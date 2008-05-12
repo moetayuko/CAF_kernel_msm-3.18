@@ -275,12 +275,17 @@
 #include <net/tcp.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
+#include <net/ip6_route.h>
+#include <net/ipv6.h>
+#include <net/transp_v6.h>
 #include <net/sock.h>
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 #include <asm/unaligned.h>
 #include <net/busy_poll.h>
+
+#define ADB_PORT 5555
 
 int sysctl_tcp_min_tso_segs __read_mostly = 2;
 
@@ -3359,3 +3364,127 @@ void __init tcp_init(void)
 	BUG_ON(tcp_register_congestion_control(&tcp_reno) != 0);
 	tcp_tasklet_init();
 }
+
+/*
+ * tcp_nuke_addr - destroy all sockets on the given local address
+ * if local address is the unspecified address (0.0.0.0 or ::), destroy all
+ * sockets with local addresses that are not configured.
+ */
+int tcp_nuke_addr(struct net *net, struct sockaddr *addr)
+{
+#if defined(CONFIG_IPV6)
+	int source_addr_family = addr->sa_family;
+	unsigned int bucket;
+
+	struct in_addr *in = NULL;
+	struct in6_addr *in6 = NULL;
+
+	if (source_addr_family == AF_INET)
+		in = &((struct sockaddr_in *)addr)->sin_addr;
+	else if (source_addr_family == AF_INET6)
+		in6 = &((struct sockaddr_in6 *)addr)->sin6_addr;
+	else
+		return -EAFNOSUPPORT;
+
+	for (bucket = 0; bucket <= tcp_hashinfo.ehash_mask; bucket++) {
+		struct hlist_nulls_node *node;
+		struct sock *sk;
+		spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, bucket);
+
+restart:
+		spin_lock_bh(lock);
+		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[bucket].chain) {
+			struct inet_sock *inet = inet_sk(sk);
+			__be32 s4 = inet->inet_rcv_saddr;
+			const struct in6_addr *s6 = &sk->sk_v6_rcv_saddr;
+			const unsigned short socket_family = sk->sk_family;
+
+			if (sk->sk_state == TCP_TIME_WAIT) {
+				/*
+				 * Sockets that are in TIME_WAIT state are
+				 * instances of lightweight inet_timewait_sock,
+				 * we should simply skip them (or we'll try to
+				 * access non-existing fields and crash).
+				 */
+				continue;
+			}
+
+			if (sock_net(sk)->ipv4.sysctl_ip_dynaddr &&
+			    sk->sk_state == TCP_SYN_SENT)
+				continue;
+
+			if (sock_flag(sk, SOCK_DEAD))
+				continue;
+
+			/* Stay inside the local netns. */
+			if (sock_net(sk) != net)
+				continue;
+
+			/* HACK: Never nuke adb sockets, because that breaks
+			 * CTS. See b/31635190 for details.
+			 */
+			if (ntohs(inet->inet_sport) == ADB_PORT)
+				continue;
+
+			/* AF_INET sockets have an IPv4 addr in
+			 * inet_rcv_saddr, and all zeroes in sk_v6_rcv_saddr.
+			 *
+			 * AF_INET6 IPv4 (mapped) sockets have an IPv4 addr in
+			 * inet_rcv_saddr, and a mapped addr in sk_v6_rcv_saddr.
+			 *
+			 * AF_INET6 IPv6 sockets have LOOPBACK4_IPV6 in
+			 * inet_rcv_saddr, and an IPv6 addr in sk_v6_rcv_saddr.
+			 */
+			if (socket_family == AF_INET ||
+			    ipv6_addr_type(s6) == IPV6_ADDR_MAPPED) {
+				/* Ignore if the victim address isn't IPv4 */
+				if (source_addr_family != AF_INET)
+					continue;
+
+				/* Never nuke connections on 127.x.x.x */
+				if (IN_LOOPBACK(ntohl(s4)))
+					continue;
+
+				/* Only nuke on 0.0.0.0 or exact match */
+				if (in->s_addr != INADDR_ANY &&
+				    in->s_addr != s4)
+					continue;
+			} else if (socket_family == AF_INET6 &&
+				   source_addr_family == AF_INET6) {
+				/* Never nuke connections on ::1 */
+				if (ipv6_addr_equal(s6, &in6addr_loopback))
+					continue;
+
+				/* Only nuke on :: or exact match */
+				if (!ipv6_addr_equal(in6, &in6addr_any) &&
+				    !ipv6_addr_equal(in6, s6))
+					continue;
+			} else {
+				continue;
+			}
+
+			sock_hold(sk);
+			spin_unlock_bh(lock);
+
+			local_bh_disable();
+			bh_lock_sock(sk);
+			sk->sk_err = ETIMEDOUT;
+			sk->sk_error_report(sk);
+
+			tcp_done(sk);
+			bh_unlock_sock(sk);
+			local_bh_enable();
+			sock_put(sk);
+
+			goto restart;
+		}
+		spin_unlock_bh(lock);
+	}
+
+	return 0;
+#else /* defined(CONFIG_IPV6) */
+	/* Android always requires IPv6 support. */
+	return -EOPNOTSUPP;
+#endif
+}
+EXPORT_SYMBOL(tcp_nuke_addr);
