@@ -32,6 +32,8 @@
 static int irqs[] = {
 #ifdef CONFIG_ARCH_OMAP2
 	3,
+#elif defined(CONFIG_ARCH_MSM7X00A)
+	INT_ARM11_PMU,
 #endif
 };
 
