@@ -40,6 +40,7 @@
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/i2c.h>
+#include <linux/msm_audio.h>
 
 #define MSM_SMI_BASE		0x00000000
 #define MSM_SMI_SIZE		0x900000
@@ -260,6 +261,49 @@ static struct platform_device android_pmem_gpu1_device = {
 	.dev = { .platform_data = &android_pmem_gpu1_pdata },
 };
 
+#define SND(desc,num) { .name = #desc, .id = num }
+static struct snd_endpoint snd_endpoints_list[] = {
+	SND(HANDSET, 0),
+//	SND(HFK, 1),
+	SND(HEADSET, 2),
+//	SND(STEREO_HEADSET, 3),
+//	SND(AHFK, 4),
+//	SND(SDAC, 5),
+	SND(SPEAKER, 6),
+//	SND(TTY_HFK, 7),
+//	SND(TTY_HEADSET, 8),
+//	SND(TTY_VCO, 9),
+//	SND(TTY_HCO, 10),
+//	SND(BT_INTERCOM, 11),
+	SND(BT, 12),
+//	SND(BT_AG_LOCAL_AUDIO, 13),
+//	SND(USB, 14),
+//	SND(STEREO_USB, 15),
+//	SND(IN_S_SADC_OUT_HANDSET, 16),
+//	SND(IN_S_SADC_OUT_HEADSET, 17),
+//	SND(EXT_S_SADC_OUT_HANDSET, 18),
+//	SND(EXT_S_SADC_OUT_HEADSET, 19),
+//	SND(BT_A2DP_HEADSET, 20),
+//	SND(BT_A2DP_SCO_HEADSET, 21),
+//	SND(TX_INT_SADC_RX_EXT_AUXPCM, 22),
+//	SND(RX_EXT_SDAC_TX_INTERNAL, 23),
+	SND(CURRENT, 25),
+};
+#undef SND
+
+static struct msm_snd_endpoints halibut_snd_endpoints = {
+        .endpoints = snd_endpoints_list,
+        .num = sizeof(snd_endpoints_list) / sizeof(struct snd_endpoint)
+};
+
+static struct platform_device halibut_snd = {
+        .name = "msm_snd",
+        .id = -1,
+        .dev    = {
+                .platform_data = &halibut_snd_endpoints
+        },
+};
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_serial0_device,
@@ -273,6 +317,7 @@ static struct platform_device *devices[] __initdata = {
 	&android_pmem_adsp_device,
 	&android_pmem_gpu0_device,
 	&android_pmem_gpu1_device,
+	&halibut_snd,
 };
 
 /*

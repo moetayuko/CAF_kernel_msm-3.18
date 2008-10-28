@@ -20,6 +20,8 @@
 #include <linux/ioctl.h>
 #include <asm/sizes.h>
 
+/* PCM Audio */
+
 #define AUDIO_IOCTL_MAGIC 'a'
 
 #define AUDIO_START        _IOW(AUDIO_IOCTL_MAGIC, 0, unsigned)
@@ -49,4 +51,37 @@ struct msm_audio_stats {
 	uint32_t unused[2];
 };
 
-#endif
+/* Audio routing */
+
+#define SND_IOCTL_MAGIC 's'
+
+#define SND_MUTE_UNMUTED 0
+#define SND_MUTE_MUTED   1
+
+struct snd_device_config {
+	uint32_t device;
+	uint32_t ear_mute;
+	uint32_t mic_mute;
+};
+
+#define SND_SET_DEVICE		_IOW(SND_IOCTL_MAGIC, 2, struct device_config *)
+
+#define SND_METHOD_VOICE 0
+
+struct snd_volume_config {
+	uint32_t device;
+	uint32_t method;
+	uint32_t volume;
+};
+
+#define SND_SET_VOLUME		_IOW(SND_IOCTL_MAGIC, 3, struct snd_volume_config *)
+
+struct snd_endpoint {
+        const char name[50];
+        int id;
+};
+
+#define SND_GET_ENDPOINTS       _IOR(SND_IOCTL_MAGIC, 4, struct snd_endpoint *) 
+
+#endif //_SND_H_
+

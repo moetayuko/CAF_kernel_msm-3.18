@@ -55,6 +55,12 @@ struct msm_camera_device_platform_data{
 	int vcm_pwd;
 };
 
+struct snd_endpoint;
+struct msm_snd_endpoints {
+        struct snd_endpoint *endpoints;
+        int num;
+};
+
 /* common init routines for use by arch/arm/mach-msm/board-*.c */
 
 void __init msm_add_devices(void);
