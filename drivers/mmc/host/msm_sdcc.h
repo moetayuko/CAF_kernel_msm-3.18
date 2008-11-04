@@ -208,6 +208,9 @@ struct msmsdcc_host {
 	unsigned int		data_xfered;	/* Bytes acked by BLKEND irq */
 
 	struct msmsdcc_dma_data	dma;
+
+	struct work_struct	resume_task;
+	int			suspended;
 };
 
 #endif

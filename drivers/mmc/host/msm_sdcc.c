@@ -910,6 +910,15 @@ msmsdcc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		return;
 	}
 
+	if (host->suspended) {
+		printk("%s: Warning - use while suspended!\n", 
+		       mmc_hostname(mmc));
+		mrq->cmd->error = -EBUSY;
+		spin_unlock_irq(&host->lock);
+		mmc_request_done(mmc, mrq);
+		return;
+	}
+
 	host->mrq = mrq;
 
 	/*
@@ -1123,6 +1132,37 @@ msmsdcc_init_dma(struct msmsdcc_host *host)
 	return 0;
 }
 
+static void
+do_resume_work(struct work_struct *work)
+{
+	struct msmsdcc_host *host =
+		container_of(work, struct msmsdcc_host, resume_task);
+	struct mmc_host	*mmc = host->mmc;
+	unsigned long flags;
+
+	spin_lock_irqsave(&host->lock, flags);
+	if (mmc) {
+		struct msmsdcc_host *host = mmc_priv(mmc);
+
+		if (!host->clks_on) {
+			clk_enable(host->pclk);
+			clk_enable(host->clk);
+			host->clks_on = 1;
+		}
+
+		writel(MCI_IRQENABLE, host->base + MMCIMASK0);
+
+		host->suspended = 0;
+		spin_unlock_irqrestore(&host->lock, flags);
+
+		if (mmc->card && mmc->card->type != MMC_TYPE_SDIO)
+			mmc_resume_host(mmc);
+
+		if (host->plat->status_irq)
+			enable_irq(host->plat->status_irq);
+	}
+}
+
 static int
 msmsdcc_probe(struct platform_device *pdev)
 {
@@ -1191,6 +1231,8 @@ msmsdcc_probe(struct platform_device *pdev)
 					   plat->embedded_sdio->funcs,
 					   plat->embedded_sdio->num_funcs);
 #endif
+
+	INIT_WORK(&host->resume_task, do_resume_work);
 
 	/*
 	 * Setup DMA
@@ -1367,13 +1409,13 @@ static int
 msmsdcc_suspend(struct platform_device *dev, pm_message_t state)
 {
 	struct mmc_host *mmc = mmc_get_drvdata(dev);
+	struct msmsdcc_host *host = mmc_priv(mmc);
 	int rc = 0;
 
 	if (mmc) {
-		struct msmsdcc_host *host = mmc_priv(mmc);
-
 		if (host->plat->status_irq)
 			disable_irq(host->plat->status_irq);
+		
 		if (mmc->card && mmc->card->type != MMC_TYPE_SDIO)
 			rc = mmc_suspend_host(mmc, state);
 		if (!rc) {
@@ -1385,6 +1427,7 @@ msmsdcc_suspend(struct platform_device *dev, pm_message_t state)
 				host->clks_on = 0;
 			}
 		}
+		host->suspended = 1;
 	}
 	return rc;
 }
@@ -1393,25 +1436,9 @@ static int
 msmsdcc_resume(struct platform_device *dev)
 {
 	struct mmc_host *mmc = mmc_get_drvdata(dev);
-	int rc = 0;
-
-	if (mmc) {
-		struct msmsdcc_host *host = mmc_priv(mmc);
-
-		if (!host->clks_on) {
-			clk_enable(host->pclk);
-			clk_enable(host->clk);
-			host->clks_on = 1;
-		}
-
-		writel(MCI_IRQENABLE, host->base + MMCIMASK0);
-		if (mmc->card && mmc->card->type != MMC_TYPE_SDIO)
-			rc = mmc_resume_host(mmc);
-
-		if (host->plat->status_irq)
-			enable_irq(host->plat->status_irq);
-	}
-	return rc;
+	struct msmsdcc_host *host = mmc_priv(mmc);
+	schedule_work(&host->resume_task);
+	return 0;
 }
 
 static struct platform_driver msmsdcc_driver = {
