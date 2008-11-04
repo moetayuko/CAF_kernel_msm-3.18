@@ -97,10 +97,6 @@ msmsdcc_request_end(struct msmsdcc_host *host, struct mmc_request *mrq)
 
 	host->mrq = NULL;
 	host->cmd = NULL;
-#if 0
-	if (mrq->data && mrq->data->error)
-		mrq->cmd->error = mrq->data->error;
-#endif
 
 	if (mrq->data)
 		mrq->data->bytes_xfered = host->data_xfered;
@@ -267,15 +263,7 @@ msmsdcc_dma_complete_func(struct msm_dmov_cmd *cmd,
 
 		host->mrq = NULL;
 		host->cmd = NULL;
-#if 0
-		if (mrq->data && mrq->data->error)
-			mrq->cmd->error = mrq->data->error;
-#endif
 		mrq->data->bytes_xfered = host->data_xfered;
-#if 0
-		if (mrq->cmd->error == -ETIMEDOUT)
-			mdelay(5);
-#endif
 
 		spin_unlock_irqrestore(&host->lock, flags);
 		mmc_request_done(host->mmc, mrq);
