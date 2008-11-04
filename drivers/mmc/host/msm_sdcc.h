@@ -138,7 +138,7 @@
 #define MCI_IRQENABLE	\
 	(MCI_CMDCRCFAILMASK|MCI_DATACRCFAILMASK|MCI_CMDTIMEOUTMASK|	\
 	MCI_DATATIMEOUTMASK|MCI_TXUNDERRUNMASK|MCI_RXOVERRUNMASK|	\
-	MCI_CMDRESPENDMASK|MCI_CMDSENTMASK)
+	MCI_CMDRESPENDMASK|MCI_CMDSENTMASK|MCI_DATAENDMASK)
 
 /*
  * The size of the FIFO in bytes.
@@ -171,6 +171,24 @@ struct msmsdcc_dma_data {
 
 	int				channel;
 	struct msmsdcc_host		*host;
+	int				busy; /* Set if DM is busy */
+};
+
+struct msmsdcc_pio_data {
+	struct scatterlist	*sg;
+	unsigned int		sg_len;
+	unsigned int		sg_off;
+};
+
+struct msmsdcc_curr_req {
+	struct mmc_request	*mrq;
+	struct mmc_command	*cmd;
+	struct mmc_data		*data;
+	unsigned int		xfer_size;	/* Total data size */
+	unsigned int		xfer_remain;	/* Bytes remaining to send */
+	unsigned int		data_xfered;	/* Bytes acked by BLKEND irq */
+	int			got_dataend;
+	int			got_datablkend;
 };
 
 struct msmsdcc_host {
@@ -180,8 +198,8 @@ struct msmsdcc_host {
 	void __iomem		*base;
 	int			pdev_id;
 
-	struct mmc_request	*mrq;
-	struct mmc_command	*cmd;
+	struct msmsdcc_curr_req	curr;
+
 	struct mmc_host		*mmc;
 	struct clk		*clk;		/* main MMC bus clock */
 	struct clk		*pclk;		/* SDCC peripheral bus clock */
@@ -201,13 +219,8 @@ struct msmsdcc_host {
 	struct timer_list	timer;
 	unsigned int		oldstat;
 
-	struct mmc_data		*data;
-
-	unsigned int		xfer_size;	/* Total data size */
-	unsigned int		xfer_remain;	/* Bytes remaining to send */
-	unsigned int		data_xfered;	/* Bytes acked by BLKEND irq */
-
 	struct msmsdcc_dma_data	dma;
+	struct msmsdcc_pio_data	pio;
 
 	struct work_struct	resume_task;
 	int			suspended;
