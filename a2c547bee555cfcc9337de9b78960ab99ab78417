@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "zad455315b40b2707b5175563d6d8b714",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1412,
+      "author": {
+        "id": 1000414
+      },
+      "writtenOn": "2008-12-03T16:11:36Z",
+      "side": 1,
+      "message": "Previousely we checked if mmc !\u003d NULL, now you can crash.",
+      "revId": "a2c547bee555cfcc9337de9b78960ab99ab78417",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "z7cf18f0ec97a0306b4c0dd6e362837bb",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1439,
+      "author": {
+        "id": 1000414
+      },
+      "writtenOn": "2008-12-03T16:11:36Z",
+      "side": 1,
+      "message": "Previousely you checked if mmc !\u003d NULL. Now there is an assumption that it is not NULL.",
+      "revId": "a2c547bee555cfcc9337de9b78960ab99ab78417",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
