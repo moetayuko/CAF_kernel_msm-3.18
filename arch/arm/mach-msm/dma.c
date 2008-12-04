@@ -29,7 +29,8 @@ enum {
 };
 
 static DEFINE_SPINLOCK(msm_dmov_lock);
-static unsigned int channel_active;
+static unsigned int channel_active_irq;
+static unsigned int check_channel;
 static struct list_head ready_commands[MSM_DMOV_CHANNEL_COUNT];
 static struct list_head active_commands[MSM_DMOV_CHANNEL_COUNT];
 unsigned int msm_dmov_print_mask = MSM_DMOV_PRINT_ERRORS;
@@ -52,12 +53,153 @@ void msm_dmov_stop_cmd(unsigned id, struct msm_dmov_cmd *cmd, int graceful)
 }
 EXPORT_SYMBOL(msm_dmov_stop_cmd);
 
-void msm_dmov_enqueue_cmd(unsigned id, struct msm_dmov_cmd *cmd)
+static void msm_datamover_enable_irq(unsigned id)
 {
+	if (!channel_active_irq)
+		enable_irq(INT_ADM_AARM);
+	channel_active_irq |= BIT(id);
+}
+
+static void msm_datamover_channel_irq(unsigned id)
+{
+	unsigned int ch_status;
+	unsigned int ch_result;
+	struct msm_dmov_cmd *cmd;
 	unsigned long irq_flags;
-	unsigned int status;
 
 	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+	if (!(channel_active_irq & BIT(id))) {
+		PRINT_FLOW("msm_datamover_irq_handler: "
+			   "got masked interrupt channel %d\n", id);
+		goto done;
+	}
+
+	ch_status = readl(DMOV_STATUS(id));
+	if (!(ch_status & DMOV_STATUS_RSLT_VALID)) {
+		PRINT_FLOW("msm_datamover_irq_handler id %d, result not valid %x\n", id, ch_status);
+		goto done;
+	}
+	do {
+		if (list_empty(&active_commands[id])) {
+			PRINT_ERROR("msm_datamover_irq_handler id %d, got result "
+				"with no active command, status %x, result %x\n",
+				id, ch_status, readl(DMOV_RSLT(id)));
+			cmd = NULL;
+		} else {
+			cmd = list_entry(active_commands[id].next, typeof(*cmd), list);
+			if (cmd->complete_func == NULL) {
+				PRINT_FLOW("msm_datamover_irq_handler id %d, "
+					"next command requested no callback\n",
+					id);
+				break;
+			}
+		}
+		ch_result = readl(DMOV_RSLT(id));
+		PRINT_FLOW("msm_datamover_irq_handler id %d, status %x, result %x\n", id, ch_status, ch_result);
+		if (ch_result & DMOV_RSLT_DONE) {
+			PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n",
+				id, ch_status);
+			PRINT_IO("msm_datamover_irq_handler id %d, got result "
+				"for %p, result %x\n", id, cmd, ch_result);
+			if (cmd) {
+				list_del(&cmd->list);
+				spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+				cmd->complete_func(cmd, ch_result, NULL);
+				spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+			}
+		}
+		if (ch_result & DMOV_RSLT_FLUSH) {
+			struct msm_dmov_errdata errdata;
+
+			errdata.flush[0] = readl(DMOV_FLUSH0(id));
+			errdata.flush[1] = readl(DMOV_FLUSH1(id));
+			errdata.flush[2] = readl(DMOV_FLUSH2(id));
+			errdata.flush[3] = readl(DMOV_FLUSH3(id));
+			errdata.flush[4] = readl(DMOV_FLUSH4(id));
+			errdata.flush[5] = readl(DMOV_FLUSH5(id));
+			PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
+			PRINT_FLOW("msm_datamover_irq_handler id %d, flush, result %x, flush0 %x\n", id, ch_result, errdata.flush[0]);
+			if (cmd) {
+				list_del(&cmd->list);
+				spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+				cmd->complete_func(cmd, ch_result, &errdata);
+				spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+			}
+		}
+		if (ch_result & DMOV_RSLT_ERROR) {
+			struct msm_dmov_errdata errdata;
+
+			errdata.flush[0] = readl(DMOV_FLUSH0(id));
+			errdata.flush[1] = readl(DMOV_FLUSH1(id));
+			errdata.flush[2] = readl(DMOV_FLUSH2(id));
+			errdata.flush[3] = readl(DMOV_FLUSH3(id));
+			errdata.flush[4] = readl(DMOV_FLUSH4(id));
+			errdata.flush[5] = readl(DMOV_FLUSH5(id));
+
+			PRINT_ERROR("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
+			PRINT_ERROR("msm_datamover_irq_handler id %d, error, result %x, flush0 %x\n", id, ch_result, errdata.flush[0]);
+			if (cmd) {
+				list_del(&cmd->list);
+				spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+				cmd->complete_func(cmd, ch_result, &errdata);
+				spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+			}
+			/* this does not seem to work, once we get an error */
+			/* the datamover will no longer accept commands */
+			writel(0, DMOV_FLUSH0(id));
+		}
+		ch_status = readl(DMOV_STATUS(id));
+		PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
+		if ((ch_status & DMOV_STATUS_CMD_PTR_RDY) && !list_empty(&ready_commands[id])) {
+			cmd = list_entry(ready_commands[id].next, typeof(*cmd), list);
+			list_del(&cmd->list);
+			list_add_tail(&cmd->list, &active_commands[id]);
+			PRINT_FLOW("msm_datamover_irq_handler id %d, start command\n", id);
+			writel(cmd->cmdptr, DMOV_CMD_PTR(id));
+		}
+	} while (ch_status & DMOV_STATUS_RSLT_VALID);
+	if (list_empty(&active_commands[id]))
+		cmd = NULL;
+	else
+		cmd = list_first_entry(&active_commands[id], typeof(*cmd), list);
+	if ((!cmd && list_empty(&ready_commands[id]))
+	    || (cmd && !cmd->complete_func)) {
+		channel_active_irq &= ~(1U << id);
+		if (!channel_active_irq)
+			disable_irq(INT_ADM_AARM);
+	}
+	PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
+done:
+	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+}
+
+static void msm_dmov_check_status(unsigned long arg)
+{
+	unsigned int int_status, mask, id;
+
+	local_irq_disable();
+	spin_lock(&msm_dmov_lock);
+	int_status = check_channel;
+	check_channel = 0;
+	spin_unlock(&msm_dmov_lock);
+	PRINT_FLOW("msm_dmov_check_status: DMOV_ISR %x\n", int_status);
+
+	while (int_status) {
+		mask = int_status & -int_status;
+		id = fls(mask) - 1;
+		PRINT_FLOW("msm_dmov_check_status %08x %08x id %d\n", int_status, mask, id);
+		int_status &= ~mask;
+		msm_datamover_channel_irq(id);
+	}
+	local_irq_enable();
+}
+
+static DECLARE_TASKLET(msm_dmov_tasklet, msm_dmov_check_status, 0);
+
+static void msm_dmov_enqueue_cmd_locked(unsigned id, struct msm_dmov_cmd *cmd)
+{
+	unsigned int status;
+
 	status = readl(DMOV_STATUS(id));
 	if (list_empty(&ready_commands[id]) &&
 		(status & DMOV_STATUS_CMD_PTR_RDY)) {
@@ -68,21 +210,61 @@ void msm_dmov_enqueue_cmd(unsigned id, struct msm_dmov_cmd *cmd)
 		}
 #endif
 		PRINT_IO("msm_dmov_enqueue_cmd(%d), start command, status %x\n", id, status);
+		if (list_empty(&active_commands[id]) && cmd->complete_func)
+			msm_datamover_enable_irq(id);
 		list_add_tail(&cmd->list, &active_commands[id]);
-		if (!channel_active)
-			enable_irq(INT_ADM_AARM);
-		channel_active |= 1U << id;
 		writel(cmd->cmdptr, DMOV_CMD_PTR(id));
 	} else {
+		if (list_empty(&active_commands[id]) &&
+		    list_empty(&ready_commands[id]))
+			msm_datamover_enable_irq(id);
 		if (list_empty(&active_commands[id]))
 			PRINT_ERROR("msm_dmov_enqueue_cmd(%d), error datamover stalled, status %x\n", id, status);
 
 		PRINT_IO("msm_dmov_enqueue_cmd(%d), enqueue command, status %x\n", id, status);
 		list_add_tail(&cmd->list, &ready_commands[id]);
 	}
+}
+
+void msm_dmov_enqueue_cmd(unsigned id, struct msm_dmov_cmd *cmd)
+{
+	unsigned long irq_flags;
+	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+	msm_dmov_enqueue_cmd_locked(id, cmd);
 	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
 }
 EXPORT_SYMBOL(msm_dmov_enqueue_cmd);
+
+void msm_dmov_enqueue_cmd_no_callback(unsigned id, struct msm_dmov_cmd *cmd)
+{
+	unsigned long irq_flags;
+	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+	cmd->complete_func = NULL;
+	msm_dmov_enqueue_cmd_locked(id, cmd);
+	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+}
+EXPORT_SYMBOL(msm_dmov_enqueue_cmd_no_callback);
+
+void msm_dmov_add_callback(unsigned id, struct msm_dmov_cmd *cmd,
+	void (*complete_func)(struct msm_dmov_cmd *cmd,
+			      unsigned int result,
+			      struct msm_dmov_errdata *err))
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
+
+	PRINT_IO("msm_dmov_enqueue_cmd(%d), add callback, status %x\n", id, readl(DMOV_STATUS(id)));
+	cmd->complete_func = complete_func;
+	if (active_commands[id].next == &cmd->list) {
+		PRINT_IO("msm_dmov_enqueue_cmd(%d), add callback, enable irq, old %x\n", id, channel_active_irq);
+		msm_datamover_enable_irq(id);
+		check_channel |= BIT(id);
+		tasklet_schedule(&msm_dmov_tasklet);
+	}
+	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
+}
+EXPORT_SYMBOL(msm_dmov_add_callback);
 
 void msm_dmov_flush(unsigned int id)
 {
@@ -146,12 +328,6 @@ int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr)
 static irqreturn_t msm_datamover_irq_handler(int irq, void *dev_id)
 {
 	unsigned int int_status, mask, id;
-	unsigned long irq_flags;
-	unsigned int ch_status;
-	unsigned int ch_result;
-	struct msm_dmov_cmd *cmd;
-
-	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
 
 	int_status = readl(DMOV_ISR); /* read and clear interrupt */
 	PRINT_FLOW("msm_datamover_irq_handler: DMOV_ISR %x\n", int_status);
@@ -161,86 +337,9 @@ static irqreturn_t msm_datamover_irq_handler(int irq, void *dev_id)
 		id = fls(mask) - 1;
 		PRINT_FLOW("msm_datamover_irq_handler %08x %08x id %d\n", int_status, mask, id);
 		int_status &= ~mask;
-		ch_status = readl(DMOV_STATUS(id));
-		if (!(ch_status & DMOV_STATUS_RSLT_VALID)) {
-			PRINT_FLOW("msm_datamover_irq_handler id %d, result not valid %x\n", id, ch_status);
-			continue;
-		}
-		do {
-			ch_result = readl(DMOV_RSLT(id));
-			if (list_empty(&active_commands[id])) {
-				PRINT_ERROR("msm_datamover_irq_handler id %d, got result "
-					"with no active command, status %x, result %x\n",
-					id, ch_status, ch_result);
-				cmd = NULL;
-			} else
-				cmd = list_entry(active_commands[id].next, typeof(*cmd), list);
-			PRINT_FLOW("msm_datamover_irq_handler id %d, status %x, result %x\n", id, ch_status, ch_result);
-			if (ch_result & DMOV_RSLT_DONE) {
-				PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n",
-					id, ch_status);
-				PRINT_IO("msm_datamover_irq_handler id %d, got result "
-					"for %p, result %x\n", id, cmd, ch_result);
-				if (cmd) {
-					list_del(&cmd->list);
-					cmd->complete_func(cmd, ch_result, NULL);
-				}
-			}
-			if (ch_result & DMOV_RSLT_FLUSH) {
-				struct msm_dmov_errdata errdata;
-
-				errdata.flush[0] = readl(DMOV_FLUSH0(id));
-				errdata.flush[1] = readl(DMOV_FLUSH1(id));
-				errdata.flush[2] = readl(DMOV_FLUSH2(id));
-				errdata.flush[3] = readl(DMOV_FLUSH3(id));
-				errdata.flush[4] = readl(DMOV_FLUSH4(id));
-				errdata.flush[5] = readl(DMOV_FLUSH5(id));
-				PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
-				PRINT_FLOW("msm_datamover_irq_handler id %d, flush, result %x, flush0 %x\n", id, ch_result, errdata.flush[0]);
-				if (cmd) {
-					list_del(&cmd->list);
-					cmd->complete_func(cmd, ch_result, &errdata);
-				}
-			}
-			if (ch_result & DMOV_RSLT_ERROR) {
-				struct msm_dmov_errdata errdata;
-
-				errdata.flush[0] = readl(DMOV_FLUSH0(id));
-				errdata.flush[1] = readl(DMOV_FLUSH1(id));
-				errdata.flush[2] = readl(DMOV_FLUSH2(id));
-				errdata.flush[3] = readl(DMOV_FLUSH3(id));
-				errdata.flush[4] = readl(DMOV_FLUSH4(id));
-				errdata.flush[5] = readl(DMOV_FLUSH5(id));
-
-				PRINT_ERROR("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
-				PRINT_ERROR("msm_datamover_irq_handler id %d, error, result %x, flush0 %x\n", id, ch_result, errdata.flush[0]);
-				if (cmd) {
-					list_del(&cmd->list);
-					cmd->complete_func(cmd, ch_result, &errdata);
-				}
-				/* this does not seem to work, once we get an error */
-				/* the datamover will no longer accept commands */
-				writel(0, DMOV_FLUSH0(id));
-			}
-			ch_status = readl(DMOV_STATUS(id));
-			PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
-			if ((ch_status & DMOV_STATUS_CMD_PTR_RDY) && !list_empty(&ready_commands[id])) {
-				cmd = list_entry(ready_commands[id].next, typeof(*cmd), list);
-				list_del(&cmd->list);
-				list_add_tail(&cmd->list, &active_commands[id]);
-				PRINT_FLOW("msm_datamover_irq_handler id %d, start command\n", id);
-				writel(cmd->cmdptr, DMOV_CMD_PTR(id));
-			}
-		} while (ch_status & DMOV_STATUS_RSLT_VALID);
-		if (list_empty(&active_commands[id]) && list_empty(&ready_commands[id]))
-			channel_active &= ~(1U << id);
-		PRINT_FLOW("msm_datamover_irq_handler id %d, status %x\n", id, ch_status);
+		msm_datamover_channel_irq(id);
 	}
 
-	if (!channel_active)
-		disable_irq(INT_ADM_AARM);
-
-	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
 	return IRQ_HANDLED;
 }
 
