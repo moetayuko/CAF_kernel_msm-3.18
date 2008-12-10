@@ -39,7 +39,6 @@ void msm_dmov_add_callback(unsigned id, struct msm_dmov_cmd *cmd,
 			      unsigned int result,
 			      struct msm_dmov_errdata *err));
 void msm_dmov_stop_cmd(unsigned id, struct msm_dmov_cmd *cmd, int graceful);
-void msm_dmov_flush(unsigned int id);
 int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr);
 
 
@@ -73,7 +72,6 @@ int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr);
 #define DMOV_FLUSH3(ch)       DMOV_SD3(0x140, ch)
 #define DMOV_FLUSH4(ch)       DMOV_SD3(0x180, ch)
 #define DMOV_FLUSH5(ch)       DMOV_SD3(0x1C0, ch)
-#define DMOV_FLUSH_TYPE       (1 << 31)
 
 #define DMOV_STATUS(ch)       DMOV_SD3(0x200, ch)
 #define DMOV_STATUS_RSLT_COUNT(n)    (((n) >> 29))

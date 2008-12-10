@@ -266,19 +266,6 @@ void msm_dmov_add_callback(unsigned id, struct msm_dmov_cmd *cmd,
 }
 EXPORT_SYMBOL(msm_dmov_add_callback);
 
-void msm_dmov_flush(unsigned int id)
-{
-	unsigned long irq_flags;
-	spin_lock_irqsave(&msm_dmov_lock, irq_flags);
-	/* XXX not checking if flush cmd sent already */
-	if (!list_empty(&active_commands[id])) {
-		PRINT_IO("msm_dmov_flush(%d), send flush cmd\n", id);
-		writel(DMOV_FLUSH_TYPE, DMOV_FLUSH0(id));
-	}
-	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
-}
-EXPORT_SYMBOL(msm_dmov_flush);
-
 struct msm_dmov_exec_cmdptr_cmd {
 	struct msm_dmov_cmd dmov_cmd;
 	struct completion complete;
