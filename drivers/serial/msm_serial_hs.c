@@ -462,7 +462,8 @@ static void msm_hs_set_termios(struct uart_port *uport,
 	if (msm_uport->rx.flush == FLUSH_NONE) {
 		wake_lock(&msm_uport->rx.wake_lock);
 		msm_uport->rx.flush = FLUSH_TERMIOS;
-		msm_dmov_flush(msm_uport->dma_rx_channel);
+		msm_dmov_stop_cmd(msm_uport->dma_rx_channel,
+				  &msm_uport->rx.xfer, 1);
 	}
 
 	msm_hs_write(uport, UARTDM_IMR_ADDR, msm_uport->imr_reg);
@@ -522,7 +523,8 @@ static void msm_hs_stop_rx_locked(struct uart_port *uport)
 	msm_hs_write(uport, UARTDM_CR_ADDR, UARTDM_CR_RX_DISABLE_BMSK);
 	if (msm_uport->rx.flush == FLUSH_NONE) {
 		wake_lock(&msm_uport->rx.wake_lock);
-		msm_dmov_flush(msm_uport->dma_rx_channel);
+		msm_dmov_stop_cmd(msm_uport->dma_rx_channel,
+				  &msm_uport->rx.xfer, 1);
 	}
 	if (msm_uport->rx.flush != FLUSH_SHUTDOWN)
 		msm_uport->rx.flush = FLUSH_STOP;
@@ -921,7 +923,8 @@ static irqreturn_t msm_hs_isr(int irq, void *dev)
 
 		if (rx->flush == FLUSH_NONE) {
 			rx->flush = FLUSH_DATA_READY;
-			msm_dmov_flush(msm_uport->dma_rx_channel);
+			msm_dmov_stop_cmd(msm_uport->dma_rx_channel,
+					  &msm_uport->rx.xfer, 1);
 		}
 	}
 	/* tx ready interrupt */
