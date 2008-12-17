@@ -29,6 +29,8 @@
 static DEFINE_MUTEX(clocks_mutex);
 static DEFINE_SPINLOCK(clocks_lock);
 static LIST_HEAD(clocks);
+struct clk *msm_clocks;
+unsigned msm_num_clocks;
 
 /*
  * glue for the proc_comm interface
@@ -178,14 +180,14 @@ int clk_set_flags(struct clk *clk, unsigned long flags)
 EXPORT_SYMBOL(clk_set_flags);
 
 
-void __init msm_clock_init(void)
+void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
 {
 	unsigned n;
 
 	spin_lock_init(&clocks_lock);
 	mutex_lock(&clocks_mutex);
-	for (n = 0; n < msm_num_clocks; n++)
-		list_add_tail(&msm_clocks[n].list, &clocks);
+	for (n = 0; n < num_clocks; n++)
+		list_add_tail(&clock_tbl[n].list, &clocks);
 	mutex_unlock(&clocks_mutex);
 }
 
