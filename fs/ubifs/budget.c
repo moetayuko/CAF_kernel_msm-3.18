@@ -198,8 +198,10 @@ static int make_free_space(struct ubifs_info *c)
  *
  * This function calculates and returns the number of LEBs which should be kept
  * for index usage.
+ *
+ * Note: watch 'ubifs_calc_full_idx_lebs()' if changing this function.
  */
-int ubifs_calc_min_idx_lebs(struct ubifs_info *c)
+int ubifs_calc_min_idx_lebs(const struct ubifs_info *c)
 {
 	int idx_lebs;
 	long long idx_size;
@@ -229,6 +231,10 @@ int ubifs_calc_min_idx_lebs(struct ubifs_info *c)
  * @min_idx_lebs: minimum number of LEBs reserved for the index
  *
  * This function calculates and returns amount of FS space available for use.
+ *
+ * Note, this function is called from debugging code with the debugging lock
+ * held, which means you cannot call other debugging functions and use
+ * debugging macros like 'dbg_msg()' from here.
  */
 long long ubifs_calc_available(const struct ubifs_info *c, int min_idx_lebs)
 {
@@ -641,48 +647,95 @@ void ubifs_release_dirty_inode_budget(struct ubifs_info *c,
 }
 
 /**
+ * ubifs_calc_full_idx_lebs - calculate amount of indexing LEBs of full FS.
+ * @c: UBIFS file-system description object
+ * @available: how much space is available at the moment
+ *
+ * This function calculates how many LEBs the index would take if the
+ * @available space was filled with un-compressible data nodes of maximum
+ * size.
+ *
+ * Note, this function is called from debugging code with the debugging lock
+ * held, which means you cannot call other debugging functions and use
+ * debugging macros like 'dbg_msg()' from here.
+ */
+static int ubifs_calc_full_idx_lebs(const struct ubifs_info *c,
+				    long long available)
+{
+	int n;
+	long long idx_size, predicted_idx_size;
+
+	/*
+	 * First of all, calculate how many such data nodes would fit into
+	 * @available.
+	 */
+	n = div_u64(available + UBIFS_MAX_DATA_NODE_SZ - 1,
+		    UBIFS_MAX_DATA_NODE_SZ);
+
+	/*
+	 * Indexing nodes refer @c->fanout data nodes. Calculate how many bytes
+	 * would these indexing nodes take.
+	 *
+	 * But there are many levels of indexing nodes, and we took into
+	 * account only the bottom level, which refers leaf data nodes. And for
+	 * sure, the amount of upper level indexing nodes is less, thus
+	 * multiply the predicted index size by 2.
+	 *
+	 * And UBIFS reserves 3 times more space for the index, so multiply by
+	 * 3 as well.
+	 */
+	predicted_idx_size = (long long)n * c->max_idx_node_sz * 2 * 3;
+	predicted_idx_size = div_u64(predicted_idx_size + c->fanout - 1,
+				     c->fanout);
+
+	/*
+	 * And take into account current (real) index. The below calculations
+	 * are similar to calculations in the 'ubifs_calc_min_idx_lebs()'.
+	 */
+	idx_size = c->old_idx_sz + c->budg_idx_growth + c->budg_uncommitted_idx;
+	idx_size += idx_size << 1;
+	idx_size += predicted_idx_size;
+	n = div_u64(idx_size + c->idx_leb_size - 1, c->idx_leb_size);
+	n += 1;
+	if (n < MIN_INDEX_LEBS)
+		n = MIN_INDEX_LEBS;
+	ubifs_assert(n >= ubifs_calc_min_idx_lebs(c));
+	return n;
+}
+
+/**
  * ubifs_reported_space - calculate reported free space.
  * @c: the UBIFS file-system description object
- * @free: amount of free space
+ * @available: amount of available UBIFS space
  *
  * This function calculates amount of free space which will be reported to
- * user-space. User-space application tend to expect that if the file-system
- * (e.g., via the 'statfs()' call) reports that it has N bytes available, they
+ * user-space. User-space applications tend to expect that if the file-system
+ * reports (e.g., via the 'statfs()' call) that it has N bytes available, they
  * are able to write a file of size N. UBIFS attaches node headers to each data
- * node and it has to write indexing nodes as well. This introduces additional
- * overhead, and UBIFS has to report slightly less free space to meet the above
+ * node and it has to write indexing nodes as well. This introduces overhead,
+ * and UBIFS has to report slightly less free space to meet the above
  * expectations.
- *
- * This function assumes free space is made up of uncompressed data nodes and
- * full index nodes (one per data node, tripled because we always allow enough
- * space to write the index thrice).
  *
  * Note, the calculation is pessimistic, which means that most of the time
  * UBIFS reports less space than it actually has.
+ *
+ * Note, this function is called from debugging code with the debugging lock
+ * held, which means you cannot call other debugging functions and use
+ * debugging macros like 'dbg_msg()' from here.
  */
-long long ubifs_reported_space(const struct ubifs_info *c, long long free)
+long long ubifs_reported_space(const struct ubifs_info *c, long long available)
 {
-	int divisor, factor, f;
+	int idx_lebs = ubifs_calc_full_idx_lebs(c, available);
 
-	/*
-	 * Reported space size is @free * X, where X is UBIFS block size
-	 * divided by UBIFS block size + all overhead one data block
-	 * introduces. The overhead is the node header + indexing overhead.
-	 *
-	 * Indexing overhead calculations are based on the following formula:
-	 * I = N/(f - 1) + 1, where I - number of indexing nodes, N - number
-	 * of data nodes, f - fanout. Because effective UBIFS fanout is twice
-	 * as less than maximum fanout, we assume that each data node
-	 * introduces 3 * @c->max_idx_node_sz / (@c->fanout/2 - 1) bytes.
-	 * Note, the multiplier 3 is because UBIFS reserves thrice as more space
-	 * for the index.
-	 */
-	f = c->fanout > 3 ? c->fanout >> 1 : 2;
-	factor = UBIFS_BLOCK_SIZE;
-	divisor = UBIFS_MAX_DATA_NODE_SZ;
-	divisor += (c->max_idx_node_sz * 3) / (f - 1);
-	free *= factor;
-	return div_u64(free, divisor);
+	/* Index space is not available for data */
+	available -= (long long)c->leb_size * (idx_lebs - c->min_idx_lebs);
+	if (available <= 0)
+		return 0;
+
+	/* Take into account the node headers overhead */
+	available *= UBIFS_BLOCK_SIZE;
+	available = div_u64(available, UBIFS_MAX_DATA_NODE_SZ);
+	return available;
 }
 
 /**
@@ -700,6 +753,10 @@ long long ubifs_reported_space(const struct ubifs_info *c, long long free)
  * be able to fit a file of N bytes to the FS. This almost works for
  * traditional file-systems, because they have way less overhead than UBIFS.
  * So, to keep users happy, UBIFS tries to take the overhead into account.
+ *
+ * Note, this function is called from debugging code with the debugging lock
+ * held, which means you cannot call other debugging functions and use
+ * debugging macros like 'dbg_msg()' from here.
  */
 long long ubifs_get_free_space_nolock(struct ubifs_info *c)
 {
