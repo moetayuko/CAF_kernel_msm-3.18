@@ -786,38 +786,16 @@ long long ubifs_reported_space(const struct ubifs_info *c, long long available)
  */
 long long ubifs_get_free_space_nolock(struct ubifs_info *c)
 {
-	int rsvd_idx_lebs, lebs;
-	long long available, outstanding, free;
+	long long available;
 
 	ubifs_assert(c->min_idx_lebs == ubifs_calc_min_idx_lebs(c));
-	outstanding = c->budg_data_growth + c->budg_dd_growth;
 	available = ubifs_calc_available(c, c->min_idx_lebs);
-
-	/*
-	 * When reporting free space to user-space, UBIFS guarantees that it is
-	 * possible to write a file of free space size. This means that for
-	 * empty LEBs we may use more precise calculations than
-	 * 'ubifs_calc_available()' is using. Namely, we know that in empty
-	 * LEBs we would waste only @c->leb_overhead bytes, not @c->dark_wm.
-	 * Thus, amend the available space.
-	 *
-	 * Note, the calculations below are similar to what we have in
-	 * 'do_budget_space()', so refer there for comments.
-	 */
-	if (c->min_idx_lebs > c->lst.idx_lebs)
-		rsvd_idx_lebs = c->min_idx_lebs - c->lst.idx_lebs;
+	available -= c->budg_data_growth + c->budg_dd_growth;
+	if (available > 0)
+		available = ubifs_reported_space(c, available);
 	else
-		rsvd_idx_lebs = 0;
-	lebs = c->lst.empty_lebs + c->freeable_cnt + c->idx_gc_cnt -
-	       c->lst.taken_empty_lebs;
-	lebs -= rsvd_idx_lebs;
-	available += lebs * (c->dark_wm - c->leb_overhead);
-
-	if (available > outstanding)
-		free = ubifs_reported_space(c, available - outstanding);
-	else
-		free = 0;
-	return free;
+		available = 0;
+	return available;
 }
 
 /**
