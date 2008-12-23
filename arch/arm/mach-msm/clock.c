@@ -50,7 +50,7 @@ static inline int pc_clk_set_rate(unsigned id, unsigned rate)
 	return msm_proc_comm(PCOM_CLKCTL_RPC_SET_RATE, &id, &rate);
 }
 
-static inline int pc_clk_set_min_rate(unsigned id, unsigned rate)
+int pc_clk_set_min_rate(unsigned id, unsigned rate)
 {
 	return msm_proc_comm(PCOM_CLKCTL_RPC_MIN_RATE, &id, &rate);
 }
