@@ -87,5 +87,7 @@ struct clk {
 
 extern struct clk msm_clocks[];
 
+int pc_clk_set_min_rate(unsigned id, unsigned rate);
+
 #endif
 
