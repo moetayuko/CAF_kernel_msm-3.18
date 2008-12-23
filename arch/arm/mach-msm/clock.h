@@ -98,5 +98,7 @@ struct clk {
 #define OFF CLKFLAG_AUTO_OFF
 #define MINMAX CLKFLAG_USE_MIN_MAX_TO_SET
 
+int pc_clk_set_min_rate(unsigned id, unsigned rate);
+
 #endif
 
