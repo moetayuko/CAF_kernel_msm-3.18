@@ -37,17 +37,31 @@ struct rmnet_private
 	smd_channel_t *ch;
 	struct net_device_stats stats;
 	const char *chname;
+	ktime_t last_packet;
+	unsigned long rmnet_wakeups;
+	unsigned long timeout_us;
 };
 
-static int count_this_packet(void *_hdr, int len)
+static int count_this_packet(void *_hdr, int len, struct rmnet_private *p)
 {
+	struct timespec ts;
 	struct ethhdr *hdr = _hdr;
+	ktime_t now;
 
-	if (len < ETH_HLEN)
+	if (len >= ETH_HLEN && hdr->h_proto == htons(ETH_P_ARP))
+		return 0;
+
+	if (p->timeout_us == 0)
 		return 1;
 
-	if (hdr->h_proto == htons(ETH_P_ARP))
-		return 0;
+	/* Use real (wall) time. */
+	ktime_get_real_ts(&ts);
+	now = timespec_to_ktime(ts);
+
+	if (ktime_us_delta(now, p->last_packet) > p->timeout_us) {
+		p->rmnet_wakeups++;
+	}
+	p->last_packet = now;
 
 	return 1;
 }
@@ -83,7 +97,7 @@ static void smd_net_data_handler(unsigned long arg)
 					dev_kfree_skb_irq(skb);
 				} else {
 					skb->protocol = eth_type_trans(skb, dev);
-					if (count_this_packet(ptr, skb->len)) {
+					if (count_this_packet(ptr, skb->len, p)) {
 						p->stats.rx_packets++;
 						p->stats.rx_bytes += skb->len;
 					}
@@ -141,7 +155,7 @@ static int rmnet_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (smd_write(ch, skb->data, skb->len) != skb->len) {
 		pr_err("rmnet fifo full, dropping packet\n");
 	} else {
-		if (count_this_packet(skb->data, skb->len)) {
+		if (count_this_packet(skb->data, skb->len, p)) {
 			p->stats.tx_packets++;
 			p->stats.tx_bytes += skb->len;
 		}
@@ -185,15 +199,45 @@ static void __init rmnet_setup(struct net_device *dev)
 }
 
 
+/* module crap */
 static const char *ch_name[3] = {
 	"SMD_DATA5",
 	"SMD_DATA6",
 	"SMD_DATA7",
 };
 
+static ssize_t wakeups_show(struct device *d, struct device_attribute *attr,
+		char *buf)
+{
+	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+	return sprintf(buf, "%lu\n", p->rmnet_wakeups);
+}
+
+DEVICE_ATTR(wakeups, 0444, wakeups_show, NULL);
+
+/* Set timeout in us. */
+static ssize_t timeout_store(struct device *d, struct device_attribute *attr,
+		const char *buf, size_t n)
+{
+	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+	p->timeout_us = simple_strtoul(buf, NULL, 10);
+	return n;
+}
+
+static ssize_t timeout_show(struct device *d, struct device_attribute *attr,
+		const char *buf, size_t n)
+{
+	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+	p = netdev_priv(to_net_dev(d));
+	return sprintf(buf, "%lu\n", p->timeout_us);
+}
+
+DEVICE_ATTR(timeout, 0664, timeout_show, timeout_store);
+
 static int __init rmnet_init(void)
 {
 	int ret;
+	struct device *d;
 	struct net_device *dev;
 	struct rmnet_private *p;
 	unsigned n;
@@ -205,14 +249,19 @@ static int __init rmnet_init(void)
 		if (!dev)
 			return -ENOMEM;
 
+		d = &(dev->dev);
 		p = netdev_priv(dev);
 		p->chname = ch_name[n];
+		p->timeout_us = p->rmnet_wakeups = 0;
 
 		ret = register_netdev(dev);
 		if (ret) {
 			free_netdev(dev);
 			return ret;
 		}
+
+		device_create_file(d, &dev_attr_timeout);
+		device_create_file(d, &dev_attr_wakeups);
 	}
 	return 0;
 }
