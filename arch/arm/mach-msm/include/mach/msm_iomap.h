@@ -43,12 +43,19 @@
 #define IOMEM(x)	((void __force __iomem *)(x))
 #endif
 
+#if defined(CONFIG_ARCH_MSM_ARM11)
+#define _PHYS(a11,scorp) (a11)
+#endif
+#if defined(CONFIG_ARCH_MSM_SCORPION)
+#define _PHYS(a11,scorp) (scorp)
+#endif
+
 #define MSM_VIC_BASE          IOMEM(0xF8000000)
-#define MSM_VIC_PHYS          0xC0000000
+#define MSM_VIC_PHYS          _PHYS(0xC0000000,0xAC000000)
 #define MSM_VIC_SIZE          SZ_4K
 
 #define MSM_CSR_BASE          IOMEM(0xF8001000)
-#define MSM_CSR_PHYS          0xC0100000
+#define MSM_CSR_PHYS          _PHYS(0xC0100000,0xAC100000)
 #define MSM_CSR_SIZE          SZ_4K
 
 #define MSM_GPT_PHYS          MSM_CSR_PHYS
@@ -60,11 +67,11 @@
 #define MSM_DMOV_SIZE         SZ_4K
 
 #define MSM_GPIO1_BASE        IOMEM(0xF8003000)
-#define MSM_GPIO1_PHYS        0xA9200000
+#define MSM_GPIO1_PHYS        _PHYS(0xA9200000,0xA9000000)
 #define MSM_GPIO1_SIZE        SZ_4K
 
 #define MSM_GPIO2_BASE        IOMEM(0xF8004000)
-#define MSM_GPIO2_PHYS        0xA9300000
+#define MSM_GPIO2_PHYS        _PHYS(0xA9300000,0xA9100000)
 #define MSM_GPIO2_SIZE        SZ_4K
 
 #define MSM_CLK_CTL_BASE      IOMEM(0xF8005000)
@@ -95,7 +102,6 @@
 #endif
 #define MSM_DEBUG_UART_SIZE   SZ_4K
 #endif
-
 
 #define MSM_SDC1_PHYS         0xA0400000
 #define MSM_SDC1_SIZE         SZ_4K
@@ -143,5 +149,15 @@
 
 #define MSM_TSSC_PHYS         0xAA300000
 #define MSM_TSSC_SIZE         SZ_4K
+
+#if defined(CONFIG_ARCH_MSM_SCORPION)
+#define MSM_SIRC_BASE         IOMEM(0xF8006000)
+#define MSM_SIRC_PHYS         0xAC200000
+#define MSM_SIRC_SIZE         SZ_4K
+
+#define MSM_SCPLL_BASE        IOMEM(0xF8007000)
+#define MSM_SCPLL_PHYS        0xA8800000
+#define MSM_SCPLL_SIZE        SZ_4K
+#endif
 
 #endif
