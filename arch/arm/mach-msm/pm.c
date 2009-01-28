@@ -255,7 +255,12 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 			printk(KERN_INFO "msm_sleep(): vector %x %x -> "
 			       "%x %x\n", saved_vector[0], saved_vector[1],
 			       msm_pm_reset_vector[0], msm_pm_reset_vector[1]);
+
+		/* Synchronize because RTC is not used on resume. */
+		msm_timer_enter_idle();
 		collapsed = msm_pm_collapse();
+		msm_timer_exit_idle(1);
+
 		msm_pm_reset_vector[0] = saved_vector[0];
 		msm_pm_reset_vector[1] = saved_vector[1];
 		if (collapsed) {
