@@ -320,6 +320,7 @@ enter_failed:
 
 void arch_idle(void)
 {
+#ifndef CONFIG_ARCH_MSM_SCORPION
 	int ret;
 	int spin;
 	int64_t sleep_time;
@@ -397,6 +398,7 @@ abort_idle:
 #ifdef CONFIG_MSM_IDLE_STATS
 	t2 = ktime_to_ns(ktime_get());
 	msm_pm_add_stat(exit_stat, t2 - t1);
+#endif
 #endif
 }
 
