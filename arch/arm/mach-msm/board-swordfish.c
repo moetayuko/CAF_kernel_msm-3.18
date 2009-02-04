@@ -29,6 +29,7 @@
 #include <mach/board.h>
 #include <mach/irqs.h>
 #include <mach/msm_iomap.h>
+#include <mach/msm_hsusb.h>
 
 #include "devices.h"
 
@@ -52,10 +53,46 @@ static struct platform_device smc91x_device = {
 	.resource	= smc91x_resources,
 };
 
+#ifdef CONFIG_USB_FUNCTION
+static char *swordfish_usb_functions[] = {
+#ifdef CONFIG_USB_FUNCTION_ADB
+	"adb",
+#endif
+};
+
+static struct msm_hsusb_product swordfish_usb_products[] = {
+	{
+		.product_id     = 0x0002,
+		.functions      = 0x00000001, /* "adb" only */
+	},
+};
+#endif
+
+static int swordfish_phy_init_seq[] = { 0x1D, 0x0D, 0x1D, 0x10, -1 };
+
+static struct msm_hsusb_platform_data msm_hsusb_pdata = {
+//	.phy_reset		= trout_phy_reset,
+	.phy_init_seq		= swordfish_phy_init_seq,
+#ifdef CONFIG_USB_FUNCTION
+	.vendor_id		= 0x18d1,
+	.product_id		= 0x0002,
+	.version		= 0x0100,
+	.product_name		= "Swordfish",
+	.serial_number		= "42",
+	.manufacturer_name	= "Qualcomm",
+
+	.functions = swordfish_usb_functions,
+	.num_functions = ARRAY_SIZE(swordfish_usb_functions),
+	.products  = swordfish_usb_products,
+	.num_products = ARRAY_SIZE(swordfish_usb_products),
+#endif
+};
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_uart3,
 	&msm_device_smd,
 	&msm_device_nand,
+	&msm_device_hsusb,
 	&smc91x_device,
 };
 
@@ -72,7 +109,9 @@ static struct msm_acpu_clock_platform_data swordfish_clock_data = {
 static void __init swordfish_init(void)
 {
 	msm_acpu_clock_init(&swordfish_clock_data);
+	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
+	msm_hsusb_set_vbus_state(1);
 }
 
 static void __init swordfish_fixup(struct machine_desc *desc, struct tag *tags,
