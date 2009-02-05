@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAACX///54\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 183,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-02-05T04:34:12Z",
+      "side": 1,
+      "message": "Passing a separate count is fragile. It would be better to null terminate the list.",
+      "revId": "e0357e7a959c0d4a1b571831e98d59360e92d2c1",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
