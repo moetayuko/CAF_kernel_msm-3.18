@@ -534,9 +534,8 @@ static void handle_setup(struct usb_info *ui)
 						num += 16;
 
 					usb_ept_enable(ui->ept + num, 1);
-					ep0_setup_ack(ui);
-					return;
 				}
+				goto ack;
 			}
 		}
 	}
