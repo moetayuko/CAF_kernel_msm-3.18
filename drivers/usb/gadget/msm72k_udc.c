@@ -537,6 +537,7 @@ static void handle_setup(struct usb_info *ui)
 					ep0_setup_ack(ui);
 					return;
 				}
+				goto ack;
 			}
 		}
 	}
