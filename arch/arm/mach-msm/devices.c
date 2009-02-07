@@ -15,17 +15,17 @@
 
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-
 #include <linux/dma-mapping.h>
 #include <mach/msm_iomap.h>
 #include <mach/dma.h>
-#include "devices.h"
 
 #include <asm/mach/flash.h>
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
-
 #include <asm/mach/mmc.h>
+
+#include "devices.h"
+#include "clock.h"
 
 static struct resource resources_uart1[] = {
 	{
@@ -434,4 +434,65 @@ struct platform_device msm_device_mdp = {
 	.id = 0,
 	.num_resources = ARRAY_SIZE(resources_mdp),
 	.resource = resources_mdp,
+};
+
+#define CLOCK(clk_name, clk_id, clk_dev, clk_flags, clk_arch) {	\
+	.name = clk_name, \
+	.id = clk_id, \
+	.flags = clk_flags, \
+	.dev = clk_dev, \
+	.arch = clk_arch, \
+	}
+
+#define OFF CLKFLAG_AUTO_OFF
+#define MINMAX CLKFLAG_USE_MIN_MAX_TO_SET
+
+struct clk msm_clocks[] = {
+	CLOCK("adm_clk", ADM_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("adsp_clk", ADSP_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("ebi1_clk", EBI1_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("ebi2_clk", EBI2_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("ecodec_clk", ECODEC_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("mddi_clk", EMDH_CLK, &msm_device_mddi1.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("gp_clk", GP_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("grp_clk", GRP_CLK, NULL, OFF, CLK_ARCH_ALL),
+	CLOCK("i2c_clk", I2C_CLK, &msm_device_i2c.dev, 0, CLK_ARCH_ALL),
+	CLOCK("icodec_rx_clk", ICODEC_RX_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("icodec_tx_clk", ICODEC_TX_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("imem_clk", IMEM_CLK, NULL, OFF, CLK_ARCH_ALL),
+	CLOCK("mdc_clk", MDC_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("mdp_clk", MDP_CLK, &msm_device_mdp.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("pbus_clk", PBUS_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("pcm_clk", PCM_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("mddi_clk", PMDH_CLK, &msm_device_mddi0.dev, OFF | MINMAX,
+	      CLK_ARCH_ALL),
+	CLOCK("sdac_clk", SDAC_CLK, NULL, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_clk", SDC1_CLK, &msm_device_sdc1.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_pclk", SDC1_PCLK, &msm_device_sdc1.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_clk", SDC2_CLK, &msm_device_sdc2.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_pclk", SDC2_PCLK, &msm_device_sdc2.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_clk", SDC3_CLK, &msm_device_sdc3.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_pclk", SDC3_PCLK, &msm_device_sdc3.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_clk", SDC4_CLK, &msm_device_sdc4.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("sdc_pclk", SDC4_PCLK, &msm_device_sdc4.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("tsif_clk", TSIF_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("tsif_ref_clk", TSIF_REF_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("tv_dac_clk", TV_DAC_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("tv_enc_clk", TV_ENC_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("uart_clk", UART1_CLK, &msm_device_uart1.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("uart_clk", UART2_CLK, &msm_device_uart2.dev, 0, CLK_ARCH_ALL),
+	CLOCK("uart_clk", UART3_CLK, &msm_device_uart3.dev, OFF, CLK_ARCH_ALL),
+	CLOCK("uartdm_clk", UART1DM_CLK, &msm_device_uart_dm1.dev, OFF,
+	      CLK_ARCH_ALL),
+	CLOCK("uartdm_clk", UART2DM_CLK, &msm_device_uart_dm2.dev, 0,
+	      CLK_ARCH_ALL),
+	CLOCK("usb_hs_clk", USB_HS_CLK, &msm_device_hsusb.dev, OFF,
+	      CLK_ARCH_ALL),
+	CLOCK("usb_hs_pclk", USB_HS_PCLK, &msm_device_hsusb.dev, OFF,
+	      CLK_ARCH_ALL),
+	CLOCK("usb_otg_clk", USB_OTG_CLK, NULL, 0, CLK_ARCH_ALL),
+	CLOCK("vdc_clk", VDC_CLK, NULL, OFF | MINMAX, CLK_ARCH_ALL),
+	CLOCK("vfe_clk", VFE_CLK, NULL, OFF, CLK_ARCH_ALL),
+	CLOCK("vfe_mdc_clk", VFE_MDC_CLK, NULL, OFF, CLK_ARCH_ALL),
+	CLOCK(NULL, 0, NULL, 0, 0),
 };
