@@ -32,7 +32,6 @@
 
 #define ACOUSTIC_IOCTL_MAGIC 'p'
 #define ACOUSTIC_ARM11_DONE	_IOW(ACOUSTIC_IOCTL_MAGIC, 22, unsigned int)
-#define ACOUSTIC_ALLOC_SMEM	_IOW(ACOUSTIC_IOCTL_MAGIC, 23, unsigned int)
 
 #define HTCRPOG 0x30100002
 #define HTCVERS 0
@@ -63,7 +62,7 @@ struct set_acoustic_rep {
 } rep;
 
 static uint32_t htc_acoustic_phy_addr;
-static uint32_t htc_acoustic_vir_addr;
+static uint32_t htc_acoustic_vir_addr = 0;
 static struct msm_rpc_endpoint *endpoint;
 struct mutex rpc_connect_mutex;
 
@@ -123,30 +122,16 @@ static int acoustic_mmap(struct file *file, struct vm_area_struct *vma)
 
 static int acoustic_open(struct inode *inode, struct file *file)
 {
-	if (!is_rpc_connect())
-		return -1;
-	return 0;
-}
-
-static int acoustic_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static long acoustic_ioctl(struct file *file, unsigned int cmd,
-			   unsigned int arg)
-{
 	int rc, reply_value;
 	struct set_smem_req req_smem;
 	struct set_smem_rep rep_smem;
 	struct set_acoustic_req req;
 	struct set_acoustic_rep rep;
 
-	switch (cmd) {
-	case ACOUSTIC_ALLOC_SMEM:
-#if 0
-		AACOUSTICE("ioctl ACOUSTIC_ALLOC_SMEM %d called.\n", rc);
-#endif
+	if (!is_rpc_connect())
+		return -1;
+
+	if (!htc_acoustic_vir_addr) {
 		req_smem.size = cpu_to_be32(HTC_ACOUSTIC_TABLE_SIZE);
 		rc = msm_rpc_call_reply(endpoint,
 					ONCRPC_ALLOC_ACOUSTIC_MEM_PROC,
@@ -161,7 +146,7 @@ static long acoustic_ioctl(struct file *file, unsigned int cmd,
 		}
 
 		htc_acoustic_vir_addr =
-				(uint32_t)smem_alloc(SMEM_ID_VENDOR1, HTC_ACOUSTIC_TABLE_SIZE);
+			(uint32_t)smem_alloc(SMEM_ID_VENDOR1, HTC_ACOUSTIC_TABLE_SIZE);
 		htc_acoustic_phy_addr = MSM_SHARED_RAM_PHYS +
 					(htc_acoustic_vir_addr -
 						(uint32_t)MSM_SHARED_RAM_BASE);
@@ -171,10 +156,22 @@ static long acoustic_ioctl(struct file *file, unsigned int cmd,
 			ACOUSTICE("htc_acoustic_phy_addr wrong.\n");
 			return -EFAULT;
 		}
+	}
 
-		return 0;
-		break;
+	return 0;
+}
 
+static int acoustic_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static long acoustic_ioctl(struct file *file, unsigned int cmd,
+			   unsigned int arg)
+{
+	int rc, reply_value;
+
+	switch (cmd) {
 	case ACOUSTIC_ARM11_DONE:
 #if 0
 		pr_info("ioctl ACOUSTIC_ARM11_DONE called %d.\n", current->pid);
