@@ -40,7 +40,9 @@
 #define ONCRPC_ALLOC_ACOUSTIC_MEM_PROC (6)
 
 #define HTC_ACOUSTIC_TABLE_SIZE        (0x10000)
-#define ACOUSTICE(x...) printk(KERN_ERR "[ACOUSTIC] " x)
+
+#define D(fmt, args...) printk(KERN_INFO "htc-acoustic: "fmt, ##args)
+#define E(fmt, args...) printk(KERN_ERR "htc-acoustic: "fmt, ##args)
 
 struct set_smem_req {
 	struct rpc_request_hdr hdr;
@@ -54,84 +56,82 @@ struct set_smem_rep {
 
 struct set_acoustic_req {
 	struct rpc_request_hdr hdr;
-} req;
+};
 
 struct set_acoustic_rep {
 	struct rpc_reply_hdr hdr;
 	int n;
-} rep;
+};
 
-static uint32_t htc_acoustic_phy_addr;
-static uint32_t htc_acoustic_vir_addr = 0;
+static uint32_t htc_acoustic_vir_addr;
 static struct msm_rpc_endpoint *endpoint;
-struct mutex rpc_connect_mutex;
-
-static int is_rpc_connect()
-{
-	mutex_lock(&rpc_connect_mutex);
-	if (endpoint == NULL) {
-		endpoint = msm_rpc_connect(HTCRPOG, HTCVERS, 0);
-		if (IS_ERR(endpoint)) {
-			ACOUSTICE("%s: init rpc failed! rc = %ld\n",
-				__func__, PTR_ERR(endpoint));
-			mutex_unlock(&rpc_connect_mutex);
-			return 0;
-		}
-	}
-	mutex_unlock(&rpc_connect_mutex);
-	return 1;
-}
-
-
-int turn_mic_bias_on(int on)
-{
-	struct mic_bias_req {
-		struct rpc_request_hdr hdr;
-		uint32_t on;
-	} req;
-
-	if (!is_rpc_connect())
-		return -1;
-
-	req.on = cpu_to_be32(on);
-	return msm_rpc_call(endpoint, ONCRPC_SET_MIC_BIAS_PROC,
-			    &req, sizeof(req), 5 * HZ);
-}
-EXPORT_SYMBOL(turn_mic_bias_on);
+static struct mutex api_lock;
 
 static int acoustic_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	unsigned long pgoff;
-	size_t size = vma->vm_end - vma->vm_start;
-	if (vma->vm_pgoff != 0)
-		return -EINVAL;
+	int rc = -EINVAL;
+	size_t size;
 
-	if (size <= HTC_ACOUSTIC_TABLE_SIZE)
-		pgoff = htc_acoustic_phy_addr >> PAGE_SHIFT;
-	else
-		return -EINVAL;
+	D("mmap: %p\n", vma);
 
+	mutex_lock(&api_lock);
+
+	size = vma->vm_end - vma->vm_start;
+
+	if (vma->vm_pgoff != 0) {
+		E("mmap failed: page offset %lx\n", vma->vm_pgoff);
+		goto done;
+	}
+
+	if (size > HTC_ACOUSTIC_TABLE_SIZE) {
+		E("mmap failed: size %d\n", size);
+		goto done;
+	}
+
+	if (!htc_acoustic_vir_addr) {
+		E("mmap failed: smem region not allocated\n");
+		rc = -EIO;
+		goto done;
+	}
+
+	pgoff = MSM_SHARED_RAM_PHYS +
+		(htc_acoustic_vir_addr -(uint32_t)MSM_SHARED_RAM_BASE);
+	pgoff = PAGE_ALIGN(pgoff) >> PAGE_SHIFT;
 	vma->vm_flags |= VM_IO | VM_RESERVED;
 
 	if (io_remap_pfn_range(vma, vma->vm_start, pgoff,
-			      size, vma->vm_page_prot))
-		return -EAGAIN;
+			      size, vma->vm_page_prot)) {
+		E("mmap failed: remap error\n");
+		rc = -EAGAIN;
+	}
 
-	return 0;
+done:
+	mutex_unlock(&api_lock);
+	return rc;
 }
 
 static int acoustic_open(struct inode *inode, struct file *file)
 {
-	int rc, reply_value;
+	int rc = -EIO;
 	struct set_smem_req req_smem;
 	struct set_smem_rep rep_smem;
-	struct set_acoustic_req req;
-	struct set_acoustic_rep rep;
 
-	if (!is_rpc_connect())
-		return -1;
+	D("open\n");
+
+	mutex_lock(&api_lock);
 
 	if (!htc_acoustic_vir_addr) {
+		if (endpoint == NULL) {
+			endpoint = msm_rpc_connect(HTCRPOG, HTCVERS, 0);
+			if (IS_ERR(endpoint)) {
+				E("init rpc failed! rc = %ld\n",
+					PTR_ERR(endpoint));
+				endpoint = NULL;
+				goto done;
+			}
+		}
+
 		req_smem.size = cpu_to_be32(HTC_ACOUSTIC_TABLE_SIZE);
 		rc = msm_rpc_call_reply(endpoint,
 					ONCRPC_ALLOC_ACOUSTIC_MEM_PROC,
@@ -139,43 +139,45 @@ static int acoustic_open(struct inode *inode, struct file *file)
 					&rep_smem, sizeof(rep_smem),
 					5 * HZ);
 
-		reply_value = be32_to_cpu(rep_smem.n);
-		if (reply_value != 0 || rc < 0) {
-			ACOUSTICE("ALLOC_ACOUSTIC_MEM_PROC failed %d.\n", rc);
-			return rc;
+		if (rep_smem.n != 0 || rc < 0) {
+			E("open failed: ALLOC_ACOUSTIC_MEM_PROC error %d.\n", rc);
+			goto done;
 		}
-
 		htc_acoustic_vir_addr =
 			(uint32_t)smem_alloc(SMEM_ID_VENDOR1, HTC_ACOUSTIC_TABLE_SIZE);
-		htc_acoustic_phy_addr = MSM_SHARED_RAM_PHYS +
-					(htc_acoustic_vir_addr -
-						(uint32_t)MSM_SHARED_RAM_BASE);
-		htc_acoustic_phy_addr = (htc_acoustic_phy_addr + 4095 & ~4095);
-
-		if (htc_acoustic_phy_addr <= 0) {
-			ACOUSTICE("htc_acoustic_phy_addr wrong.\n");
-			return -EFAULT;
+		if (!htc_acoustic_vir_addr) {
+			E("open failed: smem_alloc error\n");
+			goto done;
 		}
+		D("open succeeded: %p\n", htc_acoustic_vir_addr);
 	}
-
-	return 0;
+ 
+	rc = 0;
+done:
+	mutex_unlock(&api_lock);
+	return rc;
 }
 
 static int acoustic_release(struct inode *inode, struct file *file)
 {
+	D("release\n");
 	return 0;
 }
 
 static long acoustic_ioctl(struct file *file, unsigned int cmd,
-			   unsigned int arg)
+			   unsigned long arg)
 {
 	int rc, reply_value;
+	struct set_acoustic_req req;
+	struct set_acoustic_rep rep;
+
+	D("ioctl\n");
+
+	mutex_lock(&api_lock);
 
 	switch (cmd) {
 	case ACOUSTIC_ARM11_DONE:
-#if 0
-		pr_info("ioctl ACOUSTIC_ARM11_DONE called %d.\n", current->pid);
-#endif
+		D("ioctl: ACOUSTIC_ARM11_DONE called %d.\n", current->pid);
 		rc = msm_rpc_call_reply(endpoint,
 					ONCRPC_ACOUSTIC_INIT_PROC, &req,
 					sizeof(req), &rep, sizeof(rep),
@@ -183,19 +185,18 @@ static long acoustic_ioctl(struct file *file, unsigned int cmd,
 
 		reply_value = be32_to_cpu(rep.n);
 		if (reply_value != 0 || rc < 0) {
-			ACOUSTICE("ONCRPC_ACOUSTIC_INIT_PROC failed %d.\n", rc);
-			return reply_value;
-		} else {
-#if 0
-			pr_info("ONCRPC_ACOUSTIC_INIT_PROC success.\n");
-#endif
-			return 0;
+			E("ioctl failed: ONCRPC_ACOUSTIC_INIT_PROC error %d.\n", rc);
+			if (rc >= 0) rc = -EIO;
+			break;
 		}
+		D("ioctl: ONCRPC_ACOUSTIC_INIT_PROC success.\n");
 		break;
-
 	default:
+		E("ioctl: invalid command\n");
 		rc = -EINVAL;
 	}
+
+	mutex_unlock(&api_lock);
 	return 0;
 }
 
@@ -216,25 +217,13 @@ static struct miscdevice acoustic_misc = {
 
 static int __init acoustic_init(void)
 {
-	int ret;
-
-	ret = misc_register(&acoustic_misc);
-	if (ret < 0) {
-		ACOUSTICE("failed to register misc device!\n");
-		return ret;
-	}
-	mutex_init(&rpc_connect_mutex);
-
-	return 0;
+	mutex_init(&api_lock);
+	return misc_register(&acoustic_misc);
 }
 
 static void __exit acoustic_exit(void)
 {
-	int ret;
-
-	ret = misc_deregister(&acoustic_misc);
-	if (ret < 0)
-		ACOUSTICE("failed to unregister misc device!\n");
+	misc_deregister(&acoustic_misc);
 }
 
 module_init(acoustic_init);
