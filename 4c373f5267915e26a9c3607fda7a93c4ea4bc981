@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAEX///7s\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 299,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-02-12T18:45:51Z",
+      "side": 1,
+      "message": "Do we often see \u003e 1 second latency such that we need to bump this timeout?",
+      "revId": "4c373f5267915e26a9c3607fda7a93c4ea4bc981",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
