@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAEX///+g\u003d",
+        "filename": "arch/arm/mach-msm/devices.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 451,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-02-12T04:02:49Z",
+      "side": 1,
+      "message": "How about defining CLK_ALL(name, id, dev, flags) as CLOCK(name, id, dev, flags, CLK_ARCH_ALL).\n\nPossibly even folding this into flags (plenty of bits there).\nShould make the list more readable and later we can have CLK_8K(), CLK_7K(), etc for one-off clocks.",
+      "revId": "d050d0e7cdcfb8360be030b008158e6bb0f04d93",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
