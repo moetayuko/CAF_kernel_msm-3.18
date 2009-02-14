@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAFH////I\u003d",
+        "filename": "arch/arm/mach-msm/qdsp5/audio_in.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 938,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-02-14T05:08:49Z",
+      "side": 1,
+      "message": "This is not correct. It will turn an error (negative value) from either misc_reister call into a 1.",
+      "revId": "89c6ebff7bc9edd33da0690e09df6a4683ad924f",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
