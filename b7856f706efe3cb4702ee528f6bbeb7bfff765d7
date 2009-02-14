@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAFH///+M\u003d",
+        "filename": "arch/arm/mach-msm/htc_acoustic.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 87,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-02-14T22:19:11Z",
+      "side": 1,
+      "message": "This looks wrong. Your allow the map size to match the allocated size, but the mapping does not start at the beginning of the allocated range.",
+      "revId": "b7856f706efe3cb4702ee528f6bbeb7bfff765d7",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAFH///+Q\u003d",
+        "filename": "arch/arm/mach-msm/htc_acoustic.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 154,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-02-14T22:19:11Z",
+      "side": 1,
+      "message": "Remove extra whitespace",
+      "revId": "b7856f706efe3cb4702ee528f6bbeb7bfff765d7",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
