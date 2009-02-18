@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAF3////k\u003d",
+        "filename": "arch/arm/mach-msm/htc_pwrsink.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 200,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-02-18T20:30:17Z",
+      "side": 1,
+      "message": "Shouldn\u0027t this be static?",
+      "revId": "f76086c2f6c624b6a2183433f13caa6d8e798a25",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAF3////g\u003d",
+        "filename": "arch/arm/mach-msm/htc_pwrsink.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 206,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-02-18T20:30:17Z",
+      "side": 1,
+      "message": "Shouldn\u0027t this be static?  There are more functions below too.",
+      "revId": "f76086c2f6c624b6a2183433f13caa6d8e798a25",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
