@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAF3///6A\u003d",
+        "filename": "arch/arm/mach-msm/clock.h",
+        "patchSetId": 3
+      },
+      "lineNbr": 90,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-02-19T04:44:48Z",
+      "side": 1,
+      "message": "Do we want to export this, or can we use the normal clock api instead.",
+      "revId": "88bf6ff2a86b8433b264fde45b760c6dcfe7b738",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
