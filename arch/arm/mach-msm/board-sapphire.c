@@ -244,6 +244,7 @@ static int sapphire_ts_power(int on)
 		msleep(2);
 	} else {
 		gpio_set_value(gpio_tp_ls_en, 0);
+		udelay(50);
 		sapphire_gpio_write(NULL, SAPPHIRE_GPIO_TP_EN, 0);
 	}
 
@@ -1011,6 +1012,8 @@ static void __init sapphire_init(void)
 	config_gpios();
 
 	msm_hw_reset_hook = sapphire_reset;
+
+	gpio_direction_output(SAPPHIRE_TP_LS_EN, 0);
 
 	msm_acpu_clock_init(&sapphire_clock_data);
 
