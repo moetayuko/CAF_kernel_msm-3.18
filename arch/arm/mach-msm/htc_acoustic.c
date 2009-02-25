@@ -29,6 +29,8 @@
 #include <mach/msm_rpcrouter.h>
 #include <mach/msm_iomap.h>
 
+#include <asm/mach-types.h>
+
 #include "smd_private.h"
 
 #define ACOUSTIC_IOCTL_MAGIC 'p'
@@ -248,6 +250,8 @@ static struct miscdevice acoustic_misc = {
 
 static int __init acoustic_init(void)
 {
+	if (!machine_is_trout() && !machine_is_sapphire())
+		return 0;
 	mutex_init(&api_lock);
 	mutex_init(&rpc_connect_mutex);
 	return misc_register(&acoustic_misc);
@@ -255,7 +259,8 @@ static int __init acoustic_init(void)
 
 static void __exit acoustic_exit(void)
 {
-	misc_deregister(&acoustic_misc);
+        if (machine_is_trout() || machine_is_sapphire())
+		misc_deregister(&acoustic_misc);
 }
 
 module_init(acoustic_init);
