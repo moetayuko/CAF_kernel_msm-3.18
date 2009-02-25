@@ -1314,13 +1314,16 @@ static struct platform_driver h2w_driver = {
 
 static int __init h2w_init(void)
 {
+	if (!machine_is_trout() && !machine_is_sapphire())
+		return 0;
 	H2W_DBG("");
 	return platform_driver_register(&h2w_driver);
 }
 
 static void __exit h2w_exit(void)
 {
-	platform_driver_unregister(&h2w_driver);
+	if (machine_is_trout() || machine_is_sapphire())
+		platform_driver_unregister(&h2w_driver);
 }
 
 module_init(h2w_init);
