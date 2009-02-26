@@ -31,6 +31,14 @@
 #include <mach/msm_iomap.h>
 #include <mach/msm_hsusb.h>
 
+#ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
+#include <linux/usb/mass_storage_function.h>
+#endif
+
+#ifdef CONFIG_USB_ANDROID
+#include <linux/usb/android.h>
+#endif
+
 #include "devices.h"
 
 static struct resource smc91x_resources[] = {
@@ -55,6 +63,9 @@ static struct platform_device smc91x_device = {
 
 #ifdef CONFIG_USB_FUNCTION
 static char *swordfish_usb_functions[] = {
+#if defined(CONFIG_USB_FUNCTION_MASS_STORAGE)
+	"usb_mass_storage",
+#endif
 #ifdef CONFIG_USB_FUNCTION_ADB
 	"adb",
 #endif
@@ -62,8 +73,12 @@ static char *swordfish_usb_functions[] = {
 
 static struct msm_hsusb_product swordfish_usb_products[] = {
 	{
-		.product_id     = 0x0002,
-		.functions      = 0x00000001, /* "adb" only */
+		.product_id     = 0x0d01,
+		.functions      = 0x00000001, /* "usb_mass_storage" only */
+	},
+	{
+		.product_id     = 0x0d02,
+		.functions      = 0x00000003, /* "usb_mass_storage" and "adb" */
 	},
 };
 #endif
@@ -75,7 +90,7 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= swordfish_phy_init_seq,
 #ifdef CONFIG_USB_FUNCTION
 	.vendor_id		= 0x18d1,
-	.product_id		= 0x0002,
+	.product_id		= 0x0d02,
 	.version		= 0x0100,
 	.product_name		= "Swordfish",
 	.serial_number		= "42",
@@ -88,11 +103,56 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 #endif
 };
 
+#ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
+static struct usb_mass_storage_platform_data mass_storage_pdata = {
+	.nluns= 1,
+	.buf_size= 16384,
+	.vendor= "Qualcomm",
+	.product= "Swordfish",
+	.release= 0x0100,
+};
+
+static struct platform_device usb_mass_storage_device = {
+	.name= "usb_mass_storage",
+	.id= -1,
+	.dev= {
+		.platform_data = &mass_storage_pdata,
+	},
+};
+#endif
+
+#ifdef CONFIG_USB_ANDROID
+static struct android_usb_platform_data android_usb_pdata = {
+	.vendor_id= 0x18d1,
+	.product_id= 0x0d01,
+	.adb_product_id= 0x0d02,
+	.version= 0x0100,
+	.serial_number= "42",
+	.product_name= "Swordfishdroid",
+	.manufacturer_name = "Qualcomm",
+	.nluns = 1,
+};
+
+static struct platform_device android_usb_device = {
+	.name= "android_usb",
+	.id= -1,
+	.dev= {
+		.platform_data = &android_usb_pdata,
+	},
+};
+#endif
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_uart3,
 	&msm_device_smd,
 	&msm_device_nand,
 	&msm_device_hsusb,
+#ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
+	&usb_mass_storage_device,
+#endif
+#ifdef CONFIG_USB_ANDROID
+	&android_usb_device,
+#endif
 	&smc91x_device,
 };
 
