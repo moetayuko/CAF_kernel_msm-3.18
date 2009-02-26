@@ -142,6 +142,10 @@ static struct platform_device android_usb_device = {
 };
 #endif
 
+static struct platform_device fish_battery_device = {
+	.name = "fish_battery",
+};
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_uart3,
 	&msm_device_smd,
@@ -153,6 +157,7 @@ static struct platform_device *devices[] __initdata = {
 #ifdef CONFIG_USB_ANDROID
 	&android_usb_device,
 #endif
+	&fish_battery_device,
 	&smc91x_device,
 };
 
