@@ -1,0 +1,72 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAHn///+Y\u003d",
+        "filename": "arch/arm/mach-msm/acpuclock.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 380,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-02-26T22:50:07Z",
+      "side": 1,
+      "message": "Don\u0027t do that.\n\nin acpuclk_init, take a reference to the ebi1_clk by name with clk_get.",
+      "revId": "10b84e55190ba8c7c33f2dced756e167d5f0f334",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAHn///+U\u003d",
+        "filename": "arch/arm/mach-msm/acpuclock.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 438,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-02-26T22:50:07Z",
+      "side": 1,
+      "message": "since you added the min rate stuff and marked this clock as use_min, you should not be using the proc_comm command directly, but rather clk_set_rate() (as mentioned above use clk_get).",
+      "revId": "10b84e55190ba8c7c33f2dced756e167d5f0f334",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAHn///+Q\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 51,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-02-26T22:50:07Z",
+      "side": 1,
+      "message": "leave as static inline, since you shouldn\u0027t need it in acpuclock if you make the changes i suggested.",
+      "revId": "10b84e55190ba8c7c33f2dced756e167d5f0f334",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAHn///+M\u003d",
+        "filename": "arch/arm/mach-msm/devices.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 457,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-02-26T22:50:07Z",
+      "side": 1,
+      "message": "in the spirit of shorthands, add a shorthand for use_min_to_set... maybe USE_MIN",
+      "revId": "10b84e55190ba8c7c33f2dced756e167d5f0f334",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
