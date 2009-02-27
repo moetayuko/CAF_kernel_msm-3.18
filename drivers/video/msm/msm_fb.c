@@ -666,6 +666,7 @@ static int setup_fbmem(struct msmfb_info *msmfb, struct platform_device *pdev)
 	unsigned long size = msmfb->xres * msmfb->yres *
 			     (BITS_PER_PIXEL >> 3) * 2;
 	unsigned char *fbram;
+	dma_addr_t phy_addr;
 
 	/* board file might have attached a resource describing an fb */
 	resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -678,6 +679,19 @@ static int setup_fbmem(struct msmfb_info *msmfb, struct platform_device *pdev)
 				"fb\n");
 		return -ENOMEM;
 	}
+#if 0
+	fb->fix.smem_len = resource->end - resource->start;
+	fbram = dma_alloc_writecombine(NULL, //&pdev->dev,
+			fb->fix.smem_len,
+			&phy_addr,	
+			GFP_KERNEL);	
+	fb->fix.smem_start = phy_addr;
+
+	if (!fbram) {
+		printk(KERN_ERR "could not kmalloc frame buffer!\n");
+		return -ENOMEM;
+	}
+#else
 	fb->fix.smem_start = resource->start;
 	fb->fix.smem_len = resource->end - resource->start;
 	fbram = ioremap(resource->start,
@@ -686,6 +700,7 @@ static int setup_fbmem(struct msmfb_info *msmfb, struct platform_device *pdev)
 		printk(KERN_ERR "msmfb: cannot allocate fbram!\n");
 		return -ENOMEM;
 	}
+#endif
 	fb->screen_base = fbram;
 	return 0;
 }
