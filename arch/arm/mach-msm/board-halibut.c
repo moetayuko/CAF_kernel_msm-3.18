@@ -48,16 +48,7 @@
 #endif
 
 #include "devices.h"
-
-#define MSM_SMI_BASE            0x100000
-#define MSM_SMI_SIZE            0x800000
-#define MSM_PMEM_GPU0_BASE      MSM_SMI_BASE
-#define MSM_PMEM_GPU0_SIZE      0x800000
-
-#define MSM_PMEM_MDP_SIZE       0x800000
-#define MSM_PMEM_ADSP_SIZE      0x800000
-#define MSM_PMEM_GPU1_SIZE      0x800000
-#define MSM_FB_SIZE             0x800000
+#include "board-halibut.h"
 
 static struct resource smc91x_resources[] = {
 	[0] = {
@@ -111,12 +102,16 @@ static struct platform_device halibut_snd = {
 
 static struct android_pmem_platform_data android_pmem_pdata = {
         .name = "pmem",
+        .start = MSM_PMEM_MDP_BASE,
+        .size = MSM_PMEM_MDP_SIZE,
         .no_allocator = 0,
         .cached = 1,
 };
 
 static struct android_pmem_platform_data android_pmem_adsp_pdata = {
         .name = "pmem_adsp",
+        .start = MSM_PMEM_ADSP_BASE,
+        .size = MSM_PMEM_ADSP_SIZE,
         .no_allocator = 0,
         .cached = 0,
 };
@@ -131,6 +126,8 @@ static struct android_pmem_platform_data android_pmem_gpu0_pdata = {
 
 static struct android_pmem_platform_data android_pmem_gpu1_pdata = {
         .name = "pmem_gpu1",
+        .start = MSM_PMEM_GPU1_BASE,
+        .size = MSM_PMEM_GPU1_SIZE,
         .no_allocator = 1,
         .cached = 0,
 };
@@ -282,40 +279,6 @@ static struct msm_acpu_clock_platform_data halibut_clock_data = {
 void msm_serial_debug_init(unsigned int base, int irq,
 				struct device *clk_device, int signal_irq);
 
-static void __init msm_halibut_allocate_memory_regions(void)
-{
-        void *addr, *addr_1m_aligned;
-        unsigned long size;
-
-        size = MSM_PMEM_MDP_SIZE;
-        addr = alloc_bootmem(size);
-        android_pmem_pdata.start = __pa(addr);
-        android_pmem_pdata.size = size;
-        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
-               "for pmem\n", size, addr, __pa(addr));
-
-        size = MSM_PMEM_ADSP_SIZE;
-        addr = alloc_bootmem(size);
-        android_pmem_adsp_pdata.start = __pa(addr);
-        android_pmem_adsp_pdata.size = size;
-        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
-               "for adsp pmem\n", size, addr, __pa(addr));
-
-        /* The GPU1 area must be aligned to a 1M boundary */
-        /* XXX For now allocate an extra 1M, use the aligned part, */
-	/* waste the extra memory */
-        size = MSM_PMEM_GPU1_SIZE + 0x100000 - PAGE_SIZE;
-        addr = alloc_bootmem(size);
-        addr_1m_aligned = (void *)(((unsigned int)addr + 0x100000) &
-                                   0xfff00000);
-        size = MSM_PMEM_GPU1_SIZE;
-        android_pmem_gpu1_pdata.start = __pa(addr_1m_aligned);
-        android_pmem_gpu1_pdata.size = size;
-        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
-               "for gpu1 pmem\n", size, addr_1m_aligned,
-               __pa(addr_1m_aligned));
-}
-
 static void __init halibut_init(void)
 {
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER)
@@ -324,7 +287,6 @@ static void __init halibut_init(void)
 #endif
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_acpu_clock_init(&halibut_clock_data);
-	msm_halibut_allocate_memory_regions();
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 	msm_hsusb_set_vbus_state(1);
