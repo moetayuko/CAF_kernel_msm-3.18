@@ -317,6 +317,10 @@ static struct platform_device android_usb_device = {
 #endif
 
 
+static struct platform_device fish_battery_device = {
+	.name = "fish_battery",
+};
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart3,
@@ -334,10 +338,11 @@ static struct platform_device *devices[] __initdata = {
 	&smc91x_device,
 	&halibut_snd,
 	&halibut_camera,
-        &android_pmem_device,
-        &android_pmem_adsp_device,
-        &android_pmem_gpu0_device,
-        &android_pmem_gpu1_device,
+	&android_pmem_device,
+	&android_pmem_adsp_device,
+	&android_pmem_gpu0_device,
+	&android_pmem_gpu1_device,
+	&fish_battery_device,
 };
 
 extern struct sys_timer msm_timer;
