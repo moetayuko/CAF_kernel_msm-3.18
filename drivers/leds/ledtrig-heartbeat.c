@@ -17,6 +17,7 @@
 #include <linux/timer.h>
 #include <linux/sched.h>
 #include <linux/leds.h>
+#include <linux/suspend.h>
 #include "leds.h"
 
 struct heartbeat_trig_data {
@@ -100,13 +101,30 @@ static struct led_trigger heartbeat_led_trigger = {
 	.deactivate = heartbeat_trig_deactivate,
 };
 
+static int heartbeat_sleep_pm_callback(struct notifier_block *nfb,
+					unsigned long action,
+					void *ignored)
+{
+	if (action == PM_HIBERNATION_PREPARE ||
+	    action == PM_SUSPEND_PREPARE)
+		led_trigger_event(&heartbeat_led_trigger, LED_OFF);
+}
+
+static struct notifier_block heartbeat_sleep_pm_notifier = {
+	.notifier_call = heartbeat_sleep_pm_callback,
+	.priority = 0,
+};
+
 static int __init heartbeat_trig_init(void)
 {
-	return led_trigger_register(&heartbeat_led_trigger);
+	int rc = led_trigger_register(&heartbeat_led_trigger);
+	register_pm_notifier(&heartbeat_sleep_pm_notifier);
+	return rc;
 }
 
 static void __exit heartbeat_trig_exit(void)
 {
+	unregister_pm_notifier(&heartbeat_sleep_pm_notifier);
 	led_trigger_unregister(&heartbeat_led_trigger);
 }
 
