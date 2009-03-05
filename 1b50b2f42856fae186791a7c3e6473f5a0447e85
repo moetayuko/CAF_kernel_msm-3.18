@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAJn///+A\u003d",
+        "filename": "arch/arm/mach-msm/acpuclock.c",
+        "patchSetId": 6
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-03-05T02:33:38Z",
+      "side": 1,
+      "message": "you shouldn\u0027t need this include anymore.",
+      "revId": "1b50b2f42856fae186791a7c3e6473f5a0447e85",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAJn///98\u003d",
+        "filename": "arch/arm/mach-msm/acpuclock.c",
+        "patchSetId": 6
+      },
+      "lineNbr": 381,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-03-05T02:33:38Z",
+      "side": 1,
+      "message": "does this not fit on 80 chars?",
+      "revId": "1b50b2f42856fae186791a7c3e6473f5a0447e85",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
