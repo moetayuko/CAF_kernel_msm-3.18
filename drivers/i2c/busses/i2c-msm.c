@@ -15,12 +15,14 @@
 
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/io.h>
+#include <mach/system.h>
 
 #define DEBUG 0
 
@@ -224,6 +226,45 @@ msm_i2c_poll_notbusy(struct msm_i2c_dev *dev)
 	return -ETIMEDOUT;
 }
 
+static void
+msm_i2c_recover_bus_busy(struct msm_i2c_dev *dev)
+{
+	int i;
+	uint32_t status = readl(dev->base + I2C_STATUS);
+	int gpio_clk, gpio_dat;
+
+	if (!(status & I2C_STATUS_BUS_ACTIVE))
+		return;
+
+	msm_set_i2c_mux(true, &gpio_clk, &gpio_dat);
+	for (i = 0; i < 16; i++) {
+		if (gpio_get_value(gpio_dat) && gpio_get_value(gpio_clk))
+			break;
+		gpio_direction_output(gpio_clk, 0);
+		udelay(5);
+		gpio_direction_output(gpio_dat, 0);
+		udelay(5);
+		gpio_direction_input(gpio_clk);
+		udelay(5);
+		gpio_direction_input(gpio_dat);
+		udelay(5);
+	}
+	msm_set_i2c_mux(false, NULL, NULL);
+	udelay(10);
+
+	status = readl(dev->base + I2C_STATUS);
+	if (!(status & I2C_STATUS_BUS_ACTIVE)) {
+		dev_info(dev->dev, "Bus busy cleared after %d clock cycles, "
+			 "status %x, intf %x\n",
+			 i, status, readl(dev->base + I2C_INTERFACE_SELECT));
+		return;
+	}
+
+	dev_warn(dev->dev, "Bus still busy, status %x, intf %x\n",
+		 status, readl(dev->base + I2C_INTERFACE_SELECT));
+}
+
+
 static int
 msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 {
@@ -315,6 +356,8 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 	ret = num;
  out_err:
+ 	if (ret < 0)
+	 	msm_i2c_recover_bus_busy(dev);
 	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->flush_cnt) {
 		dev_warn(dev->dev, "%d unrequested bytes read\n",
