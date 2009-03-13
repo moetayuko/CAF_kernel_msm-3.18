@@ -15,20 +15,64 @@
 #ifndef _MDP_HW_H_
 #define _MDP_HW_H_
 
+#include <linux/platform_device.h>
 #include <mach/msm_iomap.h>
 #include <mach/msm_fb.h>
 
+struct mdp_lcdc;
 struct mdp_info {
+	spinlock_t lock;
+
 	struct mdp_device mdp_dev;
 	char* __iomem base;
 	int irq;
+	struct clk *clk;
+
+	struct mdp_lcdc *lcdc;
 };
+
+struct mdp_lcdc {
+#ifdef CONFIG_FB_MSM_LCDC
+	struct mdp_info *mdp;
+	struct clk *pclk;
+	struct clk *pad_pclk;
+	struct msm_panel_data panel_data;
+	struct platform_device pdev;
+	struct msm_lcdc_platform_data *pdata;
+	uint32_t fb_start;
+
+	struct {
+		unsigned int hsync_ctl;
+		unsigned int vsync_period;
+		unsigned int vsync_pulse_width;
+		unsigned int display_hctl;
+		unsigned int display_vstart;
+		unsigned int display_vend;
+		unsigned int hsync_skew;
+	} parms;
+#endif /* CONFIG_FB_MSM_LCDC */
+};
+
+
 struct mdp_blit_req;
 struct mdp_device;
 int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 		 struct file *src_file, unsigned long src_start,
 		 unsigned long src_len, struct file *dst_file,
 		 unsigned long dst_start, unsigned long dst_len);
+
+/* LCDC functions */
+struct platform_device;
+#if defined(CONFIG_FB_MSM_LCDC)
+int mdp_lcdc_init(struct mdp_info *, struct platform_device *);
+int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc);
+#else
+inline static int
+mdp_lcdc_init(struct mdp_info *mdp, struct platform_device *pdev) { return 0; }
+
+inline static int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc) { return 0; }
+#endif
+
 #define mdp_writel(mdp, value, offset) writel(value, mdp->base + offset)
 #define mdp_readl(mdp, offset) readl(mdp->base + offset)
 
@@ -158,55 +202,46 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define MDP_TEST_MISR_CURR_VAL_DCLK      ( 0xd020c)
 #define MDP_TEST_CAPTURED_DCLK           ( 0xd0210)
 #define MDP_TEST_MISR_CAPT_VAL_DCLK      ( 0xd0214)
-#define MDP_LCDC_CTL                     ( 0xe0000)
+
+#define MDP_DMA_P_CONFIG                 ( 0x90000)
+#define MDP_DMA_P_SIZE                   ( 0x90004)
+#define MDP_DMA_P_IBUF_ADDR              ( 0x90008)
+#define MDP_DMA_P_IBUF_Y_STRIDE          ( 0x9000c)
+#define MDP_DMA_P_OUT_XY                 ( 0x90010)
+#define MDP_DMA_P_COLOR_CORRECT_CONFIG   ( 0x90070)
+
+#define MDP_LCDC_EN                      ( 0xe0000)
 #define MDP_LCDC_HSYNC_CTL               ( 0xe0004)
-#define MDP_LCDC_VSYNC_CTL               ( 0xe0008)
-#define MDP_LCDC_ACTIVE_HCTL             ( 0xe000c)
-#define MDP_LCDC_ACTIVE_VCTL             ( 0xe0010)
-#define MDP_LCDC_BORDER_CLR              ( 0xe0014)
-#define MDP_LCDC_H_BLANK                 ( 0xe0018)
-#define MDP_LCDC_V_BLANK                 ( 0xe001c)
-#define MDP_LCDC_UNDERFLOW_CLR           ( 0xe0020)
-#define MDP_LCDC_HSYNC_SKEW              ( 0xe0024)
-#define MDP_LCDC_TEST_CTL                ( 0xe0028)
-#define MDP_LCDC_LINE_IRQ                ( 0xe002c)
-#define MDP_LCDC_CTL_POLARITY            ( 0xe0030)
-#define MDP_LCDC_DMA_CONFIG              ( 0xe1000)
-#define MDP_LCDC_DMA_SIZE                ( 0xe1004)
-#define MDP_LCDC_DMA_IBUF_ADDR           ( 0xe1008)
-#define MDP_LCDC_DMA_IBUF_Y_STRIDE       ( 0xe100c)
+#define MDP_LCDC_VSYNC_PERIOD            ( 0xe0008)
+#define MDP_LCDC_VSYNC_PULSE_WIDTH       ( 0xe000c)
+#define MDP_LCDC_DISPLAY_HCTL            ( 0xe0010)
+#define MDP_LCDC_DISPLAY_V_START         ( 0xe0014)
+#define MDP_LCDC_DISPLAY_V_END           ( 0xe0018)
+#define MDP_LCDC_ACTIVE_HCTL             ( 0xe001c)
+#define MDP_LCDC_ACTIVE_V_START          ( 0xe0020)
+#define MDP_LCDC_ACTIVE_V_END            ( 0xe0024)
+#define MDP_LCDC_BORDER_CLR              ( 0xe0028)
+#define MDP_LCDC_UNDERFLOW_CTL           ( 0xe002c)
+#define MDP_LCDC_HSYNC_SKEW              ( 0xe0030)
+#define MDP_LCDC_TEST_CTL                ( 0xe0034)
+#define MDP_LCDC_CTL_POLARITY            ( 0xe0038)
 
-
-#define MDP_DMA2_TERM 0x1
-#define MDP_DMA3_TERM 0x2
-#define MDP_PPP_TERM 0x3
+#define MDP_DMA2_TERM			(0x1)
+#define MDP_DMA3_TERM			(0x2)
+#define MDP_PPP_TERM			(0x3)
 
 /* MDP_INTR_ENABLE */
-#define DL0_ROI_DONE           (1<<0)
-#define DL1_ROI_DONE           (1<<1)
-#define DL0_DMA2_TERM_DONE     (1<<2)
-#define DL1_DMA2_TERM_DONE     (1<<3)
-#define DL0_PPP_TERM_DONE      (1<<4)
-#define DL1_PPP_TERM_DONE      (1<<5)
-#define TV_OUT_DMA3_DONE       (1<<6)
-#define TV_ENC_UNDERRUN        (1<<7)
-#define DL0_FETCH_DONE         (1<<11)
-#define DL1_FETCH_DONE         (1<<12)
+#define DL0_ROI_DONE			(1<<0)
+#define TV_OUT_DMA3_DONE		(1<<6)
+#define TV_ENC_UNDERRUN			(1<<7)
 
-#define MDP_PPP_BUSY_STATUS (DL0_ROI_DONE| \
-			   DL1_ROI_DONE| \
-			   DL0_PPP_TERM_DONE| \
-			   DL1_PPP_TERM_DONE)
-
-#define MDP_ANY_INTR_MASK (DL0_ROI_DONE| \
-			   DL1_ROI_DONE| \
-			   DL0_DMA2_TERM_DONE| \
-			   DL1_DMA2_TERM_DONE| \
-			   DL0_PPP_TERM_DONE| \
-			   DL1_PPP_TERM_DONE| \
-			   DL0_FETCH_DONE| \
-			   DL1_FETCH_DONE| \
-			   TV_ENC_UNDERRUN)
+#ifdef CONFIG_MSM_MDP22
+#define MDP_DMA_P_DONE			(1 << 2)
+#else /* CONFIG_MSM_MDP31 */
+#define MDP_DMA_P_DONE			(1 << 14)
+#define MDP_LCDC_UNDERFLOW		(1 << 16)
+#define MDP_LCDC_FRAME_START		(1 << 15)
+#endif
 
 #define MDP_TOP_LUMA       16
 #define MDP_TOP_CHROMA     0
@@ -593,9 +628,14 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define DMA_DSTC0G_6BITS (1<<1)
 #define DMA_DSTC1B_6BITS (1<<3)
 #define DMA_DSTC2R_6BITS (1<<5)
+
 #define DMA_DSTC0G_5BITS (1<<0)
 #define DMA_DSTC1B_5BITS (1<<2)
 #define DMA_DSTC2R_5BITS (1<<4)
+
+#define DMA_DSTC0G_8BITS (3<<0)
+#define DMA_DSTC1B_8BITS (3<<2)
+#define DMA_DSTC2R_8BITS (3<<4)
 
 #define DMA_PACK_TIGHT (1<<6)
 #define DMA_PACK_LOOSE 0
@@ -604,21 +644,38 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define DMA_PACK_PATTERN_RGB \
 	(MDP_GET_PACK_PATTERN(0, CLR_R, CLR_G, CLR_B, 2)<<8)
 
+
+#ifdef CONFIG_MSM_MDP22
+
 #define DMA_OUT_SEL_AHB  0
 #define DMA_OUT_SEL_MDDI (1<<14)
 #define DMA_AHBM_LCD_SEL_PRIMARY 0
 #define DMA_AHBM_LCD_SEL_SECONDARY (1<<15)
 #define DMA_IBUF_C3ALPHA_EN (1<<16)
 #define DMA_DITHER_EN (1<<17)
-
 #define DMA_MDDI_DMAOUT_LCD_SEL_PRIMARY 0
 #define DMA_MDDI_DMAOUT_LCD_SEL_SECONDARY (1<<18)
 #define DMA_MDDI_DMAOUT_LCD_SEL_EXTERNAL (1<<19)
-
 #define DMA_IBUF_FORMAT_RGB565 (1<<20)
 #define DMA_IBUF_FORMAT_RGB888_OR_ARGB8888 0
-
 #define DMA_IBUF_NONCONTIGUOUS (1<<21)
+
+#else /* CONFIG_MSM_MDP31 */
+
+#define DMA_OUT_SEL_AHB				(0 << 19)
+#define DMA_OUT_SEL_MDDI			(1 << 19)
+#define DMA_OUT_SEL_LCDC			(2 << 19)
+#define DMA_OUT_SEL_LCDC_MDDI			(3 << 19)
+#define DMA_DITHER_EN				(1 << 24)
+#define DMA_IBUF_FORMAT_RGB888			(0 << 25)
+#define DMA_IBUF_FORMAT_RGB565			(1 << 25)
+#define DMA_IBUF_FORMAT_XRGB8888		(2 << 25)
+#define DMA_IBUF_NONCONTIGUOUS			(0)
+
+#define DMA_MDDI_DMAOUT_LCD_SEL_PRIMARY		(0)
+#define DMA_MDDI_DMAOUT_LCD_SEL_SECONDARY	(0)
+#define DMA_MDDI_DMAOUT_LCD_SEL_EXTERNAL	(0)
+#endif
 
 /* MDDI REGISTER ? */
 #define MDDI_VDO_PACKET_DESC  0x5666
