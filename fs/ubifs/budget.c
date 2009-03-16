@@ -359,7 +359,8 @@ static int do_budget_space(struct ubifs_info *c)
 	 * LEBs that have been garbage collected and are awaiting the commit
 	 * before they can be used. And the in-the-gaps method will grab these
 	 * if it needs them. @c->lst.taken_empty_lebs are empty LEBs that have
-	 * already been allocated for some purpose.
+	 * already been allocated for some purpose (e.g., the GC always has one
+	 * LEB allocated).
 	 *
 	 * Note, @c->idx_gc_cnt is included to both @c->lst.empty_lebs (because
 	 * these LEBs are empty) and to @c->lst.taken_empty_lebs (because they
@@ -659,8 +660,7 @@ void ubifs_release_dirty_inode_budget(struct ubifs_info *c,
  * held, which means you cannot call other debugging functions and use
  * debugging macros like 'dbg_msg()' from here.
  */
-static int ubifs_calc_full_idx_lebs(const struct ubifs_info *c,
-				    long long available)
+int ubifs_calc_full_idx_lebs(const struct ubifs_info *c, long long available)
 {
 	int n;
 	long long idx_size, predicted_idx_size;

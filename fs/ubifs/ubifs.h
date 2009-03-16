@@ -1507,8 +1507,9 @@ long long ubifs_get_free_space(struct ubifs_info *c);
 long long ubifs_get_free_space_nolock(struct ubifs_info *c);
 int ubifs_calc_min_idx_lebs(const struct ubifs_info *c);
 void ubifs_convert_page_budget(struct ubifs_info *c);
-long long ubifs_reported_space(const struct ubifs_info *c, long long available);
 long long ubifs_calc_available(const struct ubifs_info *c, int min_idx_lebs);
+int ubifs_calc_full_idx_lebs(const struct ubifs_info *c, long long available);
+long long ubifs_reported_space(const struct ubifs_info *c, long long available);
 
 /* find.c */
 int ubifs_find_free_space(struct ubifs_info *c, int min_space, int *offs,

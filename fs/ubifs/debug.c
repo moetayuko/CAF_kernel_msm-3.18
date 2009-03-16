@@ -608,7 +608,7 @@ void dbg_dump_lstats(const struct ubifs_lp_stats *lst)
 
 void dbg_dump_budg(struct ubifs_info *c)
 {
-	int i;
+	int i, full_idx_lebs;
 	struct rb_node *rb;
 	struct ubifs_bud *bud;
 	struct ubifs_gced_idx_leb *idx_gc;
@@ -619,8 +619,9 @@ void dbg_dump_budg(struct ubifs_info *c)
 	printk(KERN_DEBUG "(pid %d) Budgeting info: budg_data_growth %lld, "
 	       "budg_dd_growth %lld, budg_idx_growth %lld\n", current->pid,
 	       c->budg_data_growth, c->budg_dd_growth, c->budg_idx_growth);
-	printk(KERN_DEBUG "\tdata budget sum %lld, total budget sum %lld, "
-	       "freeable_cnt %d\n", c->budg_data_growth + c->budg_dd_growth,
+	printk(KERN_DEBUG "\tbudg_uncommitted_idx %lld, data budget sum %lld, "
+	       "total budget sum %lld, freeable_cnt %d\n",
+	       c->budg_uncommitted_idx, c->budg_data_growth + c->budg_dd_growth,
 	       c->budg_data_growth + c->budg_dd_growth + c->budg_idx_growth,
 	       c->freeable_cnt);
 	printk(KERN_DEBUG "\tmin_idx_lebs %d, old_idx_sz %lld, "
@@ -654,10 +655,13 @@ void dbg_dump_budg(struct ubifs_info *c)
 	/* Print budgeting predictions */
 	available = ubifs_calc_available(c, c->min_idx_lebs);
 	outstanding = c->budg_data_growth + c->budg_dd_growth;
+	full_idx_lebs = ubifs_calc_full_idx_lebs(c, available - outstanding);
 	free = ubifs_get_free_space_nolock(c);
+
 	printk(KERN_DEBUG "Budgeting predictions:\n");
-	printk(KERN_DEBUG "\tavailable: %lld, outstanding %lld, free %lld\n",
-	       available, outstanding, free);
+	printk(KERN_DEBUG "\tfull index LEBS %d, available %lld, "
+	       "outstanding %lld, free %lld\n", full_idx_lebs, available,
+	       outstanding, free);
 	spin_unlock(&dbg_lock);
 }
 
@@ -2602,6 +2606,55 @@ static int open_debugfs_file(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static ssize_t read_integer(void __user *to, size_t count, loff_t *ppos,
+			    int val)
+{
+	loff_t pos = *ppos;
+	uint8_t buf[16];
+	int available;
+
+	available = sprintf(buf, "%d\n", val);
+	if (available <= 0)
+		return 0;
+	if (pos >= available)
+		return 0;
+
+	if (count > available - pos)
+		count = available - pos;
+	if (copy_to_user(to, buf + pos, count))
+		return -EFAULT;
+	*ppos = pos + count;
+	return count;
+}
+
+static ssize_t read_debugfs_file(struct file *file, char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+	struct ubifs_info *c = file->private_data;
+	struct ubifs_debug_info *d = c->dbg;
+	int val = 0;
+
+	spin_lock(&c->space_lock);
+	if (file->f_path.dentry == d->dfs_min_idx_lebs) {
+		val = c->min_idx_lebs;
+	} else if (file->f_path.dentry == d->dfs_full_idx_lebs) {
+		long long outstanding, available;
+
+		outstanding = c->budg_data_growth + c->budg_dd_growth;
+		available = ubifs_calc_available(c, c->min_idx_lebs);
+		if (available > outstanding) {
+			available -= outstanding;
+			val = ubifs_calc_full_idx_lebs(c, available);
+		}
+	} else {
+		spin_unlock(&c->space_lock);
+		return -EINVAL;
+	}
+	spin_unlock(&c->space_lock);
+
+	return read_integer(buf, count, ppos, val);
+}
+
 static ssize_t write_debugfs_file(struct file *file, const char __user *buf,
 				  size_t count, loff_t *ppos)
 {
@@ -2621,12 +2674,12 @@ static ssize_t write_debugfs_file(struct file *file, const char __user *buf,
 	} else
 		return -EINVAL;
 
-	*ppos += count;
 	return count;
 }
 
 static const struct file_operations dfs_fops = {
-	.open = open_debugfs_file,
+	.open  = open_debugfs_file,
+	.read  = read_debugfs_file,
 	.write = write_debugfs_file,
 	.owner = THIS_MODULE,
 };
@@ -2676,6 +2729,18 @@ int dbg_debugfs_init_fs(struct ubifs_info *c)
 	if (IS_ERR(dent))
 		goto out_remove;
 	d->dfs_dump_tnc = dent;
+
+	fname = "min_idx_lebs";
+	dent = debugfs_create_file(fname, S_IRUGO, d->dfs_dir, c, &dfs_fops);
+	if (IS_ERR(dent))
+		goto out_remove;
+	d->dfs_min_idx_lebs = dent;
+
+	fname = "full_idx_lebs";
+	dent = debugfs_create_file(fname, S_IRUGO, d->dfs_dir, c, &dfs_fops);
+	if (IS_ERR(dent))
+		goto out_remove;
+	d->dfs_full_idx_lebs = dent;
 
 	return 0;
 

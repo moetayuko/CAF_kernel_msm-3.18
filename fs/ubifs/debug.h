@@ -47,11 +47,14 @@
  * @saved_lst: saved lprops statistics (used by 'dbg_save_space_info()')
  * @saved_free: saved free space (used by 'dbg_save_space_info()')
  *
- * dfs_dir_name: name of debugfs directory containing this file-system's files
- * dfs_dir: direntry object of the file-system debugfs directory
- * dfs_dump_lprops: "dump lprops" debugfs knob
- * dfs_dump_budg: "dump budgeting information" debugfs knob
- * dfs_dump_tnc: "dump TNC" debugfs knob
+ * @dfs_dir_name: name of debugfs directory containing this file-system's files
+ * @dfs_dir: direntry object of the file-system debugfs directory
+ * @dfs_dump_lprops: "dump lprops" debugfs knob
+ * @dfs_dump_budg: "dump budgeting information" debugfs knob
+ * @dfs_dump_tnc: "dump TNC" debugfs knob
+ * @dfs_min_idx_lebs: debugfs file containing @c->min_idx_lebs value
+ * @dfs_full_idx_lebs: debugfs file containing min. index LEBs count prediction
+ *                     ('ubifs_calc_full_idx_lebs()')
  */
 struct ubifs_debug_info {
 	void *buf;
@@ -79,6 +82,8 @@ struct ubifs_debug_info {
 	struct dentry *dfs_dump_lprops;
 	struct dentry *dfs_dump_budg;
 	struct dentry *dfs_dump_tnc;
+	struct dentry *dfs_min_idx_lebs;
+	struct dentry *dfs_full_idx_lebs;
 };
 
 #define ubifs_assert(expr) do {                                                \
