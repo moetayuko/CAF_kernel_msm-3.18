@@ -35,14 +35,6 @@
 #include <linux/math64.h>
 
 /*
- * When pessimistic budget calculations say that there is no enough space,
- * UBIFS starts writing back dirty inodes and pages, doing garbage collection,
- * or committing. The below constant defines maximum number of times UBIFS
- * repeats the operations.
- */
-#define MAX_MKSPC_RETRIES 3
-
-/*
  * The below constant defines amount of dirty pages which should be written
  * back at when trying to shrink the liability.
  */
@@ -71,6 +63,7 @@ static int shrink_liability(struct ubifs_info *c, int nr_to_write)
 		.nr_to_write = nr_to_write,
 	};
 
+	dbg_budg("start writing-back");
 	generic_sync_sb_inodes(c->vfs_sb, &wbc);
 	nr_written = nr_to_write - wbc.nr_to_write;
 
@@ -87,7 +80,7 @@ static int shrink_liability(struct ubifs_info *c, int nr_to_write)
 		nr_written = nr_to_write - wbc.nr_to_write;
 	}
 
-	dbg_budg("%d pages were written back", nr_written);
+	dbg_budg("%d pages were written-back", nr_written);
 	return nr_written;
 }
 
@@ -104,6 +97,7 @@ static int run_gc(struct ubifs_info *c)
 	int err, lnum;
 
 	/* Make some free space by garbage-collecting dirty space */
+	dbg_budg("run GC");
 	down_read(&c->commit_sem);
 	lnum = ubifs_garbage_collect(c, 1);
 	up_read(&c->commit_sem);
@@ -119,20 +113,25 @@ static int run_gc(struct ubifs_info *c)
 }
 
 /**
- * get_liability - calculate current liability.
+ * get_space - roughly calculate amount of available space.
  * @c: UBIFS file-system description object
  *
- * This function calculates and returns current UBIFS liability, i.e. the
- * amount of bytes UBIFS has "promised" to write to the media.
+ * This is a helper function for 'make_free_space()' which returns rough amount
+ * of available space. The values returned by this function may be compared in
+ * order to decide whether it time to stop making free space.
  */
-static long long get_liability(struct ubifs_info *c)
+static long long get_space(struct ubifs_info *c)
 {
-	long long liab;
+	long long liab, avail, free;
 
 	spin_lock(&c->space_lock);
-	liab = c->budg_idx_growth + c->budg_data_growth + c->budg_dd_growth;
+	liab = c->budg_idx_growth + c->budg_data_growth + c->budg_dd_growth +
+	       c->budg_uncommitted_idx;
+	avail = ubifs_calc_available(c, c->min_idx_lebs);
 	spin_unlock(&c->space_lock);
-	return liab;
+
+	free = avail - liab;
+	return free > 0 ? free : 0;
 }
 
 /**
@@ -155,39 +154,65 @@ static long long get_liability(struct ubifs_info *c)
  */
 static int make_free_space(struct ubifs_info *c)
 {
-	int err, retries = 0;
-	long long liab1, liab2;
+	int err, nr_pages = 0, retries = 0;
+	long long free1, free2;
+
+	/*
+	 * Start with writing-back. Hopefully this will free some space soon,
+	 * because due to compression the cached data pages have to take less
+	 * space than it was budgeted for. Writing-back may also cause
+	 * garbage-collection and commit, which would produce the needed free
+	 * space.
+	 */
+	free1 = get_space(c);
+	while (1) {
+		nr_pages = shrink_liability(c, NR_TO_WRITE);
+		if (!nr_pages)
+			break;
+
+		free2 = get_space(c);
+		if (free2 > free1)
+			return -EAGAIN;
+	}
+
+	/* Hmm, writing-back did not help. Let's try to commit */
+	dbg_budg("run commit");
+	err = ubifs_run_commit(c);
+	if (err)
+		return err;
+
+	free2 = get_space(c);
+	if (free2 > free1)
+		return -EAGAIN;
 
 	do {
-		liab1 = get_liability(c);
-		/*
-		 * We probably have some dirty pages or inodes (liability), try
-		 * to write them back.
-		 */
-		dbg_budg("liability %lld, run write-back", liab1);
-		shrink_liability(c, NR_TO_WRITE);
-
-		liab2 = get_liability(c);
-		if (liab2 < liab1)
-			return -EAGAIN;
-
-		dbg_budg("new liability %lld (not shrinked)", liab2);
-
-		/* Liability did not shrink again, try GC */
-		dbg_budg("Run GC");
+		/* The commit did not help, let's try to do GC */
 		err = run_gc(c);
-		if (!err)
-			return -EAGAIN;
-
-		if (err != -EAGAIN && err != -ENOSPC)
+		if (err == -ENOSPC)
+			/* Garbage-collector says there is nothing to GC */
+			break;
+		if (err == -EAGAIN) {
+			/* Garbage-collector requested a commit */
+			err = ubifs_run_commit(c);
+			if (err)
+				return err;
+		} else if (err < 0)
 			/* Some real error happened */
 			return err;
 
-		dbg_budg("Run commit (retries %d)", retries);
-		err = ubifs_run_commit(c);
-		if (err)
-			return err;
-	} while (retries++ < MAX_MKSPC_RETRIES);
+		/* GC freed an LEB, hopefully we've got more space */
+		free2 = get_space(c);
+		if (free2 > free1)
+			return -EAGAIN;
+	} while (retries++ < 32);
+
+	err = ubifs_run_commit(c);
+	if (err)
+		return err;
+
+	free2 = get_space(c);
+	if (free2 > free1)
+		return -EAGAIN;
 
 	return -ENOSPC;
 }
@@ -383,8 +408,9 @@ static int do_budget_space(struct ubifs_info *c)
 	outstanding = c->budg_data_growth + c->budg_dd_growth;
 
 	if (unlikely(available < outstanding)) {
-		dbg_budg("out of data space: available %lld, outstanding %lld",
-			 available, outstanding);
+		dbg_budg("out of data space: available %lld, outstanding %lld, "
+			 "min_idx_lebs %d", available, outstanding,
+			 min_idx_lebs);
 		return -ENOSPC;
 	}
 
