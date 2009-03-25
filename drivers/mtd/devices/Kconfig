@@ -58,6 +58,14 @@ config MTD_MSM_NAND
 	help
 	  Support for some NAND chips connected to the MSM NAND controller.
 
+config MTD_BADBLOCK_HANDLING
+	bool "Enable Bad Block handling functions in driver"
+	depends on MTD_MSM_NAND
+	default y
+	help
+	  Enables bad Block handling functions (block_isbad and block_markbad)
+	  functions in driver.
+
 config MTD_DATAFLASH
 	tristate "Support for AT45xxx DataFlash"
 	depends on SPI_MASTER && EXPERIMENTAL
