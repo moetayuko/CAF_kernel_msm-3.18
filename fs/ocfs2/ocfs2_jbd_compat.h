@@ -60,7 +60,8 @@ static inline int jbd2_journal_file_inode(handle_t *handle,
 	return 0;
 }
 
-static inline int jbd2_journal_begin_ordered_truncate(struct jbd2_inode *inode,
+static inline int jbd2_journal_begin_ordered_truncate(journal_t *journal,
+						      struct jbd2_inode *inode,
 						      loff_t new_size)
 {
 	return 0;
