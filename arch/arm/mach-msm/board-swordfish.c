@@ -42,6 +42,8 @@
 
 #include "devices.h"
 
+extern int swordfish_init_mmc(void);
+
 static struct resource smc91x_resources[] = {
 	[0] = {
 		.start	= 0x70000300,
@@ -186,11 +188,16 @@ static struct msm_acpu_clock_platform_data swordfish_clock_data = {
 
 static void __init swordfish_init(void)
 {
+	int rc;
+
 	msm_acpu_clock_init(&swordfish_clock_data);
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_device_touchscreen.dev.platform_data = &swordfish_ts_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 	msm_hsusb_set_vbus_state(1);
+	rc = swordfish_init_mmc();
+	if (rc)
+		pr_crit("%s: MMC init failure (%d)\n", __func__, rc);
 }
 
 static void __init swordfish_fixup(struct machine_desc *desc, struct tag *tags,
