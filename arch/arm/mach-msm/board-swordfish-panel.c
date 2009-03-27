@@ -41,7 +41,7 @@ int swordfish_panel_unblank(void)
 }
 
 /* TODO: Move me to not be here */
-#define MSM_FB_BASE		0x14000000/*0x03800000*/
+#define MSM_FB_BASE		0x1FE00000
 #define MSM_FB_SIZE		0x00200000
 static struct resource resources_msm_fb[] = {
 	{
