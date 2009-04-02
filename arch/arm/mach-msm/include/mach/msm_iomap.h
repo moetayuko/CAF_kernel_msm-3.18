@@ -107,16 +107,13 @@
 #define MSM_DEBUG_UART_SIZE   SZ_4K
 #endif
 
-#define MSM_SDC1_PHYS         0xA0400000
+#define MSM_SDC1_PHYS         _PHYS(0xA0400000,0xA0300000)
 #define MSM_SDC1_SIZE         SZ_4K
-
-#define MSM_SDC2_PHYS         0xA0500000
+#define MSM_SDC2_PHYS         _PHYS(0xA0500000,0xA0400000)
 #define MSM_SDC2_SIZE         SZ_4K
-
-#define MSM_SDC3_PHYS         0xA0600000
+#define MSM_SDC3_PHYS         _PHYS(0xA0600000,0xA0500000)
 #define MSM_SDC3_SIZE         SZ_4K
-
-#define MSM_SDC4_PHYS         0xA0700000
+#define MSM_SDC4_PHYS         _PHYS(0xA0700000,0xA0600000)
 #define MSM_SDC4_SIZE         SZ_4K
 
 #define MSM_I2C_PHYS          0xA9900000
