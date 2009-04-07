@@ -55,7 +55,7 @@ struct mmc_platform_data;
 int __init msm_add_sdcc_devices(unsigned int controller, struct mmc_platform_data *plat);
 int __init msm_add_serial_devices(unsigned uart);
 
-#if defined(CONFIG_USB_FUNCTION_MSM_HSUSB)
+#if defined(CONFIG_USB_FUNCTION_MSM_HSUSB) || defined(CONFIG_USB_MSM_72K)
 /* START: add USB connected notify function */
 struct t_usb_status_notifier{
 	struct list_head notifier_link;
