@@ -8,8 +8,6 @@
 #include <asm/sizes.h>
 #include <linux/ioctl.h>
 
-#define MSM_MAX_CAMERA_SENSORS 5
-
 #define MSM_CAM_IOCTL_MAGIC 'm'
 
 #define MSM_CAM_IOCTL_GET_SENSOR_INFO \
@@ -118,7 +116,7 @@ struct msm_vfe_evt_msg_t {
 	unsigned short type;	/* 1 == event (RPC), 0 == message (adsp) */
 	unsigned short msg_id;
 	unsigned int len;	/* size in, number of bytes out */
-	unsigned char *data;
+	void *data;
 };
 
 enum msm_camera_resp_t {
