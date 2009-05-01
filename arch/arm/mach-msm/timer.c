@@ -193,6 +193,7 @@ static void msm_timer_set_mode(enum clock_event_mode mode,
 		clock->stopped_tick = (msm_read_timer_count(clock) +
 					clock->offset) >> clock->shift;
 		writel(0, clock->regbase + TIMER_ENABLE);
+		while (msm_read_timer_count(clock)) ; /* wait for clock to disable */
 		break;
 	}
 	local_irq_restore(irq_flags);
