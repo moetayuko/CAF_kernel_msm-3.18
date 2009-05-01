@@ -65,6 +65,7 @@ static int lcdc_resume(struct msm_panel_data *panel)
 {
 	struct mdp_lcdc *lcdc = panel_to_lcdc(panel);
 	uint32_t dma_cfg;
+	uint32_t val;
 
 	pr_info("%s: resuming\n", __func__);
 
@@ -88,10 +89,13 @@ static int lcdc_resume(struct msm_panel_data *panel)
 
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_BORDER_CLR);
 	mdp_writel(lcdc->mdp, 0xff, MDP_LCDC_UNDERFLOW_CTL);
-	mdp_writel(lcdc->mdp, 0, MDP_LCDC_CTL_POLARITY);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_HCTL);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_V_START);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_V_END);
+	val = ((lcdc->pdata->panel_info.hsync_act_low << 0) |
+	       (lcdc->pdata->panel_info.vsync_act_low << 1) |
+	       (lcdc->pdata->panel_info.den_act_low << 2));
+	mdp_writel(lcdc->mdp, val, MDP_LCDC_CTL_POLARITY);
 
 	/* config the dma_p block that drives the lcdc data */
 	mdp_writel(lcdc->mdp, lcdc->fb_start, MDP_DMA_P_IBUF_ADDR);

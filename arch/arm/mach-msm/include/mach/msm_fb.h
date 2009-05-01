@@ -120,6 +120,11 @@ struct msm_lcdc_panel_info {
 	unsigned int vsync_pulse_width;	/* in lines */
 	unsigned int vsync_back_porch;	/* in lines */
 	unsigned int vsync_front_porch;	/* in lines */
+
+	/* control signal polarity */
+	unsigned int vsync_act_low:1;
+	unsigned int hsync_act_low:1;
+	unsigned int den_act_low:1;
 };
 
 struct msm_lcdc_platform_data {
