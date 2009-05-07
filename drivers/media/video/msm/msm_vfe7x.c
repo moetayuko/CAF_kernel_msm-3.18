@@ -284,7 +284,7 @@ init_fail:
 	return rc;
 }
 
-static int vfe_7x_config_axi(enum vfeoutput_mode_t mode,
+static int vfe_7x_config_axi(int mode,
 	struct axidata_t *ad, struct axiout_t *ao)
 {
 	struct msm_pmem_region *regptr;

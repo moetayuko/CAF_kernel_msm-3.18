@@ -95,6 +95,7 @@ struct msm_sync_t {
 	spinlock_t prev_frame_q_lock;
 	struct list_head prev_frame_q;
 	wait_queue_head_t prev_frame_wait;
+	int unblock_poll_frame;
 
 	spinlock_t pict_frame_q_lock;
 	struct list_head pict_frame_q;
@@ -152,7 +153,7 @@ struct register_address_value_pair_t {
 
 struct msm_pmem_region {
 	struct hlist_node list;
-	enum msm_pmem_t type;
+	int type;
 	void *vaddr;
 	unsigned long paddr;
 	unsigned long len;
