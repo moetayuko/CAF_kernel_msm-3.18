@@ -1,0 +1,89 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAARH///7o\u003d",
+        "filename": "arch/arm/mach-msm/board-sapphire-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 436,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-05-08T22:04:56Z",
+      "side": 1,
+      "message": "Remove extra tab.\r\n\r\nPlease run checkpatch.",
+      "revId": "2465a64db555feea7a73eeb83e5efe3c00ac3bb3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAARH///7k\u003d",
+        "filename": "arch/arm/mach-msm/board-sapphire-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 761,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-05-08T22:04:56Z",
+      "side": 1,
+      "message": "This should be a separate patch. It is clearly not related to adding a sharp panel.",
+      "revId": "2465a64db555feea7a73eeb83e5efe3c00ac3bb3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAARH///7g\u003d",
+        "filename": "arch/arm/mach-msm/board-sapphire-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1005,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-05-08T22:04:56Z",
+      "side": 1,
+      "message": "Run checkpatch.",
+      "revId": "2465a64db555feea7a73eeb83e5efe3c00ac3bb3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAARH///7c\u003d",
+        "filename": "arch/arm/mach-msm/board-sapphire-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1015,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-05-08T22:04:56Z",
+      "side": 1,
+      "message": "Why did this change? This code was following the kernel code style before, but not now.",
+      "revId": "2465a64db555feea7a73eeb83e5efe3c00ac3bb3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAARH///7Y\u003d",
+        "filename": "arch/arm/mach-msm/board-sapphire-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1044,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-05-08T22:04:56Z",
+      "side": 1,
+      "message": "Checkpatch. This not very readable.",
+      "revId": "2465a64db555feea7a73eeb83e5efe3c00ac3bb3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
