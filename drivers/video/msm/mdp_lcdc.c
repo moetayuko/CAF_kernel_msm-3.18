@@ -20,6 +20,8 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+#include <linux/sched.h>
+#include <linux/wait.h>
 
 #include <asm/io.h>
 #include <asm/mach-types.h>
@@ -28,53 +30,97 @@
 
 #include "mdp_hw.h"
 
-#define panel_to_lcdc(p)	container_of((p), struct mdp_lcdc, panel_data)
-#define to_panel_info(p)	(&((p)->pdata->panel_info))
+struct mdp_lcdc_info {
+	struct mdp_info			*mdp;
+	struct clk			*mdp_clk;
+	struct clk			*pclk;
+	struct clk			*pad_pclk;
+	struct msm_panel_data		fb_panel_data;
+	struct platform_device		fb_pdev;
+	struct msm_lcdc_platform_data	*pdata;
+	uint32_t fb_start;
 
-static int lcdc_unblank(struct msm_panel_data *panel)
+	struct msmfb_callback		frame_start_cb;
+	wait_queue_head_t		vsync_waitq;
+	int				got_vsync;
+
+	struct {
+		uint32_t	clk_rate;
+		uint32_t	hsync_ctl;
+		uint32_t	vsync_period;
+		uint32_t	vsync_pulse_width;
+		uint32_t	display_hctl;
+		uint32_t	display_vstart;
+		uint32_t	display_vend;
+		uint32_t	hsync_skew;
+		uint32_t	polarity;
+	} parms;
+};
+
+static struct mdp_device *mdp_dev;
+
+#define panel_to_lcdc(p) container_of((p), struct mdp_lcdc_info, fb_panel_data)
+
+static int lcdc_unblank(struct msm_panel_data *fb_panel)
 {
-	struct mdp_lcdc *lcdc = panel_to_lcdc(panel);
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
+	struct msm_lcdc_panel_ops *panel_ops = lcdc->pdata->panel_ops;
 
-	lcdc->pdata->unblank();
-	pr_info("%s: unblank sesame\n", __func__);
+	pr_info("%s: ()\n", __func__);
+
+	panel_ops->unblank(panel_ops);
+
 	return 0;
 }
 
-static int lcdc_blank(struct msm_panel_data *panel)
+static int lcdc_blank(struct msm_panel_data *fb_panel)
 {
-	struct mdp_lcdc *lcdc = panel_to_lcdc(panel);
-	pr_info("%s: well <blank> me\n", __func__);
-	lcdc->pdata->blank();
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
+	struct msm_lcdc_panel_ops *panel_ops = lcdc->pdata->panel_ops;
 
-	clk_enable(lcdc->mdp->clk);
+	pr_info("%s: ()\n", __func__);
+	panel_ops->blank(panel_ops);
+
+	clk_enable(lcdc->mdp_clk);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_EN);
-	clk_disable(lcdc->mdp->clk);
+	clk_disable(lcdc->mdp_clk);
 
 	clk_disable(lcdc->pclk);
 	clk_disable(lcdc->pad_pclk);
 	return 0;
 }
 
-static int lcdc_suspend(struct msm_panel_data *panel)
+static int lcdc_suspend(struct msm_panel_data *fb_panel)
 {
 	pr_info("%s: suspending\n", __func__);
 	return 0;
 }
 
-static int lcdc_resume(struct msm_panel_data *panel)
+static int lcdc_resume(struct msm_panel_data *fb_panel)
 {
-	struct mdp_lcdc *lcdc = panel_to_lcdc(panel);
-	uint32_t dma_cfg;
-	uint32_t val;
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
 
 	pr_info("%s: resuming\n", __func__);
 
-	clk_enable(lcdc->mdp->clk);
+	clk_enable(lcdc->mdp_clk);
+	clk_enable(lcdc->pclk);
+	clk_enable(lcdc->pad_pclk);
+	mdp_writel(lcdc->mdp, 1, MDP_LCDC_EN);
+
+	return 0;
+}
+
+static int lcdc_hw_init(struct mdp_lcdc_info *lcdc)
+{
+	struct msm_panel_data *fb_panel = &lcdc->fb_panel_data;
+	uint32_t dma_cfg;
+
+	clk_enable(lcdc->mdp_clk);
 	clk_enable(lcdc->pclk);
 	clk_enable(lcdc->pad_pclk);
 
-	clk_set_rate(lcdc->pclk, lcdc->pdata->panel_info.clk_rate);
-	clk_set_rate(lcdc->pad_pclk, lcdc->pdata->panel_info.clk_rate);
+	clk_set_rate(lcdc->pclk, lcdc->parms.clk_rate);
+	clk_set_rate(lcdc->pad_pclk, lcdc->parms.clk_rate);
 
 	/* write the lcdc params */
 	mdp_writel(lcdc->mdp, lcdc->parms.hsync_ctl, MDP_LCDC_HSYNC_CTL);
@@ -92,18 +138,15 @@ static int lcdc_resume(struct msm_panel_data *panel)
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_HCTL);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_V_START);
 	mdp_writel(lcdc->mdp, 0, MDP_LCDC_ACTIVE_V_END);
-	val = ((lcdc->pdata->panel_info.hsync_act_low << 0) |
-	       (lcdc->pdata->panel_info.vsync_act_low << 1) |
-	       (lcdc->pdata->panel_info.den_act_low << 2));
-	mdp_writel(lcdc->mdp, val, MDP_LCDC_CTL_POLARITY);
+	mdp_writel(lcdc->mdp, lcdc->parms.polarity, MDP_LCDC_CTL_POLARITY);
 
 	/* config the dma_p block that drives the lcdc data */
 	mdp_writel(lcdc->mdp, lcdc->fb_start, MDP_DMA_P_IBUF_ADDR);
-	mdp_writel(lcdc->mdp, (((panel->fb_data->yres & 0x7ff) << 16) |
-			       (panel->fb_data->xres & 0x7ff)),
+	mdp_writel(lcdc->mdp, (((fb_panel->fb_data->yres & 0x7ff) << 16) |
+			       (fb_panel->fb_data->xres & 0x7ff)),
 		   MDP_DMA_P_SIZE);
 	/* TODO: pull in the bpp info from somewhere else? */
-	mdp_writel(lcdc->mdp, panel->fb_data->xres * 2,
+	mdp_writel(lcdc->mdp, fb_panel->fb_data->xres * 2,
 		   MDP_DMA_P_IBUF_Y_STRIDE);
 	mdp_writel(lcdc->mdp, 0, MDP_DMA_P_OUT_XY);
 
@@ -121,29 +164,61 @@ static int lcdc_resume(struct msm_panel_data *panel)
 	return 0;
 }
 
-#if 0
 static void lcdc_wait_vsync(struct msm_panel_data *panel)
 {
-	pr_info("%s: XXXXXXXXXXXXXXX waiting vsync\n", __func__);
-}
-#endif
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(panel);
+	int ret;
 
-static void lcdc_request_vsync(struct msm_panel_data *panel,
-			       struct msmfb_callback *cb)
-{
-	if (cb)
-		cb->func(cb);
+	ret = wait_event_timeout(lcdc->vsync_waitq, lcdc->got_vsync, HZ / 2);
+	if (ret == 0)
+		pr_err("%s: timeout waiting for VSYNC\n", __func__);
+	lcdc->got_vsync = 0;
 }
 
-static void lcdc_clear_vsync(struct msm_panel_data *panel)
+static void lcdc_request_vsync(struct msm_panel_data *fb_panel,
+			       struct msmfb_callback *vsync_cb)
 {
-	return;
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
+
+	/* the vsync callback will start the dma */
+	vsync_cb->func(vsync_cb);
+	lcdc->got_vsync = 0;
+	mdp_out_if_req_irq(mdp_dev, MSM_LCDC_INTERFACE, MDP_LCDC_FRAME_START,
+			   &lcdc->frame_start_cb);
+	lcdc_wait_vsync(fb_panel);
 }
 
-static void compute_timing_parms(struct mdp_lcdc *lcdc)
+static void lcdc_clear_vsync(struct msm_panel_data *fb_panel)
 {
-	struct msm_lcdc_panel_info *panel_info = &lcdc->pdata->panel_info;
-	struct msm_fb_data *fb_data = &lcdc->pdata->fb_data;
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
+	lcdc->got_vsync = 0;
+	mdp_out_if_req_irq(mdp_dev, MSM_LCDC_INTERFACE, 0, NULL);
+}
+
+/* called in irq context with mdp lock held, when mdp gets the
+ * MDP_LCDC_FRAME_START interrupt */
+static void lcdc_frame_start(struct msmfb_callback *cb)
+{
+	struct mdp_lcdc_info *lcdc;
+
+	lcdc = container_of(cb, struct mdp_lcdc_info, frame_start_cb);
+
+	lcdc->got_vsync = 1;
+	wake_up(&lcdc->vsync_waitq);
+}
+
+static void lcdc_dma_start(void *priv, uint32_t addr, uint32_t stride,
+			   uint32_t width, uint32_t height, uint32_t x,
+			   uint32_t y)
+{
+	struct mdp_lcdc_info *lcdc = priv;
+	mdp_writel(lcdc->mdp, addr, MDP_DMA_P_IBUF_ADDR);
+}
+
+static void precompute_timing_parms(struct mdp_lcdc_info *lcdc)
+{
+	struct msm_lcdc_timing *timing = lcdc->pdata->timing;
+	struct msm_fb_data *fb_data = lcdc->pdata->fb_data;
 	unsigned int hsync_period;
 	unsigned int hsync_start_x;
 	unsigned int hsync_end_x;
@@ -151,109 +226,190 @@ static void compute_timing_parms(struct mdp_lcdc *lcdc)
 	unsigned int display_vstart;
 	unsigned int display_vend;
 
-	hsync_period = (panel_info->hsync_pulse_width +
-			panel_info->hsync_back_porch +
-			fb_data->xres +
-			panel_info->hsync_front_porch);
-	hsync_start_x = (panel_info->hsync_pulse_width +
-			 panel_info->hsync_back_porch);
-	hsync_end_x = hsync_period - panel_info->hsync_front_porch - 1;
+	hsync_period = (timing->hsync_pulse_width + timing->hsync_back_porch +
+			fb_data->xres + timing->hsync_front_porch);
+	hsync_start_x = (timing->hsync_pulse_width + timing->hsync_back_porch);
+	hsync_end_x = hsync_period - timing->hsync_front_porch - 1;
 
-	vsync_period = (panel_info->vsync_pulse_width +
-			panel_info->vsync_back_porch +
-			fb_data->yres +
-			panel_info->vsync_front_porch) * hsync_period;
-	display_vstart = (panel_info->vsync_pulse_width +
-			  panel_info->vsync_back_porch) * hsync_period;
-	display_vstart += panel_info->hsync_skew;
+	vsync_period = (timing->vsync_pulse_width + timing->vsync_back_porch +
+			fb_data->yres + timing->vsync_front_porch);
+	vsync_period *= hsync_period;
 
-	display_vend = panel_info->vsync_front_porch * hsync_period;
-	display_vend = vsync_period - display_vend + panel_info->hsync_skew - 1;
+	display_vstart = timing->vsync_pulse_width + timing->vsync_back_porch;
+	display_vstart *= hsync_period;
+	display_vstart += timing->hsync_skew;
+
+	display_vend = timing->vsync_front_porch * hsync_period;
+	display_vend = vsync_period - display_vend + timing->hsync_skew - 1;
 
 	/* register values we pre-compute at init time from the timing
 	 * information in the panel info */
 	lcdc->parms.hsync_ctl = (((hsync_period & 0xfff) << 16) |
-				 (panel_info->hsync_pulse_width & 0xfff));
+				 (timing->hsync_pulse_width & 0xfff));
 	lcdc->parms.vsync_period = vsync_period & 0xffffff;
-	lcdc->parms.vsync_pulse_width = (panel_info->vsync_pulse_width *
+	lcdc->parms.vsync_pulse_width = (timing->vsync_pulse_width *
 					 hsync_period) & 0xffffff;
 
 	lcdc->parms.display_hctl = (((hsync_end_x & 0xfff) << 16) |
 				    (hsync_start_x & 0xfff));
 	lcdc->parms.display_vstart = display_vstart & 0xffffff;
 	lcdc->parms.display_vend = display_vend & 0xffffff;
-	lcdc->parms.hsync_skew = panel_info->hsync_skew & 0xfff;
+	lcdc->parms.hsync_skew = timing->hsync_skew & 0xfff;
+	lcdc->parms.polarity = ((timing->hsync_act_low << 0) |
+				(timing->vsync_act_low << 1) |
+				(timing->den_act_low << 2));
+	lcdc->parms.clk_rate = timing->clk_rate;
 }
 
-int mdp_lcdc_init(struct mdp_info *mdp, struct platform_device *pdev)
+static int mdp_lcdc_probe(struct platform_device *pdev)
 {
-	struct device *_dev = mdp->mdp_dev.dev.parent;
-	struct msm_mdp_platform_data *pdata = _dev->platform_data;
-	struct mdp_lcdc *lcdc;
+	struct msm_lcdc_platform_data *pdata = pdev->dev.platform_data;
+	struct mdp_lcdc_info *lcdc;
 	int ret = 0;
 
-	if (!pdata || !pdata->lcdc_data) {
+	if (!pdata) {
 		pr_err("%s: no LCDC platform data found\n", __func__);
 		return -EINVAL;
 	}
 
-	lcdc = kzalloc(sizeof(struct mdp_lcdc), GFP_KERNEL);
+	lcdc = kzalloc(sizeof(struct mdp_lcdc_info), GFP_KERNEL);
 	if (!lcdc)
 		return -ENOMEM;
 
-	lcdc->mdp = mdp;
-	mdp->lcdc = lcdc;
-	lcdc->pdata = pdata->lcdc_data;
+	/* We don't actually own the clocks, the mdp does. */
+	lcdc->mdp_clk = clk_get(mdp_dev->dev.parent, "mdp_clk");
+	if (IS_ERR(lcdc->mdp_clk)) {
+		pr_err("%s: failed to get mdp_clk\n", __func__);
+		ret = PTR_ERR(lcdc->mdp_clk);
+		goto err_get_mdp_clk;
+	}
 
-	lcdc->pclk = clk_get(_dev, "lcdc_pclk_clk");
+	lcdc->pclk = clk_get(mdp_dev->dev.parent, "lcdc_pclk_clk");
 	if (IS_ERR(lcdc->pclk)) {
 		pr_err("%s: failed to get lcdc_pclk\n", __func__);
 		ret = PTR_ERR(lcdc->pclk);
-		goto error_pclk;
+		goto err_get_pclk;
 	}
 
-	lcdc->pad_pclk = clk_get(_dev, "lcdc_pad_pclk_clk");
+	lcdc->pad_pclk = clk_get(mdp_dev->dev.parent, "lcdc_pad_pclk_clk");
 	if (IS_ERR(lcdc->pad_pclk)) {
 		pr_err("%s: failed to get lcdc_pad_pclk\n", __func__);
 		ret = PTR_ERR(lcdc->pad_pclk);
-		goto error_pad_pclk;
+		goto err_get_pad_pclk;
 	}
 
-	compute_timing_parms(lcdc);
+	init_waitqueue_head(&lcdc->vsync_waitq);
+	lcdc->pdata = pdata;
+	lcdc->frame_start_cb.func = lcdc_frame_start;
 
-	lcdc->fb_start = lcdc->pdata->fb_resource->start;
+	platform_set_drvdata(pdev, lcdc);
 
-	lcdc->panel_data.suspend = lcdc_suspend;
-	lcdc->panel_data.resume = lcdc_resume;
-/*
-	lcdc->panel_data.wait_vsync = lcdc_wait_vsync;
-*/
+	mdp_out_if_register(mdp_dev, MSM_LCDC_INTERFACE, lcdc, MDP_DMA_P_DONE,
+			    lcdc_dma_start);
 
-	lcdc->panel_data.request_vsync = lcdc_request_vsync;
-	lcdc->panel_data.clear_vsync = lcdc_clear_vsync;
+	precompute_timing_parms(lcdc);
 
-	lcdc->panel_data.blank = lcdc_blank;
-	lcdc->panel_data.unblank = lcdc_unblank;
-	lcdc->panel_data.fb_data =  &lcdc->pdata->fb_data;
-	lcdc->panel_data.interface_type = MSM_LCDC_INTERFACE;
+	lcdc->fb_start = pdata->fb_resource->start;
+	lcdc->mdp = container_of(mdp_dev, struct mdp_info, mdp_dev);
 
-	lcdc->pdev.name = "msm_panel";
-	lcdc->pdev.id = pdev->id;
-	lcdc->pdev.resource = lcdc->pdata->fb_resource;
-	lcdc->pdev.num_resources = 1;
-	lcdc->pdev.dev.platform_data = &lcdc->panel_data;
+	lcdc->fb_panel_data.suspend = lcdc_suspend;
+	lcdc->fb_panel_data.resume = lcdc_resume;
+	lcdc->fb_panel_data.wait_vsync = lcdc_wait_vsync;
+	lcdc->fb_panel_data.request_vsync = lcdc_request_vsync;
+	lcdc->fb_panel_data.clear_vsync = lcdc_clear_vsync;
+	lcdc->fb_panel_data.blank = lcdc_blank;
+	lcdc->fb_panel_data.unblank = lcdc_unblank;
+	lcdc->fb_panel_data.fb_data = pdata->fb_data;
+	lcdc->fb_panel_data.interface_type = MSM_LCDC_INTERFACE;
 
-	lcdc_resume(&lcdc->panel_data);
+	ret = lcdc_hw_init(lcdc);
+	if (ret) {
+		pr_err("%s: Cannot initialize the mdp_lcdc\n", __func__);
+		goto err_hw_init;
+	}
 
-	platform_device_register(&lcdc->pdev);
+	lcdc->fb_pdev.name = "msm_panel";
+	lcdc->fb_pdev.id = pdata->fb_id;
+	lcdc->fb_pdev.resource = pdata->fb_resource;
+	lcdc->fb_pdev.num_resources = 1;
+	lcdc->fb_pdev.dev.platform_data = &lcdc->fb_panel_data;
 
-	printk(KERN_INFO "mdp_lcdc initialized\n");
+	if (pdata->panel_ops->init)
+		pdata->panel_ops->init(pdata->panel_ops);
+
+	ret = platform_device_register(&lcdc->fb_pdev);
+	if (ret) {
+		pr_err("%s: Cannot register msm_panel pdev\n", __func__);
+		goto err_plat_dev_reg;
+	}
+
+	pr_info("%s: initialized\n", __func__);
 
 	return 0;
 
-error_pad_pclk:
+err_plat_dev_reg:
+err_hw_init:
+	platform_set_drvdata(pdev, NULL);
+	clk_put(lcdc->pad_pclk);
+err_get_pad_pclk:
 	clk_put(lcdc->pclk);
-error_pclk:
+err_get_pclk:
+	clk_put(lcdc->mdp_clk);
+err_get_mdp_clk:
 	kfree(lcdc);
 	return ret;
 }
+
+static int mdp_lcdc_remove(struct platform_device *pdev)
+{
+	struct mdp_lcdc_info *lcdc = platform_get_drvdata(pdev);
+
+	platform_set_drvdata(pdev, NULL);
+
+	clk_put(lcdc->pclk);
+	clk_put(lcdc->pad_pclk);
+	kfree(lcdc);
+
+	return 0;
+}
+
+static struct platform_driver mdp_lcdc_driver = {
+	.probe = mdp_lcdc_probe,
+	.remove = mdp_lcdc_remove,
+	.driver = {
+		.name	= "msm_mdp_lcdc",
+		.owner	= THIS_MODULE,
+	},
+};
+
+static int mdp_lcdc_add_mdp_device(struct device *dev,
+				   struct class_interface *class_intf)
+{
+	/* might need locking if mulitple mdp devices */
+	if (mdp_dev)
+		return 0;
+	mdp_dev = container_of(dev, struct mdp_device, dev);
+	return platform_driver_register(&mdp_lcdc_driver);
+}
+
+static void mdp_lcdc_remove_mdp_device(struct device *dev,
+				       struct class_interface *class_intf)
+{
+	/* might need locking if mulitple mdp devices */
+	if (dev != &mdp_dev->dev)
+		return;
+	platform_driver_unregister(&mdp_lcdc_driver);
+	mdp_dev = NULL;
+}
+
+static struct class_interface mdp_lcdc_interface = {
+	.add_dev = &mdp_lcdc_add_mdp_device,
+	.remove_dev = &mdp_lcdc_remove_mdp_device,
+};
+
+static int __init mdp_lcdc_init(void)
+{
+	return register_mdp_client(&mdp_lcdc_interface);
+}
+
+module_init(mdp_lcdc_init);

@@ -28,15 +28,20 @@
 
 #define CLK_NS_TO_RATE(ns)			(1000000000UL / (ns))
 
-int swordfish_panel_blank(void)
+int swordfish_panel_blank(struct msm_lcdc_panel_ops *ops)
 {
 	/* TODO: Turn backlight off? */
 	return 0;
 }
 
-int swordfish_panel_unblank(void)
+int swordfish_panel_unblank(struct msm_lcdc_panel_ops *ops)
 {
 	/* TODO: Turn backlight on? */
+	return 0;
+}
+
+int swordfish_panel_init(struct msm_lcdc_panel_ops *ops)
+{
 	return 0;
 }
 
@@ -51,31 +56,48 @@ static struct resource resources_msm_fb[] = {
 	},
 };
 
-static struct msm_lcdc_platform_data swordfish_lcdc_platform_data = {
+static struct msm_lcdc_timing swordfish_lcdc_timing = {
+	.clk_rate		= CLK_NS_TO_RATE(26),
+	.hsync_pulse_width	= 60,
+	.hsync_back_porch	= 81,
+	.hsync_front_porch	= 81,
+	.hsync_skew		= 0,
+	.vsync_pulse_width	= 2,
+	.vsync_back_porch	= 20,
+	.vsync_front_porch	= 27,
+	.vsync_act_low		= 0,
+	.hsync_act_low		= 0,
+	.den_act_low		= 0,
+};
+
+static struct msm_fb_data swordfish_lcdc_fb_data = {
+	.xres		= 800,
+	.yres		= 480,
+	.width		= 94,
+	.height		= 57,
+	.output_format	= 0,
+};
+
+static struct msm_lcdc_panel_ops swordfish_lcdc_panel_ops = {
+	.init		= swordfish_panel_init,
 	.blank		= swordfish_panel_blank,
 	.unblank	= swordfish_panel_unblank,
-	.panel_info	= {
-		.clk_rate		= CLK_NS_TO_RATE(26),
-		.hsync_pulse_width	= 60,
-		.hsync_back_porch	= 81,
-		.hsync_front_porch	= 81,
-		.hsync_skew		= 0,
-		.vsync_pulse_width	= 2,
-		.vsync_back_porch	= 20,
-		.vsync_front_porch	= 27,
-	},
-	.fb_data	= {
-		.xres		= 800,
-		.yres		= 480,
-		.width		= 94,
-		.height		= 57,
-		.output_format	= 0,
-	},
+};
+
+static struct msm_lcdc_platform_data swordfish_lcdc_platform_data = {
+	.panel_ops	= &swordfish_lcdc_panel_ops,
+	.timing		= &swordfish_lcdc_timing,
+	.fb_id		= 0,
+	.fb_data	= &swordfish_lcdc_fb_data,
 	.fb_resource = &resources_msm_fb[0],
 };
 
-static struct msm_mdp_platform_data swordfish_mdp_platform_data = {
-	.lcdc_data = &swordfish_lcdc_platform_data,
+static struct platform_device swordfish_lcdc_device = {
+	.name	= "msm_mdp_lcdc",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &swordfish_lcdc_platform_data,
+	},
 };
 
 int __init swordfish_init_panel(void)
@@ -84,9 +106,12 @@ int __init swordfish_init_panel(void)
 	if (!machine_is_swordfish())
 		return 0;
 
-	msm_device_mdp.dev.platform_data = &swordfish_mdp_platform_data;
 	if ((rc = platform_device_register(&msm_device_mdp)) != 0)
 		return rc;
+
+	if ((rc = platform_device_register(&swordfish_lcdc_device)) != 0)
+		return rc;
+
 	return 0;
 }
 

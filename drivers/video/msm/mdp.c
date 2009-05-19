@@ -47,9 +47,7 @@ static uint16_t mdp_default_ccs[] = {
 #endif
 };
 
-static DECLARE_WAIT_QUEUE_HEAD(mdp_dma_waitqueue);
 static DECLARE_WAIT_QUEUE_HEAD(mdp_ppp_waitqueue);
-static struct msmfb_callback *dma_callback;
 static unsigned int mdp_irq_mask;
 DEFINE_MUTEX(mdp_mutex);
 
@@ -124,7 +122,7 @@ static irqreturn_t mdp_isr(int irq, void *data)
 	uint32_t status;
 	unsigned long irq_flags;
 	struct mdp_info *mdp = data;
-	int dma_done = 0;
+	int i;
 
 	spin_lock_irqsave(&mdp->lock, irq_flags);
 
@@ -134,19 +132,19 @@ static irqreturn_t mdp_isr(int irq, void *data)
 	//pr_info("%s: status=%08x\n", __func__, status);
 	status &= mdp_irq_mask;
 
-	if (!mdp->lcdc && (status & MDP_DMA_P_DONE))
-		dma_done = 1;
-#ifdef CONFIG_FB_MSM_LCDC
-	else if (mdp->lcdc && (status & MDP_LCDC_FRAME_START))
-		dma_done = 1;
-#endif
-
-	if (dma_done) {
-		if (dma_callback) {
-			dma_callback->func(dma_callback);
-			dma_callback = NULL;
+	for (i = 0; i < MSM_MDP_NUM_INTERFACES; ++i) {
+		struct mdp_out_interface *out_if = &mdp->out_if[i];
+		if (status & out_if->dma_mask) {
+			if (out_if->dma_cb) {
+				out_if->dma_cb->func(out_if->dma_cb);
+				out_if->dma_cb = NULL;
+			}
+			wake_up(&out_if->dma_waitqueue);
 		}
-		wake_up(&mdp_dma_waitqueue);
+		if (status & out_if->irq_mask) {
+			out_if->irq_cb->func(out_if->irq_cb);
+			out_if->irq_cb = NULL;
+		}
 	}
 
 	if (status & DL0_ROI_DONE)
@@ -175,6 +173,7 @@ static int mdp_wait(struct mdp_info *mdp, uint32_t mask, wait_queue_head_t *wq)
 	int ret = 0;
 	unsigned long irq_flags;
 
+	pr_info("%s: WAITING\n", __func__);
 	wait_event_timeout(*wq, !mdp_check_mask(mdp, mask), HZ);
 
 	spin_lock_irqsave(&mdp->lock, irq_flags);
@@ -195,22 +194,22 @@ void mdp_dma_wait(struct mdp_device *mdp_dev, int interface)
 	static int timeout_count;
 	struct mdp_info *mdp = container_of(mdp_dev, struct mdp_info, mdp_dev);
 	unsigned int mask = 0;
+	wait_queue_head_t *wq;
 
 	switch (interface) {
-#ifdef CONFIG_FB_MSM_LCDC
-	case MSM_LCDC_INTERFACE:
-		mask = MDP_LCDC_FRAME_START;
-		break;
-#endif
 	case MSM_MDDI_PMDH_INTERFACE:
-		mask = MDP_DMA_P_DONE;
+	case MSM_MDDI_EMDH_INTERFACE:
+	case MSM_LCDC_INTERFACE:
+		BUG_ON(!mdp->out_if[interface].registered);
+		mask = mdp->out_if[interface].dma_mask;
+		wq = &mdp->out_if[interface].dma_waitqueue;
 		break;
 	default:
 		pr_err("%s: Unknown interface %d\n", __func__, interface);
 		BUG();
 	}
 
-	if (mdp_wait(mdp, mask, &mdp_dma_waitqueue) == -ETIMEDOUT)
+	if (mdp_wait(mdp, mask, wq) == -ETIMEDOUT)
 		timeout_count++;
 	else
 		timeout_count = 0;
@@ -227,21 +226,13 @@ static int mdp_ppp_wait(struct mdp_info *mdp)
 	return mdp_wait(mdp, DL0_ROI_DONE, &mdp_ppp_waitqueue);
 }
 
-static void mdp_dma_to_mddi(struct mdp_info *mdp, uint32_t addr,
-			    uint32_t stride, uint32_t width, uint32_t height,
-			    uint32_t x, uint32_t y,
-			    struct msmfb_callback *callback)
+static void mdp_dma_to_mddi(void *priv, uint32_t addr, uint32_t stride,
+			    uint32_t width, uint32_t height, uint32_t x,
+			    uint32_t y)
 {
-#ifdef CONFIG_MSM_MDP22
+	struct mdp_info *mdp = priv;
 	uint32_t dma2_cfg;
 	uint16_t ld_param = 0; /* 0=PRIM, 1=SECD, 2=EXT */
-
-	if (enable_mdp_irq(mdp, MDP_DMA_P_DONE)) {
-		printk(KERN_ERR "mdp_dma_to_mddi: busy\n");
-		return;
-	}
-
-	dma_callback = callback;
 
 	dma2_cfg = DMA_PACK_TIGHT |
 		DMA_PACK_ALIGN_LSB |
@@ -257,14 +248,15 @@ static void mdp_dma_to_mddi(struct mdp_info *mdp, uint32_t addr,
 
 	dma2_cfg |= DMA_DITHER_EN;
 
+	/* 666 18BPP */
+	dma2_cfg |= DMA_DSTC0G_6BITS | DMA_DSTC1B_6BITS | DMA_DSTC2R_6BITS;
+
+#ifdef CONFIG_MSM_MDP22
 	/* setup size, address, and stride */
 	mdp_writel(mdp, (height << 16) | (width),
 		   MDP_CMD_DEBUG_ACCESS_BASE + 0x0184);
 	mdp_writel(mdp, addr, MDP_CMD_DEBUG_ACCESS_BASE + 0x0188);
 	mdp_writel(mdp, stride, MDP_CMD_DEBUG_ACCESS_BASE + 0x018C);
-
-	/* 666 18BPP */
-	dma2_cfg |= DMA_DSTC0G_6BITS | DMA_DSTC1B_6BITS | DMA_DSTC2R_6BITS;
 
 	/* set y & x offset and MDDI transaction parameters */
 	mdp_writel(mdp, (y << 16) | (x), MDP_CMD_DEBUG_ACCESS_BASE + 0x0194);
@@ -277,35 +269,19 @@ static void mdp_dma_to_mddi(struct mdp_info *mdp, uint32_t addr,
 	/* start DMA2 */
 	mdp_writel(mdp, 0, MDP_CMD_DEBUG_ACCESS_BASE + 0x0044);
 #else
-	pr_err("DMA-to-MDDI not implemented for this device\n");
-	BUG();
-#endif
-}
-
-static void mdp_dma_to_lcdc(struct mdp_info *mdp, uint32_t addr,
-			    struct msmfb_callback *callback)
-{
-#if defined(CONFIG_FB_MSM_LCDC)
-	unsigned long flags;
-
-	spin_lock_irqsave(&mdp->lock, flags);
-	if (locked_enable_mdp_irq(mdp, MDP_LCDC_FRAME_START)) {
-		pr_err("%s: busy\n", __func__);
-		goto done;
-	}
-
-	if (dma_callback) {
-		pr_err("%s: dma callback already set\n", __func__);
-		goto done;
-	}
-
-	dma_callback = callback;
-
-//	pr_info("%s: dma'ing to lcdc @ 0x%08x\n", __func__, addr);
+	/* setup size, address, and stride */
+	mdp_writel(mdp, (height << 16) | (width), MDP_DMA_P_SIZE);
 	mdp_writel(mdp, addr, MDP_DMA_P_IBUF_ADDR);
+	mdp_writel(mdp, stride, MDP_DMA_P_IBUF_Y_STRIDE);
 
-done:
-	spin_unlock_irqrestore(&mdp->lock, flags);
+	/* set y & x offset and MDDI transaction parameters */
+	mdp_writel(mdp, (y << 16) | (x), MDP_DMA_P_OUT_XY);
+	mdp_writel(mdp, ld_param, MDP_MDDI_PARAM_WR_SEL);
+	mdp_writel(mdp, (MDDI_VDO_PACKET_DESC << 16) | MDDI_VDO_PACKET_PRIM,
+		   MDP_MDDI_PARAM);
+
+	mdp_writel(mdp, dma2_cfg, MDP_DMA_P_CONFIG);
+	mdp_writel(mdp, 0, MDP_DMA_P_START);
 #endif
 }
 
@@ -314,20 +290,26 @@ void mdp_dma(struct mdp_device *mdp_dev, uint32_t addr, uint32_t stride,
 	     struct msmfb_callback *callback, int interface)
 {
 	struct mdp_info *mdp = container_of(mdp_dev, struct mdp_info, mdp_dev);
+	struct mdp_out_interface *out_if;
+	unsigned long flags;
 
-	switch (interface) {
-	case MSM_MDDI_PMDH_INTERFACE:
-		mdp_dma_to_mddi(mdp, addr, stride, width, height, x, y,
-				callback);
-		break;
-	case MSM_LCDC_INTERFACE:
-		mdp_dma_to_lcdc(mdp, addr, callback);
-		break;
-	default:
+	if (interface < 0 || interface > MSM_MDP_NUM_INTERFACES ||
+	    !mdp->out_if[interface].registered) {
 		pr_err("%s: Unknown interface: %d\n", __func__, interface);
 		BUG();
-		break;
 	}
+	out_if = &mdp->out_if[interface];
+
+	spin_lock_irqsave(&mdp->lock, flags);
+	if (locked_enable_mdp_irq(mdp, out_if->dma_mask)) {
+		pr_err("%s: busy\n", __func__);
+		goto done;
+	}
+
+	out_if->dma_cb = callback;
+	out_if->dma_start(out_if->priv, addr, stride, width, height, x, y);
+done:
+	spin_unlock_irqrestore(&mdp->lock, flags);
 }
 
 static int get_img(struct mdp_img *img, struct fb_info *info,
@@ -464,6 +446,78 @@ void mdp_set_grp_disp(struct mdp_device *mdp_dev, unsigned disp_id)
 	mdp_writel(mdp, disp_id, MDP_FULL_BYPASS_WORD43);
 }
 
+/* used by output interface drivers like mddi and lcdc */
+int mdp_out_if_register(struct mdp_device *mdp_dev, int interface,
+			void *private_data, uint32_t dma_mask,
+			mdp_dma_start_func_t dma_start)
+{
+	struct mdp_info *mdp = container_of(mdp_dev, struct mdp_info, mdp_dev);
+	unsigned long flags;
+	int ret = 0;
+
+	if (interface < 0 || interface >= MSM_MDP_NUM_INTERFACES) {
+		pr_err("%s: invalid interface (%d)\n", __func__, interface);
+		return -EINVAL;
+	}
+
+	spin_lock_irqsave(&mdp->lock, flags);
+
+	if (mdp->out_if[interface].registered) {
+		pr_err("%s: interface (%d) already registered\n", __func__,
+		       interface);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	init_waitqueue_head(&mdp->out_if[interface].dma_waitqueue);
+	mdp->out_if[interface].registered = 1;
+	mdp->out_if[interface].priv = private_data;
+	mdp->out_if[interface].dma_mask = dma_mask;
+	mdp->out_if[interface].dma_start = dma_start;
+	mdp->out_if[interface].dma_cb = NULL;
+
+done:
+	spin_unlock_irqrestore(&mdp->lock, flags);
+	return ret;
+}
+
+int mdp_out_if_req_irq(struct mdp_device *mdp_dev, int interface,
+		       uint32_t mask, struct msmfb_callback *cb)
+{
+	struct mdp_info *mdp = container_of(mdp_dev, struct mdp_info, mdp_dev);
+	unsigned long flags;
+	int ret = 0;
+
+	if (interface < 0 || interface >= MSM_MDP_NUM_INTERFACES) {
+		pr_err("%s: invalid interface (%d)\n", __func__, interface);
+		BUG();
+	} else if (!mdp->out_if[interface].registered) {
+		pr_err("%s: interface (%d) not registered\n", __func__,
+		       interface);
+		BUG();
+	}
+
+	spin_lock_irqsave(&mdp->lock, flags);
+
+	if (mask) {
+		ret = locked_enable_mdp_irq(mdp, mask);
+		if (ret) {
+			pr_err("%s: busy\n", __func__);
+			goto done;
+		}
+		mdp->out_if[interface].irq_mask = mask;
+		mdp->out_if[interface].irq_cb = cb;
+	} else {
+		locked_disable_mdp_irq(mdp, mask);
+		mdp->out_if[interface].irq_mask = 0;
+		mdp->out_if[interface].irq_cb = NULL;
+	}
+
+done:
+	spin_unlock_irqrestore(&mdp->lock, flags);
+	return ret;
+}
+
 int register_mdp_client(struct class_interface *cint)
 {
 	if (!mdp_class) {
@@ -543,7 +597,6 @@ void mdp_hw_init(struct mdp_info *mdp)
 
 int mdp_probe(struct platform_device *pdev)
 {
-	struct msm_mdp_platform_data *pdata = pdev->dev.platform_data;
 	struct resource *resource;
 	int ret;
 	struct mdp_info *mdp;
@@ -580,6 +633,11 @@ int mdp_probe(struct platform_device *pdev)
 	mdp->mdp_dev.blit = mdp_blit;
 	mdp->mdp_dev.set_grp_disp = mdp_set_grp_disp;
 
+	ret = mdp_out_if_register(&mdp->mdp_dev, MSM_MDDI_PMDH_INTERFACE, mdp,
+				  MDP_DMA_P_DONE, mdp_dma_to_mddi);
+	if (ret)
+		goto error_mddi_pmdh_register;
+
 	mdp->clk = clk_get(&pdev->dev, "mdp_clk");
 	if (IS_ERR(mdp->clk)) {
 		printk(KERN_INFO "mdp: failed to get mdp clk");
@@ -606,21 +664,15 @@ int mdp_probe(struct platform_device *pdev)
 	if (ret)
 		goto error_device_register;
 
-	if (pdata && pdata->lcdc_data) {
-		ret = mdp_lcdc_init(mdp, pdev);
-		if (ret)
-			goto error_lcdc_init;
-	}
 	return 0;
 
-error_lcdc_init:
-	device_unregister(&mdp->mdp_dev.dev);
 error_device_register:
 	free_irq(mdp->irq, mdp);
 error_request_irq:
+error_mddi_pmdh_register:
 	iounmap(mdp->base);
-error_get_irq:
 error_ioremap:
+error_get_irq:
 	kfree(mdp);
 	return ret;
 }

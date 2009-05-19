@@ -34,10 +34,12 @@ struct msmfb_callback {
 };
 
 enum {
-	MSM_MDDI_PMDH_INTERFACE,
+	MSM_MDDI_PMDH_INTERFACE = 0,
 	MSM_MDDI_EMDH_INTERFACE,
 	MSM_EBI2_INTERFACE,
 	MSM_LCDC_INTERFACE,
+
+	MSM_MDP_NUM_INTERFACES = MSM_LCDC_INTERFACE + 1,
 };
 
 #define MSMFB_CAP_PARTIAL_UPDATES	(1 << 0)
@@ -111,7 +113,7 @@ struct msm_mddi_platform_data {
 	} client_platform_data[];
 };
 
-struct msm_lcdc_panel_info {
+struct msm_lcdc_timing {
 	unsigned int clk_rate;		/* dclk freq */
 	unsigned int hsync_pulse_width;	/* in dclks */
 	unsigned int hsync_back_porch;	/* in dclks */
@@ -127,23 +129,26 @@ struct msm_lcdc_panel_info {
 	unsigned int den_act_low:1;
 };
 
-struct msm_lcdc_platform_data {
-	int (*blank)(void);
-	int (*unblank)(void);
-	struct msm_lcdc_panel_info panel_info;
-	struct msm_fb_data fb_data;
-	struct resource *fb_resource;
+struct msm_lcdc_panel_ops {
+	int	(*init)(struct msm_lcdc_panel_ops *);
+	int	(*uninit)(struct msm_lcdc_panel_ops *);
+	int	(*blank)(struct msm_lcdc_panel_ops *);
+	int	(*unblank)(struct msm_lcdc_panel_ops *);
 };
 
-struct msm_mdp_platform_data {
-	struct msm_lcdc_platform_data *lcdc_data;
+struct msm_lcdc_platform_data {
+	struct msm_lcdc_panel_ops	*panel_ops;
+	struct msm_lcdc_timing		*timing;
+	int				fb_id;
+	struct msm_fb_data		*fb_data;
+	struct resource			*fb_resource;
 };
 
 struct mdp_blit_req;
 struct fb_info;
 struct mdp_device {
 	struct device dev;
-	void (*dma)(struct mdp_device *mpd, uint32_t addr,
+	void (*dma)(struct mdp_device *mdp, uint32_t addr,
 		    uint32_t stride, uint32_t w, uint32_t h, uint32_t x,
 		    uint32_t y, struct msmfb_callback *callback, int interface);
 	void (*dma_wait)(struct mdp_device *mdp, int interface);

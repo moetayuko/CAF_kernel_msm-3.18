@@ -16,43 +16,46 @@
 #define _MDP_HW_H_
 
 #include <linux/platform_device.h>
+#include <linux/wait.h>
 #include <mach/msm_iomap.h>
 #include <mach/msm_fb.h>
 
-struct mdp_lcdc;
+typedef void (*mdp_dma_start_func_t)(void *private_data, uint32_t addr,
+				     uint32_t stride, uint32_t width,
+				     uint32_t height, uint32_t x, uint32_t y);
+
+struct mdp_out_interface {
+	uint32_t		registered:1;
+	void			*priv;
+
+	/* If the interface client wants to get DMA_DONE events */
+	uint32_t		dma_mask;
+	mdp_dma_start_func_t	dma_start;
+
+	struct msmfb_callback	*dma_cb;
+	wait_queue_head_t	dma_waitqueue;
+
+	/* If the interface client wants to be notified of non-DMA irqs,
+	 * e.g. LCDC/TV-out frame start */
+	uint32_t		irq_mask;
+	struct msmfb_callback	*irq_cb;
+};
+
 struct mdp_info {
 	spinlock_t lock;
-
 	struct mdp_device mdp_dev;
 	char* __iomem base;
 	int irq;
 	struct clk *clk;
-
-	struct mdp_lcdc *lcdc;
+	struct mdp_out_interface out_if[MSM_MDP_NUM_INTERFACES];
 };
 
-struct mdp_lcdc {
-#ifdef CONFIG_FB_MSM_LCDC
-	struct mdp_info *mdp;
-	struct clk *pclk;
-	struct clk *pad_pclk;
-	struct msm_panel_data panel_data;
-	struct platform_device pdev;
-	struct msm_lcdc_platform_data *pdata;
-	uint32_t fb_start;
+extern int mdp_out_if_register(struct mdp_device *mdp_dev, int interface,
+			       void *private_data, uint32_t dma_mask,
+			       mdp_dma_start_func_t dma_start);
 
-	struct {
-		unsigned int hsync_ctl;
-		unsigned int vsync_period;
-		unsigned int vsync_pulse_width;
-		unsigned int display_hctl;
-		unsigned int display_vstart;
-		unsigned int display_vend;
-		unsigned int hsync_skew;
-	} parms;
-#endif /* CONFIG_FB_MSM_LCDC */
-};
-
+extern int mdp_out_if_req_irq(struct mdp_device *mdp_dev, int interface,
+			      uint32_t mask, struct msmfb_callback *cb);
 
 struct mdp_blit_req;
 struct mdp_device;
@@ -60,18 +63,6 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 		 struct file *src_file, unsigned long src_start,
 		 unsigned long src_len, struct file *dst_file,
 		 unsigned long dst_start, unsigned long dst_len);
-
-/* LCDC functions */
-struct platform_device;
-#if defined(CONFIG_FB_MSM_LCDC)
-int mdp_lcdc_init(struct mdp_info *, struct platform_device *);
-int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc);
-#else
-inline static int
-mdp_lcdc_init(struct mdp_info *mdp, struct platform_device *pdev) { return 0; }
-
-inline static int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc) { return 0; }
-#endif
 
 #define mdp_writel(mdp, value, offset) writel(value, mdp->base + offset)
 #define mdp_readl(mdp, offset) readl(mdp->base + offset)
@@ -105,6 +96,8 @@ inline static int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc) { return 0; }
 #define MDP_SECONDARY_VSYNC_OUT_CTRL     ( 0x00084)
 #define MDP_EXTERNAL_VSYNC_OUT_CTRL      ( 0x00088)
 #define MDP_VSYNC_CTRL                   ( 0x0008c)
+#define MDP_MDDI_PARAM_WR_SEL            ( 0x00090)
+#define MDP_MDDI_PARAM                   ( 0x00094)
 #define MDP_CGC_EN                       ( 0x00100)
 #define MDP_CMD_STATUS                   ( 0x10008)
 #define MDP_PROFILE_EN                   ( 0x10010)
@@ -203,6 +196,7 @@ inline static int mdp_lcdc_frame_start_isr(struct mdp_lcdc *lcdc) { return 0; }
 #define MDP_TEST_CAPTURED_DCLK           ( 0xd0210)
 #define MDP_TEST_MISR_CAPT_VAL_DCLK      ( 0xd0214)
 
+#define MDP_DMA_P_START                  ( 0x00044)
 #define MDP_DMA_P_CONFIG                 ( 0x90000)
 #define MDP_DMA_P_SIZE                   ( 0x90004)
 #define MDP_DMA_P_IBUF_ADDR              ( 0x90008)
