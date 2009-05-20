@@ -30,7 +30,7 @@
 
 static struct wake_lock vbus_wake_lock;
 
-#define TRACE_BATT 0
+#define TRACE_BATT 1
 
 #if TRACE_BATT
 #include <linux/rtc.h>
@@ -71,11 +71,15 @@ tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec); \
  *  ISET (CPLD MISC2 bit[1]) is move to PMIC (MPP_13). */
 #define GPIO_SAPPHIRE_USB_ID	30
 
+#if !defined(CONFIG_MACH_FIRESTONE)
 #define GPIO_BATTERY_DETECTION		21
 #define GPIO_BATTERY_CHARGER_EN		128
-
-/* Charge current selection */
 #define GPIO_BATTERY_CHARGER_CURRENT	129
+#else
+#define GPIO_BATTERY_DETECTION		39
+#define GPIO_BATTERY_CHARGER_EN		22
+#define GPIO_BATTERY_CHARGER_CURRENT	16
+#endif
 
 typedef enum {
 	DISABLE = 0,
