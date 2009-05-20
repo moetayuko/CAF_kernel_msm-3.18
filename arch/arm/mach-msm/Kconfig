@@ -118,7 +118,7 @@ config HTC_HEADSET
 	 debugger, but not with serial console.
 
 config TROUT_BATTCHG
-	depends on MACH_TROUT && POWER_SUPPLY
+	depends on MSM_ONCRPCROUTER && POWER_SUPPLY
 	default y
 	bool "Trout battery / charger driver"
 
