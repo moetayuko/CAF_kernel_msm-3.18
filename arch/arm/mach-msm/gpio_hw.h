@@ -33,7 +33,7 @@
 #define GPIO1_REG(off) (MSM_GPIO1_BASE + 0x800 + (off))
 #define GPIO2_REG(off) (MSM_GPIO2_BASE + 0xC00 + (off))
 
-#if defined(CONFIG_ARCH_MSM_ARM11)
+#if defined(CONFIG_ARCH_MSM7X00A)
 
 /* output value */
 #define GPIO_OUT_0         GPIO1_REG(0x00)  /* gpio  15-0  */
@@ -101,7 +101,7 @@
 
 #endif
 
-#if defined(CONFIG_ARCH_MSM_SCORPION)
+#if defined(CONFIG_ARCH_QSD8X50)
 /* output value */
 #define GPIO_OUT_0         GPIO1_REG(0x00)  /* gpio  15-0   */
 #define GPIO_OUT_1         GPIO2_REG(0x00)  /* gpio  42-16  */
@@ -130,7 +130,7 @@
 #define GPIO_IN_4          GPIO1_REG(0x5C)
 #define GPIO_IN_5          GPIO1_REG(0x60)
 #define GPIO_IN_6          GPIO1_REG(0x64)
-#define GPIO_IN_7          GPIO1_REG(0x6C)
+#define GPIO_IN_7          GPIO1_REG(0x68)
 
 /* same pin map as above, 1=edge 0=level interrup */
 #define GPIO_INT_EDGE_0    GPIO1_REG(0x70)
