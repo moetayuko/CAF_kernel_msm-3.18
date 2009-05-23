@@ -7,6 +7,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio_func.h>
+#include <linux/resource.h>
 
 struct embedded_sdio_data {
         struct sdio_cis cis;
