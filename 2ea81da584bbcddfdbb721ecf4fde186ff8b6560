@@ -104,6 +104,23 @@
     },
     {
       "key": {
+        "uuid": "AAAAVX////k\u003d",
+        "filename": "arch/arm/mach-msm/qdsp5/adsp_new.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 100,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-05-28T19:26:29Z",
+      "side": 1,
+      "message": "No, the image is set when we setup the DSP.  I still added a BUG_ON() though.",
+      "revId": "2ea81da584bbcddfdbb721ecf4fde186ff8b6560",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAU3///9o\u003d",
         "filename": "arch/arm/mach-msm/qdsp5/adsp_new.c",
         "patchSetId": 1
@@ -115,6 +132,23 @@
       "writtenOn": "2009-05-28T08:02:36Z",
       "side": 1,
       "message": "potentially spinning for \u003e\u003d 1ms while holding the spinlock is probably not a good idea.",
+      "revId": "2ea81da584bbcddfdbb721ecf4fde186ff8b6560",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAVX////g\u003d",
+        "filename": "arch/arm/mach-msm/qdsp5/adsp_new.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 459,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-05-28T19:26:29Z",
+      "side": 1,
+      "message": "Not a good idea, but we have to do it, per Qualcomm\u0027s instructions.  This is the same code as in adsp.c",
       "revId": "2ea81da584bbcddfdbb721ecf4fde186ff8b6560",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
