@@ -1,0 +1,106 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAU3///+M\u003d",
+        "filename": "arch/arm/mach-msm/include/mach/msm_rpcrouter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 116,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "typecasting to unit16_t is kinda weird.. ((minor) \u0026 0xffff) somehow feels more correct.\n\nAlso, surround macro arg usage with ()",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAU3///+Y\u003d",
+        "filename": "arch/arm/mach-msm/smd_rpcrouter.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 438,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "define a RPC_ROUTER_STRICT_SERVER_CREATE or something like that at the top and use that instead of 0?",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAU3///+U\u003d",
+        "filename": "arch/arm/mach-msm/smd_rpcrouter.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 983,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "stray \u003ctab\u003e before Ignore",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAU3///+Q\u003d",
+        "filename": "arch/arm/mach-msm/smd_rpcrouter.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1144,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "you can just return -1 here since you return from inside the loop when you find something/",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAU3///+g\u003d",
+        "filename": "arch/arm/mach-msm/smd_rpcrouter_device.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 256,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "should that be RPC_VERSION_MODE_MASK?",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAU3///+c\u003d",
+        "filename": "arch/arm/mach-msm/smd_rpcrouter_device.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 259,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-05-28T06:21:22Z",
+      "side": 1,
+      "message": "RPC_VERSION_MAJOR_MASK (i.e. 0x0fff0000) instead of 0xffff0000 ?",
+      "revId": "fb2bdb702ae5a18182008f4cebd0dee3026d8c82",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
