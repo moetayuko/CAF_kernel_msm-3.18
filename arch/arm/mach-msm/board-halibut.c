@@ -20,6 +20,7 @@
 #include <linux/input.h>
 #include <linux/io.h>
 #include <linux/delay.h>
+#include <linux/bootmem.h>
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
@@ -32,12 +33,31 @@
 #include <mach/irqs.h>
 #include <mach/board.h>
 #include <mach/msm_iomap.h>
+#include <mach/msm_hsusb.h>
 
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/i2c.h>
+#include <linux/android_pmem.h>
+
+#ifdef CONFIG_USB_FUNCTION
+#include <linux/usb/mass_storage_function.h>
+#endif
+#ifdef CONFIG_USB_ANDROID
+#include <linux/usb/android.h>
+#endif
 
 #include "devices.h"
+
+#define MSM_SMI_BASE            0x100000
+#define MSM_SMI_SIZE            0x800000
+#define MSM_PMEM_GPU0_BASE      MSM_SMI_BASE
+#define MSM_PMEM_GPU0_SIZE      0x800000
+
+#define MSM_PMEM_MDP_SIZE       0x800000
+#define MSM_PMEM_ADSP_SIZE      0x800000
+#define MSM_PMEM_GPU1_SIZE      0x800000
+#define MSM_FB_SIZE             0x800000
 
 static struct resource smc91x_resources[] = {
 	[0] = {
@@ -89,6 +109,139 @@ static struct platform_device halibut_snd = {
 	},
 };
 
+static struct android_pmem_platform_data android_pmem_pdata = {
+        .name = "pmem",
+        .no_allocator = 0,
+        .cached = 1,
+};
+
+static struct android_pmem_platform_data android_pmem_adsp_pdata = {
+        .name = "pmem_adsp",
+        .no_allocator = 0,
+        .cached = 0,
+};
+
+static struct android_pmem_platform_data android_pmem_gpu0_pdata = {
+        .name = "pmem_gpu0",
+        .start = MSM_PMEM_GPU0_BASE,
+        .size = MSM_PMEM_GPU0_SIZE,
+        .no_allocator = 1,
+        .cached = 0,
+};
+
+static struct android_pmem_platform_data android_pmem_gpu1_pdata = {
+        .name = "pmem_gpu1",
+        .no_allocator = 1,
+        .cached = 0,
+};
+
+static struct platform_device android_pmem_device = {
+        .name = "android_pmem",
+        .id = 0,
+        .dev = { .platform_data = &android_pmem_pdata },
+};
+
+static struct platform_device android_pmem_adsp_device = {
+        .name = "android_pmem",
+        .id = 1,
+        .dev = { .platform_data = &android_pmem_adsp_pdata },
+};
+
+static struct platform_device android_pmem_gpu0_device = {
+        .name = "android_pmem",
+        .id = 2,
+        .dev = { .platform_data = &android_pmem_gpu0_pdata },
+};
+
+static struct platform_device android_pmem_gpu1_device = {
+        .name = "android_pmem",
+        .id = 3,
+        .dev = { .platform_data = &android_pmem_gpu1_pdata },
+};
+
+
+#ifdef CONFIG_USB_FUNCTION
+static char *halibut_usb_functions[] = {
+#if defined(CONFIG_USB_FUNCTION_MASS_STORAGE) || defined(CONFIG_USB_FUNCTION_UMS)
+"usb_mass_storage",
+#endif
+#ifdef CONFIG_USB_FUNCTION_ADB
+"adb",
+#endif
+};
+
+static struct msm_hsusb_product halibut_usb_products[] = {
+{
+.product_id     = 0x0c01,
+.functions      = 0x00000001, /* "usb_mass_storage" only */
+},
+{
+.product_id     = 0x0c02,
+.functions      = 0x00000003, /* "usb_mass_storage" and "adb" */
+},
+};
+#endif
+
+static int halibut_phy_init_seq[] = { 0x1D, 0x0D, 0x1D, 0x10, -1 };
+
+static struct msm_hsusb_platform_data msm_hsusb_pdata = {
+//.phy_reset= trout_phy_reset,
+.phy_init_seq= halibut_phy_init_seq,
+#ifdef CONFIG_USB_FUNCTION
+.vendor_id= 0x18d1,
+.product_id= 0x0c02,
+.version= 0x0100,
+.product_name= "Halibut",
+.serial_number= "42",
+.manufacturer_name = "Qualcomm",
+
+.functions = halibut_usb_functions,
+.num_functions = ARRAY_SIZE(halibut_usb_functions),
+.products  = halibut_usb_products,
+.num_products = ARRAY_SIZE(halibut_usb_products),
+#endif
+};
+
+#ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
+static struct usb_mass_storage_platform_data mass_storage_pdata = {
+.nluns= 1,
+.buf_size= 16384,
+.vendor= "Qualcomm",
+.product= "Halibut",
+.release= 0x0100,
+};
+
+static struct platform_device usb_mass_storage_device = {
+.name= "usb_mass_storage",
+.id= -1,
+.dev= {
+.platform_data = &mass_storage_pdata,
+},
+};
+#endif
+
+#ifdef CONFIG_USB_ANDROID
+static struct android_usb_platform_data android_usb_pdata = {
+.vendor_id= 0x18d1,
+.product_id= 0x0c01,
+.adb_product_id= 0x0c02,
+.version= 0x0100,
+.serial_number= "42",
+.product_name= "Halibutdroid",
+.manufacturer_name = "Qualcomm",
+.nluns = 1,
+};
+
+static struct platform_device android_usb_device = {
+.name= "android_usb",
+.id= -1,
+.dev= {
+.platform_data = &android_usb_pdata,
+},
+};
+#endif
+
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart3,
@@ -96,9 +249,19 @@ static struct platform_device *devices[] __initdata = {
 	&msm_device_smd,
 	&msm_device_nand,
 	&msm_device_hsusb,
+#ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
+	&usb_mass_storage_device,
+#endif
+#ifdef CONFIG_USB_ANDROID
+	&android_usb_device,
+#endif
 	&msm_device_i2c,
 	&smc91x_device,
 	&halibut_snd,
+        &android_pmem_device,
+        &android_pmem_adsp_device,
+        &android_pmem_gpu0_device,
+        &android_pmem_gpu1_device,
 };
 
 extern struct sys_timer msm_timer;
@@ -119,15 +282,52 @@ static struct msm_acpu_clock_platform_data halibut_clock_data = {
 void msm_serial_debug_init(unsigned int base, int irq,
 				struct device *clk_device, int signal_irq);
 
+static void __init msm_halibut_allocate_memory_regions(void)
+{
+        void *addr, *addr_1m_aligned;
+        unsigned long size;
+
+        size = MSM_PMEM_MDP_SIZE;
+        addr = alloc_bootmem(size);
+        android_pmem_pdata.start = __pa(addr);
+        android_pmem_pdata.size = size;
+        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
+               "for pmem\n", size, addr, __pa(addr));
+
+        size = MSM_PMEM_ADSP_SIZE;
+        addr = alloc_bootmem(size);
+        android_pmem_adsp_pdata.start = __pa(addr);
+        android_pmem_adsp_pdata.size = size;
+        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
+               "for adsp pmem\n", size, addr, __pa(addr));
+
+        /* The GPU1 area must be aligned to a 1M boundary */
+        /* XXX For now allocate an extra 1M, use the aligned part, */
+	/* waste the extra memory */
+        size = MSM_PMEM_GPU1_SIZE + 0x100000 - PAGE_SIZE;
+        addr = alloc_bootmem(size);
+        addr_1m_aligned = (void *)(((unsigned int)addr + 0x100000) &
+                                   0xfff00000);
+        size = MSM_PMEM_GPU1_SIZE;
+        android_pmem_gpu1_pdata.start = __pa(addr_1m_aligned);
+        android_pmem_gpu1_pdata.size = size;
+        printk(KERN_INFO "allocating %lu bytes at %p (%lx physical)"
+               "for gpu1 pmem\n", size, addr_1m_aligned,
+               __pa(addr_1m_aligned));
+}
+
 static void __init halibut_init(void)
 {
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	msm_serial_debug_init(MSM_UART3_PHYS, INT_UART3,
 			      &msm_device_uart3.dev, 1);
 #endif
+	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_acpu_clock_init(&halibut_clock_data);
+	msm_halibut_allocate_memory_regions();
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
+	msm_hsusb_set_vbus_state(1);
 }
 
 static void __init halibut_fixup(struct machine_desc *desc, struct tag *tags,
