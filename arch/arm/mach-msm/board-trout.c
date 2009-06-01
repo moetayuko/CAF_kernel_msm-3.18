@@ -285,10 +285,16 @@ static struct i2c_board_info i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("pca963x", 0x62),
 	},
+#if defined(CONFIG_MSM_CAMERA) && defined(CONFIG_MT9T013)
+	{
+		I2C_BOARD_INFO("mt9t013", 0x6C),
+	},
+#endif
+#ifdef CONFIG_SENSORS_MT9T013
 	{
 		I2C_BOARD_INFO("mt9t013", 0x6C >> 1),
-		/* .irq = TROUT_GPIO_TO_INT(TROUT_GPIO_CAM_BTN_STEP1_N), */
 	},
+#endif
 };
 
 static struct timed_gpio timed_gpios[] = {
@@ -411,7 +417,37 @@ static void trout_phy_reset(void)
 
 static void config_camera_on_gpios(void);
 static void config_camera_off_gpios(void);
-static struct msm_camera_device_platform_data msm_camera_device = {
+
+#ifdef CONFIG_MSM_CAMERA
+static struct msm_camera_device_platform_data msm_camera_device_data = {
+        .camera_gpio_on  = config_camera_on_gpios,
+        .camera_gpio_off = config_camera_off_gpios,
+        .ioext.mdcphy = MSM_MDC_PHYS,
+        .ioext.mdcsz  = MSM_MDC_SIZE,
+        .ioext.appphy = MSM_CLK_CTL_PHYS,
+        .ioext.appsz  = MSM_CLK_CTL_SIZE,
+};
+
+#ifdef CONFIG_MT9T013
+static struct msm_camera_sensor_info msm_camera_sensor_mt9t013_data = {
+	.sensor_name    = "mt9t013",
+	.sensor_reset   = 108,
+	.sensor_pwd     = 85,
+	.vcm_pwd        = TROUT_GPIO_VCM_PWDN,
+	.pdata          = &msm_camera_device_data
+};
+
+static struct platform_device msm_camera_sensor_mt9t013 = {
+	.name           = "msm_camera_mt9t013",
+	.dev            = {
+		.platform_data = &msm_camera_sensor_mt9t013_data,
+	},
+};
+#endif
+#endif
+
+#ifdef CONFIG_SENSORS_MT9T013
+static struct msm_camera_legacy_device_platform_data msm_camera_device_mt9t013 = {
 	.sensor_reset	= 108,
 	.sensor_pwd	= 85,
 	.vcm_pwd	= TROUT_GPIO_VCM_PWDN,
@@ -420,11 +456,12 @@ static struct msm_camera_device_platform_data msm_camera_device = {
 };
 
 static struct platform_device trout_camera = {
-	.name		= "camera",
-	.dev		= { 
-		.platform_data = &msm_camera_device,
+	.name           = "camera",
+	.dev            = {
+		.platform_data = &msm_camera_device_mt9t013,
 	},
 };
+#endif
 
 static struct pwr_sink trout_pwrsink_table[] = {
 	{
@@ -599,7 +636,15 @@ static struct platform_device *devices[] __initdata = {
 	&android_leds,
 	&sd_door_switch,
 	&android_timed_gpios,
+#ifdef CONFIG_SENSORS_MT9T013
 	&trout_camera,
+#endif
+#ifdef CONFIG_MT9T013
+	&msm_camera_sensor_mt9t013,
+#endif
+#ifdef CONFIG_SENSORS_MT9T013
+	&trout_camera,
+#endif
 	&trout_rfkill,
 #ifdef CONFIG_WIFI_CONTROL_FUNC
 	&trout_wifi,
