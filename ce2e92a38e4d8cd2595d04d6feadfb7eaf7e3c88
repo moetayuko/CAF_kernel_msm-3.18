@@ -1,0 +1,72 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWH///90\u003d",
+        "filename": "arch/arm/mach-msm/board-halibut-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 41,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-02T19:18:13Z",
+      "side": 1,
+      "message": "replace the 0 with something like   HALIBUT_DO_MDDI_POWER_CLIENT, if you intend to selectively turn it on.",
+      "revId": "ce2e92a38e4d8cd2595d04d6feadfb7eaf7e3c88",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWH///9s\u003d",
+        "filename": "arch/arm/mach-msm/board-halibut.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 164,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-02T19:18:13Z",
+      "side": 1,
+      "message": "between lines 163 and 239 there quite a lot of missing leading tabs in struct/array definitions.",
+      "revId": "ce2e92a38e4d8cd2595d04d6feadfb7eaf7e3c88",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWH///94\u003d",
+        "filename": "arch/arm/mach-msm/board-halibut.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 290,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-02T19:18:13Z",
+      "side": 1,
+      "message": "this assignment (and ones similar to it below) are unnecessary.",
+      "revId": "ce2e92a38e4d8cd2595d04d6feadfb7eaf7e3c88",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWH///9w\u003d",
+        "filename": "arch/arm/mach-msm/board-trout-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 573,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-02T19:18:13Z",
+      "side": 1,
+      "message": "it\u0027s a good change, not related to halibut :( I guess you can leave it.",
+      "revId": "ce2e92a38e4d8cd2595d04d6feadfb7eaf7e3c88",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
