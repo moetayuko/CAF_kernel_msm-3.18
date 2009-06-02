@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWH///9g\u003d",
+        "filename": "arch/arm/mach-msm/board-halibut.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 123,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-02T19:36:54Z",
+      "side": 1,
+      "message": "s/spaces/tabs/",
+      "revId": "1bb027c2064e21ba0944f06a2927e7ecc4c54ada",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
