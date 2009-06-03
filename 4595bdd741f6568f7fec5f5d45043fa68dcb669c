@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWX///5k\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 1303,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T22:19:53Z",
+      "side": 1,
+      "message": "Are you sure this is safe to do without a lock around the entire thing? list_empty_careful has very limited operational safety.",
+      "revId": "4595bdd741f6568f7fec5f5d45043fa68dcb669c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
