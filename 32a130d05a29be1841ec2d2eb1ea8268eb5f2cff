@@ -1,0 +1,72 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWX///74\u003d",
+        "filename": "drivers/media/video/Kconfig",
+        "patchSetId": 4
+      },
+      "lineNbr": 942,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T08:31:19Z",
+      "side": 1,
+      "message": "string is wrong. It should reflect the _DEBUG part.",
+      "revId": "32a130d05a29be1841ec2d2eb1ea8268eb5f2cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWX///70\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 700,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T08:31:19Z",
+      "side": 1,
+      "message": "why not do if (!pp_en) break; and then not have the extra level of indent? It would make the code more readable. We can also do this in a separate commit if you like.",
+      "revId": "32a130d05a29be1841ec2d2eb1ea8268eb5f2cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWX///7s\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 1150,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T08:31:19Z",
+      "side": 1,
+      "message": "another case where we could do the error check first, then jump to put_done, and have the meat of the function not have the extra level of indent.",
+      "revId": "32a130d05a29be1841ec2d2eb1ea8268eb5f2cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWX///7w\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 1167,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T08:31:19Z",
+      "side": 1,
+      "message": "get rid of the trailing slash",
+      "revId": "32a130d05a29be1841ec2d2eb1ea8268eb5f2cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
