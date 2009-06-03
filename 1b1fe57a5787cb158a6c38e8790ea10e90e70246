@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWH///6s\u003d",
+        "filename": "arch/arm/mach-msm/board-trout.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 639,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T00:58:18Z",
+      "side": 1,
+      "message": "seems like a bad merge. trout_camera is being added twice.",
+      "revId": "1b1fe57a5787cb158a6c38e8790ea10e90e70246",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWH///6I\u003d",
+        "filename": "drivers/media/video/Kconfig",
+        "patchSetId": 2
+      },
+      "lineNbr": 934,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T00:58:18Z",
+      "side": 1,
+      "message": "you should at least make this be dependent on ARCH_MSM (or whatever the right thingie is)",
+      "revId": "1b1fe57a5787cb158a6c38e8790ea10e90e70246",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
