@@ -4,7 +4,7 @@
 
 #include "mt9d112.h"
 
-struct register_address_value_pair_t
+struct register_address_value_pair
 preview_snapshot_mode_reg_settings_array[] = {
 	{0x338C, 0x2703},
 	{0x3390, 800},    /* Output Width (P) = 640 */
@@ -110,7 +110,7 @@ preview_snapshot_mode_reg_settings_array[] = {
 	{0x3390, 0x6408}, /* MODE_SPEC_EFFECTS(S) */
 };
 
-static struct register_address_value_pair_t
+static struct register_address_value_pair
 noise_reduction_reg_settings_array[] = {
 	{0x338C, 0xA76D},
 	{0x3390, 0x0003},

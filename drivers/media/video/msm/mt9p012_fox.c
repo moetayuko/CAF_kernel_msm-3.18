@@ -1063,12 +1063,12 @@ static int32_t mt9p012_set_sensor_mode(int mode, int res)
 
 int mt9p012_sensor_config(void __user *argp)
 {
-	struct sensor_cfg_data_t cdata;
+	struct sensor_cfg_data cdata;
 	int rc = 0;
 
 	if (copy_from_user(&cdata,
 			(void *)argp,
-			sizeof(struct sensor_cfg_data_t)))
+			sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 
 	down(&mt9p012_sem);
@@ -1080,7 +1080,7 @@ int mt9p012_sensor_config(void __user *argp)
 				&(cdata.cfg.gfps.pictfps));
 
 		if (copy_to_user((void *)argp, &cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1089,7 +1089,7 @@ int mt9p012_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1098,7 +1098,7 @@ int mt9p012_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1107,7 +1107,7 @@ int mt9p012_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1116,7 +1116,7 @@ int mt9p012_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1126,7 +1126,7 @@ int mt9p012_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1174,7 +1174,7 @@ int mt9p012_sensor_config(void __user *argp)
 		cdata.max_steps = MT9P012_STEPS_NEAR_TO_CLOSEST_INF;
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1259,7 +1259,7 @@ static struct i2c_driver mt9p012_i2c_driver = {
 };
 
 static int mt9p012_sensor_probe(const struct msm_camera_sensor_info *info,
-				struct msm_sensor_ctrl_t *s)
+				struct msm_sensor_ctrl *s)
 {
 	int rc = i2c_add_driver(&mt9p012_i2c_driver);
 	if (rc < 0 || mt9p012_client == NULL) {

@@ -621,12 +621,12 @@ static int mt9d112_init_client(struct i2c_client *client)
 
 int mt9d112_sensor_config(void __user *argp)
 {
-	struct sensor_cfg_data_t cfg_data;
+	struct sensor_cfg_data cfg_data;
 	long   rc = 0;
 
 	if (copy_from_user(&cfg_data,
 			(void *)argp,
-			sizeof(struct sensor_cfg_data_t)))
+			sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 
 	/* down(&mt9d112_sem); */
@@ -715,7 +715,7 @@ static struct i2c_driver mt9d112_i2c_driver = {
 };
 
 static int mt9d112_sensor_probe(const struct msm_camera_sensor_info *info,
-				struct msm_sensor_ctrl_t *s)
+				struct msm_sensor_ctrl *s)
 {
 	int rc = i2c_add_driver(&mt9d112_i2c_driver);
 	if (rc < 0 || mt9d112_client == NULL) {
