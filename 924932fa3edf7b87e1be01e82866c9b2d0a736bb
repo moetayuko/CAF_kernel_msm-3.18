@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWH///5A\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 2
+      },
+      "lineNbr": 320,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T01:23:37Z",
+      "side": 1,
+      "message": "did you mean for this to be defaulting to \u0027n\u0027? the msm_defconfig shows it as disabled.",
+      "revId": "924932fa3edf7b87e1be01e82866c9b2d0a736bb",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
