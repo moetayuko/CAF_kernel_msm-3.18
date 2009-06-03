@@ -99,7 +99,7 @@ struct mt9t013_work_t {
 static struct  mt9t013_work_t *mt9t013_sensorw;
 static struct  i2c_client *mt9t013_client;
 
-struct mt9t013_ctrl_t {
+struct mt9t013_ctrl {
 	const struct msm_camera_sensor_info *sensordata;
 
 	int sensormode;
@@ -120,7 +120,7 @@ struct mt9t013_ctrl_t {
 };
 
 
-static struct mt9t013_ctrl_t *mt9t013_ctrl;
+static struct mt9t013_ctrl *mt9t013_ctrl;
 static DECLARE_WAIT_QUEUE_HEAD(mt9t013_wait_queue);
 DECLARE_MUTEX(mt9t013_sem);
 
@@ -1173,7 +1173,7 @@ int mt9t013_sensor_open_init(const struct msm_camera_sensor_info *data)
 {
 	int32_t  rc;
 
-	mt9t013_ctrl = kzalloc(sizeof(struct mt9t013_ctrl_t), GFP_KERNEL);
+	mt9t013_ctrl = kzalloc(sizeof(struct mt9t013_ctrl), GFP_KERNEL);
 	if (!mt9t013_ctrl) {
 		pr_err("mt9t013_init failed!\n");
 		rc = -ENOMEM;
@@ -1263,11 +1263,11 @@ static int32_t mt9t013_set_sensor_mode(int mode, int res)
 
 int mt9t013_sensor_config(void __user *argp)
 {
-	struct sensor_cfg_data_t cdata;
+	struct sensor_cfg_data cdata;
 	long   rc = 0;
 
 	if (copy_from_user(&cdata, (void *)argp,
-			sizeof(struct sensor_cfg_data_t)))
+			sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 
 	down(&mt9t013_sem);
@@ -1279,7 +1279,7 @@ int mt9t013_sensor_config(void __user *argp)
 				&(cdata.cfg.gfps.pictfps));
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1287,7 +1287,7 @@ int mt9t013_sensor_config(void __user *argp)
 		cdata.cfg.prevl_pf = mt9t013_get_prev_lines_pf();
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1295,7 +1295,7 @@ int mt9t013_sensor_config(void __user *argp)
 		cdata.cfg.prevp_pl = mt9t013_get_prev_pixels_pl();
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1303,7 +1303,7 @@ int mt9t013_sensor_config(void __user *argp)
 		cdata.cfg.pictl_pf = mt9t013_get_pict_lines_pf();
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1313,7 +1313,7 @@ int mt9t013_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1323,7 +1323,7 @@ int mt9t013_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1363,7 +1363,7 @@ int mt9t013_sensor_config(void __user *argp)
 		cdata.max_steps = MT9T013_TOTAL_STEPS_NEAR_TO_FAR;
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1446,7 +1446,7 @@ static struct i2c_driver mt9t013_i2c_driver = {
 
 static int mt9t013_sensor_probe(
 		const struct msm_camera_sensor_info *info,
-		struct msm_sensor_ctrl_t *s)
+		struct msm_sensor_ctrl *s)
 {
 	/* We expect this driver to match with the i2c device registered
 	 * in the board file immediately. */

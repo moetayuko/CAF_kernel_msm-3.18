@@ -20,10 +20,10 @@ struct mt9d112_i2c_reg_conf {
 	unsigned short mdelay_time;
 };
 
-struct mt9d112_reg_t {
-	const struct register_address_value_pair_t *prev_snap_reg_settings;
+struct mt9d112_reg {
+	const struct register_address_value_pair *prev_snap_reg_settings;
 	uint16_t prev_snap_reg_settings_size;
-	const struct register_address_value_pair_t *noise_reduction_reg_settings;
+	const struct register_address_value_pair *noise_reduction_reg_settings;
 	uint16_t noise_reduction_reg_settings_size;
 	const struct mt9d112_i2c_reg_conf *plltbl;
 	uint16_t plltbl_size;

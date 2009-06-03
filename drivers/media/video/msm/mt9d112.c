@@ -21,11 +21,11 @@
 #define  REG_MT9D112_STANDBY_CONTROL  0x3202
 #define  REG_MT9D112_MCU_BOOT         0x3386
 
-struct mt9d112_work_t {
+struct mt9d112_work {
 	struct work_struct work;
 };
 
-static struct  mt9d112_work_t *mt9d112_sensorw;
+static struct  mt9d112_work *mt9d112_sensorw;
 static struct  i2c_client *mt9d112_client;
 
 struct mt9d112_ctrl_t {
@@ -42,7 +42,7 @@ DECLARE_MUTEX(mt9d112_sem);
 /*=============================================================
 	EXTERNAL DECLARATIONS
 ==============================================================*/
-extern struct mt9d112_reg_t mt9d112_regs;
+extern struct mt9d112_reg mt9d112_regs;
 
 
 /*=============================================================*/
@@ -621,12 +621,12 @@ static int mt9d112_init_client(struct i2c_client *client)
 
 int mt9d112_sensor_config(void __user *argp)
 {
-	struct sensor_cfg_data_t cfg_data;
+	struct sensor_cfg_data cfg_data;
 	long   rc = 0;
 
 	if (copy_from_user(&cfg_data,
 			(void *)argp,
-			sizeof(struct sensor_cfg_data_t)))
+			sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 
 	/* down(&mt9d112_sem); */
@@ -678,7 +678,7 @@ static int mt9d112_i2c_probe(struct i2c_client *client,
 	}
 
 	mt9d112_sensorw =
-		kzalloc(sizeof(struct mt9d112_work_t), GFP_KERNEL);
+		kzalloc(sizeof(struct mt9d112_work), GFP_KERNEL);
 
 	if (!mt9d112_sensorw) {
 		rc = -ENOMEM;
@@ -715,7 +715,7 @@ static struct i2c_driver mt9d112_i2c_driver = {
 };
 
 static int mt9d112_sensor_probe(const struct msm_camera_sensor_info *info,
-				struct msm_sensor_ctrl_t *s)
+				struct msm_sensor_ctrl *s)
 {
 	int rc = i2c_add_driver(&mt9d112_i2c_driver);
 	if (rc < 0 || mt9d112_client == NULL) {

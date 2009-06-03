@@ -299,10 +299,10 @@ struct s5k3e2fx_ctrl_t {
 	uint16_t my_reg_gain;
 	uint32_t my_reg_line_count;
 
-	enum msm_s_resolution_t prev_res;
-	enum msm_s_resolution_t pict_res;
-	enum msm_s_resolution_t curr_res;
-	enum msm_s_test_mode_t  set_test;
+	enum msm_s_resolution prev_res;
+	enum msm_s_resolution pict_res;
+	enum msm_s_resolution curr_res;
+	enum msm_s_test_mode  set_test;
 };
 
 struct s5k3e2fx_i2c_reg_conf {
@@ -514,7 +514,7 @@ static struct i2c_driver s5k3e2fx_i2c_driver = {
 	},
 };
 
-static int32_t s5k3e2fx_test(enum msm_s_test_mode_t mo)
+static int32_t s5k3e2fx_test(enum msm_s_test_mode mo)
 {
 	int32_t rc = 0;
 
@@ -527,8 +527,8 @@ static int32_t s5k3e2fx_test(enum msm_s_test_mode_t mo)
 	return rc;
 }
 
-static int32_t s5k3e2fx_setting(enum msm_s_reg_update_t rupdate,
-	enum msm_s_setting_t rt)
+static int32_t s5k3e2fx_setting(enum msm_s_reg_update rupdate,
+	enum msm_s_setting rt)
 {
 	int32_t rc = 0;
 	uint16_t num_lperf;
@@ -1138,12 +1138,12 @@ static int32_t s5k3e2fx_move_focus(int direction, int32_t num_steps)
 
 static int s5k3e2fx_sensor_config(void __user *argp)
 {
-	struct sensor_cfg_data_t cdata;
+	struct sensor_cfg_data cdata;
 	long   rc = 0;
 
 	if (copy_from_user(&cdata,
 			(void *)argp,
-			sizeof(struct sensor_cfg_data_t)))
+			sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 
 	down(&s5k3e2fx_sem);
@@ -1155,7 +1155,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 			&(cdata.cfg.gfps.pictfps));
 
 		if (copy_to_user((void *)argp, &cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1164,7 +1164,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1173,7 +1173,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1182,7 +1182,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1191,7 +1191,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1201,7 +1201,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 
 		if (copy_to_user((void *)argp,
 				&cdata,
-				sizeof(struct sensor_cfg_data_t)))
+				sizeof(struct sensor_cfg_data)))
 			rc = -EFAULT;
 		break;
 
@@ -1259,7 +1259,7 @@ static int s5k3e2fx_sensor_config(void __user *argp)
 }
 
 static int s5k3e2fx_sensor_probe(const struct msm_camera_sensor_info *info,
-		struct msm_sensor_ctrl_t *s)
+		struct msm_sensor_ctrl *s)
 {
 	int rc = 0;
 
