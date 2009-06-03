@@ -1,0 +1,89 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn////Y\u003d",
+        "filename": "arch/arm/mach-msm/include/mach/camera.h",
+        "patchSetId": 3
+      },
+      "lineNbr": 31,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T23:58:28Z",
+      "side": 1,
+      "message": "typedef it so you don\u0027t have to do enum msm_queue_t all over the place.. This is one of the places where typedefs are ok ;)",
+      "revId": "d503613a8fa6837bb3e14fd28b7c43ad06787cb9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///+4\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe7x.h",
+        "patchSetId": 3
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T23:58:28Z",
+      "side": 1,
+      "message": "heh",
+      "revId": "d503613a8fa6837bb3e14fd28b7c43ad06787cb9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn////U\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 76,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T23:58:28Z",
+      "side": 1,
+      "message": "spurious semicolon",
+      "revId": "d503613a8fa6837bb3e14fd28b7c43ad06787cb9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn////I\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 1547,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T23:58:28Z",
+      "side": 1,
+      "message": "You probably want opencnt to be atomic_t, and use atomit_dec_and_test",
+      "revId": "d503613a8fa6837bb3e14fd28b7c43ad06787cb9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///+8\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 2044,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T23:58:28Z",
+      "side": 1,
+      "message": "huh?!",
+      "revId": "d503613a8fa6837bb3e14fd28b7c43ad06787cb9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
