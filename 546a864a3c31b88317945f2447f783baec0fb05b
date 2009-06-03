@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWX///7Y\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 377,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T09:13:20Z",
+      "side": 1,
+      "message": "i assume the userspace is aware of these changes since this patch is in the middle of the stack.",
+      "revId": "546a864a3c31b88317945f2447f783baec0fb05b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
