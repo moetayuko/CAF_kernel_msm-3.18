@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWH///40\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 2096,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T01:30:50Z",
+      "side": 1,
+      "message": "might as well add a DEFINE_MSM_FOPS or something :)",
+      "revId": "ed30f3fd6da06526babd7e1538adc1d38d4e5078",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
