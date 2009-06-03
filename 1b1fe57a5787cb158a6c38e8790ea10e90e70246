@@ -19,6 +19,23 @@
     },
     {
       "key": {
+        "uuid": "AAAAWH///4s\u003d",
+        "filename": "arch/arm/mach-msm/include/mach/camera.h",
+        "patchSetId": 2
+      },
+      "lineNbr": 52,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T01:32:16Z",
+      "side": 1,
+      "message": "ugh, _t implies that it\u0027s type, but its not. its a struct :( same goes for other struct \u003cfoo\u003e_t",
+      "revId": "1b1fe57a5787cb158a6c38e8790ea10e90e70246",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAWH///6I\u003d",
         "filename": "drivers/media/video/Kconfig",
         "patchSetId": 2
