@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWX///6A\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 1837,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T21:59:51Z",
+      "side": 1,
+      "message": "why the rc \u003c 0?  release_common always returns 0. Is the idea that at some point later you man have release_common fail, and leave the dev open?",
+      "revId": "bde46bccb095e58702e10f5f7760efccde4f203b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
