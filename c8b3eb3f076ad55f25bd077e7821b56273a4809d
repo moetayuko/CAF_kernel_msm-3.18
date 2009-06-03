@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn////8\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 1837,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-03T22:26:51Z",
+      "side": 1,
+      "message": "You did not modify the get_frame code to get rid of the kfree(qcmd-\u003ecommand). Bad things will ensue.",
+      "revId": "c8b3eb3f076ad55f25bd077e7821b56273a4809d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
