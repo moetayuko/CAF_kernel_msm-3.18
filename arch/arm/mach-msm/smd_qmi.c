@@ -566,10 +566,17 @@ static int qmi_network_up(struct qmi_ctxt *ctxt, char *apn)
 {
 	unsigned char data[96 + QMUX_OVERHEAD];
 	struct qmi_msg msg;
-	char *user;
-	char *pass;
+	char *auth_type = 0;
+	char *user = 0;
+	char *pass = 0;
 
-	for (user = apn; *user; user++) {
+	for (auth_type = apn; *auth_type; auth_type++) {
+		if (*auth_type == ' ') {
+			*auth_type++ = 0;
+			break;
+		}
+	}
+	for (user = auth_type; *user; user++) {
 		if (*user == ' ') {
 			*user++ = 0;
 			break;
@@ -592,10 +599,9 @@ static int qmi_network_up(struct qmi_ctxt *ctxt, char *apn)
 	ctxt->wds_txn_id += 2;
 
 	qmi_add_tlv(&msg, 0x14, strlen(apn), apn);
+	if (*auth_type)
+		qmi_add_tlv(&msg, 0x16, strlen(auth_type), auth_type);
 	if (*user) {
-		unsigned char x;
-		x = 3;
-		qmi_add_tlv(&msg, 0x16, 1, &x);
 		qmi_add_tlv(&msg, 0x17, strlen(user), user);
 		if (*pass)
 			qmi_add_tlv(&msg, 0x18, strlen(pass), pass);
