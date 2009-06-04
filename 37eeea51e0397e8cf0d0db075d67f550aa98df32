@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///+M\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 471,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T00:47:02Z",
+      "side": 1,
+      "message": "do you always want to wake up the config thread, even if queue is NULL?",
+      "revId": "37eeea51e0397e8cf0d0db075d67f550aa98df32",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///+I\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 512,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T00:47:02Z",
+      "side": 1,
+      "message": "bool",
+      "revId": "37eeea51e0397e8cf0d0db075d67f550aa98df32",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
