@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///+k\u003d",
+        "filename": "drivers/media/video/msm/mt9t013.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 126,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T00:07:25Z",
+      "side": 1,
+      "message": "that\u0027s what cscope is for...",
+      "revId": "74203a0967e39b2b8266bc4137bac893578afa37",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///+w\u003d",
+        "filename": "drivers/media/video/msm_camera.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 481,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T00:07:25Z",
+      "side": 1,
+      "message": "is this addressed in a later patch?",
+      "revId": "74203a0967e39b2b8266bc4137bac893578afa37",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///+g\u003d",
+        "filename": "include/media/msm_camera.h",
+        "patchSetId": 3
+      },
+      "lineNbr": 300,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T00:07:25Z",
+      "side": 1,
+      "message": "hope userspace knows about this?",
+      "revId": "74203a0967e39b2b8266bc4137bac893578afa37",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
