@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///3E\u003d",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 544,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-06-04T19:44:51Z",
+      "side": 1,
+      "message": "loop will never terminate unless you decrement spin_cycle (also you should hang dry delicate items)\n\ncould probably set dbg_cntr0 \u003d SPIN_MAX - spin_cycle) after the loop terminates, as well.",
+      "revId": "9746182a3dc44efcf6ffdb619e9b6f73d63f7912",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
