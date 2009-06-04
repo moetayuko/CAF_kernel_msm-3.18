@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///3M\u003d",
+        "filename": "arch/arm/mach-msm/smd_qmi.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 573,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-06-04T19:41:38Z",
+      "side": 1,
+      "message": "How about adding auth_type to the end, so it can remain backward compatible with the existing userspace code?",
+      "revId": "0f61bee5b55528511b1d2886d021c7690cef222f",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
