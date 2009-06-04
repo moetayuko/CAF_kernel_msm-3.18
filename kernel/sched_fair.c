@@ -71,6 +71,13 @@ unsigned int __read_mostly sysctl_sched_compat_yield;
  */
 unsigned int sysctl_sched_wakeup_granularity = 5000000UL;
 
+/*
+ * Scale sleeper bonus down by sysctl_sched_fair_sleeper_scale and limit the
+ * result to sysctl_sched_fair_sleeper_limit.
+ */
+unsigned int sysctl_sched_fair_sleeper_limit = 20000000ULL;
+unsigned int sysctl_sched_fair_sleeper_scale = 0;
+
 const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
 
 static const struct sched_class fair_sched_class;
@@ -664,6 +671,7 @@ static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
 	u64 vruntime = cfs_rq->min_vruntime;
+	u64 se_vruntime;
 
 	/*
 	 * The 'current' period is already promised to the current tasks,
@@ -676,8 +684,19 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 
 	if (!initial) {
 		/* sleeps upto a single latency don't count. */
+		se_vruntime = se->vruntime;
 		if (sched_feat(NEW_FAIR_SLEEPERS)) {
-			unsigned long thresh = sysctl_sched_latency;
+			unsigned long thresh = sysctl_sched_fair_sleeper_limit;
+			s64 delta;
+
+			/*
+			 * Limit the credit of short sleepers by
+			 * sysctl_sched_fair_sleeper_scale
+			 */
+			delta = vruntime - se_vruntime;
+			if (delta > 0)
+				se_vruntime += (delta *
+					sysctl_sched_fair_sleeper_scale) >> 32;
 
 			/*
 			 * Convert the sleeper threshold into virtual time.
@@ -693,7 +712,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		}
 
 		/* ensure we never gain time by being placed backwards. */
-		vruntime = max_vruntime(se->vruntime, vruntime);
+		vruntime = max_vruntime(se_vruntime, vruntime);
 	}
 
 	se->vruntime = vruntime;

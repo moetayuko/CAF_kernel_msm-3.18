@@ -1735,6 +1735,8 @@ extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sysctl_sched_shares_ratelimit;
 extern unsigned int sysctl_sched_shares_thresh;
+extern unsigned int sysctl_sched_fair_sleeper_limit;
+extern unsigned int sysctl_sched_fair_sleeper_scale;
 #ifdef CONFIG_SCHED_DEBUG
 extern unsigned int sysctl_sched_child_runs_first;
 extern unsigned int sysctl_sched_features;
