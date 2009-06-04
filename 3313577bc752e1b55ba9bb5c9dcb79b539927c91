@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///20\u003d",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 538,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-06-04T20:10:24Z",
+      "side": 1,
+      "message": "if you do --spin_cycle, you won\u0027t end up with spin_cycle \u003d -1 at the end of the loop.",
+      "revId": "3313577bc752e1b55ba9bb5c9dcb79b539927c91",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
