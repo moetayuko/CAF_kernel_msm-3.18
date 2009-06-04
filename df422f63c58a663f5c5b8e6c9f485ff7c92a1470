@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///7g\u003d",
+        "filename": "drivers/media/video/msm/mt9t013.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 828,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-04T02:15:46Z",
+      "side": 1,
+      "message": "doesn\u0027t belong in drivers",
+      "revId": "df422f63c58a663f5c5b8e6c9f485ff7c92a1470",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
