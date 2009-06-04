@@ -16,6 +16,23 @@
       "revId": "8cd6251600784fecb498d73cf91b46bc6c750026",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///3w\u003d",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 547,
+      "author": {
+        "id": 1001174
+      },
+      "writtenOn": "2009-06-04T19:12:04Z",
+      "side": 0,
+      "message": "The termination condition is actually the bug :). The correct points to terminate this loop is when the controller indicates there is no more data in the FIFO. We also terminate when we get to the end of an sg page and there are no more pages in the list.",
+      "revId": "8cd6251600784fecb498d73cf91b46bc6c750026",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
