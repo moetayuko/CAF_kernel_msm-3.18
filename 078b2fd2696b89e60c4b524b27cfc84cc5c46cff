@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///38\u003d",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 69,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-06-04T19:08:23Z",
+      "side": 1,
+      "message": "maybe use slightly more informative names?",
+      "revId": "078b2fd2696b89e60c4b524b27cfc84cc5c46cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///34\u003d",
+        "filename": "drivers/mmc/host/msm_sdcc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 528,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-06-04T19:08:23Z",
+      "side": 1,
+      "message": "might be worth a smaller spin count and dropping a udelay(1) in the retry loop.  arve may have a suggestions here?",
+      "revId": "078b2fd2696b89e60c4b524b27cfc84cc5c46cff",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
