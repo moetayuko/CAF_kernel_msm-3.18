@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAWn///0E\u003d",
+        "filename": "drivers/net/msm_rmnet.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 105,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-06-05T01:37:56Z",
+      "side": 1,
+      "message": "something loke restart_count would be more informative.",
+      "revId": "2eb4f18e8089ad826373b9eae102ba03f63dcd73",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAWn///0I\u003d",
+        "filename": "drivers/net/msm_rmnet.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 106,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-06-05T01:37:56Z",
+      "side": 1,
+      "message": "active_countdown would be a better name.",
+      "revId": "2eb4f18e8089ad826373b9eae102ba03f63dcd73",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
