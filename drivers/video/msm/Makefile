@@ -8,7 +8,11 @@ endif
 
 # MDP DMA/PPP engine
 #
-obj-y += mdp.o mdp_ppp.o mdp_ppp22.o
+obj-y += mdp.o mdp_ppp.o
+
+
+obj-$(CONFIG_MSM_MDP22) += mdp_ppp22.o
+obj-$(CONFIG_MSM_MDP31) += mdp_ppp31.o
 
 # MDDI interface
 #

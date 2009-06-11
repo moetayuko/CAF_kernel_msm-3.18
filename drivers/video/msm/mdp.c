@@ -31,21 +31,11 @@
 #include <linux/platform_device.h>
 
 #include "mdp_hw.h"
+#include "mdp_ppp.h"
 
 struct class *mdp_class;
 
 #define MDP_CMD_DEBUG_ACCESS_BASE (0x10000)
-
-/* color coefficient matrix for YUV -> RGB */
-static uint16_t mdp_default_ccs[] = {
-#ifdef CONFIG_MSM_MDP31
-	0x254, 0x000, 0x331, 0x254, 0xFF38, 0xFE61, 0x254, 0x409, 0x000,
-	0x110, 0x180, 0x180,
-#else
-	0x254, 0x000, 0x331, 0x254, 0xF38, 0xE61, 0x254, 0x409, 0x000,
-	0x010, 0x080, 0x080,
-#endif
-};
 
 static DECLARE_WAIT_QUEUE_HEAD(mdp_ppp_waitqueue);
 static unsigned int mdp_irq_mask;
@@ -129,7 +119,8 @@ static irqreturn_t mdp_isr(int irq, void *data)
 	status = mdp_readl(mdp, MDP_INTR_STATUS);
 	mdp_writel(mdp, status, MDP_INTR_CLEAR);
 
-	//pr_info("%s: status=%08x\n", __func__, status);
+//	pr_info("%s: status=%08x (irq_mask=%08x)\n", __func__, status,
+//		mdp_irq_mask);
 	status &= mdp_irq_mask;
 
 	for (i = 0; i < MSM_MDP_NUM_INTERFACES; ++i) {
@@ -173,15 +164,17 @@ static int mdp_wait(struct mdp_info *mdp, uint32_t mask, wait_queue_head_t *wq)
 	int ret = 0;
 	unsigned long irq_flags;
 
-	pr_info("%s: WAITING\n", __func__);
+//	pr_info("%s: WAITING for 0x%x\n", __func__, mask);
 	wait_event_timeout(*wq, !mdp_check_mask(mdp, mask), HZ);
 
 	spin_lock_irqsave(&mdp->lock, irq_flags);
 	if (mdp_irq_mask & mask) {
 		locked_disable_mdp_irq(mdp, mask);
-		printk(KERN_WARNING "timeout waiting for mdp to complete %x\n",
-		       mask);
+		pr_warning("%s: timeout waiting for mdp to complete 0x%x\n",
+			   __func__, mask);
 		ret = -ETIMEDOUT;
+	} else {
+//		pr_info("%s: SUCCESS waiting for 0x%x\n", __func__, mask);
 	}
 	spin_unlock_irqrestore(&mdp->lock, irq_flags);
 
@@ -387,6 +380,7 @@ int mdp_blit(struct mdp_device *mdp_dev, struct fb_info *fb,
 
 	/* transp_masking unimplemented */
 	req->transp_mask = MDP_TRANSP_NOP;
+#ifndef CONFIG_MSM_MDP31
 	if (unlikely((req->transp_mask != MDP_TRANSP_NOP ||
 		      req->alpha != MDP_ALPHA_NOP ||
 		      HAS_ALPHA(req->src.format)) &&
@@ -415,6 +409,7 @@ int mdp_blit(struct mdp_device *mdp_dev, struct fb_info *fb,
 		req->src_rect.w = remainder*req->src_rect.w / req->dst_rect.h;
 		req->dst_rect.h = remainder;
 	}
+#endif
 	enable_mdp_irq(mdp, DL0_ROI_DONE);
 	ret = mdp_ppp_blit(mdp, req, src_file, src_start, src_len, dst_file,
 			   dst_start,
@@ -529,18 +524,17 @@ int register_mdp_client(struct class_interface *cint)
 }
 
 #include "mdp_csc_table.h"
-#include "mdp_scale_tables.h"
 
 void mdp_hw_init(struct mdp_info *mdp)
 {
 	int n;
 
 	mdp_irq_mask = 0;
+
 	mdp_writel(mdp, 0, MDP_INTR_ENABLE);
 
 	/* debug interface write access */
 	mdp_writel(mdp, 1, 0x60);
-
 	mdp_writel(mdp, 1, MDP_EBI2_PORTMAP_MODE);
 
 #ifndef CONFIG_MSM_MDP22
@@ -554,9 +548,10 @@ void mdp_hw_init(struct mdp_info *mdp)
 
 	mdp_writel(mdp, 0, MDP_CMD_DEBUG_ACCESS_BASE + 0x01f8);
 	mdp_writel(mdp, 0, MDP_CMD_DEBUG_ACCESS_BASE + 0x01fc);
+	mdp_writel(mdp, 1, 0x60);
 
-	for (n = 0; n < ARRAY_SIZE(csc_table); n++)
-		mdp_writel(mdp, csc_table[n].val, csc_table[n].reg);
+	for (n = 0; n < ARRAY_SIZE(csc_color_lut); n++)
+		mdp_writel(mdp, csc_color_lut[n].val, csc_color_lut[n].reg);
 
 	/* clear up unused fg/main registers */
 	/* comp.plane 2&3 ystride */
@@ -584,15 +579,15 @@ void mdp_hw_init(struct mdp_info *mdp)
 	mdp_writel(mdp, 0, MDP_CMD_DEBUG_ACCESS_BASE + 0x01e0);
 	mdp_writel(mdp, 0, MDP_CMD_DEBUG_ACCESS_BASE + 0x01e4);
 
-	for (n = 0; n < ARRAY_SIZE(mdp_upscale_table); n++)
-		mdp_writel(mdp, mdp_upscale_table[n].val,
-			   mdp_upscale_table[n].reg);
+	for (n = 0; n < ARRAY_SIZE(csc_matrix_config_table); n++)
+		mdp_writel(mdp, csc_matrix_config_table[n].val,
+			   csc_matrix_config_table[n].reg);
 
-	for (n = 0; n < 9; n++)
-		mdp_writel(mdp, mdp_default_ccs[n], 0x40440 + 4 * n);
-	mdp_writel(mdp, mdp_default_ccs[9], 0x40500 + 4 * 0);
-	mdp_writel(mdp, mdp_default_ccs[10], 0x40500 + 4 * 0);
-	mdp_writel(mdp, mdp_default_ccs[11], 0x40500 + 4 * 0);
+	mdp_ppp_init_scale(mdp);
+
+#ifndef CONFIG_MSM_MDP31
+	mdp_writel(mdp, 0x04000400, MDP_COMMAND_CONFIG);
+#endif
 }
 
 int mdp_probe(struct platform_device *pdev)

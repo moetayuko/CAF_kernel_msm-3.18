@@ -83,10 +83,18 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define MDP_DISPLAY_STATUS               ( 0x00038)
 #define MDP_EBI2_LCD0                    ( 0x0003c)
 #define MDP_EBI2_LCD1                    ( 0x00040)
+#define MDP_EBI2_PORTMAP_MODE            ( 0x0005c)
+
+#ifndef CONFIG_MSM_MDP31
 #define MDP_DISPLAY0_ADDR                ( 0x00054)
 #define MDP_DISPLAY1_ADDR                ( 0x00058)
-#define MDP_EBI2_PORTMAP_MODE            ( 0x0005c)
-#define MDP_MODE                         ( 0x00060)
+#define MDP_PPP_CMD_MODE                 ( 0x00060)
+#else
+#define MDP_DISPLAY0_ADDR                ( 0x10000)
+#define MDP_DISPLAY1_ADDR                ( 0x10004)
+#define MDP_PPP_CMD_MODE                 ( 0x10060)
+#endif
+
 #define MDP_TV_OUT_STATUS                ( 0x00064)
 #define MDP_HW_VERSION                   ( 0x00070)
 #define MDP_SW_RESET                     ( 0x00074)
@@ -144,6 +152,7 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define MDP_FULL_BYPASS_WORD35           ( 0x1018c)
 #define MDP_FULL_BYPASS_WORD37           ( 0x10194)
 #define MDP_FULL_BYPASS_WORD39           ( 0x1019c)
+#define MDP_PPP_OUT_XY                   ( 0x1019c)
 #define MDP_FULL_BYPASS_WORD40           ( 0x101a0)
 #define MDP_FULL_BYPASS_WORD41           ( 0x101a4)
 #define MDP_FULL_BYPASS_WORD43           ( 0x101ac)
@@ -166,6 +175,16 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define MDP_FULL_BYPASS_WORD61           ( 0x101f4)
 #define MDP_FULL_BYPASS_WORD62           ( 0x101f8)
 #define MDP_FULL_BYPASS_WORD63           ( 0x101fc)
+
+#ifdef CONFIG_MSM_MDP31
+#define MDP_PPP_SRC_XY                   ( 0x10200)
+#define MDP_PPP_BG_XY                    ( 0x10204)
+#define MDP_PPP_SRC_IMAGE_SIZE           ( 0x10208)
+#define MDP_PPP_BG_IMAGE_SIZE            ( 0x1020c)
+#define MDP_PPP_SCALE_CONFIG             ( 0x10230)
+#define MDP_PPP_CSC_CONFIG               ( 0x10240)
+#endif
+
 #define MDP_TFETCH_TEST_MODE             ( 0x20004)
 #define MDP_TFETCH_STATUS                ( 0x20008)
 #define MDP_TFETCH_TILE_COUNT            ( 0x20010)
@@ -219,10 +238,6 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define MDP_LCDC_HSYNC_SKEW              ( 0xe0030)
 #define MDP_LCDC_TEST_CTL                ( 0xe0034)
 #define MDP_LCDC_CTL_POLARITY            ( 0xe0038)
-
-#define MDP_DMA2_TERM			(0x1)
-#define MDP_DMA3_TERM			(0x2)
-#define MDP_PPP_TERM			(0x3)
 
 /* MDP_INTR_ENABLE */
 #define DL0_ROI_DONE			(1<<0)
@@ -345,7 +360,12 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define PPP_OP_SCALE_X_ON (1<<0)
 #define PPP_OP_SCALE_Y_ON (1<<1)
 
+#ifndef CONFIG_MSM_MDP31
 #define PPP_OP_CONVERT_RGB2YCBCR 0
+#else
+#define PPP_OP_CONVERT_RGB2YCBCR (1<<30)
+#endif
+
 #define PPP_OP_CONVERT_YCBCR2RGB (1<<2)
 #define PPP_OP_CONVERT_ON (1<<3)
 
@@ -617,6 +637,44 @@ int mdp_ppp_blit(const struct mdp_info *mdp, struct mdp_blit_req *req,
 #define PPP_ADDR_BG_YSTRIDE		MDP_FULL_BYPASS_WORD51
 #define PPP_ADDR_BG_CFG			MDP_FULL_BYPASS_WORD53
 #define PPP_ADDR_BG_PACK_PATTERN	MDP_FULL_BYPASS_WORD54
+
+/* color conversion matrix configuration registers */
+/* pfmv is mv1, prmv is mv2 */
+#define MDP_CSC_PFMVn(n)		(0x40400 + (4 * (n)))
+#define MDP_CSC_PRMVn(n)		(0x40440 + (4 * (n)))
+
+#ifdef CONFIG_MSM_MDP31
+#define MDP_PPP_CSC_PRE_BV1n(n)		(0x40500 + (4 * (n)))
+#define MDP_PPP_CSC_PRE_BV2n(n)		(0x40540 + (4 * (n)))
+#define MDP_PPP_CSC_POST_BV1n(n)	(0x40580 + (4 * (n)))
+#define MDP_PPP_CSC_POST_BV2n(n)	(0x405c0 + (4 * (n)))
+
+#define MDP_PPP_CSC_PRE_LV1n(n)		(0x40600 + (4 * (n)))
+#define MDP_PPP_CSC_PRE_LV2n(n)		(0x40640 + (4 * (n)))
+#define MDP_PPP_CSC_POST_LV1n(n)	(0x40680 + (4 * (n)))
+#define MDP_PPP_CSC_POST_LV2n(n)	(0x406c0 + (4 * (n)))
+
+#define MDP_PPP_SCALE_COEFF_D0_SET	(0)
+#define MDP_PPP_SCALE_COEFF_D1_SET	(1)
+#define MDP_PPP_SCALE_COEFF_D2_SET	(2)
+#define MDP_PPP_SCALE_COEFF_U1_SET	(3)
+#define MDP_PPP_SCALE_COEFF_LSBn(n)	(0x50400 + (8 * (n)))
+#define MDP_PPP_SCALE_COEFF_MSBn(n)	(0x50404 + (8 * (n)))
+
+#define MDP_PPP_DEINT_COEFFn(n)		(0x30010 + (4 * (n)))
+
+#define MDP_PPP_SCALER_FIR		(0)
+#define MDP_PPP_SCALER_MN		(1)
+
+#else /* !defined(CONFIG_MSM_MDP31) */
+
+#define MDP_CSC_PBVn(n)			(0x40500 + (4 * (n)))
+#define MDP_CSC_SBVn(n)			(0x40540 + (4 * (n)))
+#define MDP_CSC_PLVn(n)			(0x40580 + (4 * (n)))
+#define MDP_CSC_SLVn(n)			(0x405c0 + (4 * (n)))
+
+#endif
+
 
 /* MDP_DMA_CONFIG / MDP_FULL_BYPASS_WORD32 */
 #define DMA_DSTC0G_6BITS (1<<1)
