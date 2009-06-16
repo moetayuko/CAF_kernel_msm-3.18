@@ -8,7 +8,7 @@ endif
 
 # MDP DMA/PPP engine
 #
-obj-y += mdp.o mdp_scale_tables.o mdp_ppp.o
+obj-y += mdp.o mdp_ppp.o mdp_ppp22.o
 
 # MDDI interface
 #
