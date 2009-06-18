@@ -302,9 +302,9 @@ static int vfe_7x_config_axi(int mode,
 
 		bptr = &ao->output1buffer1_y_phy;
 		for (cnt = 0; cnt < ad->bufnum1; cnt++) {
-			*bptr = regptr->paddr + regptr->y_off;
+			*bptr = regptr->paddr + regptr->info.y_off;
 			bptr++;
-			*bptr = regptr->paddr + regptr->cbcr_off;
+			*bptr = regptr->paddr + regptr->info.cbcr_off;
 
 			bptr++;
 			regptr++;
@@ -312,9 +312,9 @@ static int vfe_7x_config_axi(int mode,
 
 		regptr--;
 		for (cnt = 0; cnt < (8 - ad->bufnum1); cnt++) {
-			*bptr = regptr->paddr + regptr->y_off;
+			*bptr = regptr->paddr + regptr->info.y_off;
 			bptr++;
-			*bptr = regptr->paddr + regptr->cbcr_off;
+			*bptr = regptr->paddr + regptr->info.cbcr_off;
 			bptr++;
 		}
 	} /* if OUTPUT1 or Both */
@@ -328,9 +328,9 @@ static int vfe_7x_config_axi(int mode,
 
 		bptr = &ao->output2buffer1_y_phy;
 		for (cnt = 0; cnt < ad->bufnum2; cnt++) {
-			*bptr = regptr->paddr + regptr->y_off;
+			*bptr = regptr->paddr + regptr->info.y_off;
 			bptr++;
-			*bptr = regptr->paddr + regptr->cbcr_off;
+			*bptr = regptr->paddr + regptr->info.cbcr_off;
 
 			bptr++;
 			regptr++;
@@ -338,9 +338,9 @@ static int vfe_7x_config_axi(int mode,
 
 		regptr--;
 		for (cnt = 0; cnt < (8 - ad->bufnum2); cnt++) {
-			*bptr = regptr->paddr + regptr->y_off;
+			*bptr = regptr->paddr + regptr->info.y_off;
 			bptr++;
-			*bptr = regptr->paddr + regptr->cbcr_off;
+			*bptr = regptr->paddr + regptr->info.cbcr_off;
 			bptr++;
 		}
 	}
