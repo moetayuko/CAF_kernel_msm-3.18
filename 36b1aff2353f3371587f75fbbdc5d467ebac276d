@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAZn///9k\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 145,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-22T23:07:46Z",
+      "side": 1,
+      "message": "please don\u0027t do implicit structure copies. use memcpy() instead.",
+      "revId": "36b1aff2353f3371587f75fbbdc5d467ebac276d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAZn///9g\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 193,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-22T23:07:46Z",
+      "side": 1,
+      "message": "use memcpy()",
+      "revId": "36b1aff2353f3371587f75fbbdc5d467ebac276d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAZn///9c\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 939,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-22T23:07:46Z",
+      "side": 1,
+      "message": "\u003e 80",
+      "revId": "36b1aff2353f3371587f75fbbdc5d467ebac276d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
