@@ -298,7 +298,7 @@ static int vfe_7x_config_axi(int mode,
 
 		CDBG("bufnum1 = %d\n", ad->bufnum1);
 		CDBG("config_axi1: O1, phy = 0x%lx, y_off = %d, cbcr_off =%d\n",
-			regptr->paddr, regptr->y_off, regptr->cbcr_off);
+			regptr->paddr, regptr->info.y_off, regptr->info.cbcr_off);
 
 		bptr = &ao->output1buffer1_y_phy;
 		for (cnt = 0; cnt < ad->bufnum1; cnt++) {
@@ -324,7 +324,7 @@ static int vfe_7x_config_axi(int mode,
 
 		CDBG("bufnum2 = %d\n", ad->bufnum2);
 		CDBG("config_axi2: O2, phy = 0x%lx, y_off = %d, cbcr_off =%d\n",
-			regptr->paddr, regptr->y_off, regptr->cbcr_off);
+			regptr->paddr, regptr->info.y_off, regptr->info.cbcr_off);
 
 		bptr = &ao->output2buffer1_y_phy;
 		for (cnt = 0; cnt < ad->bufnum2; cnt++) {

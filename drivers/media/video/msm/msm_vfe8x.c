@@ -79,7 +79,7 @@ static void vfe_config_axi(int mode,
 			p2 = &(ao->output2.outputCbcr.outFragments[i][0]);
 
 		CDBG("config_axi: O2, phy = 0x%lx, y_off = %d, cbcr_off = %d\n",
-			regptr->paddr, regptr->y_off, regptr->cbcr_off);
+			regptr->paddr, regptr->info.y_off, regptr->info.cbcr_off);
 
 			for (j = 0;
 				j < ao->output2.fragmentCount; j++) {
