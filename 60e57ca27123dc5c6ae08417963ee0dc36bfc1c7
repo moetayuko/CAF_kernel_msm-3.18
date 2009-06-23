@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAZn///6s\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 143,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-06-23T17:55:16Z",
+      "side": 1,
+      "message": "optional: join lines 143+144 lines.",
+      "revId": "60e57ca27123dc5c6ae08417963ee0dc36bfc1c7",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
