@@ -71,7 +71,7 @@ tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec); \
  *  ISET (CPLD MISC2 bit[1]) is move to PMIC (MPP_13). */
 #define GPIO_SAPPHIRE_USB_ID	30
 
-#if !defined(CONFIG_MACH_FIRESTONE)
+#if !defined(CONFIG_MACH_FIRESTONE) && !defined(CONFIG_MACH_MAHIMAHI)
 #define GPIO_BATTERY_DETECTION		21
 #define GPIO_BATTERY_CHARGER_EN		128
 #define GPIO_BATTERY_CHARGER_CURRENT	129
@@ -493,7 +493,18 @@ static int htc_battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		mutex_lock(&htc_batt_info.lock);
-		val->intval = htc_batt_info.rep.level;
+		if (machine_is_mahimahi()) {
+			/* FIXME: The 1-wire master (for battery gauge) driver
+			 * of mahimahi will need to be impl'ed in ACPU side.
+			 * Before it will be ready, we try to hard code
+			 * the battery capacity here first to avoid
+			 * system shutdown due to framework could consider
+			 * battery level is critical.
+			 */
+			val->intval = 100;
+		} else {
+			val->intval = htc_batt_info.rep.level;
+		}
 		mutex_unlock(&htc_batt_info.lock);
 		break;
 	default:		
