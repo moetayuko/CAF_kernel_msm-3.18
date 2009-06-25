@@ -193,7 +193,6 @@ static void msm_timer_set_mode(enum clock_event_mode mode,
 		clock->stopped_tick = (msm_read_timer_count(clock) +
 					clock->offset) >> clock->shift;
 		writel(0, clock->regbase + TIMER_ENABLE);
-		while (msm_read_timer_count(clock)) ; /* wait for clock to disable */
 		break;
 	}
 	local_irq_restore(irq_flags);
@@ -474,6 +473,7 @@ static void __init msm_timer_init(void)
 		writel(0, clock->regbase + TIMER_ENABLE);
 		writel(0, clock->regbase + TIMER_CLEAR);
 		writel(~0, clock->regbase + TIMER_MATCH_VAL);
+		while (msm_read_timer_count(clock)) ; /* wait for clock to clear */
 
 		ce->mult = div_sc(clock->freq, NSEC_PER_SEC, ce->shift);
 		/* allow at least 10 seconds to notice that the timer wrapped */
