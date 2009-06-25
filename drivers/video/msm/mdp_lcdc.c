@@ -67,7 +67,6 @@ static int lcdc_unblank(struct msm_panel_data *fb_panel)
 	struct msm_lcdc_panel_ops *panel_ops = lcdc->pdata->panel_ops;
 
 	pr_info("%s: ()\n", __func__);
-
 	panel_ops->unblank(panel_ops);
 
 	return 0;
@@ -81,18 +80,20 @@ static int lcdc_blank(struct msm_panel_data *fb_panel)
 	pr_info("%s: ()\n", __func__);
 	panel_ops->blank(panel_ops);
 
-	clk_enable(lcdc->mdp_clk);
-	mdp_writel(lcdc->mdp, 0, MDP_LCDC_EN);
-	clk_disable(lcdc->mdp_clk);
-
-	clk_disable(lcdc->pclk);
-	clk_disable(lcdc->pad_pclk);
 	return 0;
 }
 
 static int lcdc_suspend(struct msm_panel_data *fb_panel)
 {
+	struct mdp_lcdc_info *lcdc = panel_to_lcdc(fb_panel);
+
 	pr_info("%s: suspending\n", __func__);
+
+	mdp_writel(lcdc->mdp, 0, MDP_LCDC_EN);
+	clk_disable(lcdc->pad_pclk);
+	clk_disable(lcdc->pclk);
+	clk_disable(lcdc->mdp_clk);
+
 	return 0;
 }
 
