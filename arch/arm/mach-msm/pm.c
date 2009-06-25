@@ -210,6 +210,7 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 	uint32_t exit_state;
 	uint32_t exit_wait_clear = 0;
 	uint32_t exit_wait_set = 0;
+	uint32_t early_exit_state = 0;
 	unsigned long pm_saved_acpu_clk_rate = 0;
 	int ret;
 	int rv = -EINTR;
@@ -248,12 +249,14 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		enter_wait_set = DEM_MASTER_SMSM_RSA;
 		exit_state = DEM_SLAVE_SMSM_WFPI;
 		exit_wait_set = DEM_MASTER_SMSM_RUN;
+		early_exit_state = DEM_SLAVE_SMSM_PWRC_EARLY_EXIT;
 		break;
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_SUSPEND:
 		enter_state = DEM_SLAVE_SMSM_PWRC_SUSPEND;
 		enter_wait_set = DEM_MASTER_SMSM_RSA;
 		exit_state = DEM_SLAVE_SMSM_WFPI;
 		exit_wait_set = DEM_MASTER_SMSM_RUN;
+		early_exit_state = DEM_SLAVE_SMSM_PWRC_EARLY_EXIT;
 		break;
 	case MSM_PM_SLEEP_MODE_APPS_SLEEP:
 		enter_state = DEM_SLAVE_SMSM_SLEEP;
@@ -331,6 +334,13 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		collapsed = msm_pm_collapse();
 		msm_pm_reset_vector[0] = saved_vector[0];
 		msm_pm_reset_vector[1] = saved_vector[1];
+
+		if (smsm_get_state(PM_SMSM_READ_STATE) & DEM_MASTER_SMSM_PWRC_EARLY_EXIT) {
+			exit_state = early_exit_state;
+			exit_wait_set = 0;
+		}
+		early_exit_state = 0;
+
 		if (collapsed) {
 			cpu_init();
 			__asm__("cpsie   a");
@@ -366,6 +376,10 @@ enter_failed:
 	if (enter_state) {
 		writel(0x00, A11S_CLK_SLEEP_EN);
 		writel(0, A11S_PWRDOWN);
+		if (early_exit_state) {
+			exit_state = early_exit_state;
+			exit_wait_set = DEM_MASTER_SMSM_PWRC_EARLY_EXIT;
+		}
 		smsm_change_state(PM_SMSM_WRITE_STATE, enter_state, exit_state);
 		msm_pm_wait_state(exit_wait_set, exit_wait_clear, 0, 0);
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_STATE)
