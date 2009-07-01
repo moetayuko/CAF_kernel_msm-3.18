@@ -578,6 +578,11 @@ static int msm_nand_read_oob(struct mtd_info *mtd, loff_t from,
 				rawerr = -EIO;
 				break;
 			}
+			if (dma_buffer->data.result[n].buffer_status >> 16 != 0xffff) {
+				pr_err("bad block\n");
+				rawerr = -EIO;
+				break;
+			}
 		}
 		if (rawerr) {
 			if (ops->datbuf) {
