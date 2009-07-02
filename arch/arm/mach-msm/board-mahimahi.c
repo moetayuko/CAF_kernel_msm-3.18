@@ -15,8 +15,10 @@
  *
  */
 
+#include <linux/cy8c_tmg_ts.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
+#include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
@@ -167,6 +169,48 @@ static struct platform_device android_pmem_gpu1_device = {
 	},
 };
 
+static int mahimahi_cy8c_ts_power(int on)
+{
+	pr_info("%s: power %d\n", __func__, on);
+
+	if (on) {
+		/* level shifter should be off */
+		gpio_set_value(MAHIMAHI_GPIO_TP_EN, 1);
+		msleep(120);
+		/* enable touch panel level shift */
+		gpio_set_value(MAHIMAHI_GPIO_TP_LS_EN, 1);
+		msleep(3);
+	} else {
+		gpio_set_value(MAHIMAHI_GPIO_TP_LS_EN, 0);
+		gpio_set_value(MAHIMAHI_GPIO_TP_EN, 0);
+		udelay(50);
+	}
+
+	return 0;
+}
+
+struct cy8c_i2c_platform_data mahimahi_cy8c_ts_data = {
+	.version = 0x0001,
+	.abs_x_min = 0,
+	.abs_x_max = 479,
+	.abs_y_min = 0,
+	.abs_y_max = 799,
+	.abs_pressure_min = 0,
+	.abs_pressure_max = 255,
+	.abs_width_min = 0,
+	.abs_width_max = 10,
+	.power = mahimahi_cy8c_ts_power,
+};
+
+static struct i2c_board_info i2c_devices[] = {
+	{
+		I2C_BOARD_INFO("cy8c-tmg-ts", 0x34),
+		.platform_data = &mahimahi_cy8c_ts_data,
+		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_TP_INT_N),
+	},
+};
+
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart1,
@@ -183,6 +227,7 @@ static struct platform_device *devices[] __initdata = {
 	&android_pmem_gpu0_device,
 	&android_pmem_gpu1_device,
 	&msm_kgsl_device,
+	&msm_device_i2c,
 };
 
 
@@ -224,10 +269,7 @@ void msm_serial_debug_init(unsigned int base, int irq,
 
 static void __init mahimahi_init(void)
 {
-	int rc;
-
 	printk("mahimahi_init() revision=%d\n", system_rev);
-
 
 	msm_acpu_clock_init(&mahimahi_clock_data);
 
@@ -237,9 +279,13 @@ static void __init mahimahi_init(void)
 #endif
 
 	config_gpio_table(bt_gpio_table, ARRAY_SIZE(bt_gpio_table));
+	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
+	gpio_direction_output(MAHIMAHI_GPIO_TP_EN, 0);
 
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
+	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
+
 	msm_hsusb_set_vbus_state(1);
 }
 
