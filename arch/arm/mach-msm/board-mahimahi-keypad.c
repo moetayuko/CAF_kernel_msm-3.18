@@ -225,7 +225,7 @@ static int __init mahimahi_init_keypad_jogball(void)
 	if (ret != 0)
 		return ret;
 
-	jog_vreg = vreg_get(&mahimahi_jogball_device, "gp2");
+	jog_vreg = vreg_get(&mahimahi_jogball_device.dev, "gp2");
 	if (jog_vreg == NULL)
 		return -ENOENT;
 
