@@ -89,7 +89,6 @@ static struct msm_hsusb_product swordfish_usb_products[] = {
 static int swordfish_phy_init_seq[] = { 0x1D, 0x0D, 0x1D, 0x10, -1 };
 
 static struct msm_hsusb_platform_data msm_hsusb_pdata = {
-//	.phy_reset		= trout_phy_reset,
 	.phy_init_seq		= swordfish_phy_init_seq,
 #ifdef CONFIG_USB_FUNCTION
 	.vendor_id		= 0x18d1,
@@ -99,26 +98,26 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.serial_number		= "42",
 	.manufacturer_name	= "Qualcomm",
 
-	.functions = swordfish_usb_functions,
-	.num_functions = ARRAY_SIZE(swordfish_usb_functions),
-	.products  = swordfish_usb_products,
-	.num_products = ARRAY_SIZE(swordfish_usb_products),
+	.functions		= swordfish_usb_functions,
+	.num_functions		= ARRAY_SIZE(swordfish_usb_functions),
+	.products		= swordfish_usb_products,
+	.num_products		= ARRAY_SIZE(swordfish_usb_products),
 #endif
 };
 
 #ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
 static struct usb_mass_storage_platform_data mass_storage_pdata = {
-	.nluns= 1,
-	.buf_size= 16384,
-	.vendor= "Qualcomm",
-	.product= "Swordfish",
-	.release= 0x0100,
+	.nluns		= 1,
+	.buf_size	= 16384,
+	.vendor		= "Qualcomm",
+	.product	= "Swordfish",
+	.release	= 0x0100,
 };
 
 static struct platform_device usb_mass_storage_device = {
-	.name= "usb_mass_storage",
-	.id= -1,
-	.dev= {
+	.name	= "usb_mass_storage",
+	.id	= -1,
+	.dev	= {
 		.platform_data = &mass_storage_pdata,
 	},
 };
@@ -126,20 +125,20 @@ static struct platform_device usb_mass_storage_device = {
 
 #ifdef CONFIG_USB_ANDROID
 static struct android_usb_platform_data android_usb_pdata = {
-	.vendor_id= 0x18d1,
-	.product_id= 0x0d01,
-	.adb_product_id= 0x0d02,
-	.version= 0x0100,
-	.serial_number= "42",
-	.product_name= "Swordfishdroid",
-	.manufacturer_name = "Qualcomm",
-	.nluns = 1,
+	.vendor_id		= 0x18d1,
+	.product_id		= 0x0d01,
+	.adb_product_id		= 0x0d02,
+	.version		= 0x0100,
+	.serial_number		= "42",
+	.product_name		= "Swordfishdroid",
+	.manufacturer_name	= "Qualcomm",
+	.nluns			= 1,
 };
 
 static struct platform_device android_usb_device = {
-	.name= "android_usb",
-	.id= -1,
-	.dev= {
+	.name	= "android_usb",
+	.id	= -1,
+	.dev	= {
 		.platform_data = &android_usb_pdata,
 	},
 };
@@ -181,11 +180,11 @@ static struct platform_device *devices[] __initdata = {
 extern struct sys_timer msm_timer;
 
 static struct msm_acpu_clock_platform_data swordfish_clock_data = {
-	.acpu_switch_time_us = 20,
-	.max_speed_delta_khz = 256000,
-	.vdd_switch_time_us = 62,
-	.power_collapse_khz = 128000000,
-	.wait_for_irq_khz = 128000000,
+	.acpu_switch_time_us	= 20,
+	.max_speed_delta_khz	= 256000,
+	.vdd_switch_time_us	= 62,
+	.power_collapse_khz	= 128000000,
+	.wait_for_irq_khz	= 128000000,
 };
 
 void msm_serial_debug_init(unsigned int base, int irq,
