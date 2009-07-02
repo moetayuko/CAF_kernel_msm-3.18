@@ -264,11 +264,14 @@ static struct msm_acpu_clock_platform_data mahimahi_clock_data = {
 	.wait_for_irq_khz	= 128000000,
 };
 
+int mahimahi_init_mmc(int sysrev);
 void msm_serial_debug_init(unsigned int base, int irq,
 			   struct device *clk_device, int signal_irq);
 
 static void __init mahimahi_init(void)
 {
+	int ret;
+
 	printk("mahimahi_init() revision=%d\n", system_rev);
 
 	msm_acpu_clock_init(&mahimahi_clock_data);
@@ -287,6 +290,10 @@ static void __init mahimahi_init(void)
 	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 
 	msm_hsusb_set_vbus_state(1);
+
+	ret = mahimahi_init_mmc(system_rev);
+	if (ret != 0)
+		pr_crit("%s: Unable to initialize MMC\n", __func__);
 }
 
 static void __init mahimahi_fixup(struct machine_desc *desc, struct tag *tags,
