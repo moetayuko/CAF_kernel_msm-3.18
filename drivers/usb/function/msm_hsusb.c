@@ -1572,7 +1572,7 @@ static int usb_probe(struct platform_device *pdev)
 		return usb_free(ui, PTR_ERR(ui->pclk));
 
 	ui->otgclk = clk_get(&pdev->dev, "usb_otg_clk");
-	if (IS_ERR(ui->pclk))
+	if (IS_ERR(ui->otgclk))
 		ui->otgclk = NULL;
 
 	ret = request_irq(irq, usb_interrupt, 0, pdev->name, ui);
