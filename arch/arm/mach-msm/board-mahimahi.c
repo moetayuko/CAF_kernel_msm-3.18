@@ -25,6 +25,7 @@
 #include <linux/platform_device.h>
 #include <linux/usb/mass_storage_function.h>
 #include <linux/android_pmem.h>
+#include <linux/synaptics_i2c_rmi.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -169,7 +170,7 @@ static struct platform_device android_pmem_gpu1_device = {
 	},
 };
 
-static int mahimahi_cy8c_ts_power(int on)
+static int mahimahi_ts_power(int on)
 {
 	pr_info("%s: power %d\n", __func__, on);
 
@@ -199,7 +200,18 @@ struct cy8c_i2c_platform_data mahimahi_cy8c_ts_data = {
 	.abs_pressure_max = 255,
 	.abs_width_min = 0,
 	.abs_width_max = 10,
-	.power = mahimahi_cy8c_ts_power,
+	.power = mahimahi_ts_power,
+};
+
+static struct synaptics_i2c_rmi_platform_data mahimahi_synaptics_ts_data[] = {
+	{
+		.power = mahimahi_ts_power,
+		.flags = SYNAPTICS_FLIP_Y | SYNAPTICS_SNAP_TO_INACTIVE_EDGE,
+		.inactive_left = -25 * 0x10000 / 480,
+		.inactive_right = -20 * 0x10000 / 480,
+		.inactive_top = -15 * 0x10000 / 800,
+		.inactive_bottom = -40 * 0x10000 / 800,
+	},
 };
 
 static struct i2c_board_info i2c_devices[] = {
@@ -207,6 +219,11 @@ static struct i2c_board_info i2c_devices[] = {
 		I2C_BOARD_INFO("cy8c-tmg-ts", 0x34),
 		.platform_data = &mahimahi_cy8c_ts_data,
 		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_TP_INT_N),
+	},
+	{
+		I2C_BOARD_INFO(SYNAPTICS_I2C_RMI_NAME, 0x40),
+		.platform_data = mahimahi_synaptics_ts_data,
+		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_TP_INT_N)
 	},
 };
 
