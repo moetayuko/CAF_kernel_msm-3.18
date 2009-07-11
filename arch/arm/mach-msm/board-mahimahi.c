@@ -20,6 +20,7 @@
 #include <linux/gpio.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
+#include <linux/input.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
@@ -281,6 +282,35 @@ static struct msm_acpu_clock_platform_data mahimahi_clock_data = {
 	.wait_for_irq_khz	= 128000000,
 };
 
+static ssize_t mahimahi_virtual_keys_show(struct kobject *kobj,
+			       struct kobj_attribute *attr, char *buf)
+{
+	/* center: x: home: 55, menu: 185, back: 305, search 425, y: 835 */
+	return sprintf(buf,
+		__stringify(EV_KEY) ":" __stringify(KEY_HOME)   ":55:835:55:55"
+	    ":" __stringify(EV_KEY) ":" __stringify(KEY_MENU)   ":185:835:90:45"
+	    ":" __stringify(EV_KEY) ":" __stringify(KEY_BACK)   ":305:835:55:55"
+	    ":" __stringify(EV_KEY) ":" __stringify(KEY_SEARCH) ":425:835:55:55"
+	    "\n");
+}
+
+static struct kobj_attribute mahimahi_virtual_keys_attr = {
+	.attr = {
+		.name = "virtualkeys.synaptics-rmi-touchscreen",
+		.mode = S_IRUGO,
+	},
+	.show = &mahimahi_virtual_keys_show,
+};
+
+static struct attribute *mahimahi_properties_attrs[] = {
+	&mahimahi_virtual_keys_attr.attr,
+	NULL
+};
+
+static struct attribute_group mahimahi_properties_attr_group = {
+	.attrs = mahimahi_properties_attrs,
+};
+
 int mahimahi_init_mmc(int sysrev);
 void msm_serial_debug_init(unsigned int base, int irq,
 			   struct device *clk_device, int signal_irq);
@@ -288,6 +318,7 @@ void msm_serial_debug_init(unsigned int base, int irq,
 static void __init mahimahi_init(void)
 {
 	int ret;
+	struct kobject *properties_kobj;
 
 	printk("mahimahi_init() revision=%d\n", system_rev);
 
@@ -311,6 +342,13 @@ static void __init mahimahi_init(void)
 	ret = mahimahi_init_mmc(system_rev);
 	if (ret != 0)
 		pr_crit("%s: Unable to initialize MMC\n", __func__);
+
+	properties_kobj = kobject_create_and_add("board_properties", NULL);
+	if (properties_kobj)
+		ret = sysfs_create_group(properties_kobj,
+					 &mahimahi_properties_attr_group);
+	if (!properties_kobj || ret)
+		pr_err("failed to create board_properties\n");
 }
 
 static void __init mahimahi_fixup(struct machine_desc *desc, struct tag *tags,
