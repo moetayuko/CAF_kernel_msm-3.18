@@ -575,15 +575,6 @@ static int sapphire_mddi_panel_blank(
 
 /* Initial sequence of sharp panel with Novatek NT35399 MDDI client */
 static const struct mddi_table sharp2_init_table[] = {
-	{ 0x0110, 0x00 },
-	{    0x1,  0x5 },
-
-	{ 0x0F20, 0x55 },
-	{ 0x0F21, 0xAA },
-	{ 0x0F22, 0x66 },
-	{ 0x0F32, 0x01 },
-	{ 0x0F36, 0x10 },
-
 	{ 0x02A0, 0x00 },
 	{ 0x02A1, 0x00 },
 	{ 0x02A2, 0x3F },
@@ -596,7 +587,7 @@ static const struct mddi_table sharp2_init_table[] = {
 	{ 0x02D1, 0x00 },
 	{ 0x02D2, 0x00 },
 	{ 0x02D3, 0x00 },
-	{ 0x0350, 0x70 },
+	{ 0x0350, 0x80 },	/* Set frame tearing effect(FTE) position */
 	{ 0x0351, 0x00 },
 	{ 0x0360, 0x30 },
 	{ 0x0361, 0xC1 },
@@ -736,8 +727,6 @@ static const struct mddi_table sharp2_init_table[] = {
 	{ 0xE5D, 0x0051},
 	{ 0xE5E, 0x005A},
 	{ 0xE5F, 0x006B},
-
-
 
         { 0x0290, 0x01 },
 };
@@ -994,6 +983,8 @@ static int nt35399_detect_panel(struct msm_mddi_client_data *client_data)
 {
 	int id = -1 ;
 
+	client_data->remote_write(client_data, 0, 0x110);
+	msleep(5);
 	id = client_data->remote_read(client_data, userid) ;
 	switch(id) {
 	case 0:
@@ -1024,13 +1015,13 @@ static int nt35399_client_init(
 		gpio_set_value(MDDI_RST_N, 1);
 		mdelay(10);
 
+		client_data->auto_hibernate(client_data, 0);
+
 		g_panel_id = panel_id = nt35399_detect_panel(client_data);
 		if (panel_id == -1) {
 			printk("Invalid panel id\n");
 			return -1;
 		}
-
-		client_data->auto_hibernate(client_data, 0);
 
 		if (panel_id == SAPPHIRE_PANEL_TOPPOLY) {
 			sapphire_process_mddi_table(client_data, tpo2_init_table,
@@ -1059,6 +1050,7 @@ static int nt35399_panel_unblank(
 {
 	int ret = 0;
 
+	mdelay(20);
 	sapphire_set_backlight_level(0);
 	client_data->auto_hibernate(client_data, 0);
 
