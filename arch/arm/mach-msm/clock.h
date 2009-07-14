@@ -93,8 +93,9 @@ struct clk {
 #define LCDC_PCLK	42
 #define LCDC_PAD_PCLK	43
 #define MDP_VSYNC_CLK	44
+#define SPI_CLK		45
 
-#define NR_CLKS		45
+#define NR_CLKS		46
 
 extern struct clk msm_clocks[];
 
