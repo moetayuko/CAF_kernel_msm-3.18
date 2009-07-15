@@ -212,6 +212,7 @@ static struct synaptics_i2c_rmi_platform_data mahimahi_synaptics_ts_data[] = {
 		.inactive_right = -20 * 0x10000 / 480,
 		.inactive_top = -15 * 0x10000 / 800,
 		.inactive_bottom = -40 * 0x10000 / 800,
+		.sensitivity_adjust = 8,
 	},
 };
 
