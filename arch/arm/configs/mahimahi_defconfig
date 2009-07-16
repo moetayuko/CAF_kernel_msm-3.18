@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.29
-# Tue Jun 30 19:57:47 2009
+# Thu Jul 16 15:01:46 2009
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -699,6 +699,7 @@ CONFIG_INPUT_MISC=y
 CONFIG_INPUT_UINPUT=y
 CONFIG_INPUT_GPIO=y
 CONFIG_INPUT_KEYCHORD=y
+CONFIG_INPUT_CAPELLA_CM3602=y
 
 #
 # Hardware I/O ports

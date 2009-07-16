@@ -27,6 +27,7 @@
 #include <linux/usb/mass_storage_function.h>
 #include <linux/android_pmem.h>
 #include <linux/synaptics_i2c_rmi.h>
+#include <linux/capella_cm3602.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -229,6 +230,32 @@ static struct i2c_board_info i2c_devices[] = {
 	},
 };
 
+static int capella_cm3602_power(int on)
+{
+	/* TODO eolsen Add Voltage reg control */
+	if (on) {
+		gpio_direction_output(MAHIMAHI_GPIO_PROXIMITY_EN, 0);
+	} else {
+		gpio_direction_output(MAHIMAHI_GPIO_PROXIMITY_EN, 1);
+	}
+
+	return 0;
+}
+
+
+static struct capella_cm3602_platform_data capella_cm3602_pdata = {
+	.power = capella_cm3602_power,
+	.p_en = MAHIMAHI_GPIO_PROXIMITY_EN,
+	.p_out = MAHIMAHI_GPIO_PROXIMITY_INT_N
+};
+
+static struct platform_device capella_cm3602 = {
+	.name = CAPELLA_CM3602,
+	.id = -1,
+	.dev = {
+		.platform_data = &capella_cm3602_pdata
+	}
+};
 
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
@@ -247,6 +274,7 @@ static struct platform_device *devices[] __initdata = {
 	&android_pmem_gpu1_device,
 	&msm_kgsl_device,
 	&msm_device_i2c,
+	&capella_cm3602
 };
 
 
