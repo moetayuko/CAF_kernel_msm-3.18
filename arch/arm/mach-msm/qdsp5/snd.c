@@ -27,6 +27,7 @@
 #include <asm/ioctls.h>
 #include <mach/board.h>
 #include <mach/msm_rpcrouter.h>
+#include <mach/msm_rpc_versions.h>
 
 struct snd_ctxt {
 	struct mutex lock;
@@ -36,17 +37,6 @@ struct snd_ctxt {
 };
 
 static struct snd_ctxt the_snd;
-
-#define RPC_SND_PROG    0x30000002
-#define RPC_SND_CB_PROG 0x31000002
-#if CONFIG_MSM_AMSS_VERSION == 6210
-#define RPC_SND_VERS	0x94756085 /* 2490720389 */
-#elif (CONFIG_MSM_AMSS_VERSION == 6220) || \
-      (CONFIG_MSM_AMSS_VERSION == 6225)
-#define RPC_SND_VERS	0xaa2b1a44 /* 2854951492 */
-#elif CONFIG_MSM_AMSS_VERSION == 6350
-#define RPC_SND_VERS 	MSM_RPC_VERS(1,0)
-#endif
 
 #define SND_SET_DEVICE_PROC 2
 #define SND_SET_VOLUME_PROC 3

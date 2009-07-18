@@ -1,9 +1,19 @@
 if ARCH_MSM
 
+config MSM_RPC_ROUTER_BW_COMPAT
+	bool
+
+config MSM_NEW_ADSP
+	bool
+
+config MSM_NEW_AUDMGR
+	bool
+
+config MSM_VFE_CLOCK_SWITCHED
+	bool
+
 config MSM_AMSS_VERSION
 	int
-	default 6210 if MSM_AMSS_VERSION_6210
-	default 6220 if MSM_AMSS_VERSION_6220
 	default 6225 if MSM_AMSS_VERSION_6225
 	default 6350 if MSM_AMSS_VERSION_6350
 
@@ -12,17 +22,15 @@ choice
 
 	default MSM_AMSS_VERSION_6225
 
-	config MSM_AMSS_VERSION_6210
-		bool "6.2.10"
-
-	config MSM_AMSS_VERSION_6220
-		bool "6.2.20"
-
 	config MSM_AMSS_VERSION_6225
-		bool "6.2.20 + New ADSP"
+		bool "6.2.25"
 
 	config MSM_AMSS_VERSION_6350
 		bool "6.3.50"
+		select MSM_RPC_ROUTER_BW_COMPAT
+		select MSM_NEW_ADSP
+		select MSM_VFE_CLOCK_SWITCHED
+		select MSM_NEW_AUDMGR
 endchoice
 
 config MSM_DEBUG_UART

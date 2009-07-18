@@ -81,7 +81,7 @@ struct clk {
 #define USB_HS_PCLK	37  /* High speed USB pbus clock */
 #define USB_OTG_CLK	38  /* Full speed USB clock */
 #define VDC_CLK		39  /* Video controller clock */
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef MSM_VFE_CLOCK_SWITCHED
 #define VFE_MDC_CLK	40  /* VFE MDDI client clock */
 #define VFE_CLK		41  /* Camera / Video Front End clock */
 #else/* For radio code base others */

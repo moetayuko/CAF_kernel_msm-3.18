@@ -764,7 +764,7 @@ int msm_rpc_write(struct msm_rpc_endpoint *ept, void *buffer, int count)
 			return -ENOTCONN;
 		}
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_RPC_ROUTER_BW_COMPAT
 		if ((ept->dst_prog != rq->prog) ||
 			!msm_rpc_is_compatible_version(
 					be32_to_cpu(ept->dst_vers),
@@ -1094,7 +1094,7 @@ int __msm_rpc_read(struct msm_rpc_endpoint *ept,
 	return rc;
 }
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_RPC_ROUTER_BW_COMPAT
 int msm_rpc_is_compatible_version(uint32_t server_version,
 				  uint32_t client_version)
 {
@@ -1140,7 +1140,7 @@ struct msm_rpc_endpoint *msm_rpc_connect(uint32_t prog, uint32_t vers, unsigned 
 	struct msm_rpc_endpoint *ept;
 	struct rr_server *server;
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_RPC_ROUTER_BW_COMPAT
 	if (!(vers & RPC_VERSION_MODE_MASK)) {
 		uint32_t found_vers;
 		if (msm_rpc_get_compatible_server(prog, vers, &found_vers) < 0)

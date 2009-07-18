@@ -19,15 +19,9 @@
 #include <linux/hrtimer.h>
 #include <../../../drivers/staging/android/timed_output.h>
 #include <linux/sched.h>
+#include <mach/msm_rpc_versions.h>
 
 #include <mach/msm_rpcrouter.h>
-
-#define PM_LIBPROG	  0x30000061
-#if (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
-#define PM_LIBVERS	  0xfb837d0b
-#else
-#define PM_LIBVERS	  MSM_RPC_VERS(1,1)
-#endif
 
 #define HTC_PROCEDURE_SET_VIB_ON_OFF	21
 #define PMIC_VIBRATOR_LEVEL	(3000)

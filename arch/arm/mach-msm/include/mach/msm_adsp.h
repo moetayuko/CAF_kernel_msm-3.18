@@ -46,7 +46,7 @@ int msm_adsp_write(struct msm_adsp_module *module,
 		   unsigned queue_id,
 		   void *data, size_t len);
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 /* Command Queue Indexes */
 #define QDSP_lpmCommandQueue              0
 #define QDSP_mpuAfeQueue                  1

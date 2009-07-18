@@ -27,6 +27,7 @@
 #include <mach/board.h>
 #include <asm/mach-types.h>
 #include <mach/board_htc.h>
+#include <mach/msm_rpc_versions.h>
 
 static struct wake_lock vbus_wake_lock;
 
@@ -50,9 +51,6 @@ tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec); \
 #endif
 
 /* rpc related */
-#define APP_BATT_PDEV_NAME		"rs30100001:00000000"
-#define APP_BATT_PROG			0x30100001
-#define APP_BATT_VER			MSM_RPC_VERS(0,0)
 #define HTC_PROCEDURE_BATTERY_NULL	0
 #define HTC_PROCEDURE_GET_BATT_LEVEL	1
 #define HTC_PROCEDURE_GET_BATT_INFO	2
@@ -717,8 +715,6 @@ static struct platform_driver htc_battery_driver = {
 };
 
 /* batt_mtoa server definitions */
-#define BATT_MTOA_PROG				0x30100000
-#define BATT_MTOA_VERS				0
 #define RPC_BATT_MTOA_NULL			0
 #define RPC_BATT_MTOA_SET_CHARGING_PROC		1
 #define RPC_BATT_MTOA_CABLE_STATUS_UPDATE_PROC	2

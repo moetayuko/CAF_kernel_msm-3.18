@@ -25,6 +25,7 @@
 #include <mach/board.h>
 #include <mach/board_htc.h>
 #include <mach/msm_hsusb.h>
+#include <mach/msm_rpc_versions.h>
 #include <linux/usb/mass_storage_function.h>
 #include <linux/usb/android.h>
 
@@ -37,6 +38,7 @@
 #include <mach/msm_rpcrouter.h>
 #include <mach/msm_iomap.h>
 #include <asm/mach/mmc.h>
+#include <mach/msm_rpc_versions.h>
 
 static char *df_serialno = "000000000000";
 
@@ -54,8 +56,6 @@ void __init msm_add_devices(void)
 #endif
 
 #define HSUSB_API_INIT_PHY_PROC	2
-#define HSUSB_API_PROG		0x30000064
-#define HSUSB_API_VERS MSM_RPC_VERS(1,1)
 
 static void internal_phy_reset(void)
 {
@@ -292,13 +292,6 @@ void __init msm_add_mem_devices(struct msm_pmem_setting *setting)
 		platform_device_register(&ram_console_device);
 	}
 }
-
-#define PM_LIBPROG      0x30000061
-#if (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
-#define PM_LIBVERS      0xfb837d0b
-#else
-#define PM_LIBVERS      0x10001
-#endif
 
 #if 0
 static struct platform_device *msm_serial_devices[] __initdata = {

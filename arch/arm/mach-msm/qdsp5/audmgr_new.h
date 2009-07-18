@@ -146,9 +146,6 @@ struct rpc_audmgr_enable_client_args {
 #define AUDMGR_GET_TX_SAMPLE_RATE		9
 #define AUDMGR_SET_DEVICE_MODE			10
 
-#define AUDMGR_PROG 0x30000013
-#define AUDMGR_VERS MSM_RPC_VERS(1,0)
-
 struct rpc_audmgr_cb_func_ptr {
 	uint32_t cb_id;
 	uint32_t status; /* Audmgr status */
@@ -169,9 +166,6 @@ struct rpc_audmgr_cb_func_ptr {
 #define AUDMGR_CB_FUNC_PTR			1
 #define AUDMGR_OPR_LSTNR_CB_FUNC_PTR		2
 #define AUDMGR_CODEC_LSTR_FUNC_PTR		3
-
-#define AUDMGR_CB_PROG 0x31000013
-#define AUDMGR_CB_VERS 0xf8e3e2d9
 
 struct audmgr {
 	wait_queue_head_t wait;

@@ -22,6 +22,7 @@
 #include <linux/msm_adsp.h>
 #include <mach/msm_rpcrouter.h>
 #include <mach/msm_adsp.h>
+#include <mach/msm_rpc_versions.h>
 
 int adsp_pmem_fixup(struct msm_adsp_module *module, void **addr,
 		    unsigned long len);
@@ -111,7 +112,7 @@ struct adsp_info {
 	uint32_t events_received;
 	uint32_t event_backlog_max;
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	/* rpc_client for init_info */
 	struct msm_rpc_endpoint *init_info_rpc_client;
 	struct adsp_rtos_mp_mtoa_init_info_type *init_info_ptr;
@@ -120,28 +121,10 @@ struct adsp_info {
 #endif
 };
 
-#define RPC_ADSP_RTOS_ATOM_PROG 0x3000000a
-#define RPC_ADSP_RTOS_MTOA_PROG 0x3000000b
 #define RPC_ADSP_RTOS_ATOM_NULL_PROC 0
 #define RPC_ADSP_RTOS_MTOA_NULL_PROC 0
 #define RPC_ADSP_RTOS_APP_TO_MODEM_PROC 2
 #define RPC_ADSP_RTOS_MODEM_TO_APP_PROC 2
-
-#if CONFIG_MSM_AMSS_VERSION >= 6350
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(1,0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(2,1) /* must be actual vers */
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:00010000"
-#elif (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x71d1094b, 0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0xee3a9966, 0)
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:71d1094b"
-#elif CONFIG_MSM_AMSS_VERSION == 6210
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x20f17fd3, 0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0x75babbd6, 0)
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:20f17fd3"
-#else
-#error "Unknown AMSS version"
-#endif
 
 enum rpc_adsp_rtos_proc_type {
 	RPC_ADSP_RTOS_PROC_NONE = 0,
@@ -159,7 +142,7 @@ enum {
 	RPC_ADSP_RTOS_CMD_DISABLE_EVENT_RSP,
 	RPC_ADSP_RTOS_CMD_REMOTE_EVENT,
 	RPC_ADSP_RTOS_CMD_SET_STATE,
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	RPC_ADSP_RTOS_CMD_REMOTE_INIT_INFO_EVENT,
 	RPC_ADSP_RTOS_CMD_GET_INIT_INFO,
 #endif
@@ -171,7 +154,7 @@ enum rpc_adsp_rtos_mod_status_type {
 	RPC_ADSP_RTOS_SERVICE_RESET,
 	RPC_ADSP_RTOS_CMD_FAIL,
 	RPC_ADSP_RTOS_CMD_SUCCESS,
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	RPC_ADSP_RTOS_INIT_INFO,
 	RPC_ADSP_RTOS_DISABLE_FAIL,
 #endif
@@ -185,7 +168,7 @@ struct rpc_adsp_rtos_app_to_modem_args_t {
 	uint32_t module; /* e.g., QDSP_MODULE_AUDPPTASK */
 };
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 enum qdsp_image_type {
 	QDSP_IMAGE_COMBO,
 	QDSP_IMAGE_GAUDIO,
@@ -255,13 +238,13 @@ struct rpc_adsp_rtos_modem_to_app_args_t {
 	uint32_t module; /* e.g., QDSP_MODULE_AUDPPTASK */
 	uint32_t image; /* RPC_QDSP_IMAGE_GAUDIO */
 };
-#endif /* CONFIG_MSM_AMSS_VERSION >= 6350 */
+#endif /* CONFIG_MSM_NEW_ADSP */
 
 #define ADSP_STATE_DISABLED   0
 #define ADSP_STATE_ENABLING   1
 #define ADSP_STATE_ENABLED    2
 #define ADSP_STATE_DISABLING  3
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 #define ADSP_STATE_INIT_INFO  4
 #endif
 
@@ -297,7 +280,7 @@ extern void msm_adsp_publish_cdevs(struct msm_adsp_module *, unsigned);
 extern int adsp_init_info(struct adsp_info *info);
 
 /* Value to indicate that a queue is not defined for a particular image */
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 #define QDSP_RTOS_NO_QUEUE  0xfffffffe
 #else
 #define QDSP_RTOS_NO_QUEUE  0xffffffff

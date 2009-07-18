@@ -71,7 +71,7 @@ void adsp_set_image(struct adsp_info *info, uint32_t image)
  * module_entries table.If module_id is available returns `0`.
  * If module_id is not available returns `-ENXIO`.
  */
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 static int32_t adsp_validate_module(uint32_t module_id)
 {
 	uint32_t	*ptr;
@@ -151,7 +151,7 @@ static int rpc_adsp_rtos_app_to_modem(uint32_t cmd, uint32_t module,
 	return 0;
 }
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 static int get_module_index(uint32_t id)
 {
 	int mod_idx;
@@ -169,7 +169,7 @@ static struct msm_adsp_module *find_adsp_module_by_id(
 	if (id > info->max_module_id) {
 		return NULL;
 	} else {
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 		id = get_module_index(id);
 		if (id < 0)
 			return NULL;
@@ -206,7 +206,7 @@ static int adsp_rpc_init(struct msm_adsp_module *adsp_module)
 	return 0;
 }
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 /*
  * Send RPC_ADSP_RTOS_CMD_GET_INIT_INFO cmd to ARM9 and get
  * queue offsets and module entries (init info) as part of the event.
@@ -250,7 +250,7 @@ int msm_adsp_get(const char *name, struct msm_adsp_module **out,
 	struct msm_adsp_module *module;
 	int rc = 0;
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	static uint32_t init_info_cmd_sent;
 	if (!init_info_cmd_sent) {
 		msm_get_init_info();
@@ -550,7 +550,7 @@ int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 
 #ifdef CONFIG_MSM_ADSP_REPORT_EVENTS
 static void *modem_event_addr;
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 static void read_modem_event(void *buf, size_t len)
 {
 	uint32_t *dptr = buf;
@@ -574,7 +574,7 @@ static void read_modem_event(void *buf, size_t len)
 	dptr[1] = be32_to_cpu(sptr->module);
 	dptr[2] = be32_to_cpu(sptr->image);
 }
-#endif /* CONFIG_MSM_AMSS_VERSION >= 6350 */
+#endif /* CONFIG_MSM_NEW_ADSP */
 #endif /* CONFIG_MSM_ADSP_REPORT_EVENTS */
 
 static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
@@ -586,7 +586,7 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 	uint32_t module_id;
 	uint32_t image;
 	struct msm_adsp_module *module;
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	struct adsp_rtos_mp_mtoa_type *pkt_ptr =
 		&args->mtoa_pkt.adsp_rtos_mp_mtoa_data.mp_mtoa_packet;
 
@@ -693,7 +693,7 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 	case RPC_ADSP_RTOS_CMD_FAIL:
 		pr_info("adsp: module %s: CMD_FAIL\n", module->name);
 		break;
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	case RPC_ADSP_RTOS_DISABLE_FAIL:
 		pr_info("adsp: module %s: DISABLE_FAIL\n", module->name);
 		break;
@@ -1047,7 +1047,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	pr_info("adsp: probe\n");
 
 	wake_lock_init(&adsp_wake_lock, WAKE_LOCK_SUSPEND, "adsp");
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	adsp_info.init_info_ptr = kzalloc(
 		(sizeof(struct adsp_rtos_mp_mtoa_init_info_type)), GFP_KERNEL);
 	if (!adsp_info.init_info_ptr)
@@ -1062,7 +1062,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	adsp_info.write_ctrl += (uint32_t) MSM_AD5_BASE;
 	count = adsp_info.module_count;
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	max_module_id = count;
 #else
 	max_module_id = adsp_info.max_module_id + 1;
@@ -1121,7 +1121,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 		INIT_HLIST_HEAD(&mod->pmem_regions);
 		mod->pdev.name = adsp_info.module[i].pdev_name;
 		mod->pdev.id = -1;
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 		adsp_info.id_to_module[i] = mod;
 #else
 		adsp_info.id_to_module[mod->id] = mod;
@@ -1141,7 +1141,7 @@ fail_rpc_open:
 	free_irq(INT_ADSP, 0);
 fail_request_irq:
 	kfree(adsp_modules);
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_NEW_ADSP
 	kfree(adsp_info.init_info_ptr);
 #endif
 	return rc;

@@ -25,16 +25,11 @@
 #include <linux/msm_rpcrouter.h>
 
 #include <mach/msm_rpcrouter.h>
+#include <mach/msm_rpc_versions.h>
 
 #define RTC_DEBUG 0
 
 extern void msm_pm_set_max_sleep_time(int64_t sleep_time_ns);
-
-#if CONFIG_MSM_AMSS_VERSION >= 6350
-#define APP_TIMEREMOTE_PDEV_NAME "rs30000048:00010000"
-#else
-#define APP_TIMEREMOTE_PDEV_NAME "rs30000048:0da5b528"
-#endif
 
 #define TIMEREMOTE_PROCEEDURE_SET_JULIAN	6
 #define TIMEREMOTE_PROCEEDURE_GET_JULIAN	7

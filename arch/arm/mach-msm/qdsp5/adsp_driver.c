@@ -20,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
+#include <mach/msm_rpc_versions.h>
 
 #include "adsp.h"
 
@@ -437,7 +438,7 @@ static long adsp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return adsp_get_event(adev, (void __user *) arg);
 
 	case ADSP_IOCTL_SET_CLKRATE: {
-#if CONFIG_MSM_AMSS_VERSION==6350
+#ifdef CONFIG_MSM_NEW_ADSP
 		unsigned long clk_rate;
 		if (copy_from_user(&clk_rate, (void *) arg, sizeof(clk_rate)))
 			return -EFAULT;

@@ -22,7 +22,7 @@
 #include <linux/list.h>
 #include <linux/platform_device.h>
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
+#ifdef CONFIG_MSM_RPC_ROUTER_BW_COMPAT
 /* RPC API version structure
  * Version bit 31 : 1->hashkey versioning,
  *                  0->major-minor (backward compatible) versioning
