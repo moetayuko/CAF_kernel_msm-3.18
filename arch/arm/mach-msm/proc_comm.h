@@ -74,7 +74,7 @@ enum {
 };
 
 /* List of VREGs that support the Pull Down Resistor setting. */
-enum {
+enum vreg_pdown_id {
 	PM_VREG_PDOWN_MSMA_ID,
 	PM_VREG_PDOWN_MSMP_ID,
 	PM_VREG_PDOWN_MSME1_ID,	/* Not supported in Panoramix */
