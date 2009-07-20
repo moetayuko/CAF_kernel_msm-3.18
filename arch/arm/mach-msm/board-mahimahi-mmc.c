@@ -15,6 +15,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/debugfs.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -32,6 +33,8 @@
 #include "board-mahimahi.h"
 #include "devices.h"
 #include "proc_comm.h"
+
+#undef MAHIMAHI_DEBUG_MMC
 
 static bool opt_disable_sdcard;
 static int __init mahimahi_disablesdcard_setup(char *str)
@@ -143,19 +146,116 @@ static unsigned int mahimahi_sdslot_status(struct device *dev)
 				 MMC_VDD_27_28 | MMC_VDD_28_29 | \
 				 MMC_VDD_29_30)
 
+static uint32_t wifi_on_gpio_table[] = {
+	PCOM_GPIO_CFG(51, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT3 */
+	PCOM_GPIO_CFG(52, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT2 */
+	PCOM_GPIO_CFG(53, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT1 */
+	PCOM_GPIO_CFG(54, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT0 */
+	PCOM_GPIO_CFG(55, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_8MA), /* CMD */
+	PCOM_GPIO_CFG(56, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_8MA), /* CLK */
+	PCOM_GPIO_CFG(152, 0, GPIO_INPUT, GPIO_NO_PULL, GPIO_4MA),  /* WLAN IRQ */
+};
+
+static uint32_t wifi_off_gpio_table[] = {
+	PCOM_GPIO_CFG(51, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT3 */
+	PCOM_GPIO_CFG(52, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT2 */
+	PCOM_GPIO_CFG(53, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT1 */
+	PCOM_GPIO_CFG(54, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT0 */
+	PCOM_GPIO_CFG(55, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* CMD */
+	PCOM_GPIO_CFG(56, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* CLK */
+	PCOM_GPIO_CFG(152, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA),  /* WLAN IRQ */
+};
+
+static int mahimahi_wifi_cd = 0; /* WIFI virtual 'card detect' status */
+static void (*wifi_status_cb)(int card_present, void *dev_id);
+static void *wifi_status_cb_devid;
+
+static int mahimahi_wifi_status_register(
+			void (*callback)(int card_present, void *dev_id),
+			void *dev_id)
+{
+	if (wifi_status_cb)
+		return -EAGAIN;
+	wifi_status_cb = callback;
+	wifi_status_cb_devid = dev_id;
+	return 0;
+}
+
+static unsigned int mahimahi_wifi_status(struct device *dev)
+{
+	return mahimahi_wifi_cd;
+}
+
 static struct mmc_platform_data mahimahi_sdslot_data = {
 	.ocr_mask	= MAHIMAHI_MMC_VDD,
 	.status		= mahimahi_sdslot_status,
 	.translate_vdd	= mahimahi_sdslot_switchvdd,
 };
 
+static struct mmc_platform_data mahimahi_wifi_data = {
+	.ocr_mask		= MMC_VDD_28_29,
+	.status			= mahimahi_wifi_status,
+	.register_status_notify	= mahimahi_wifi_status_register,
+	.embedded_sdio		= NULL,
+};
+
+int mahimahi_wifi_set_carddetect(int val)
+{
+	pr_info("%s: %d\n", __func__, val);
+	mahimahi_wifi_cd = val;
+	if (wifi_status_cb) {
+		wifi_status_cb(val, wifi_status_cb_devid);
+	} else
+		pr_warning("%s: Nobody to notify\n", __func__);
+	return 0;
+}
+
+static int mahimahi_wifi_power_state;
+
+int mahimahi_wifi_power(int on)
+{
+	printk("%s: %d\n", __func__, on);
+
+	if (on) {
+		config_gpio_table(wifi_on_gpio_table,
+				  ARRAY_SIZE(wifi_on_gpio_table));
+		mdelay(50);
+	} else {
+		config_gpio_table(wifi_off_gpio_table,
+				  ARRAY_SIZE(wifi_off_gpio_table));
+	}
+
+	mdelay(100);
+	gpio_set_value(MAHIMAHI_GPIO_WIFI_SHUTDOWN_N, on); /* WIFI_SHUTDOWN */
+	mdelay(200);
+
+	mahimahi_wifi_power_state = on;
+	return 0;
+}
+
+static int mahimahi_wifi_reset_state;
+
+int mahimahi_wifi_reset(int on)
+{
+	printk("%s: do nothing\n", __func__);
+	mahimahi_wifi_reset_state = on;
+	return 0;
+}
+
 int msm_add_sdcc(unsigned int controller, struct mmc_platform_data *plat,
 		 unsigned int stat_irq, unsigned long stat_irq_flags);
 
 int __init mahimahi_init_mmc(unsigned int sys_rev)
 {
+	uint32_t id;
+
 	printk("%s()+\n", __func__);
 
+	/* initial WIFI_SHUTDOWN# */
+	id = PCOM_GPIO_CFG(MAHIMAHI_GPIO_WIFI_SHUTDOWN_N, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_2MA),
+	msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
+
+	msm_add_sdcc(1, &mahimahi_wifi_data, 0, 0);
 
 	if (opt_disable_sdcard) {
 		pr_info("%s: sdcard disabled on cmdline\n", __func__);
@@ -169,12 +269,118 @@ int __init mahimahi_init_mmc(unsigned int sys_rev)
 		return PTR_ERR(sdslot_vreg);
 
 	set_irq_wake(MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_N), 1);
-
 	msm_add_sdcc(2, &mahimahi_sdslot_data,
 		     MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_N),
 		     IORESOURCE_IRQ_LOWEDGE | IORESOURCE_IRQ_HIGHEDGE);
-
 done:
 	printk("%s()-\n", __func__);
 	return 0;
 }
+
+#if defined(MAHIMAHI_DEBUG_MMC) && defined(CONFIG_DEBUG_FS)
+
+static int mahimahimmc_dbg_wifi_reset_set(void *data, u64 val)
+{
+	mahimahi_wifi_reset((int) val);
+	return 0;
+}
+
+static int mahimahimmc_dbg_wifi_reset_get(void *data, u64 *val)
+{
+	*val = mahimahi_wifi_reset_state;
+	return 0;
+}
+
+static int mahimahimmc_dbg_wifi_cd_set(void *data, u64 val)
+{
+	mahimahi_wifi_set_carddetect((int) val);
+	return 0;
+}
+
+static int mahimahimmc_dbg_wifi_cd_get(void *data, u64 *val)
+{
+	*val = mahimahi_wifi_cd;
+	return 0;
+}
+
+static int mahimahimmc_dbg_wifi_pwr_set(void *data, u64 val)
+{
+	mahimahi_wifi_power((int) val);
+	return 0;
+}
+
+static int mahimahimmc_dbg_wifi_pwr_get(void *data, u64 *val)
+{
+	*val = mahimahi_wifi_power_state;
+	return 0;
+}
+
+static int mahimahimmc_dbg_sd_pwr_set(void *data, u64 val)
+{
+	mahimahi_sdslot_switchvdd(NULL, (unsigned int) val);
+	return 0;
+}
+
+static int mahimahimmc_dbg_sd_pwr_get(void *data, u64 *val)
+{
+	*val = sdslot_vdd;
+	return 0;
+}
+
+static int mahimahimmc_dbg_sd_cd_set(void *data, u64 val)
+{
+	return -ENOSYS;
+}
+
+static int mahimahimmc_dbg_sd_cd_get(void *data, u64 *val)
+{
+	*val = mahimahi_sdslot_status(NULL);
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(mahimahimmc_dbg_wifi_reset_fops,
+			mahimahimmc_dbg_wifi_reset_get,
+			mahimahimmc_dbg_wifi_reset_set, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(mahimahimmc_dbg_wifi_cd_fops,
+			mahimahimmc_dbg_wifi_cd_get,
+			mahimahimmc_dbg_wifi_cd_set, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(mahimahimmc_dbg_wifi_pwr_fops,
+			mahimahimmc_dbg_wifi_pwr_get,
+			mahimahimmc_dbg_wifi_pwr_set, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(mahimahimmc_dbg_sd_pwr_fops,
+			mahimahimmc_dbg_sd_pwr_get,
+			mahimahimmc_dbg_sd_pwr_set, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(mahimahimmc_dbg_sd_cd_fops,
+			mahimahimmc_dbg_sd_cd_get,
+			mahimahimmc_dbg_sd_cd_set, "%llu\n");
+
+static int __init mahimahimmc_dbg_init(void)
+{
+	struct dentry *dent;
+
+	if (!machine_is_mahimahi())
+		return 0;
+
+	dent = debugfs_create_dir("mahimahi_mmc_dbg", 0);
+	if (IS_ERR(dent))
+		return PTR_ERR(dent);
+
+	debugfs_create_file("wifi_reset", 0644, dent, NULL,
+			    &mahimahimmc_dbg_wifi_reset_fops);
+	debugfs_create_file("wifi_cd", 0644, dent, NULL,
+			    &mahimahimmc_dbg_wifi_cd_fops);
+	debugfs_create_file("wifi_pwr", 0644, dent, NULL,
+			    &mahimahimmc_dbg_wifi_pwr_fops);
+	debugfs_create_file("sd_pwr", 0644, dent, NULL,
+			    &mahimahimmc_dbg_sd_pwr_fops);
+	debugfs_create_file("sd_cd", 0644, dent, NULL,
+			    &mahimahimmc_dbg_sd_cd_fops);
+	return 0;
+}
+
+device_initcall(mahimahimmc_dbg_init);
+#endif
