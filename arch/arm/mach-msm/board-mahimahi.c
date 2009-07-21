@@ -223,12 +223,12 @@ struct cy8c_i2c_platform_data mahimahi_cy8c_ts_data = {
 static struct synaptics_i2c_rmi_platform_data mahimahi_synaptics_ts_data[] = {
 	{
 		.power = mahimahi_ts_power,
-		.flags = SYNAPTICS_FLIP_Y | SYNAPTICS_SNAP_TO_INACTIVE_EDGE,
+		.flags = SYNAPTICS_FLIP_Y,
 		.inactive_left = -25 * 0x10000 / 480,
 		.inactive_right = -20 * 0x10000 / 480,
 		.inactive_top = -15 * 0x10000 / 800,
 		.inactive_bottom = -40 * 0x10000 / 800,
-		.sensitivity_adjust = 8,
+		.sensitivity_adjust = 12,
 	},
 };
 
@@ -332,11 +332,11 @@ static ssize_t mahimahi_virtual_keys_show(struct kobject *kobj,
 {
 	/* center: x: home: 55, menu: 185, back: 305, search 425, y: 835 */
 	return sprintf(buf,
-		__stringify(EV_KEY) ":" __stringify(KEY_HOME)   ":55:835:55:55"
-	    ":" __stringify(EV_KEY) ":" __stringify(KEY_MENU)   ":185:835:90:45"
-	    ":" __stringify(EV_KEY) ":" __stringify(KEY_BACK)   ":305:835:55:55"
-	    ":" __stringify(EV_KEY) ":" __stringify(KEY_SEARCH) ":425:835:55:55"
-	    "\n");
+		__stringify(EV_KEY) ":" __stringify(KEY_HOME)  ":55:835:70:55"
+	   ":" __stringify(EV_KEY) ":" __stringify(KEY_MENU)   ":185:835:100:55"
+	   ":" __stringify(EV_KEY) ":" __stringify(KEY_BACK)   ":305:835:70:55"
+	   ":" __stringify(EV_KEY) ":" __stringify(KEY_SEARCH) ":425:835:70:55"
+	   "\n");
 }
 
 static struct kobj_attribute mahimahi_virtual_keys_attr = {
