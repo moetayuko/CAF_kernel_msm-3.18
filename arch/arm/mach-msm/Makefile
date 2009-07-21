@@ -48,6 +48,7 @@ obj-$(CONFIG_MACH_SAPPHIRE) += devices_htc.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi.o board-mahimahi-panel.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-keypad.o board-mahimahi-mmc.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-rfkill.o htc_wifi_nvs.o
+obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-wifi.o
 
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 
