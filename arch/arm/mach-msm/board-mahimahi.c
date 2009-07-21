@@ -38,6 +38,7 @@
 #include <mach/hardware.h>
 #include <mach/msm_hsusb.h>
 #include <mach/msm_iomap.h>
+#include <mach/system.h>
 
 #include "board-mahimahi.h"
 #include "devices.h"
@@ -356,6 +357,11 @@ static struct attribute_group mahimahi_properties_attr_group = {
 	.attrs = mahimahi_properties_attrs,
 };
 
+static void mahimahi_reset(void)
+{
+	gpio_set_value(MAHIMAHI_GPIO_PS_HOLD, 0);
+}
+
 int mahimahi_init_mmc(int sysrev);
 void msm_serial_debug_init(unsigned int base, int irq,
 			   struct device *clk_device, int signal_irq);
@@ -366,6 +372,8 @@ static void __init mahimahi_init(void)
 	struct kobject *properties_kobj;
 
 	printk("mahimahi_init() revision=%d\n", system_rev);
+
+	msm_hw_reset_hook = mahimahi_reset;
 
 	msm_acpu_clock_init(&mahimahi_clock_data);
 
