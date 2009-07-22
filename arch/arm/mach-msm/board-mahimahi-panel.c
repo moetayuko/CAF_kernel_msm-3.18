@@ -73,9 +73,8 @@ static int samsung_oled_panel_blank(struct msm_lcdc_panel_ops *ops)
 	pr_info("%s: +()\n", __func__);
 	clk_enable(spi_clk);
 	lcm_writeb(0x14, 0x1);
-	msleep(200);
 	lcm_writeb(0x1d, 0xa1);
-	msleep(300);
+	msleep(200);
 	clk_disable(spi_clk);
 	pr_info("%s: -()\n", __func__);
 	return 0;
@@ -86,9 +85,8 @@ static int samsung_oled_panel_unblank(struct msm_lcdc_panel_ops *ops)
 	pr_info("%s: +()\n", __func__);
 	clk_enable(spi_clk);
 	lcm_writeb(0x1d, 0xa0);
-	msleep(200);
 	lcm_writeb(0x14, 0x03);
-	msleep(100);
+	msleep(200);
 	clk_disable(spi_clk);
 	pr_info("%s: -()\n", __func__);
 	return 0;
