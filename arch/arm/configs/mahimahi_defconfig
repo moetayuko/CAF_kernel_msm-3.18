@@ -625,6 +625,7 @@ CONFIG_NETDEV_10000=y
 # CONFIG_WLAN_PRE80211 is not set
 # CONFIG_WLAN_80211 is not set
 # CONFIG_IWLWIFI_LEDS is not set
+CONFIG_BCM4329=m
 
 #
 # Enable WiMAX (Networking options) to see the WiMAX drivers
