@@ -213,6 +213,7 @@ static void lcdc_dma_start(void *priv, uint32_t addr, uint32_t stride,
 			   uint32_t y)
 {
 	struct mdp_lcdc_info *lcdc = priv;
+	mdp_writel(lcdc->mdp, stride, MDP_DMA_P_IBUF_Y_STRIDE);
 	mdp_writel(lcdc->mdp, addr, MDP_DMA_P_IBUF_ADDR);
 }
 
