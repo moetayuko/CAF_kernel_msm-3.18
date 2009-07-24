@@ -18,6 +18,7 @@
 #include <linux/gpio_event.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
+#include <linux/keyreset.h>
 #include <linux/platform_device.h>
 #include <mach/vreg.h>
 
@@ -214,12 +215,39 @@ static struct platform_device mahimahi_jogball_device = {
 	},
 };
 
+static int mahimahi_reset_keys_up[] = {
+	KEY_VOLUMEUP,
+	0,
+};
+
+static struct keyreset_platform_data mahimahi_reset_keys_pdata = {
+	.keys_up	= mahimahi_reset_keys_up,
+	.keys_down	= {
+		KEY_END,
+		KEY_VOLUMEDOWN,
+		BTN_MOUSE,
+		0
+	},
+};
+
+struct platform_device mahimahi_reset_keys_device = {
+	.name	= KEYRESET_NAME,
+	.dev	= {
+		.platform_data = &mahimahi_reset_keys_pdata,
+	},
+};
+
+
 static int __init mahimahi_init_keypad_jogball(void)
 {
 	int ret;
 
 	if (!machine_is_mahimahi())
 		return 0;
+
+	ret = platform_device_register(&mahimahi_reset_keys_device);
+	if (ret != 0)
+		return ret;
 
 	ret = platform_device_register(&mahimahi_keypad_device);
 	if (ret != 0)
