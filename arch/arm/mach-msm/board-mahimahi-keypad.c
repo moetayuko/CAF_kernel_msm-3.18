@@ -47,7 +47,7 @@ static unsigned int mahimahi_row_gpios[] = { 42, 41, 40 };
 static const unsigned short mahimahi_keymap[KEYMAP_SIZE] = {
 	[KEYMAP_INDEX(0, 0)] = KEY_VOLUMEUP,
 	[KEYMAP_INDEX(0, 1)] = KEY_VOLUMEDOWN,
-	[KEYMAP_INDEX(1, 1)] = BTN_MOUSE,
+	[KEYMAP_INDEX(1, 1)] = MATRIX_KEY(1, BTN_MOUSE),
 };
 
 static struct gpio_event_matrix_info mahimahi_keypad_matrix_info = {
@@ -67,35 +67,17 @@ static struct gpio_event_matrix_info mahimahi_keypad_matrix_info = {
 static struct gpio_event_direct_entry mahimahi_keypad_key_map[] = {
 	{
 		.gpio	= MAHIMAHI_GPIO_POWER_KEY,
-		.code	= KEY_END,
+		.code	= KEY_POWER,
 	},
 };
 
 static struct gpio_event_input_info mahimahi_keypad_key_info = {
 	.info.func = gpio_event_input_func,
+	.info.no_suspend = true,
 	.flags = 0,
 	.type = EV_KEY,
 	.keymap = mahimahi_keypad_key_map,
 	.keymap_size = ARRAY_SIZE(mahimahi_keypad_key_map)
-};
-
-static struct gpio_event_info *mahimahi_keypad_info[] = {
-	&mahimahi_keypad_matrix_info.info,
-	&mahimahi_keypad_key_info.info,
-};
-
-static struct gpio_event_platform_data mahimahi_keypad_data = {
-	.name = "mahimahi-keypad",
-	.info = mahimahi_keypad_info,
-	.info_count = ARRAY_SIZE(mahimahi_keypad_info)
-};
-
-static struct platform_device mahimahi_keypad_device = {
-	.name = GPIO_EVENT_DEV_NAME,
-	.id = 0,
-	.dev = {
-		.platform_data = &mahimahi_keypad_data,
-	},
 };
 
 /* jogball */
@@ -118,22 +100,6 @@ static uint16_t jogball_axis_map(struct gpio_event_axis_info *info, uint16_t in)
 ignore:
 	ai->in_state = in;
 	return out;
-}
-
-static int fake_event_func(struct input_dev *input_dev,
-			   struct gpio_event_info *info, void **data, int func)
-{
-	struct gpio_event_input_info *di;
-	int i;
-
-	di = container_of(info, struct gpio_event_input_info, info);
-
-	if (func != GPIO_EVENT_FUNC_INIT)
-		return 0;
-
-	for (i = 0; i < di->keymap_size; ++i)
-		input_set_capability(input_dev, di->type, di->keymap[i].code);
-	return 0;
 }
 
 static int jogball_power(const struct gpio_event_platform_data *pdata, bool on)
@@ -160,6 +126,7 @@ static struct jog_axis_info jogball_x_axis = {
 	.info = {
 		.info.func = gpio_event_axis_func,
 		.count = ARRAY_SIZE(jogball_x_gpios),
+		.dev = 1,
 		.type = EV_REL,
 		.code = REL_X,
 		.decoded_size = 1U << ARRAY_SIZE(jogball_x_gpios),
@@ -173,6 +140,7 @@ static struct jog_axis_info jogball_y_axis = {
 	.info = {
 		.info.func = gpio_event_axis_func,
 		.count = ARRAY_SIZE(jogball_y_gpios),
+		.dev = 1,
 		.type = EV_REL,
 		.code = REL_Y,
 		.decoded_size = 1U << ARRAY_SIZE(jogball_y_gpios),
@@ -182,36 +150,29 @@ static struct jog_axis_info jogball_y_axis = {
 	}
 };
 
-static struct gpio_event_direct_entry fake_buttons[] = {
-	{ 0, BTN_MOUSE },
-};
-
-static struct gpio_event_input_info jogball_button_info = {
-	.info.func = fake_event_func,
-	.flags = 0,
-	.type = EV_KEY,
-	.keymap = fake_buttons,
-	.keymap_size = ARRAY_SIZE(fake_buttons)
-};
-
-static struct gpio_event_info *mahimahi_jogball_info[] = {
+static struct gpio_event_info *mahimahi_input_info[] = {
+	&mahimahi_keypad_matrix_info.info,
+	&mahimahi_keypad_key_info.info,
 	&jogball_x_axis.info.info,
 	&jogball_y_axis.info.info,
-	&jogball_button_info.info,
 };
 
-static struct gpio_event_platform_data mahimahi_jogball_data = {
-	.name = "mahimahi-nav",
-	.info = mahimahi_jogball_info,
-	.info_count = ARRAY_SIZE(mahimahi_jogball_info),
+static struct gpio_event_platform_data mahimahi_input_data = {
+	.names = {
+		"mahimahi-keypad",
+		"mahimahi-nav",
+		NULL,
+	},
+	.info = mahimahi_input_info,
+	.info_count = ARRAY_SIZE(mahimahi_input_info),
 	.power = jogball_power,
 };
 
-static struct platform_device mahimahi_jogball_device = {
+static struct platform_device mahimahi_input_device = {
 	.name = GPIO_EVENT_DEV_NAME,
-	.id = 1,
+	.id = 0,
 	.dev = {
-		.platform_data = &mahimahi_jogball_data,
+		.platform_data = &mahimahi_input_data,
 	},
 };
 
@@ -223,7 +184,7 @@ static int mahimahi_reset_keys_up[] = {
 static struct keyreset_platform_data mahimahi_reset_keys_pdata = {
 	.keys_up	= mahimahi_reset_keys_up,
 	.keys_down	= {
-		KEY_END,
+		KEY_POWER,
 		KEY_VOLUMEDOWN,
 		BTN_MOUSE,
 		0
@@ -249,15 +210,11 @@ static int __init mahimahi_init_keypad_jogball(void)
 	if (ret != 0)
 		return ret;
 
-	ret = platform_device_register(&mahimahi_keypad_device);
-	if (ret != 0)
-		return ret;
-
-	jog_vreg = vreg_get(&mahimahi_jogball_device.dev, "gp2");
+	jog_vreg = vreg_get(&mahimahi_input_device.dev, "gp2");
 	if (jog_vreg == NULL)
 		return -ENOENT;
 
-	ret = platform_device_register(&mahimahi_jogball_device);
+	ret = platform_device_register(&mahimahi_input_device);
 	if (ret != 0)
 		return ret;
 
