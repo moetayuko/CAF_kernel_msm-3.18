@@ -32,7 +32,7 @@ static struct wifi_platform_data mahimahi_wifi_control = {
 };
 
 static struct platform_device mahimahi_wifi_device = {
-        .name           = "device_wifi",
+        .name           = "bcm4329_wlan",
         .id             = 1,
         .num_resources  = ARRAY_SIZE(mahimahi_wifi_resources),
         .resource       = mahimahi_wifi_resources,
@@ -53,4 +53,4 @@ static int __init mahimahi_wifi_init(void)
         return ret;
 }
 
-device_initcall(mahimahi_wifi_init);
+late_initcall(mahimahi_wifi_init);
