@@ -644,7 +644,9 @@ int mdp_probe(struct platform_device *pdev)
 		goto error_request_irq;
 	disable_irq(mdp->irq);
 
+	clk_enable(mdp->clk);
 	mdp_hw_init(mdp);
+	clk_disable(mdp->clk);
 
 	/* register mdp device */
 	mdp->mdp_dev.dev.parent = &pdev->dev;
