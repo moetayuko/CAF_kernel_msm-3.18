@@ -494,7 +494,7 @@ static void mdp_dump_blit(struct mdp_blit_req *req)
 		req->src.width, req->src.height, req->src.format,
 		req->src.offset, req->src.memory_id);
 	pr_info("%s: dst: w=%d h=%d f=0x%x offs=0x%x mem_id=%d\n", __func__,
-		req->dst.width, req->dst.height, req->src.format,
+		req->dst.width, req->dst.height, req->dst.format,
 		req->dst.offset, req->dst.memory_id);
 	pr_info("%s: src_rect: x=%d y=%d w=%d h=%d\n", __func__,
 		req->src_rect.x, req->src_rect.y, req->src_rect.w,
