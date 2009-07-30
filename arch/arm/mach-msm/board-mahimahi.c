@@ -44,6 +44,8 @@
 #include "devices.h"
 #include "proc_comm.h"
 
+extern void __init mahimahi_audio_init(void);
+
 static char *mahimahi_usb_functions[] = {
 	"usb_mass_storage",
 	"adb",
@@ -402,6 +404,8 @@ static void __init mahimahi_init(void)
 					 &mahimahi_properties_attr_group);
 	if (!properties_kobj || ret)
 		pr_err("failed to create board_properties\n");
+
+	mahimahi_audio_init();
 }
 
 static void __init mahimahi_fixup(struct machine_desc *desc, struct tag *tags,
