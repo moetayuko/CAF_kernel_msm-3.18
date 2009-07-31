@@ -44,6 +44,7 @@
 #include "devices.h"
 #include "proc_comm.h"
 
+extern void msm_init_pmic_vibrator(void);
 extern void __init mahimahi_audio_init(void);
 
 static char *mahimahi_usb_functions[] = {
@@ -406,6 +407,8 @@ static void __init mahimahi_init(void)
 		pr_err("failed to create board_properties\n");
 
 	mahimahi_audio_init();
+
+	msm_init_pmic_vibrator();
 }
 
 static void __init mahimahi_fixup(struct machine_desc *desc, struct tag *tags,
