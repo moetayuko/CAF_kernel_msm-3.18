@@ -1,7 +1,7 @@
-/* arch/arm/mach-msm/qdsp6/pcm_out.c
+/* arch/arm/mach-msm/qdsp6/pcm_in.c
  *
  * Copyright (C) 2009 Google, Inc.
- * Author: Brian Swetland <swetland@google.com>
+ * Copyright (C) 2009 HTC Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,11 +26,10 @@
 
 #include <mach/msm_qdsp6_audio.h>
 
-//#define BUFSZ (4096)
-#define BUFSZ (8192)
+#define BUFSZ (4096)
 #define DMASZ (BUFSZ * 2)
 
-static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct audio_client *ac = file->private_data;
 	int rc = 0;
@@ -70,8 +69,8 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		struct msm_audio_config config;
 		config.buffer_size = BUFSZ;
 		config.buffer_count = 2;
-		config.sample_rate = 44100;
-		config.channel_count = 2;
+		config.sample_rate = 8000;
+		config.channel_count = 1;
 		config.unused[0] = 0;
 		config.unused[1] = 0;
 		config.unused[2] = 0;
@@ -87,17 +86,17 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return rc;
 }
 
-static int q6_open(struct inode *inode, struct file *file)
+static int q6_in_open(struct inode *inode, struct file *file)
 {
-	file->private_data = q6audio_open_pcm(BUFSZ, 44100, 2, AUDIO_FLAG_WRITE);
+	file->private_data = q6audio_open_pcm(BUFSZ, 8000, 1, AUDIO_FLAG_READ);
 	if (!file->private_data)
 		return -ENOMEM;
 
 	return 0;
 }
 
-static ssize_t q6_write(struct file *file, const char __user *buf,
-			   size_t count, loff_t *pos)
+static ssize_t q6_in_read(struct file *file, char __user *buf,
+			  size_t count, loff_t *pos)
 {
 	struct audio_client *ac = file->private_data;
 	struct audio_buffer *ab;
@@ -114,68 +113,41 @@ static ssize_t q6_write(struct file *file, const char __user *buf,
 		if (xfer > ab->size)
 			xfer = ab->size;
 
-		if (copy_from_user(ab->data, buf, xfer)) 
+		if (copy_to_user(buf, ab->data, xfer))
 			return -EFAULT;
 
 		buf += xfer;
 		count -= xfer;
 
-		ab->used = xfer;
-		q6audio_write(ac, ab);
+		ab->used = 1;
+		q6audio_read(ac, ab);
 		ac->cpu_buf ^= 1;
 	}
 
 	return buf - start;
 }
 
-static int q6_release(struct inode *inode, struct file *file)
+static int q6_in_release(struct inode *inode, struct file *file)
 {
 	return q6audio_close(file->private_data);
 }
 
-static struct file_operations q6_fops = {
+static struct file_operations q6_in_fops = {
 	.owner		= THIS_MODULE,
-	.open		= q6_open,
-	.write		= q6_write,
-	.release	= q6_release,
-	.unlocked_ioctl	= q6_ioctl,
+	.open		= q6_in_open,
+	.read		= q6_in_read,
+	.release	= q6_in_release,
+	.unlocked_ioctl	= q6_in_ioctl,
 };
 
-struct miscdevice q6_misc = {
+struct miscdevice q6_in_misc = {
 	.minor	= MISC_DYNAMIC_MINOR,
-	.name	= "msm_pcm_out",
-	.fops	= &q6_fops,
+	.name	= "msm_pcm_in",
+	.fops	= &q6_in_fops,
 };
 
-/* legacy audpp interface -- just until userspace no longer needs it */
-static long audpp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	printk("AUDPP_IOCTL %x\n", cmd);
-	return 0;
+static int __init q6_in_init(void) {
+	return misc_register(&q6_in_misc);
 }
 
-static int audpp_open(struct inode *inode, struct file *file)
-{
-	printk("AUDPP_OPEN\n");
-	return 0;
-}
-
-static struct file_operations audpp_fops = {
-	.owner		= THIS_MODULE,
-	.open		= audpp_open,
-	.unlocked_ioctl	= audpp_ioctl,
-};
-
-struct miscdevice audpp_misc = {
-	.minor	= MISC_DYNAMIC_MINOR,
-	.name	= "msm_pcm_ctl",
-	.fops	= &audpp_fops,
-};
-
-
-static int __init q6_init(void) {
-	misc_register(&audpp_misc);
-	return misc_register(&q6_misc);
-}
-
-device_initcall(q6_init);
+device_initcall(q6_in_init);

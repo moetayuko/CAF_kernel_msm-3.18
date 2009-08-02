@@ -17,34 +17,39 @@
 #ifndef _MACH_MSM_QDSP6_Q6AUDIO_
 #define _MACH_MSM_QDSP6_Q6AUDIO_
 
+#define AUDIO_FLAG_READ		0
+#define AUDIO_FLAG_WRITE	1
+
 struct audio_buffer {
-        dma_addr_t phys;
-        void *data;
-        uint32_t size;
-        uint32_t used;
+	dma_addr_t phys;
+	void *data;
+	uint32_t size;
+	uint32_t used;	/* 1 = CPU is waiting for DSP to consume this buf */
 };
 
 struct audio_client {
-        struct audio_buffer buf[2];
-        int write_buf;
-        int read_buf;
-        int running;
-        int session;
+	struct audio_buffer buf[2];
+	int cpu_buf;	/* next buffer the CPU will touch */
+	int dsp_buf;	/* next buffer the DSP will touch */
+	int running;
+	int session;
 
-        wait_queue_head_t wait;
-        struct dal_client *client;
+	wait_queue_head_t wait;
+	struct dal_client *client;
 
-        int cb_status;
+	int cb_status;
+	uint32_t flags;
 };
 
 /* Obtain a 16bit signed, interleaved audio channel of the specified
  * rate (Hz) and channels (1 or 2), with two buffers of bufsz bytes.
  */
-struct audio_client *q6audio_open_pcm(uint32_t bufsz,
-				      uint32_t rate, uint32_t channels);
+struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
+				      uint32_t channels, uint32_t flags);
 
 int q6audio_close(struct audio_client *ac);
 
+int q6audio_read(struct audio_client *ac, struct audio_buffer *ab);
 int q6audio_write(struct audio_client *ac, struct audio_buffer *ab);
 
 struct q6audio_analog_ops {
