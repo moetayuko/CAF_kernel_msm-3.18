@@ -87,7 +87,7 @@ static int wifi_calibration_read_proc(char *page, char **start, off_t off,
 
 static int __init wifi_nvs_init(void)
 {
-	wifi_calibration = create_proc_entry("calibration", 0400, NULL);
+	wifi_calibration = create_proc_entry("calibration", 0444, NULL);
 	if (wifi_calibration != NULL) {
 		wifi_calibration->size = wifi_get_nvs_size();
 		wifi_calibration->read_proc = wifi_calibration_read_proc;
