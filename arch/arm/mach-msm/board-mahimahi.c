@@ -313,6 +313,13 @@ static uint32_t bt_gpio_table[] = {
 		      GPIO_PULL_DOWN, GPIO_4MA),
 };
 
+static int __init board_serialno_setup(char *serialno)
+{
+	msm_hsusb_pdata.serial_number = serialno;
+	return 1;
+}
+__setup("androidboot.serialno=", board_serialno_setup);
+
 static void config_gpio_table(uint32_t *table, int len)
 {
 	int n;
