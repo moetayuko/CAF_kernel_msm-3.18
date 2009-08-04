@@ -147,34 +147,7 @@ struct miscdevice q6_misc = {
 	.fops	= &q6_fops,
 };
 
-/* legacy audpp interface -- just until userspace no longer needs it */
-static long audpp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	printk("AUDPP_IOCTL %x\n", cmd);
-	return 0;
-}
-
-static int audpp_open(struct inode *inode, struct file *file)
-{
-	printk("AUDPP_OPEN\n");
-	return 0;
-}
-
-static struct file_operations audpp_fops = {
-	.owner		= THIS_MODULE,
-	.open		= audpp_open,
-	.unlocked_ioctl	= audpp_ioctl,
-};
-
-struct miscdevice audpp_misc = {
-	.minor	= MISC_DYNAMIC_MINOR,
-	.name	= "msm_pcm_ctl",
-	.fops	= &audpp_fops,
-};
-
-
 static int __init q6_init(void) {
-	misc_register(&audpp_misc);
 	return misc_register(&q6_misc);
 }
 
