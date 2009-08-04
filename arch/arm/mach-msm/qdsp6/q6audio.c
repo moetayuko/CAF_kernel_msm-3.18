@@ -41,6 +41,40 @@ void q6audio_register_analog_ops(struct q6audio_analog_ops *ops)
 	analog_ops = ops;
 }
 
+uint32_t get_device_group(uint32_t device_id)
+{
+
+	switch(device_id) {
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
+		return 0;
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
+		return 1;
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_BT_A2DP_SPKR:
+		return 2;
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
+		return 3;
+	case ADSP_AUDIO_DEVICE_ID_I2S_SPKR:
+		return 6;
+	case ADSP_AUDIO_DEVICE_ID_I2S_MIC:
+		return 7;
+	default:
+		pr_err("invalid device id %d\n", device_id);
+		return -1;
+	}
+}
 static inline int adie_open(struct dal_client *client) 
 {
 	return dal_call_f0(client, DAL_OP_OPEN, 0);
@@ -446,17 +480,6 @@ static int q6audio_init(void)
 	ecodec_clk = clk_get(0, "ecodec_clk");
 	sdac_clk = clk_get(0, "sdac_clk");
 
-	/* for playback */
-	clk_enable(icodec_rx_clk);
-	clk_enable(sdac_clk);
-	clk_set_rate(sdac_clk, 12288000);
-	clk_set_rate(icodec_rx_clk, 12288000);
-
-	clk_enable(icodec_tx_clk);
-	clk_enable(ecodec_clk);
-	clk_set_rate(ecodec_clk, 2048000);
-	clk_set_rate(icodec_tx_clk, tx_clk_freq * 256);
-
 	audio_data = dma_alloc_coherent(NULL, 4096, &audio_phys, GFP_KERNEL);
 	printk("q6audio_init() dma @ %p (%x)\n", audio_data, audio_phys);
 
@@ -567,10 +590,10 @@ fail:
 }
 
 
-static uint32_t audio_path_id = ADIE_PATH_SPEAKER_STEREO_RX;
-// ADIE_PATH_HANDSET_RX;
-static uint32_t audio_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO;
-// ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO;
+static uint32_t audio_rx_path_id = ADIE_PATH_SPEAKER_RX;
+static uint32_t audio_rx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO;
+static uint32_t audio_tx_path_id = ADIE_PATH_SPEAKER_TX;
+static uint32_t audio_tx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC;
 
 static void _audio_rx_path_enable(void)
 {
@@ -587,10 +610,10 @@ static void _audio_rx_path_enable(void)
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 	
 	/* load the config for the actual device we're using */
-	pr_info("audiolib: load %08x cfg table\n", audio_device_id);
-	sz = acdb_get_config_table(audio_device_id, 48000);	
+	pr_info("audiolib: load %08x cfg table\n", audio_rx_device_id);
+	sz = acdb_get_config_table(audio_rx_device_id, 48000);	
 	ac_control->cb_status = -EBUSY;
-	audio_set_table(audio_ctl, audio_device_id, sz);
+	audio_set_table(audio_ctl, audio_rx_device_id, sz);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 	
 	pr_info("audiolib: enable amps\n");
@@ -600,7 +623,7 @@ static void _audio_rx_path_enable(void)
 		analog_ops->headset_enable(1);
 
 	pr_info("audiolib: set path\n");
-	adie_set_path(adie, audio_path_id, ADIE_PATH_RX);
+	adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);
 	adie_set_path_freq_plan(adie, ADIE_PATH_RX, 48000);
 
 	pr_info("audiolib: enable adie\n");
@@ -614,7 +637,6 @@ static void _audio_rx_path_enable(void)
 	ac_control->cb_status = -EBUSY;
 	audio_volume(audio_ctl, adev, 496);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
 }
 
 static void _audio_tx_path_enable(void)
@@ -622,7 +644,7 @@ static void _audio_tx_path_enable(void)
 	uint32_t adev;
 	int sz;
 
-	adev = ADSP_AUDIO_DEVICE_ID_HANDSET_MIC;
+	adev = audio_tx_device_id;
 
 	sz = acdb_get_config_table(adev, 8000);
 	ac_control->cb_status = -EBUSY;
@@ -636,7 +658,7 @@ static void _audio_tx_path_enable(void)
 		analog_ops->ext_mic_enable(1);
 
 	pr_info("audiolib: set tx path\n");
-	adie_set_path(adie, ADIE_PATH_HANDSET_TX, ADIE_PATH_TX);
+	adie_set_path(adie, audio_tx_path_id, ADIE_PATH_TX);
 	adie_set_path_freq_plan(adie, ADIE_PATH_TX, 8000);
 
 	pr_info("audiolib: enable tx adie\n");
@@ -674,6 +696,134 @@ static void _audio_tx_path_disable(void)
 		analog_ops->ext_mic_enable(0);
 }
 
+static int icodec_rx_clk_refcount;
+static int icodec_tx_clk_refcount;
+static int ecodec_clk_refcount;
+static int sdac_clk_refcount;
+
+static void _audio_rx_clk_enable(void)
+{
+	uint32_t device_group;
+
+	device_group = get_device_group(audio_rx_device_id);
+
+	switch(device_group) {
+	case 0:
+		icodec_rx_clk_refcount++;
+		if (icodec_rx_clk_refcount == 1) {
+			clk_set_rate(icodec_rx_clk, 12288000);
+			clk_enable(icodec_rx_clk);
+		}
+		break;
+	case 2:
+		ecodec_clk_refcount++;
+		if (ecodec_clk_refcount == 1) {
+			clk_set_rate(ecodec_clk, 2048000);
+			clk_enable(ecodec_clk);
+		}
+		break;
+	case 6:
+		sdac_clk_refcount++;
+		if (sdac_clk_refcount == 1) {
+			clk_set_rate(sdac_clk, 12288000);
+			clk_enable(sdac_clk);
+		}
+		break;
+	default:
+		pr_err("audiolib: invalid rx path 0x%08x\n", audio_rx_path_id);
+		break;
+	}
+}
+
+static void _audio_tx_clk_enable(void)
+{
+	uint32_t device_group;
+
+	device_group = get_device_group(audio_tx_device_id);
+	switch (device_group) {
+	case 1:
+		icodec_tx_clk_refcount++;
+		if (icodec_tx_clk_refcount == 1) {
+			clk_set_rate(icodec_tx_clk, tx_clk_freq * 256);
+			clk_enable(icodec_tx_clk);
+		}
+		break;
+	case 3:
+		ecodec_clk_refcount++;
+		if (ecodec_clk_refcount == 1) {
+			clk_set_rate(ecodec_clk, 2048000);
+			clk_enable(ecodec_clk);
+		}
+		break;
+	case 7:
+		/* TODO: In QCT BSP, clk rate was set to 20480000 */
+		sdac_clk_refcount++;
+		if (sdac_clk_refcount == 1) {
+			clk_set_rate(sdac_clk, 12288000);
+			clk_enable(sdac_clk);
+		}
+		break;
+	default:
+		pr_err("audiolib: invalid tx path 0x%08x\n", audio_tx_path_id);
+		break;
+	}
+}
+
+static void _audio_rx_clk_disable(void)
+{
+	uint32_t device_group;
+
+	device_group = get_device_group(audio_rx_device_id);
+	switch (device_group) {
+	case 0:
+		icodec_rx_clk_refcount--;
+		if (icodec_rx_clk_refcount == 0)
+			clk_disable(icodec_rx_clk);
+		break;
+	case 2:
+		ecodec_clk_refcount--;
+		if (ecodec_clk_refcount == 0)
+			clk_disable(ecodec_clk);
+		break;
+	case 6:
+		sdac_clk_refcount--;
+		if (sdac_clk_refcount == 0)
+			clk_disable(sdac_clk);
+		break;
+	default:
+		pr_err("audiolib: invalid rx path 0x%08x\n", audio_rx_path_id);
+		break;
+	}
+}
+
+static void _audio_tx_clk_disable(void)
+{
+	uint32_t device_group;
+
+	device_group = get_device_group(audio_tx_device_id);
+
+	switch (device_group) {
+	case 1:
+		icodec_tx_clk_refcount--;
+		if (icodec_tx_clk_refcount == 0)
+			clk_disable(icodec_tx_clk);
+		break;
+	case 3:
+		ecodec_clk_refcount--;
+		if (ecodec_clk_refcount == 0)
+			clk_disable(ecodec_clk);
+		break;
+	case 7:
+		sdac_clk_refcount--;
+		if (sdac_clk_refcount == 0)
+			clk_disable(sdac_clk);
+		break;
+	default:
+		pr_err("audiolib: invalid tx path 0x%08x\n", audio_tx_path_id);
+		break;
+	}
+}
+
 static DEFINE_MUTEX(audio_path_lock);
 static int audio_rx_path_refcount;
 static int audio_tx_path_refcount;
@@ -683,12 +833,16 @@ static int audio_rx_path_enable(int en)
 	mutex_lock(&audio_path_lock);
 	if (en) {
 		audio_rx_path_refcount++;
-		if (audio_rx_path_refcount == 1)
+		if (audio_rx_path_refcount == 1) {
+			_audio_rx_clk_enable();
 			_audio_rx_path_enable();
+		}
 	} else {
 		audio_rx_path_refcount--;
-		if (audio_rx_path_refcount == 0)
+		if (audio_rx_path_refcount == 0) {
 			_audio_rx_path_disable();
+			_audio_rx_clk_disable();
+		}
 	}
 	mutex_unlock(&audio_path_lock);
 	return 0;
@@ -699,12 +853,16 @@ static int audio_tx_path_enable(int en)
 	mutex_lock(&audio_path_lock);
 	if (en) {
 		audio_tx_path_refcount++;
-		if (audio_tx_path_refcount == 1)
+		if (audio_tx_path_refcount == 1) {
+			_audio_tx_clk_enable();
 			_audio_tx_path_enable();
+		}
 	} else {
 		audio_tx_path_refcount--;
-		if (audio_tx_path_refcount == 0)
+		if (audio_tx_path_refcount == 0) {
 			_audio_tx_path_disable();
+			_audio_tx_clk_disable();
+		}
 	}
 	mutex_unlock(&audio_path_lock);
 	return 0;
@@ -724,10 +882,10 @@ int q6audio_set_route(const char *name)
 	}
 
 	mutex_lock(&audio_path_lock);
-	if (route == audio_path_id)
+	if (route == audio_rx_path_id)
 		goto done;
 
-	audio_path_id = route;
+	audio_rx_path_id = route;
 
 	if (audio_rx_path_refcount > 0) {
 		_audio_rx_path_disable();
