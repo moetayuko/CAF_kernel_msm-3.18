@@ -392,6 +392,7 @@ static void __init mahimahi_init(void)
 	config_gpio_table(bt_gpio_table, ARRAY_SIZE(bt_gpio_table));
 	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
 	gpio_direction_output(MAHIMAHI_GPIO_TP_EN, 0);
+	gpio_direction_output(MAHIMAHI_GPIO_PROXIMITY_EN, 1);
 
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
