@@ -33,6 +33,7 @@
 #include <mach/board.h>
 #include <mach/msm_iomap.h>
 #include <mach/msm_hsusb.h>
+#include <mach/msm_serial_debugger.h>
 #include <mach/msm_ts.h>
 
 #include "proc_comm.h"
@@ -310,9 +311,6 @@ static void config_gpio_table(uint32_t *table, int len)
 	}
 }
 
-void msm_serial_debug_init(unsigned int base, int irq,
-			   struct device *clk_device, int signal_irq);
-
 static void __init firestone_init(void)
 {
 	int rc;
@@ -326,10 +324,8 @@ static void __init firestone_init(void)
 
 	msm_acpu_clock_init(&firestone_clock_data);
 
-#if defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	msm_serial_debug_init(MSM_UART1_PHYS, INT_UART1,
-			      &msm_device_uart1.dev, 1);
-#endif
+			      &msm_device_uart1.dev, 1, MSM_GPIO_TO_INT(139));
 
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
