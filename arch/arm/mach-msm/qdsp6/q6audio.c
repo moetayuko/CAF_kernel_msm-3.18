@@ -41,9 +41,15 @@ void q6audio_register_analog_ops(struct q6audio_analog_ops *ops)
 	analog_ops = ops;
 }
 
-uint32_t get_device_group(uint32_t device_id)
-{
+#define GROUP_ICODEC_RX		0
+#define GROUP_ICODEC_TX		1
+#define GROUP_ECODEC_RX		2
+#define GROUP_ECODEC_TX		3
+#define GROUP_SDAC_RX		6
+#define GROUP_SDAC_TX		7
 
+static uint32_t get_device_group(uint32_t device_id)
+{
 	switch(device_id) {
 	case ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR:
 	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
@@ -55,21 +61,21 @@ uint32_t get_device_group(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
-		return 0;
+		return GROUP_ICODEC_RX;
 	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
 	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
-		return 1;
+		return GROUP_ICODEC_TX;
 	case ADSP_AUDIO_DEVICE_ID_BT_SCO_SPKR:
 	case ADSP_AUDIO_DEVICE_ID_BT_A2DP_SPKR:
-		return 2;
+		return GROUP_ECODEC_RX;
 	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
-		return 3;
+		return GROUP_ECODEC_TX;
 	case ADSP_AUDIO_DEVICE_ID_I2S_SPKR:
-		return 6;
+		return GROUP_SDAC_RX;
 	case ADSP_AUDIO_DEVICE_ID_I2S_MIC:
-		return 7;
+		return GROUP_SDAC_TX;
 	default:
 		pr_err("invalid device id %d\n", device_id);
 		return -1;
@@ -782,7 +788,7 @@ static void _audio_rx_clk_enable(void)
 	device_group = get_device_group(audio_rx_device_id);
 
 	switch(device_group) {
-	case 0:
+	case GROUP_ICODEC_RX:
 		icodec_rx_clk_refcount++;
 		if (icodec_rx_clk_refcount == 1) {
 			clk_set_rate(icodec_rx_clk, 12288000);
@@ -790,7 +796,7 @@ static void _audio_rx_clk_enable(void)
 			audio_rx_device_group = device_group;
 		}
 		break;
-	case 2:
+	case GROUP_ECODEC_RX:
 		ecodec_clk_refcount++;
 		if (ecodec_clk_refcount == 1) {
 			clk_set_rate(ecodec_clk, 2048000);
@@ -798,7 +804,7 @@ static void _audio_rx_clk_enable(void)
 			audio_rx_device_group = device_group;
 		}
 		break;
-	case 6:
+	case GROUP_SDAC_RX:
 		sdac_clk_refcount++;
 		if (sdac_clk_refcount == 1) {
 			clk_set_rate(sdac_clk, 12288000);
@@ -818,7 +824,7 @@ static void _audio_tx_clk_enable(void)
 
 	device_group = get_device_group(audio_tx_device_id);
 	switch (device_group) {
-	case 1:
+	case GROUP_ICODEC_TX:
 		icodec_tx_clk_refcount++;
 		if (icodec_tx_clk_refcount == 1) {
 			clk_set_rate(icodec_tx_clk, tx_clk_freq * 256);
@@ -826,7 +832,7 @@ static void _audio_tx_clk_enable(void)
 			audio_tx_device_group = device_group;
 		}
 		break;
-	case 3:
+	case GROUP_ECODEC_TX:
 		ecodec_clk_refcount++;
 		if (ecodec_clk_refcount == 1) {
 			clk_set_rate(ecodec_clk, 2048000);
@@ -834,7 +840,7 @@ static void _audio_tx_clk_enable(void)
 			audio_tx_device_group = device_group;
 		}
 		break;
-	case 7:
+	case GROUP_SDAC_TX:
 		/* TODO: In QCT BSP, clk rate was set to 20480000 */
 		sdac_clk_refcount++;
 		if (sdac_clk_refcount == 1) {
