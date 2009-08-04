@@ -38,6 +38,7 @@
 #include <mach/hardware.h>
 #include <mach/msm_hsusb.h>
 #include <mach/msm_iomap.h>
+#include <mach/msm_serial_debugger.h>
 #include <mach/system.h>
 
 #include "board-mahimahi.h"
@@ -373,8 +374,6 @@ static void mahimahi_reset(void)
 }
 
 int mahimahi_init_mmc(int sysrev);
-void msm_serial_debug_init(unsigned int base, int irq,
-			   struct device *clk_device, int signal_irq);
 
 static void __init mahimahi_init(void)
 {
@@ -387,10 +386,8 @@ static void __init mahimahi_init(void)
 
 	msm_acpu_clock_init(&mahimahi_clock_data);
 
-#if defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	msm_serial_debug_init(MSM_UART1_PHYS, INT_UART1,
-			      &msm_device_uart1.dev, 1);
-#endif
+			      &msm_device_uart1.dev, 1, MSM_GPIO_TO_INT(139));
 
 	config_gpio_table(bt_gpio_table, ARRAY_SIZE(bt_gpio_table));
 	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
