@@ -75,6 +75,48 @@ uint32_t get_device_group(uint32_t device_id)
 		return -1;
 	}
 }
+
+uint32_t get_path_id(uint32_t device_id)
+{
+	switch(device_id) {
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR:
+		return ADIE_PATH_HANDSET_RX;
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
+		return ADIE_PATH_HEADSET_MONO_RX;
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO:
+		return ADIE_PATH_HEADSET_STEREO_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO:
+		return ADIE_PATH_SPEAKER_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_MONO_HEADSET:
+		return ADIE_PATH_SPKR_MONO_HDPH_MONO_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
+		return ADIE_PATH_SPKR_MONO_HDPH_STEREO_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO:
+		return ADIE_PATH_SPEAKER_STEREO_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
+		return ADIE_PATH_SPKR_STEREO_HDPH_MONO_RX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
+		return ADIE_PATH_SPKR_STEREO_HDPH_STEREO_RX;
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
+		return ADIE_PATH_TTY_HEADSET_RX;
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
+		return ADIE_PATH_HANDSET_TX;
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
+		return ADIE_PATH_HEADSET_MONO_TX;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
+		return ADIE_PATH_SPEAKER_TX;
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
+		return ADIE_PATH_TTY_HEADSET_TX;
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_BT_A2DP_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
+	default:
+		pr_err("ADIE paths not supported for device id %d\n",
+			device_id);
+		return 0;
+	}
+}
+
 static inline int adie_open(struct dal_client *client) 
 {
 	return dal_call_f0(client, DAL_OP_OPEN, 0);
@@ -382,7 +424,7 @@ static int audio_command(struct dal_client *client, uint32_t cmd)
 	return audio_ioctl(client, &rpc, sizeof(rpc));
 }
 
-static int audio_volume(struct dal_client *client, uint32_t dev_id, int32_t volume)
+static int audio_rx_volume(struct dal_client *client, uint32_t dev_id, int32_t volume)
 {
 	struct adsp_audio_set_device_volume rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_VOL;
@@ -395,7 +437,7 @@ static int audio_volume(struct dal_client *client, uint32_t dev_id, int32_t volu
 	return audio_ioctl(client, &rpc, sizeof(rpc));
 }
 
-static int audio_mute(struct dal_client *client, uint32_t dev_id, int mute)
+static int audio_rx_mute(struct dal_client *client, uint32_t dev_id, int mute)
 {
 	struct adsp_audio_set_device_mute rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_MUTE;
@@ -404,6 +446,32 @@ static int audio_mute(struct dal_client *client, uint32_t dev_id, int mute)
 	rpc.data = 0;
 	rpc.device_id = dev_id;
 	rpc.path = ADSP_PATH_RX;
+	rpc.mute = !!mute;
+	return audio_ioctl(client, &rpc, sizeof(rpc));
+}
+
+static int audio_tx_volume(struct dal_client *client, uint32_t dev_id, int32_t volume)
+{
+	struct adsp_audio_set_device_volume rpc;
+	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_VOL;
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.context = 0;
+	rpc.data = 0;
+	rpc.device_id = dev_id;
+	rpc.path = ADSP_PATH_TX;
+	rpc.volume = volume;
+	return audio_ioctl(client, &rpc, sizeof(rpc));
+}
+
+static int audio_tx_mute(struct dal_client *client, uint32_t dev_id, int mute)
+{
+	struct adsp_audio_set_device_mute rpc;
+	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_MUTE;
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.context = 0;
+	rpc.data = 0;
+	rpc.device_id = dev_id;
+	rpc.path = ADSP_PATH_TX;
 	rpc.mute = !!mute;
 	return audio_ioctl(client, &rpc, sizeof(rpc));
 }
@@ -592,8 +660,10 @@ fail:
 
 static uint32_t audio_rx_path_id = ADIE_PATH_SPEAKER_RX;
 static uint32_t audio_rx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO;
+static uint32_t audio_rx_device_group = -1;
 static uint32_t audio_tx_path_id = ADIE_PATH_SPEAKER_TX;
 static uint32_t audio_tx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC;
+static uint32_t audio_tx_device_group = -1;
 
 static void _audio_rx_path_enable(void)
 {
@@ -631,11 +701,11 @@ static void _audio_rx_path_enable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
 	ac_control->cb_status = -EBUSY;
-	audio_mute(audio_ctl, adev, 0);
+	audio_rx_mute(audio_ctl, adev, 0);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 
 	ac_control->cb_status = -EBUSY;
-	audio_volume(audio_ctl, adev, 496);
+	audio_rx_volume(audio_ctl, adev, 496);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 }
 
@@ -666,7 +736,11 @@ static void _audio_tx_path_enable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
 	ac_control->cb_status = -EBUSY;
-	audio_mute(audio_ctl, adev, 0);
+	audio_tx_mute(audio_ctl, adev, 0);
+	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+	ac_control->cb_status = -EBUSY;
+	audio_tx_volume(audio_ctl, adev, 496);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 }
 
@@ -713,6 +787,7 @@ static void _audio_rx_clk_enable(void)
 		if (icodec_rx_clk_refcount == 1) {
 			clk_set_rate(icodec_rx_clk, 12288000);
 			clk_enable(icodec_rx_clk);
+			audio_rx_device_group = device_group;
 		}
 		break;
 	case 2:
@@ -720,6 +795,7 @@ static void _audio_rx_clk_enable(void)
 		if (ecodec_clk_refcount == 1) {
 			clk_set_rate(ecodec_clk, 2048000);
 			clk_enable(ecodec_clk);
+			audio_rx_device_group = device_group;
 		}
 		break;
 	case 6:
@@ -727,10 +803,11 @@ static void _audio_rx_clk_enable(void)
 		if (sdac_clk_refcount == 1) {
 			clk_set_rate(sdac_clk, 12288000);
 			clk_enable(sdac_clk);
+			audio_rx_device_group = device_group;
 		}
 		break;
 	default:
-		pr_err("audiolib: invalid rx path 0x%08x\n", audio_rx_path_id);
+		pr_err("audiolib: invalid rx device group %d\n", device_group);
 		break;
 	}
 }
@@ -746,6 +823,7 @@ static void _audio_tx_clk_enable(void)
 		if (icodec_tx_clk_refcount == 1) {
 			clk_set_rate(icodec_tx_clk, tx_clk_freq * 256);
 			clk_enable(icodec_tx_clk);
+			audio_tx_device_group = device_group;
 		}
 		break;
 	case 3:
@@ -753,6 +831,7 @@ static void _audio_tx_clk_enable(void)
 		if (ecodec_clk_refcount == 1) {
 			clk_set_rate(ecodec_clk, 2048000);
 			clk_enable(ecodec_clk);
+			audio_tx_device_group = device_group;
 		}
 		break;
 	case 7:
@@ -761,67 +840,102 @@ static void _audio_tx_clk_enable(void)
 		if (sdac_clk_refcount == 1) {
 			clk_set_rate(sdac_clk, 12288000);
 			clk_enable(sdac_clk);
+			audio_tx_device_group = device_group;
 		}
 		break;
 	default:
-		pr_err("audiolib: invalid tx path 0x%08x\n", audio_tx_path_id);
+		pr_err("audiolib: invalid tx device group %d\n", device_group);
 		break;
 	}
 }
 
 static void _audio_rx_clk_disable(void)
 {
-	uint32_t device_group;
-
-	device_group = get_device_group(audio_rx_device_id);
-	switch (device_group) {
+	switch (audio_rx_device_group) {
 	case 0:
 		icodec_rx_clk_refcount--;
-		if (icodec_rx_clk_refcount == 0)
+		if (icodec_rx_clk_refcount == 0) {
 			clk_disable(icodec_rx_clk);
+			audio_rx_device_group = -1;
+		}
 		break;
 	case 2:
 		ecodec_clk_refcount--;
-		if (ecodec_clk_refcount == 0)
+		if (ecodec_clk_refcount == 0) {
 			clk_disable(ecodec_clk);
+			audio_rx_device_group = -1;
+		}
 		break;
 	case 6:
 		sdac_clk_refcount--;
-		if (sdac_clk_refcount == 0)
+		if (sdac_clk_refcount == 0) {
 			clk_disable(sdac_clk);
+			audio_rx_device_group = -1;
+		}
 		break;
 	default:
-		pr_err("audiolib: invalid rx path 0x%08x\n", audio_rx_path_id);
+		pr_err("audiolib: invalid rx device group %d\n", audio_rx_device_group);
 		break;
 	}
 }
 
 static void _audio_tx_clk_disable(void)
 {
-	uint32_t device_group;
-
-	device_group = get_device_group(audio_tx_device_id);
-
-	switch (device_group) {
+	switch (audio_tx_device_group) {
 	case 1:
 		icodec_tx_clk_refcount--;
-		if (icodec_tx_clk_refcount == 0)
+		if (icodec_tx_clk_refcount == 0) {
 			clk_disable(icodec_tx_clk);
+			audio_tx_device_group = -1;
+		}
 		break;
 	case 3:
 		ecodec_clk_refcount--;
-		if (ecodec_clk_refcount == 0)
+		if (ecodec_clk_refcount == 0) {
 			clk_disable(ecodec_clk);
+			audio_tx_device_group = -1;
+		}
 		break;
 	case 7:
 		sdac_clk_refcount--;
-		if (sdac_clk_refcount == 0)
+		if (sdac_clk_refcount == 0) {
 			clk_disable(sdac_clk);
+			audio_tx_device_group = -1;
+		}
 		break;
 	default:
-		pr_err("audiolib: invalid tx path 0x%08x\n", audio_tx_path_id);
+		pr_err("audiolib: invalid tx device group %d\n", audio_tx_device_group);
 		break;
 	}
+}
+
+static void _audio_rx_clk_reinit(uint32_t rx_device)
+{
+	uint32_t device_group = get_device_group(rx_device);
+
+	if (device_group != audio_rx_device_group)
+		_audio_rx_clk_disable();
+
+	audio_rx_device_id = rx_device;
+	audio_rx_path_id = get_path_id(rx_device);
+
+	if (device_group != audio_rx_device_group)
+		_audio_rx_clk_enable();
+
+}
+
+static void _audio_tx_clk_reinit(uint32_t tx_device)
+{
+	uint32_t device_group = get_device_group(tx_device);
+
+	if (device_group != audio_tx_device_group)
+		_audio_tx_clk_disable();
+
+	audio_tx_device_id = tx_device;
+	audio_tx_path_id = get_path_id(tx_device);
+
+	if (device_group != audio_tx_device_group)
+		_audio_tx_clk_enable();
 }
 
 static DEFINE_MUTEX(audio_path_lock);
@@ -864,6 +978,79 @@ static int audio_tx_path_enable(int en)
 			_audio_tx_clk_disable();
 		}
 	}
+	mutex_unlock(&audio_path_lock);
+	return 0;
+}
+
+int q6audio_update_acdb(uint32_t id)
+{
+	mutex_lock(&audio_path_lock);
+	//TODO: Need to update ACDB here
+	mutex_unlock(&audio_path_lock);
+	return 0;
+}
+
+int q6audio_set_tx_mute(uint32_t mute)
+{
+	uint32_t adev;
+	//TODO: Need to remember current status
+	mutex_lock(&audio_path_lock);
+
+	adev = audio_tx_device_id;
+	audio_tx_mute(audio_ctl, adev, !!mute);
+	mutex_unlock(&audio_path_lock);
+	return 0;
+}
+
+int q6audio_do_routing(uint32_t device_id)
+{
+	mutex_lock(&audio_path_lock);
+
+	switch(device_id) {
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO:
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_BT_A2DP_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
+		if (device_id != audio_rx_device_id) {
+			if (audio_rx_path_refcount > 0) {
+				_audio_rx_path_disable();
+				_audio_rx_clk_reinit(device_id);
+				_audio_rx_path_enable();
+			} else {
+				audio_rx_device_id = device_id;
+				audio_rx_path_id = get_path_id(device_id);
+			}
+		}
+		break;
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
+		if (device_id != audio_tx_device_id) {
+			if (audio_tx_path_refcount > 0) {
+				_audio_tx_path_disable();
+				_audio_tx_clk_reinit(device_id);
+				_audio_tx_path_enable();
+			} else {
+				audio_tx_device_id = device_id;
+				audio_tx_path_id = get_path_id(device_id);
+			}
+		}
+		break;
+	default:
+		pr_err("%s: unsupported device 0x%08x\n", __func__, device_id);
+		break;
+	}
+
 	mutex_unlock(&audio_path_lock);
 	return 0;
 }

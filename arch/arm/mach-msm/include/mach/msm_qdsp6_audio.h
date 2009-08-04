@@ -52,6 +52,11 @@ int q6audio_close(struct audio_client *ac);
 int q6audio_read(struct audio_client *ac, struct audio_buffer *ab);
 int q6audio_write(struct audio_client *ac, struct audio_buffer *ab);
 
+int q6audio_do_routing(uint32_t route);
+int q6audio_set_tx_mute(uint32_t mute);
+int q6audio_update_acdb(uint32_t id);
+
+
 struct q6audio_analog_ops {
 	void (*init)(void);
 	void (*speaker_enable)(int en);
