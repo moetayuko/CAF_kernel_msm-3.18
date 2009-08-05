@@ -22,6 +22,58 @@
 
 #include <mach/msm_qdsp6_audio.h>
 
+#define BUFSZ (0)
+
+static DEFINE_MUTEX(voice_lock);
+static int voice_started;
+
+static struct audio_client *voc_tx_clnt;
+static struct audio_client *voc_rx_clnt;
+
+static int q6_voice_start(void)
+{
+	int rc = 0;
+
+	mutex_lock(&voice_lock);
+
+	if (voice_started) {
+		pr_err("voice: busy\n");
+		rc = -EBUSY;
+		goto done;
+	}
+
+	voc_tx_clnt = q6voice_open(BUFSZ, 8000, 1, AUDIO_FLAG_WRITE);
+	if (!voc_tx_clnt) {
+		pr_err("voice: open voice tx failed.\n");
+		rc = -ENOMEM;
+		goto done;
+	}
+
+	voc_rx_clnt = q6voice_open(BUFSZ, 8000, 1, AUDIO_FLAG_READ);
+	if (!voc_rx_clnt) {
+		pr_err("voice: open voice rx failed.\n");
+		q6voice_close(voc_tx_clnt);
+		rc = -ENOMEM;
+	}
+
+	voice_started = 1;
+done:
+	mutex_unlock(&voice_lock);
+	return rc;
+}
+
+static int q6_voice_stop(void)
+{
+	mutex_lock(&voice_lock);
+	if (voice_started) {
+		q6voice_close(voc_tx_clnt);
+		q6voice_close(voc_rx_clnt);
+		voice_started = 0;
+	}
+	mutex_unlock(&voice_lock);
+	return 0;
+}
+
 static int q6_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -48,6 +100,12 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 		rc = copy_from_user(&acdb_id, (void *)arg, sizeof(acdb_id));
 		if (!rc)
 			rc = q6audio_update_acdb(acdb_id);
+		break;
+	case AUDIO_START_VOICE:
+		rc = q6_voice_start();
+		break;
+	case AUDIO_STOP_VOICE:
+		rc = q6_voice_stop();
 		break;
 	default:
 		rc = -EINVAL;

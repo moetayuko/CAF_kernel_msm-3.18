@@ -643,17 +643,20 @@ static struct audio_client *audio_client_alloc(unsigned bufsz)
 	if (!ac)
 		return 0;
 
-	ac->buf[0].data = dma_alloc_coherent(NULL, bufsz,
-					     &ac->buf[0].phys, GFP_KERNEL);
-	if (!ac->buf[0].data)
-		goto fail;
-	ac->buf[1].data = dma_alloc_coherent(NULL, bufsz,
-					     &ac->buf[1].phys, GFP_KERNEL);
-	if (!ac->buf[1].data)
-		goto fail;
+	if (bufsz > 0) {
+		ac->buf[0].data = dma_alloc_coherent(NULL, bufsz,
+						&ac->buf[0].phys, GFP_KERNEL);
+		if (!ac->buf[0].data)
+			goto fail;
+		ac->buf[1].data = dma_alloc_coherent(NULL, bufsz,
+						&ac->buf[1].phys, GFP_KERNEL);
+		if (!ac->buf[1].data)
+			goto fail;
 
-	ac->buf[0].size = bufsz;
-	ac->buf[1].size = bufsz;
+		ac->buf[0].size = bufsz;
+		ac->buf[1].size = bufsz;
+	}
+
 	init_waitqueue_head(&ac->wait);
 
 	return ac;
@@ -1172,6 +1175,69 @@ int q6audio_close(struct audio_client *ac)
 	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 
 	pr_info("*** detach audio %p ***\n", ac);
+	dal_detach(ac->client);
+	ac->client = 0;
+
+	if (ac->flags & AUDIO_FLAG_WRITE)
+		audio_rx_path_enable(0);
+	else
+		audio_tx_path_enable(0);
+
+	pr_info("*** done %p ***\n", ac);
+	audio_client_free(ac);
+	return 0;
+}
+
+struct audio_client *q6voice_open(uint32_t bufsz, uint32_t rate,
+				uint32_t channels, uint32_t flags)
+{
+	struct audio_client *ac;
+	int res;
+
+	printk("q6voice_open()\n");
+
+	if (q6audio_init())
+		return 0;
+
+	ac = audio_client_alloc(bufsz);
+	if (!ac)
+		return 0;
+
+	ac->session = session_alloc(ac);
+	if (ac->session < 0) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	ac->flags = flags;
+	if (ac->flags & AUDIO_FLAG_WRITE)
+		audio_rx_path_enable(1);
+	else
+		audio_tx_path_enable(1);
+
+	pr_info("*** attach voice %p (%d) ***\n", ac, ac->session);
+	ac->client = dal_attach(AUDIO_DAL_DEVICE, AUDIO_DAL_PORT, callback, 0);
+	if (!ac->client) {
+		res = -EIO;
+		goto fail;
+	}
+
+	pr_info("*** init voice %p ***\n", ac);
+	audio_init(ac->client, ac->session);
+	return ac;
+
+fail:
+	if (ac->flags & AUDIO_FLAG_WRITE)
+		audio_rx_path_enable(0);
+	else
+		audio_tx_path_enable(0);
+	audio_client_free(ac);
+	return 0;
+}
+
+int q6voice_close(struct audio_client *ac)
+{
+	pr_info("*** detach voice %p ***\n", ac);
 	dal_detach(ac->client);
 	ac->client = 0;
 
