@@ -858,21 +858,21 @@ static void _audio_tx_clk_enable(void)
 static void _audio_rx_clk_disable(void)
 {
 	switch (audio_rx_device_group) {
-	case 0:
+	case GROUP_ICODEC_RX:
 		icodec_rx_clk_refcount--;
 		if (icodec_rx_clk_refcount == 0) {
 			clk_disable(icodec_rx_clk);
 			audio_rx_device_group = -1;
 		}
 		break;
-	case 2:
+	case GROUP_ECODEC_RX:
 		ecodec_clk_refcount--;
 		if (ecodec_clk_refcount == 0) {
 			clk_disable(ecodec_clk);
 			audio_rx_device_group = -1;
 		}
 		break;
-	case 6:
+	case GROUP_SDAC_RX:
 		sdac_clk_refcount--;
 		if (sdac_clk_refcount == 0) {
 			clk_disable(sdac_clk);
@@ -880,7 +880,8 @@ static void _audio_rx_clk_disable(void)
 		}
 		break;
 	default:
-		pr_err("audiolib: invalid rx device group %d\n", audio_rx_device_group);
+		pr_err("audiolib: invalid rx device group %d\n",
+			audio_rx_device_group);
 		break;
 	}
 }
@@ -888,21 +889,21 @@ static void _audio_rx_clk_disable(void)
 static void _audio_tx_clk_disable(void)
 {
 	switch (audio_tx_device_group) {
-	case 1:
+	case GROUP_ICODEC_TX:
 		icodec_tx_clk_refcount--;
 		if (icodec_tx_clk_refcount == 0) {
 			clk_disable(icodec_tx_clk);
 			audio_tx_device_group = -1;
 		}
 		break;
-	case 3:
+	case GROUP_ECODEC_TX:
 		ecodec_clk_refcount--;
 		if (ecodec_clk_refcount == 0) {
 			clk_disable(ecodec_clk);
 			audio_tx_device_group = -1;
 		}
 		break;
-	case 7:
+	case GROUP_SDAC_TX:
 		sdac_clk_refcount--;
 		if (sdac_clk_refcount == 0) {
 			clk_disable(sdac_clk);
@@ -910,7 +911,8 @@ static void _audio_tx_clk_disable(void)
 		}
 		break;
 	default:
-		pr_err("audiolib: invalid tx device group %d\n", audio_tx_device_group);
+		pr_err("audiolib: invalid tx device group %d\n",
+			audio_tx_device_group);
 		break;
 	}
 }
