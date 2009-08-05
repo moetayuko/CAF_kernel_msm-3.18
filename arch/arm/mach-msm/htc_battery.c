@@ -703,7 +703,8 @@ static int htc_battery_probe(struct platform_device *pdev)
 	}
 
 	/* create htc detail attributes */
-	htc_battery_create_attrs(htc_power_supplies[CHARGER_BATTERY].dev);
+	if (!machine_is_mahimahi())
+		htc_battery_create_attrs(htc_power_supplies[CHARGER_BATTERY].dev);
 
 	/* After battery driver gets initialized, send rpc request to inquiry
 	 * the battery status in case of we lost some info
