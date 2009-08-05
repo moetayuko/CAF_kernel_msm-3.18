@@ -16,6 +16,7 @@
 
 #include <linux/gpio.h>
 #include <mach/msm_qdsp6_audio.h>
+#include <mach/htc_acoustic_qsd.h>
 
 #include "board-mahimahi.h"
 #include "proc_comm.h"
@@ -168,6 +169,10 @@ void mahimahi_mic_enable(int en)
 	mutex_unlock(&mic_lock);
 }
 
+static struct qsd_acoustic_ops acoustic = {
+	.enable_mic_bias = mahimahi_mic_enable,
+};
+
 static struct q6audio_analog_ops ops = {
 	.init = mahimahi_analog_init,
 	.speaker_enable = mahimahi_speaker_enable,
@@ -183,4 +188,5 @@ void __init mahimahi_audio_init(void)
 	mutex_init(&mic_lock);
 	mutex_init(&bt_sco_lock);
 	q6audio_register_analog_ops(&ops);
+	acoustic_register_ops(&acoustic);
 }
