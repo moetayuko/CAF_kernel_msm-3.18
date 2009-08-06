@@ -35,6 +35,7 @@ static struct clk *sdac_clk;
 
 static struct q6audio_analog_ops *analog_ops;
 static uint32_t tx_clk_freq = 8000;
+static int tx_mute_status = -1;
 
 void q6audio_register_analog_ops(struct q6audio_analog_ops *ops)
 {
@@ -745,12 +746,14 @@ static void _audio_tx_path_enable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
 	ac_control->cb_status = -EBUSY;
-	audio_tx_mute(audio_ctl, adev, 0);
+	audio_tx_mute(audio_ctl, adev, tx_mute_status);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 
-	ac_control->cb_status = -EBUSY;
-	audio_tx_volume(audio_ctl, adev, 496);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	if (!tx_mute_status) {
+		ac_control->cb_status = -EBUSY;
+		audio_tx_volume(audio_ctl, adev, 496);
+		wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	}
 }
 
 static void _audio_rx_path_disable(void)
@@ -1001,14 +1004,26 @@ int q6audio_update_acdb(uint32_t id)
 	return 0;
 }
 
-int q6audio_set_tx_mute(uint32_t mute)
+int q6audio_set_tx_mute(int mute)
 {
 	uint32_t adev;
-	//TODO: Need to remember current status
+	int rc;
+
+	if (q6audio_init())
+		return 0;
+
 	mutex_lock(&audio_path_lock);
 
+	if (mute == tx_mute_status) {
+		mutex_unlock(&audio_path_lock);
+		return 0;
+	}
+
 	adev = audio_tx_device_id;
-	audio_tx_mute(audio_ctl, adev, !!mute);
+	ac_control->cb_status = -EBUSY;
+	rc = audio_tx_mute(audio_ctl, adev, mute);
+	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	if (!rc) tx_mute_status = mute;
 	mutex_unlock(&audio_path_lock);
 	return 0;
 }
