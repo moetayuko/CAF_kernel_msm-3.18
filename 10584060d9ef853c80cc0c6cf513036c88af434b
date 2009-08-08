@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAfH///7Q\u003d",
+        "filename": "arch/arm/mach-msm/dma.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 143,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2009-08-08T00:12:19Z",
+      "side": 1,
+      "message": "Is there any reason you restrict this to only gpl modules?",
+      "revId": "10584060d9ef853c80cc0c6cf513036c88af434b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
