@@ -239,6 +239,9 @@ static struct synaptics_i2c_rmi_platform_data mahimahi_synaptics_ts_data[] = {
 
 static struct i2c_board_info i2c_devices[] = {
 	{
+		I2C_BOARD_INFO("ds2482", 0x30 >> 1),
+	},
+	{
 		I2C_BOARD_INFO("cy8c-tmg-ts", 0x34),
 		.platform_data = &mahimahi_cy8c_ts_data,
 		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_TP_INT_N),
