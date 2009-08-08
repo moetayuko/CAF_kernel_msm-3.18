@@ -28,6 +28,8 @@
 #include <asm/mach-types.h>
 #include <mach/board_htc.h>
 
+#ifndef CONFIG_MACH_MAHIMAHI
+
 static struct wake_lock vbus_wake_lock;
 
 #define TRACE_BATT 1
@@ -810,3 +812,4 @@ module_init(htc_battery_init);
 MODULE_DESCRIPTION("HTC Battery Driver");
 MODULE_LICENSE("GPL");
 
+#endif
