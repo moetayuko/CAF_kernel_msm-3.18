@@ -668,34 +668,85 @@ fail:
 }
 
 
-static uint32_t audio_rx_path_id = ADIE_PATH_SPEAKER_RX;
-static uint32_t audio_rx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO;
+static uint32_t audio_rx_path_id = ADIE_PATH_HANDSET_RX;
+static uint32_t audio_rx_device_id = ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR;
 static uint32_t audio_rx_device_group = -1;
-static uint32_t audio_tx_path_id = ADIE_PATH_SPEAKER_TX;
-static uint32_t audio_tx_device_id = ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC;
+static uint32_t audio_tx_path_id = ADIE_PATH_HANDSET_TX;
+static uint32_t audio_tx_device_id = ADSP_AUDIO_DEVICE_ID_HANDSET_MIC;
 static uint32_t audio_tx_device_group = -1;
+
+static int qdsp6_devchg_notify(uint32_t dev_type, uint32_t dev_id)
+{
+	struct adsp_audio_device_change rpc;
+
+	if (dev_type != ADSP_AUDIO_RX_DEVICE &&
+	    dev_type != ADSP_AUDIO_TX_DEVICE)
+		return -EINVAL;
+
+	memset(&rpc, 0, sizeof(rpc));
+	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_DEVICE_SWITCH_PREPARE;
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.context = 0;
+	rpc.data = 0;
+
+	if (dev_type == ADSP_AUDIO_RX_DEVICE) {
+		rpc.old_device = audio_rx_device_id;
+		rpc.new_device = dev_id;
+	} else {
+		rpc.old_device = audio_tx_device_id;
+		rpc.new_device = dev_id;
+	}
+
+	rpc.device_class = 0;
+	rpc.device_type = dev_type;
+	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+}
+
+static int qdsp6_standby(void)
+{
+	struct adsp_audio_header rpc;
+
+	memset(&rpc, 0, sizeof(rpc));
+	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_DEVICE_SWITCH_STANDBY;
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.context = 0;
+	rpc.data = 0;
+	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+}
+
+static int qdsp6_start(void)
+{
+	struct adsp_audio_header rpc;
+
+	memset(&rpc, 0, sizeof(rpc));
+	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_DEVICE_SWITCH_COMMIT;
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.context = 0;
+	rpc.data = 0;
+	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+}
 
 static void _audio_rx_path_enable(void)
 {
 	uint32_t adev;
 	int sz;
 
-	adev = ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR;
-	/* always have to load HANDSET_SPKR or things blow up */
+	adev = audio_rx_device_id;
 
-	pr_info("audiolib: load HANDSET cfg table\n");
-	sz = acdb_get_config_table(adev, 48000);
+	pr_info("audiolib: load %08x cfg table\n", adev);
+	sz = acdb_get_config_table(adev, 48000);	
 	ac_control->cb_status = -EBUSY;
 	audio_set_table(audio_ctl, adev, sz);
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-	
-	/* load the config for the actual device we're using */
-	pr_info("audiolib: load %08x cfg table\n", audio_rx_device_id);
-	sz = acdb_get_config_table(audio_rx_device_id, 48000);	
+
 	ac_control->cb_status = -EBUSY;
-	audio_set_table(audio_ctl, audio_rx_device_id, sz);
+	qdsp6_standby();
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 	
+	ac_control->cb_status = -EBUSY;
+	qdsp6_start();
+	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
 	pr_info("audiolib: enable amps\n");
 	if (analog_ops->speaker_enable)
 		analog_ops->speaker_enable(1);
@@ -726,9 +777,18 @@ static void _audio_tx_path_enable(void)
 
 	adev = audio_tx_device_id;
 
+	pr_info("audiolib: load %08x cfg table\n", adev);
 	sz = acdb_get_config_table(adev, 8000);
 	ac_control->cb_status = -EBUSY;
 	audio_set_table(audio_ctl, adev, sz);
+	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+	ac_control->cb_status = -EBUSY;
+	qdsp6_standby();
+	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+	ac_control->cb_status = -EBUSY;
+	qdsp6_start();
 	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 
 	pr_info("audiolib: enable mic\n");
@@ -780,6 +840,7 @@ static void _audio_tx_path_disable(void)
 		analog_ops->int_mic_enable(0);
 	if (analog_ops->ext_mic_enable)
 		analog_ops->ext_mic_enable(0);
+
 }
 
 static int icodec_rx_clk_refcount;
@@ -1030,6 +1091,7 @@ int q6audio_set_tx_mute(int mute)
 
 int q6audio_do_routing(uint32_t device_id)
 {
+	int sz;
 	mutex_lock(&audio_path_lock);
 
 	switch(device_id) {
@@ -1047,10 +1109,31 @@ int q6audio_do_routing(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
 		if (device_id != audio_rx_device_id) {
 			if (audio_rx_path_refcount > 0) {
+				ac_control->cb_status = -EBUSY;
+				qdsp6_devchg_notify(ADSP_AUDIO_RX_DEVICE, device_id);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
 				_audio_rx_path_disable();
 				_audio_rx_clk_reinit(device_id);
 				_audio_rx_path_enable();
 			} else {
+				sz = acdb_get_config_table(device_id, 48000);
+				ac_control->cb_status = -EBUSY;
+				audio_set_table(audio_ctl, device_id, sz);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_devchg_notify(ADSP_AUDIO_RX_DEVICE, device_id);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_standby();
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_start();
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
 				audio_rx_device_id = device_id;
 				audio_rx_path_id = get_path_id(device_id);
 			}
@@ -1063,10 +1146,31 @@ int q6audio_do_routing(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
 		if (device_id != audio_tx_device_id) {
 			if (audio_tx_path_refcount > 0) {
+				ac_control->cb_status = -EBUSY;
+				qdsp6_devchg_notify(ADSP_AUDIO_TX_DEVICE, device_id);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
 				_audio_tx_path_disable();
 				_audio_tx_clk_reinit(device_id);
 				_audio_tx_path_enable();
 			} else {
+				sz = acdb_get_config_table(device_id, 8000);
+				ac_control->cb_status = -EBUSY;
+				audio_set_table(audio_ctl, device_id, sz);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_devchg_notify(ADSP_AUDIO_TX_DEVICE, device_id);
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_standby();
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
+				ac_control->cb_status = -EBUSY;
+				qdsp6_start();
+				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+
 				audio_tx_device_id = device_id;
 				audio_tx_path_id = get_path_id(device_id);
 			}

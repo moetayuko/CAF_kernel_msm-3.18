@@ -324,6 +324,13 @@ struct adsp_audio_buffer {
 
 /* control */
 
+struct adsp_audio_header {
+	uint32_t ioctl_id;
+	uint32_t size; /* sizeof(this) - 2 * sizeof(uint32-t) */
+	uint32_t context;
+	uint32_t data;
+} __attribute__((packed));
+
 #define ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_CONFIG_TABLE	0x0108b6bf
 
 struct adsp_ioctl_device_config_table {
