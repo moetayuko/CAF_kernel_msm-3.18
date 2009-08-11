@@ -159,6 +159,7 @@ static inline int adie_mute_path(struct dal_client *client,
 static struct dal_client *adie;
 static struct dal_client *audio_evt;
 static struct dal_client *audio_ctl;
+static struct dal_client *acdb;
 
 /* 4k DMA scratch page used for exchanging acdb device config tables
  * and stream format descriptions with the DSP.
@@ -210,41 +211,6 @@ static void session_free(int n, struct audio_client *ac)
 	if (session[n] == ac)
 		session[n] = 0;
 	mutex_unlock(&session_lock);
-}
-
-/* TODO: might as well leave the ACDB session attached always */
-static int acdb_get_config_table(uint32_t device_id, uint32_t sample_rate)
-{
-	struct dal_client *client;
-	struct acdb_cmd_device_table rpc;
-	struct acdb_result res;
-	int r;
-
-	client = dal_attach(ACDB_DAL_DEVICE, ACDB_DAL_PORT, 0, 0);
-	if (!client)
-		return -EIO;
-
-	memset(audio_data, 0, 4096);
-
-	memset(&rpc, 0, sizeof(rpc));
-
-	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
-	rpc.command_id = ACDB_GET_DEVICE_TABLE;
-	rpc.device_id = device_id;
-	rpc.sample_rate_id = sample_rate;
-	rpc.total_bytes = 4096;
-	rpc.unmapped_buf = audio_phys;
-	rpc.res_size = sizeof(res) - (2 * sizeof(uint32_t));
-
-	r = dal_call(client, ACDB_OP_IOCTL, 8, &rpc, sizeof(rpc),
-		     &res, sizeof(res));
-
-	dal_detach(client);
-
-	if ((r == sizeof(res)) && (res.dal_status == 0)) {
-		return res.used_bytes;
-	}
-	return -EIO;
 }
 
 static int audio_init(struct dal_client *client, int sessionid)
@@ -588,6 +554,13 @@ static int q6audio_init(void)
 	/* control channel is always session 1 */
 	audio_init(audio_ctl, 1);
 
+	acdb = dal_attach(ACDB_DAL_DEVICE, ACDB_DAL_PORT, 0, 0);
+	if (!acdb) {
+		pr_err("audio_init: cannot attach to acdb channel\n");
+		res = -ENODEV;
+		goto done;
+	}
+
 	ac->cb_status = -EBUSY;
 	audio_open_control(audio_ctl);
 	wait_event(ac->wait, (ac->cb_status != -EBUSY));
@@ -667,6 +640,35 @@ fail:
 	return 0;
 }
 
+
+static int acdb_get_config_table(uint32_t device_id, uint32_t sample_rate)
+{
+	struct acdb_cmd_device_table rpc;
+	struct acdb_result res;
+	int r;
+
+	if (q6audio_init())
+		return 0;
+
+	memset(audio_data, 0, 4096);
+	memset(&rpc, 0, sizeof(rpc));
+
+	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
+	rpc.command_id = ACDB_GET_DEVICE_TABLE;
+	rpc.device_id = device_id;
+	rpc.sample_rate_id = sample_rate;
+	rpc.total_bytes = 4096;
+	rpc.unmapped_buf = audio_phys;
+	rpc.res_size = sizeof(res) - (2 * sizeof(uint32_t));
+
+	r = dal_call(acdb, ACDB_OP_IOCTL, 8, &rpc, sizeof(rpc),
+		     &res, sizeof(res));
+
+	if ((r == sizeof(res)) && (res.dal_status == 0)) {
+		return res.used_bytes;
+	}
+	return -EIO;
+}
 
 static uint32_t audio_rx_path_id = ADIE_PATH_HANDSET_RX;
 static uint32_t audio_rx_device_id = ADSP_AUDIO_DEVICE_ID_HANDSET_SPKR;
