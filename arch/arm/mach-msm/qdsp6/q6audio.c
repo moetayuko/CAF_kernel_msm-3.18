@@ -158,7 +158,6 @@ static inline int adie_mute_path(struct dal_client *client,
 
 static struct dal_client *adie;
 static struct dal_client *audio_evt;
-static struct dal_client *audio_ctl;
 static struct dal_client *acdb;
 
 /* 4k DMA scratch page used for exchanging acdb device config tables
@@ -230,7 +229,7 @@ static int audio_init(struct dal_client *client, int sessionid)
 	return 0;
 }
 
-static int audio_open_control(struct dal_client *client)
+static int audio_open_control(struct audio_client *ac)
 {
 	struct adsp_audio_open_device rpc;
 	uint32_t res;
@@ -242,12 +241,14 @@ static int audio_open_control(struct dal_client *client)
 	rpc.data = 0;
 	rpc.op_code = ADSP_AUDIO_OPEN_OP_DEVICE_CTRL;
 
-	r = dal_call(client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
+	ac->cb_status = -EBUSY;
+	r = dal_call(ac->client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
 		     &res, sizeof(res));
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return 0;
 }
 
-static int audio_out_open(struct dal_client *client, uint32_t bufsz,
+static int audio_out_open(struct audio_client *ac, uint32_t bufsz,
 			  uint32_t rate, uint32_t channels)
 {
 	struct adsp_audio_format_raw_pcm *fmt = audio_data;
@@ -274,12 +275,14 @@ static int audio_out_open(struct dal_client *client, uint32_t bufsz,
 	rpc.stream_device.format_block_len = sizeof(*fmt);
 	rpc.stream_device.buf_max_size = bufsz; /* XXX ??? */
 
-	r = dal_call(client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
+	ac->cb_status = -EBUSY;
+	r = dal_call(ac->client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
 		     &res, sizeof(res));
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return 0;
 }
 
-static int audio_in_open(struct dal_client *client, uint32_t bufsz,
+static int audio_in_open(struct audio_client *ac, uint32_t bufsz,
 			 uint32_t rate, uint32_t channels)
 {
 	struct adsp_audio_format_raw_pcm *fmt = audio_data;
@@ -306,19 +309,23 @@ static int audio_in_open(struct dal_client *client, uint32_t bufsz,
 	rpc.stream_device.format_block_len = sizeof(*fmt);
 	rpc.stream_device.buf_max_size = bufsz; /* XXX ??? */
 
-	r = dal_call(client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
+	ac->cb_status = -EBUSY;
+	r = dal_call(ac->client, AUDIO_OP_OPEN, 5, &rpc, sizeof(rpc),
 		     &res, sizeof(res));
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return 0;
 }
 
-static int audio_close(struct dal_client *client, int session_id)
+static int audio_close(struct audio_client *ac)
 {
-	dal_call_f0(client, AUDIO_OP_CLOSE, session_id);
+	ac->cb_status = -EBUSY;
+	dal_call_f0(ac->client, AUDIO_OP_CLOSE, ac->session);
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return 0;
 }
 
-static int audio_set_table(struct dal_client *client,
-			uint32_t device_id, int size)
+static int audio_set_table(struct audio_client *ac,
+			   uint32_t device_id, int size)
 {
 	struct adsp_ioctl_device_config_table rpc;
 	uint32_t res;
@@ -333,8 +340,10 @@ static int audio_set_table(struct dal_client *client,
 	rpc.phys_size = size;
 	rpc.phys_used = size;
 
-	r = dal_call(client, AUDIO_OP_IOCTL, 6, &rpc, sizeof(rpc),
+	ac->cb_status = -EBUSY;
+	r = dal_call(ac->client, AUDIO_OP_IOCTL, 6, &rpc, sizeof(rpc),
 		     &res, sizeof(res));
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return 0;
 }
 
@@ -376,17 +385,19 @@ int q6audio_write(struct audio_client *ac, struct audio_buffer *ab)
 	return 0;
 }
 
-static int audio_ioctl(struct dal_client *client, void *ptr, uint32_t len)
+static int audio_ioctl(struct audio_client *ac, void *ptr, uint32_t len)
 {
 	uint32_t tmp;
 	int r;
-	r = dal_call(client, AUDIO_OP_IOCTL, 6, ptr, len, &tmp, sizeof(tmp));
+	ac->cb_status = -EBUSY;
+	r = dal_call(ac->client, AUDIO_OP_IOCTL, 6, ptr, len, &tmp, sizeof(tmp));
 	if (r != 4)
 		return -EIO;
+	wait_event(ac->wait, (ac->cb_status != -EBUSY));
 	return tmp;
 }
 
-static int audio_command(struct dal_client *client, uint32_t cmd)
+static int audio_command(struct audio_client *ac, uint32_t cmd)
 {
 	struct {
 		uint32_t ioctl;
@@ -394,10 +405,10 @@ static int audio_command(struct dal_client *client, uint32_t cmd)
 	} rpc;
 	rpc.ioctl = cmd;
 	rpc.size = 0;
-	return audio_ioctl(client, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int audio_rx_volume(struct dal_client *client, uint32_t dev_id, int32_t volume)
+static int audio_rx_volume(struct audio_client *ac, uint32_t dev_id, int32_t volume)
 {
 	struct adsp_audio_set_device_volume rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_VOL;
@@ -407,10 +418,10 @@ static int audio_rx_volume(struct dal_client *client, uint32_t dev_id, int32_t v
 	rpc.device_id = dev_id;
 	rpc.path = ADSP_PATH_RX;
 	rpc.volume = volume;
-	return audio_ioctl(client, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int audio_rx_mute(struct dal_client *client, uint32_t dev_id, int mute)
+static int audio_rx_mute(struct audio_client *ac, uint32_t dev_id, int mute)
 {
 	struct adsp_audio_set_device_mute rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_MUTE;
@@ -420,10 +431,10 @@ static int audio_rx_mute(struct dal_client *client, uint32_t dev_id, int mute)
 	rpc.device_id = dev_id;
 	rpc.path = ADSP_PATH_RX;
 	rpc.mute = !!mute;
-	return audio_ioctl(client, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int audio_tx_volume(struct dal_client *client, uint32_t dev_id, int32_t volume)
+static int audio_tx_volume(struct audio_client *ac, uint32_t dev_id, int32_t volume)
 {
 	struct adsp_audio_set_device_volume rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_VOL;
@@ -433,10 +444,10 @@ static int audio_tx_volume(struct dal_client *client, uint32_t dev_id, int32_t v
 	rpc.device_id = dev_id;
 	rpc.path = ADSP_PATH_TX;
 	rpc.volume = volume;
-	return audio_ioctl(client, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int audio_tx_mute(struct dal_client *client, uint32_t dev_id, int mute)
+static int audio_tx_mute(struct audio_client *ac, uint32_t dev_id, int mute)
 {
 	struct adsp_audio_set_device_mute rpc;
 	rpc.ioctl_id = ADSP_AUDIO_IOCTL_CMD_SET_DEVICE_MUTE;
@@ -446,7 +457,7 @@ static int audio_tx_mute(struct dal_client *client, uint32_t dev_id, int mute)
 	rpc.device_id = dev_id;
 	rpc.path = ADSP_PATH_TX;
 	rpc.mute = !!mute;
-	return audio_ioctl(client, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
 static void callback(void *data, int len, void *cookie)
@@ -544,15 +555,15 @@ static int q6audio_init(void)
 	/* event/callback channel is always session 0 */
 	audio_init(audio_evt, 0);
 
-	audio_ctl = dal_attach(AUDIO_DAL_DEVICE, AUDIO_DAL_PORT,
-			       callback, 0);
-	if (!audio_ctl){
+	ac->client = dal_attach(AUDIO_DAL_DEVICE, AUDIO_DAL_PORT,
+				callback, 0);
+	if (!ac->client){
 		pr_err("audio_init: cannot attach to audio control channel\n");
 		res = -ENODEV;
 		goto done;
 	}
 	/* control channel is always session 1 */
-	audio_init(audio_ctl, 1);
+	audio_init(ac->client, 1);
 
 	acdb = dal_attach(ACDB_DAL_DEVICE, ACDB_DAL_PORT, 0, 0);
 	if (!acdb) {
@@ -561,9 +572,7 @@ static int q6audio_init(void)
 		goto done;
 	}
 
-	ac->cb_status = -EBUSY;
-	audio_open_control(audio_ctl);
-	wait_event(ac->wait, (ac->cb_status != -EBUSY));
+	audio_open_control(ac);
 
 	adie = dal_attach(ADIE_DAL_DEVICE, ADIE_DAL_PORT, 0, 0);
 	if (!adie) {
@@ -583,7 +592,6 @@ static int q6audio_init(void)
 
 	pr_info("audio_init: OKAY\n");
 	res = 0;
-	ac->client = audio_ctl;
 	ac_control = ac;
 
 done:
@@ -677,7 +685,8 @@ static uint32_t audio_tx_path_id = ADIE_PATH_HANDSET_TX;
 static uint32_t audio_tx_device_id = ADSP_AUDIO_DEVICE_ID_HANDSET_MIC;
 static uint32_t audio_tx_device_group = -1;
 
-static int qdsp6_devchg_notify(uint32_t dev_type, uint32_t dev_id)
+static int qdsp6_devchg_notify(struct audio_client *ac,
+			       uint32_t dev_type, uint32_t dev_id)
 {
 	struct adsp_audio_device_change rpc;
 
@@ -701,10 +710,10 @@ static int qdsp6_devchg_notify(uint32_t dev_type, uint32_t dev_id)
 
 	rpc.device_class = 0;
 	rpc.device_type = dev_type;
-	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int qdsp6_standby(void)
+static int qdsp6_standby(struct audio_client *ac)
 {
 	struct adsp_audio_header rpc;
 
@@ -713,10 +722,10 @@ static int qdsp6_standby(void)
 	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
 	rpc.context = 0;
 	rpc.data = 0;
-	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
-static int qdsp6_start(void)
+static int qdsp6_start(struct audio_client *ac)
 {
 	struct adsp_audio_header rpc;
 
@@ -725,7 +734,7 @@ static int qdsp6_start(void)
 	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
 	rpc.context = 0;
 	rpc.data = 0;
-	return audio_ioctl(audio_ctl, &rpc, sizeof(rpc));
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
 static void _audio_rx_path_enable(void)
@@ -736,18 +745,10 @@ static void _audio_rx_path_enable(void)
 	adev = audio_rx_device_id;
 
 	pr_info("audiolib: load %08x cfg table\n", adev);
-	sz = acdb_get_config_table(adev, 48000);	
-	ac_control->cb_status = -EBUSY;
-	audio_set_table(audio_ctl, adev, sz);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-	ac_control->cb_status = -EBUSY;
-	qdsp6_standby();
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-	
-	ac_control->cb_status = -EBUSY;
-	qdsp6_start();
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	sz = acdb_get_config_table(adev, 48000);
+	audio_set_table(ac_control, adev, sz);
+	qdsp6_standby(ac_control);
+	qdsp6_start(ac_control);
 
 	pr_info("audiolib: enable amps\n");
 	if (analog_ops->speaker_enable)
@@ -763,13 +764,9 @@ static void _audio_rx_path_enable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_READY);
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
-	ac_control->cb_status = -EBUSY;
-	audio_rx_mute(audio_ctl, adev, 0);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	audio_rx_mute(ac_control, adev, 0);
 
-	ac_control->cb_status = -EBUSY;
-	audio_rx_volume(audio_ctl, adev, 496);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	audio_rx_volume(ac_control, adev, 496);
 }
 
 static void _audio_tx_path_enable(void)
@@ -781,17 +778,12 @@ static void _audio_tx_path_enable(void)
 
 	pr_info("audiolib: load %08x cfg table\n", adev);
 	sz = acdb_get_config_table(adev, 8000);
-	ac_control->cb_status = -EBUSY;
-	audio_set_table(audio_ctl, adev, sz);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
 
-	ac_control->cb_status = -EBUSY;
-	qdsp6_standby();
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	audio_set_table(ac_control, adev, sz);
 
-	ac_control->cb_status = -EBUSY;
-	qdsp6_start();
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	qdsp6_standby(ac_control);
+
+	qdsp6_start(ac_control);
 
 	pr_info("audiolib: enable mic\n");
 	if (analog_ops->int_mic_enable)
@@ -807,14 +799,10 @@ static void _audio_tx_path_enable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_READY);
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
-	ac_control->cb_status = -EBUSY;
-	audio_tx_mute(audio_ctl, adev, tx_mute_status);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	audio_tx_mute(ac_control, adev, tx_mute_status);
 
 	if (!tx_mute_status) {
-		ac_control->cb_status = -EBUSY;
-		audio_tx_volume(audio_ctl, adev, 496);
-		wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+		audio_tx_volume(ac_control, adev, 496);
 	}
 }
 
@@ -1083,9 +1071,7 @@ int q6audio_set_tx_mute(int mute)
 	}
 
 	adev = audio_tx_device_id;
-	ac_control->cb_status = -EBUSY;
-	rc = audio_tx_mute(audio_ctl, adev, mute);
-	wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
+	rc = audio_tx_mute(ac_control, adev, mute);
 	if (!rc) tx_mute_status = mute;
 	mutex_unlock(&audio_path_lock);
 	return 0;
@@ -1111,31 +1097,16 @@ int q6audio_do_routing(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
 		if (device_id != audio_rx_device_id) {
 			if (audio_rx_path_refcount > 0) {
-				ac_control->cb_status = -EBUSY;
-				qdsp6_devchg_notify(ADSP_AUDIO_RX_DEVICE, device_id);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
+				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
 				_audio_rx_path_disable();
 				_audio_rx_clk_reinit(device_id);
 				_audio_rx_path_enable();
 			} else {
 				sz = acdb_get_config_table(device_id, 48000);
-				ac_control->cb_status = -EBUSY;
-				audio_set_table(audio_ctl, device_id, sz);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_devchg_notify(ADSP_AUDIO_RX_DEVICE, device_id);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_standby();
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_start();
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
+				audio_set_table(ac_control, device_id, sz);
+				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
+				qdsp6_standby(ac_control);
+				qdsp6_start(ac_control);
 				audio_rx_device_id = device_id;
 				audio_rx_path_id = get_path_id(device_id);
 			}
@@ -1148,31 +1119,16 @@ int q6audio_do_routing(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
 		if (device_id != audio_tx_device_id) {
 			if (audio_tx_path_refcount > 0) {
-				ac_control->cb_status = -EBUSY;
-				qdsp6_devchg_notify(ADSP_AUDIO_TX_DEVICE, device_id);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
+				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
 				_audio_tx_path_disable();
 				_audio_tx_clk_reinit(device_id);
 				_audio_tx_path_enable();
 			} else {
 				sz = acdb_get_config_table(device_id, 8000);
-				ac_control->cb_status = -EBUSY;
-				audio_set_table(audio_ctl, device_id, sz);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_devchg_notify(ADSP_AUDIO_TX_DEVICE, device_id);
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_standby();
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
-				ac_control->cb_status = -EBUSY;
-				qdsp6_start();
-				wait_event(ac_control->wait, (ac_control->cb_status != -EBUSY));
-
+				audio_set_table(ac_control, device_id, sz);
+				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
+				qdsp6_standby(ac_control);
+				qdsp6_start(ac_control);
 				audio_tx_device_id = device_id;
 				audio_tx_path_id = get_path_id(device_id);
 			}
@@ -1257,19 +1213,14 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 	audio_init(ac->client, ac->session);
 
 	pr_info("*** open audio %p ***\n", ac);
-	ac->cb_status = -EBUSY;
 
 	if (ac->flags & AUDIO_FLAG_WRITE)
-		audio_out_open(ac->client, bufsz, rate, channels);
+		audio_out_open(ac, bufsz, rate, channels);
 	else
-		audio_in_open(ac->client, bufsz, rate, channels);
-
-	wait_event(ac->wait, (ac->cb_status != -EBUSY));
+		audio_in_open(ac, bufsz, rate, channels);
 
 	pr_info("*** stream start %p (%d) ***\n", ac, ac->session);
-	ac->cb_status = -EBUSY;
-	audio_command(ac->client, ADSP_AUDIO_IOCTL_CMD_STREAM_START);
-	wait_event(ac->wait, (ac->cb_status != -EBUSY));
+	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_STREAM_START);
 
 	if (!(ac->flags & AUDIO_FLAG_WRITE)) {
 		ac->buf[0].used = 1;
@@ -1291,9 +1242,7 @@ fail:
 int q6audio_close(struct audio_client *ac)
 {
 	pr_info("*** close audio %p ***\n", ac);
-	ac->cb_status = -EBUSY;
-	audio_close(ac->client, ac->session);
-	wait_event(ac->wait, (ac->cb_status != -EBUSY));
+	audio_close(ac);
 
 	pr_info("*** detach audio %p ***\n", ac);
 	dal_detach(ac->client);
