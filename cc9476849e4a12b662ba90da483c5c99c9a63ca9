@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAfn///84\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 50,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "sadly, yes :( fixed.",
+      "parentUuid": "AAAAfX///9Q\u003d",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAfn///90\u003d",
         "filename": "arch/arm/mach-msm/hw3d.c",
         "patchSetId": 1
@@ -30,6 +48,24 @@
       "writtenOn": "2009-08-11T23:49:30Z",
       "side": 1,
       "message": "What does this protect?",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAfn///9I\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 97,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "protects the vmas array above. The array is used by mmap to save the vma, which is then used by the mdp on get_file to verify that the region was actually mapped.",
+      "parentUuid": "AAAAfn///90\u003d",
       "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
@@ -53,6 +89,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAfn///9E\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 143,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "fixed in patch 2",
+      "parentUuid": "AAAAfX///8o\u003d",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAfn///9s\u003d",
         "filename": "arch/arm/mach-msm/hw3d.c",
         "patchSetId": 1
@@ -64,6 +118,24 @@
       "writtenOn": "2009-08-11T23:49:30Z",
       "side": 1,
       "message": "unregister early suspend",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAfn///9A\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 763,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "fixed",
+      "parentUuid": "AAAAfn///9s\u003d",
       "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
@@ -87,6 +159,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAfn///88\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 775,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "fixed.",
+      "parentUuid": "AAAAfn///9w\u003d",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAfn///9o\u003d",
         "filename": "include/linux/msm_hw3d.h",
         "patchSetId": 1
@@ -98,6 +188,24 @@
       "writtenOn": "2009-08-11T23:49:30Z",
       "side": 1,
       "message": "extra whitespace",
+      "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAfn///80\u003d",
+        "filename": "include/linux/msm_hw3d.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 10,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-12T01:30:17Z",
+      "side": 1,
+      "message": "fixed",
+      "parentUuid": "AAAAfn///9o\u003d",
       "revId": "cc9476849e4a12b662ba90da483c5c99c9a63ca9",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
