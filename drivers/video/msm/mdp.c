@@ -22,6 +22,7 @@
 #include <linux/wait.h>
 #include <linux/clk.h>
 #include <linux/file.h>
+#include <linux/list.h>
 #include <linux/android_pmem.h>
 #include <linux/major.h>
 #include <linux/msm_hw3d.h>
@@ -48,6 +49,111 @@ static struct clk *clk;
 static unsigned int mdp_irq_mask;
 static DEFINE_SPINLOCK(mdp_lock);
 DEFINE_MUTEX(mdp_mutex);
+
+struct mdp_img_ops {
+	int		(*get)(struct mdp_img *img, struct fb_info *fb,
+			       struct file **filep, unsigned long *pbase,
+			       unsigned long *len);
+	void		(*put)(struct file *file);
+	bool		(*is_owner)(struct file *);
+	char		name[];
+};
+
+static bool mdp_is_owner_pmem(struct file *file)
+{
+	return file && is_pmem_file(file);
+}
+
+static int mdp_get_file_pmem(struct mdp_img *img, struct fb_info *fb,
+			     struct file **filep, unsigned long *pbase,
+			     unsigned long *len)
+{
+	unsigned long vstart;
+	return get_pmem_file(img->memory_id, pbase, &vstart, len, filep);
+}
+
+static void mdp_put_file_pmem(struct file *file)
+{
+	if (file)
+		put_pmem_file(file);
+}
+
+static bool mdp_is_owner_msm_hw3d(struct file *file)
+{
+	return file && is_msm_hw3d_file(file);
+}
+
+static int mdp_get_file_msm_hw3d(struct mdp_img *img, struct fb_info *fb,
+				 struct file **filep, unsigned long *pbase,
+				 unsigned long *len)
+{
+	int ret;
+
+	ret = get_msm_hw3d_file(img->memory_id, HW3D_REGION_ID(img->offset),
+				HW3D_OFFSET_IN_REGION(img->offset), pbase, len,
+				filep);
+	if (ret)
+		return -1;
+	/* need to chop off the region id from the user offset */
+	img->offset = HW3D_OFFSET_IN_REGION(img->offset);
+	return 0;
+}
+
+static void mdp_put_file_msm_hw3d(struct file *file)
+{
+	if (file)
+		put_msm_hw3d_file(file);
+}
+
+static bool mdp_is_owner_msm_fb(struct file *file)
+{
+	if (file && MAJOR(file->f_dentry->d_inode->i_rdev) == FB_MAJOR)
+		return 1;
+	return 0;
+}
+static int mdp_get_file_msm_fb(struct mdp_img *img, struct fb_info *fb,
+			       struct file **filep, unsigned long *pbase,
+			       unsigned long *len)
+{
+	*filep = fget(img->memory_id);
+	if (*filep == NULL)
+		return -1;
+	else if (!mdp_is_owner_msm_fb(*filep)) {
+		fput(*filep);
+		return -1;
+	}
+
+	*pbase = fb->fix.smem_start;
+	*len = fb->fix.smem_len;
+	return 0;
+}
+
+static void mdp_put_file_msm_fb(struct file *file)
+{
+	if (file)
+		fput(file);
+}
+
+static struct mdp_img_ops mdp_img_types[] = {
+	{
+		.name		= "pmem",
+		.get		= mdp_get_file_pmem,
+		.put		= mdp_put_file_pmem,
+		.is_owner	= mdp_is_owner_pmem,
+	},
+	{
+		.name		= "msm_hw3d",
+		.get		= mdp_get_file_msm_hw3d,
+		.put		= mdp_put_file_msm_hw3d,
+		.is_owner	= mdp_is_owner_msm_hw3d,
+	},
+	{
+		.name		= "fb",
+		.get		= mdp_get_file_msm_fb,
+		.put		= mdp_put_file_msm_fb,
+		.is_owner	= mdp_is_owner_msm_fb,
+	},
+};
 
 static int enable_mdp_irq(struct mdp_info *mdp, uint32_t mask)
 {
@@ -253,55 +359,30 @@ void mdp_dma(struct mdp_device *mdp_dev, uint32_t addr, uint32_t stride,
 	}
 }
 
-int get_img(struct mdp_img *img, struct fb_info *info,
-	    unsigned long *start, unsigned long *len,
-	    struct file** filep)
+static int get_img(struct mdp_img *img, struct fb_info *info,
+		   unsigned long *start, unsigned long *len,
+		   struct file** filep)
 {
-	int put_needed, ret = 0;
-	struct file *file;
-	unsigned long vstart;
+	int i;
+	int ret;
 
-	if (!get_pmem_file(img->memory_id, start, &vstart, len, filep))
-		return 0;
-
-	ret = get_msm_hw3d_file(img->memory_id, HW3D_REGION_ID(img->offset),
-				HW3D_OFFSET_IN_REGION(img->offset), start, len,
-				filep);
-	if (!ret) {
-		/* need to chop off the region id from the user offset */
-		img->offset = HW3D_OFFSET_IN_REGION(img->offset);
-		return 0;
-	}
-
-	file = fget_light(img->memory_id, &put_needed);
-	if (file == NULL)
-		return -1;
-
-	if (MAJOR(file->f_dentry->d_inode->i_rdev) == FB_MAJOR) {
-		*start = info->fix.smem_start;
-		*len = info->fix.smem_len;
-		ret = 0;
-	} else
-		ret = -1;
-	fput_light(file, put_needed);
-
+	for (i = 0; i < ARRAY_SIZE(mdp_img_types) && ret != 0; ++i)
+		ret = mdp_img_types[i].get(img, info, filep, start, len);
 	return ret;
 }
 
-void put_img(struct file *src_file, struct file *dst_file)
+static void put_img(struct file *file)
 {
-	if (src_file) {
-		if (is_pmem_file(src_file))
-			put_pmem_file(src_file);
-		else if (is_msm_hw3d_file(src_file))
-			put_msm_hw3d_file(src_file);
+	int i;
+	int ret = -1;
+
+	for (i = 0; i < ARRAY_SIZE(mdp_img_types) && ret != 0; ++i) {
+		if (mdp_img_types[i].is_owner(file)) {
+			mdp_img_types[i].put(file);
+			return;
+		}
 	}
-	if (dst_file) {
-		if (is_pmem_file(dst_file))
-			put_pmem_file(dst_file);
-		else if (is_msm_hw3d_file(dst_file))
-			put_msm_hw3d_file(dst_file);
-	}
+	pr_info("%s: unknown file\n", __func__);
 }
 
 int mdp_blit(struct mdp_device *mdp_dev, struct fb_info *fb,
@@ -333,7 +414,7 @@ int mdp_blit(struct mdp_device *mdp_dev, struct fb_info *fb,
 	if (unlikely(get_img(&req->dst, fb, &dst_start, &dst_len, &dst_file))) {
 		printk(KERN_ERR "mpd_ppp: could not retrieve dst image from "
 				"memory\n");
-		put_pmem_file(src_file);
+		put_img(src_file);
 		return -EINVAL;
 	}
 	mutex_lock(&mdp_mutex);
@@ -378,13 +459,15 @@ int mdp_blit(struct mdp_device *mdp_dev, struct fb_info *fb,
 	if (ret)
 		goto err_wait_failed;
 end:
-	put_img(src_file, dst_file);
+	put_img(src_file);
+	put_img(dst_file);
 	mutex_unlock(&mdp_mutex);
 	return 0;
 err_bad_blit:
 	disable_mdp_irq(mdp, DL0_ROI_DONE);
 err_wait_failed:
-	put_img(src_file, dst_file);
+	put_img(src_file);
+	put_img(dst_file);
 	mutex_unlock(&mdp_mutex);
 	return ret;
 }
