@@ -236,7 +236,6 @@ static void locked_hw3d_client_done(struct hw3d_info *info, int had_timer)
 		clk_disable(info->imem_clk);
 	}
 	info->revoking = 0;
-	info->client_file = NULL;
 
 	/* double check that the irqs are disabled */
 	locked_hw3d_irq_disable(info);
@@ -477,7 +476,9 @@ static int hw3d_release(struct inode *inode, struct file *file)
 		pr_debug("hw3d: had file\n");
 		pending = del_timer(&info->revoke_timer);
 		locked_hw3d_client_done(info, pending);
-	}
+		info->client_file = NULL;
+	} else
+		pr_warning("hw3d: release without client_file.\n");
 	spin_unlock_irqrestore(&info->lock, flags);
 
 done:
