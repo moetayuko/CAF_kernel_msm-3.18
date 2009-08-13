@@ -36,10 +36,9 @@ struct ds2784_device_info {
 	/* DS2784 data, valid after calling ds2784_battery_read_status() */
 	unsigned long update_time;	/* jiffies when data read */
 	char raw[DS2784_DATA_SIZE];	/* raw DS2784 data */
-	short voltage_raw;
-	short current_raw;
 	int voltage_uV;			/* units of uV */
 	int current_uA;			/* units of uA */
+	int current_avg_uA;
 	int temp_raw;			/* units of 0.125 C */
 	int temp_C;			/* units of 0.1 C */
 	int charge_status;		/* POWER_SUPPLY_STATUS_* */
@@ -86,6 +85,7 @@ static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_CURRENT_AVG,
 };
 
 static int battery_initial;
@@ -121,6 +121,7 @@ static int g_usb_online;
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
+	short n;
 
 	/* The first time we read the entire contents of SRAM/EEPROM,
 	 * but after that we just read the interesting bits that change. */
@@ -182,16 +183,22 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 	di->percentage = di->raw[DS2784_REG_RARC];
 
 	/* Get Voltage: Unit=4.886mV, range is 0V to 4.99V */
-	di->voltage_raw = (((di->raw[DS2784_REG_VOLT_MSB] << 8)
-			    |(di->raw[DS2784_REG_VOLT_LSB])) >> 5);
-	
-	di->voltage_uV = (di->voltage_raw * 4886);
+	n = (((di->raw[DS2784_REG_VOLT_MSB] << 8) |
+	      (di->raw[DS2784_REG_VOLT_LSB])) >> 5);
+
+	di->voltage_uV = n * 4886;
 
 	/* Get Current: Unit= 1.5625uV x Rsnsp(67)=104.68 */
-	di->current_raw = ((di->raw[DS2784_REG_CURR_MSB])<<8) |
-		(di->raw[DS2784_REG_CURR_LSB]);
-	di->current_uA = (((di->current_raw * 15625) / 10000) * 67);
-//	di->current_mA = (((0x10000-result+1)*15625/10000)*67)/1000;
+	n = ((di->raw[DS2784_REG_CURR_MSB]) << 8) |
+		di->raw[DS2784_REG_CURR_LSB];
+	di->current_uA = ((n * 15625) / 10000) * 67;
+
+	n = ((di->raw[DS2784_REG_AVG_CURR_MSB]) << 8) |
+		di->raw[DS2784_REG_AVG_CURR_LSB];
+	di->current_avg_uA = ((n * 15625) / 10000) * 67;
+
+	count = (di->raw[DS2784_REG_RAAC_MSB] << 8) |
+		di->raw[DS2784_REG_RAAC_LSB];
 
 	/* Get Temperature:
 	 * Unit=0.125 degree C,therefore, give up LSB ,
@@ -201,9 +208,10 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 				     (di->raw[DS2784_REG_TEMP_LSB] >> 5);
 	di->temp_C = di->temp_raw + (di->temp_raw / 4);
 
-	pr_info("batt: rsnsp=%d, rarc=%d, %d mV, %d mA, %d C\n",
+	pr_info("batt: rsnsp=%d, rarc=%d, %d mV, %d mA, %d C %d mAh\n",
 		di->raw[DS2784_REG_RSNSP], di->raw[DS2784_REG_RARC],
-		di->voltage_uV / 1000, di->current_uA / 1000, di->temp_C);
+		di->voltage_uV / 1000, di->current_uA / 1000,
+		di->temp_C, count);
 	
 	return 0;
 }
@@ -216,14 +224,6 @@ static int battery_get_property(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
-//		printk("$$$ HACK $$$\n");
-#if 1
-		/* HACK: kick the updater if we read status */
-		if (di->monitor_wqueue) {
-			cancel_delayed_work_sync(&di->monitor_work);
-			queue_delayed_work(di->monitor_wqueue, &di->monitor_work, 0);
-		}
-#endif
 		switch (di->charging_source) {
 		case CHARGER_BATTERY:
 			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
@@ -261,6 +261,9 @@ static int battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		val->intval = di->current_uA;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_AVG:
+		val->intval = di->current_avg_uA;
 		break;
 	default:
 		return -EINVAL;
