@@ -245,7 +245,7 @@ int mahimahi_wifi_reset(int on)
 int msm_add_sdcc(unsigned int controller, struct mmc_platform_data *plat,
 		 unsigned int stat_irq, unsigned long stat_irq_flags);
 
-int __init mahimahi_init_mmc(unsigned int sys_rev)
+int __init mahimahi_init_mmc(unsigned int sys_rev, unsigned debug_uart)
 {
 	uint32_t id;
 
@@ -257,6 +257,10 @@ int __init mahimahi_init_mmc(unsigned int sys_rev)
 
 	msm_add_sdcc(1, &mahimahi_wifi_data, 0, 0);
 
+	if (debug_uart) {
+		pr_info("%s: sdcard disabled due to debug uart\n", __func__);
+		goto done;
+	}
 	if (opt_disable_sdcard) {
 		pr_info("%s: sdcard disabled on cmdline\n", __func__);
 		goto done;

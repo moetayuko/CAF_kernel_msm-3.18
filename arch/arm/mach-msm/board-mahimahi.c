@@ -45,6 +45,10 @@
 #include "devices.h"
 #include "proc_comm.h"
 
+static uint debug_uart;
+
+module_param_named(debug_uart, debug_uart, uint, 0);
+
 extern void msm_init_pmic_vibrator(void);
 extern void __init mahimahi_audio_init(void);
 
@@ -376,7 +380,7 @@ static void mahimahi_reset(void)
 	gpio_set_value(MAHIMAHI_GPIO_PS_HOLD, 0);
 }
 
-int mahimahi_init_mmc(int sysrev);
+int mahimahi_init_mmc(int sysrev, unsigned debug_uart);
 
 static void __init mahimahi_init(void)
 {
@@ -403,7 +407,7 @@ static void __init mahimahi_init(void)
 
 	msm_hsusb_set_vbus_state(1);
 
-	ret = mahimahi_init_mmc(system_rev);
+	ret = mahimahi_init_mmc(system_rev, debug_uart);
 	if (ret != 0)
 		pr_crit("%s: Unable to initialize MMC\n", __func__);
 
