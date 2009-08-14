@@ -28,6 +28,7 @@
 #include <linux/android_pmem.h>
 #include <linux/synaptics_i2c_rmi.h>
 #include <linux/capella_cm3602.h>
+#include <../../../drivers/staging/android/timed_gpio.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -284,6 +285,27 @@ static struct platform_device capella_cm3602 = {
 	}
 };
 
+static struct timed_gpio timed_gpios[] = {
+	{
+		.name = "vibrator",
+		.gpio = MAHIMAHI_GPIO_VIBRATOR_ON,
+		.max_timeout = 15000,
+	},
+};
+
+static struct timed_gpio_platform_data timed_gpio_data = {
+	.num_gpios	= ARRAY_SIZE(timed_gpios),
+	.gpios		= timed_gpios,
+};
+
+static struct platform_device mahimahi_timed_gpios = {
+	.name		= "timed-gpio",
+	.id		= -1,
+	.dev		= {
+		.platform_data = &timed_gpio_data,
+	},
+};
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart1,
@@ -420,7 +442,10 @@ static void __init mahimahi_init(void)
 
 	mahimahi_audio_init();
 
-	msm_init_pmic_vibrator();
+	if (system_rev > 0)
+		platform_device_register(&mahimahi_timed_gpios);
+	else
+		msm_init_pmic_vibrator();
 }
 
 static void __init mahimahi_fixup(struct machine_desc *desc, struct tag *tags,
