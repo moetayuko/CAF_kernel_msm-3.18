@@ -104,13 +104,6 @@ config MACH_SWORDFISH
 	help
 	  Support for the Qualcomm SURF8250 eval board.
 
-config MACH_FIRESTONE
-	depends on ARCH_QSD8X50
-	default y
-	bool "Firestone"
-	help
-	  Support for the HTC Firestone device.
-
 config MACH_SAPPHIRE
 	depends on ARCH_MSM7X00A
 	default y
