@@ -441,7 +441,7 @@ MACHINE_START(MAHIMAHI, "mahimahi")
 	.phys_io        = MSM_DEBUG_UART_PHYS,
 	.io_pg_offst    = ((MSM_DEBUG_UART_BASE) >> 18) & 0xfffc,
 #endif
-	.boot_params	= 0x12000100,
+	.boot_params	= 0x20000100,
 	.fixup		= mahimahi_fixup,
 	.map_io		= mahimahi_map_io,
 	.init_irq	= msm_init_irq,
