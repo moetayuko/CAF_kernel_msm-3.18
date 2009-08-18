@@ -42,8 +42,6 @@
 static void __iomem *spi_base;
 static struct clk *spi_clk ;
 
-#define CLK_NS_TO_RATE(ns)			(1000000000UL / (ns))
-
 static int qspi_send(uint32_t id, uint8_t data)
 {
 	uint32_t err;
@@ -441,7 +439,7 @@ static struct msm_lcdc_panel_ops mahimahi_lcdc_panel_ops = {
 };
 
 static struct msm_lcdc_timing mahimahi_lcdc_timing = {
-		.clk_rate		= CLK_NS_TO_RATE(26),
+		.clk_rate		= 24576000,
 		.hsync_pulse_width	= 4,
 		.hsync_back_porch	= 8,
 		.hsync_front_porch	= 8,
