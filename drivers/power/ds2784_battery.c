@@ -21,6 +21,7 @@
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
 
+#include <linux/android_alarm.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/err.h>
@@ -50,7 +51,9 @@ struct ds2784_device_info {
 	struct power_supply bat;
 	struct device *w1_dev;
 	struct workqueue_struct *monitor_wqueue;
-	struct delayed_work monitor_work;
+	struct work_struct monitor_work;
+	struct alarm alarm;
+	struct wake_lock work_wake_lock;
 };
 
 #define psy_to_dev_info(x) container_of((x), struct ds2784_device_info, bat)
@@ -297,12 +300,30 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 static void ds2784_battery_work(struct work_struct *work)
 {
 	struct ds2784_device_info *di =
-		container_of(work, struct ds2784_device_info, monitor_work.work);
-	const int interval = HZ * 60;
+		container_of(work, struct ds2784_device_info, monitor_work);
+	const ktime_t low_interval = ktime_set(50, 0);
+	const ktime_t slack = ktime_set(20, 0);
+	ktime_t next_alarm;
+	unsigned long flags;
 
 	ds2784_battery_update_status(di);
 
-	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, interval);
+	next_alarm = ktime_add(alarm_get_elapsed_realtime(), low_interval);
+
+	/* prevent suspend before starting the alarm */
+	local_irq_save(flags);
+
+	wake_unlock(&di->work_wake_lock);
+	alarm_start_range(&di->alarm, next_alarm, ktime_add(next_alarm, slack));
+	local_irq_restore(flags);
+}
+
+static void ds2784_battery_alarm(struct alarm *alarm)
+{
+	struct ds2784_device_info *di =
+		container_of(alarm, struct ds2784_device_info, alarm);
+	wake_lock(&di->work_wake_lock);
+	queue_work(di->monitor_wqueue, &di->monitor_work);
 }
 
 static int battery_charging_ctrl(batt_ctl_t ctl)
@@ -472,14 +493,18 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	if (rc)
 		goto fail_register;
 
-	INIT_DELAYED_WORK(&di->monitor_work, ds2784_battery_work);
+	INIT_WORK(&di->monitor_work, ds2784_battery_work);
 	di->monitor_wqueue = create_singlethread_workqueue(dev_name(&pdev->dev));
 	if (!di->monitor_wqueue) {
 		rc = -ESRCH;
 		goto fail_workqueue;
 	}
-
-	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, 0);
+	wake_lock_init(&di->work_wake_lock, WAKE_LOCK_SUSPEND,
+			"ds2784-battery");
+	alarm_init(&di->alarm, ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP,
+			ds2784_battery_alarm);
+	wake_lock(&di->work_wake_lock);
+	queue_work(di->monitor_wqueue, &di->monitor_work);
 	return 0;
 
 fail_workqueue:
