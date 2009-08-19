@@ -47,6 +47,7 @@ obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-keypad.o board-mahimahi-mmc.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-rfkill.o htc_wifi_nvs.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-wifi.o board-mahimahi-audio.o
 obj-$(CONFIG_MACH_MAHIMAHI) += msm_vibrator.o
+obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-microp.o
 
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 obj-$(CONFIG_TROUT_BATTCHG) += htc_power_supply.o

@@ -256,6 +256,10 @@ static struct i2c_board_info i2c_devices[] = {
 		.platform_data = mahimahi_synaptics_ts_data,
 		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_TP_INT_N)
 	},
+	{
+		I2C_BOARD_INFO("mahimahi-microp", 0x66),
+		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_UP_INT_N)
+	},
 };
 
 static int capella_cm3602_power(int on)
