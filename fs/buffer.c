@@ -1992,9 +1992,14 @@ int block_write_begin(struct file *file, struct address_space *mapping,
 			 * prepare_write() may have instantiated a few blocks
 			 * outside i_size.  Trim these off again. Don't need
 			 * i_size_read because we hold i_mutex.
+			 *
+			 * Filesystems which set i_op->new_truncate must
+			 * handle this themselves. Eventually this will go
+			 * away because everyone will be converted.
 			 */
 			if (pos + len > inode->i_size)
-				vmtruncate(inode, inode->i_size);
+				if (!inode->i_op->new_truncate)
+					vmtruncate(inode, inode->i_size);
 		}
 	}
 
@@ -2371,7 +2376,7 @@ int block_commit_write(struct page *page, unsigned from, unsigned to)
  *
  * We are not allowed to take the i_mutex here so we have to play games to
  * protect against truncate races as the page could now be beyond EOF.  Because
- * vmtruncate() writes the inode size before removing pages, once we have the
+ * truncate writes the inode size before removing pages, once we have the
  * page lock we can determine safely if the page is beyond EOF. If it is not
  * beyond EOF, then the page is guaranteed safe against truncation until we
  * unlock the page.
@@ -2595,7 +2600,8 @@ out_release:
 	*pagep = NULL;
 
 	if (pos + len > inode->i_size)
-		vmtruncate(inode, inode->i_size);
+		if (!inode->i_op->new_truncate)
+			vmtruncate(inode, inode->i_size);
 
 	return ret;
 }
