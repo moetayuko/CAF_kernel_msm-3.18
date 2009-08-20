@@ -3132,7 +3132,7 @@ void xtInitRoot(tid_t tid, struct inode *ip)
  * note:
  *	PWMAP:
  *	 1. truncate (non-COMMIT_NOLINK file)
- *	    by jfs_truncate() or jfs_open(O_TRUNC):
+ *	    by jfs_setsize() or jfs_open(O_TRUNC):
  *	    xtree is updated;
  *	 2. truncate index table of directory when last entry removed
  *	map update via tlock at commit time;

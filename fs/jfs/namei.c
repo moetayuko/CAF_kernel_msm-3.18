@@ -435,7 +435,7 @@ static int jfs_rmdir(struct inode *dip, struct dentry *dentry)
 	 */
 	if (test_cflag(COMMIT_Stale, dip)) {
 		if (dip->i_size > 1)
-			jfs_truncate_nolock(dip, 0);
+			jfs_truncate_blocks_nolock(dip, 0);
 
 		clear_cflag(COMMIT_Stale, dip);
 	}
@@ -586,7 +586,7 @@ static int jfs_unlink(struct inode *dip, struct dentry *dentry)
 	 */
 	if (test_cflag(COMMIT_Stale, dip)) {
 		if (dip->i_size > 1)
-			jfs_truncate_nolock(dip, 0);
+			jfs_truncate_blocks_nolock(dip, 0);
 
 		clear_cflag(COMMIT_Stale, dip);
 	}
@@ -1327,7 +1327,7 @@ static int jfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	 */
 	if (test_cflag(COMMIT_Stale, old_dir)) {
 		if (old_dir->i_size > 1)
-			jfs_truncate_nolock(old_dir, 0);
+			jfs_truncate_blocks_nolock(old_dir, 0);
 
 		clear_cflag(COMMIT_Stale, old_dir);
 	}

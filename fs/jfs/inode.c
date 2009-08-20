@@ -297,8 +297,33 @@ static int jfs_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
 {
-	return nobh_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+	int ret;
+
+	ret = nobh_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
 				jfs_get_block);
+	if (ret < 0) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			jfs_truncate_blocks(inode, isize);
+	}
+	return ret;
+}
+
+static int jfs_write_end(struct file *file, struct address_space *mapping,
+				loff_t pos, unsigned len, unsigned copied,
+				struct page *page, void *fsdata)
+{
+	int ret;
+
+	ret = nobh_write_end(file, mapping, pos, len, copied, page, fsdata);
+	if (ret < len) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			jfs_truncate_blocks(inode, isize);
+	}
+	return ret;
 }
 
 static sector_t jfs_bmap(struct address_space *mapping, sector_t block)
@@ -311,9 +336,13 @@ static ssize_t jfs_direct_IO(int rw, struct kiocb *iocb,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
+	ssize_t ret;
 
-	return blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
+	ret = blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
 				offset, nr_segs, jfs_get_block, NULL);
+	if (ret < 0)
+		jfs_truncate_blocks(inode, inode->i_size);
+	return ret;
 }
 
 const struct address_space_operations jfs_aops = {
@@ -323,16 +352,16 @@ const struct address_space_operations jfs_aops = {
 	.writepages	= jfs_writepages,
 	.sync_page	= block_sync_page,
 	.write_begin	= jfs_write_begin,
-	.write_end	= nobh_write_end,
+	.write_end	= jfs_write_end,
 	.bmap		= jfs_bmap,
 	.direct_IO	= jfs_direct_IO,
 };
 
 /*
- * Guts of jfs_truncate.  Called with locks already held.  Can be called
+ * Guts of jfs_truncate_blocks.  Called with locks already held.  Can be called
  * with directory for truncating directory index table.
  */
-void jfs_truncate_nolock(struct inode *ip, loff_t length)
+void jfs_truncate_blocks_nolock(struct inode *ip, loff_t length)
 {
 	loff_t newsize;
 	tid_t tid;
@@ -372,13 +401,20 @@ void jfs_truncate_nolock(struct inode *ip, loff_t length)
 	} while (newsize > length);	/* Truncate isn't always atomic */
 }
 
-void jfs_truncate(struct inode *ip)
+void jfs_truncate_blocks(struct inode *ip, loff_t offset)
 {
-	jfs_info("jfs_truncate: size = 0x%lx", (ulong) ip->i_size);
-
-	nobh_truncate_page(ip->i_mapping, ip->i_size, jfs_get_block);
+	jfs_info("jfs_truncate: size = 0x%lx", (ulong) offset);
 
 	IWRITE_LOCK(ip, RDWRLOCK_NORMAL);
-	jfs_truncate_nolock(ip, ip->i_size);
+	jfs_truncate_blocks_nolock(ip, offset);
 	IWRITE_UNLOCK(ip);
+}
+
+void jfs_setsize(struct inode *ip, loff_t offset)
+{
+	simple_setsize(ip, offset);
+
+	nobh_truncate_page(ip->i_mapping, offset, jfs_get_block);
+
+	jfs_truncate_blocks(ip, offset);
 }

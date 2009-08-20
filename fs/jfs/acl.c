@@ -218,20 +218,14 @@ int jfs_setattr(struct dentry *dentry, struct iattr *iattr)
 	struct inode *inode = dentry->d_inode;
 	int rc;
 
-	rc = inode_change_ok(inode, iattr);
+	rc = simple_setattr(dentry, iattr);
 	if (rc)
 		return rc;
 
-	if ((iattr->ia_valid & ATTR_UID && iattr->ia_uid != inode->i_uid) ||
-	    (iattr->ia_valid & ATTR_GID && iattr->ia_gid != inode->i_gid)) {
-		if (vfs_dq_transfer(inode, iattr))
-			return -EDQUOT;
-	}
-
-	rc = inode_setattr(inode, iattr);
-
 	if (!rc && (iattr->ia_valid & ATTR_MODE))
 		rc = jfs_acl_chmod(inode);
+
+	mark_inode_dirty(inode);
 
 	return rc;
 }
