@@ -2367,6 +2367,7 @@ extern int buffer_migrate_page(struct address_space *,
 #endif
 
 extern int inode_change_ok(struct inode *, struct iattr *);
+extern int inode_newsize_ok(struct inode *, loff_t offset);
 extern int __must_check inode_setattr(struct inode *, struct iattr *);
 
 extern void file_update_time(struct file *file);
