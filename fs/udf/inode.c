@@ -67,6 +67,7 @@ static void udf_update_extents(struct inode *,
 			       struct extent_position *);
 static int udf_get_block(struct inode *, sector_t, struct buffer_head *, int);
 
+static void udf_truncate_blocks(struct inode *inode);
 
 void udf_delete_inode(struct inode *inode)
 {
@@ -76,7 +77,7 @@ void udf_delete_inode(struct inode *inode)
 		goto no_delete;
 
 	inode->i_size = 0;
-	udf_truncate(inode);
+	udf_truncate_blocks(inode);
 	lock_kernel();
 
 	udf_update_inode(inode, IS_SYNC(inode));
@@ -127,9 +128,34 @@ static int udf_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
+	int ret;
+
 	*pagep = NULL;
-	return block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
 				udf_get_block);
+	if (ret < 0) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			udf_truncate_blocks(inode);
+	}
+	return ret;
+}
+
+static int udf_write_end(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned copied,
+			struct page *page, void *fsdata)
+{
+	int ret;
+
+	ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
+	if (ret < len) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			udf_truncate_blocks(inode);
+	}
+	return ret;
 }
 
 static sector_t udf_bmap(struct address_space *mapping, sector_t block)
@@ -141,8 +167,8 @@ const struct address_space_operations udf_aops = {
 	.readpage	= udf_readpage,
 	.writepage	= udf_writepage,
 	.sync_page	= block_sync_page,
-	.write_begin		= udf_write_begin,
-	.write_end		= generic_write_end,
+	.write_begin	= udf_write_begin,
+	.write_end	= udf_write_end,
 	.bmap		= udf_bmap,
 };
 
@@ -1011,7 +1037,7 @@ struct buffer_head *udf_bread(struct inode *inode, int block,
 	return NULL;
 }
 
-void udf_truncate(struct inode *inode)
+static void udf_truncate_blocks(struct inode *inode)
 {
 	int offset;
 	int err;
@@ -1055,6 +1081,43 @@ void udf_truncate(struct inode *inode)
 	else
 		mark_inode_dirty(inode);
 	unlock_kernel();
+}
+
+static int udf_setsize(struct inode *inode, loff_t newsize)
+{
+	loff_t oldsize;
+	int error;
+
+	error = inode_newsize_ok(inode, newsize);
+	if (error)
+		return error;
+
+	oldsize = inode->i_size;
+	i_size_write(inode, newsize);
+	truncate_pagecache(inode, oldsize, newsize);
+
+	udf_truncate_blocks(inode);
+
+	return error;
+}
+
+int udf_setattr(struct dentry *dentry, struct iattr *attr)
+{
+	struct inode *inode = dentry->d_inode;
+	int error;
+
+	if (attr->ia_valid & ATTR_SIZE) {
+		error = udf_setsize(inode, attr->ia_size);
+		if (error)
+			return error;
+	}
+
+	error = simple_setattr(dentry, attr);
+	if (error)
+		return error;
+
+	mark_inode_dirty(inode);
+	return error;
 }
 
 static void __udf_read_inode(struct inode *inode)

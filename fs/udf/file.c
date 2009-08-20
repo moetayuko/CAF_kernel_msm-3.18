@@ -215,5 +215,6 @@ const struct file_operations udf_file_operations = {
 };
 
 const struct inode_operations udf_file_inode_operations = {
-	.truncate = udf_truncate,
+	.new_truncate = 1,
+	.setattr = udf_setattr,
 };

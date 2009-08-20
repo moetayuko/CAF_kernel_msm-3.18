@@ -138,7 +138,7 @@ extern int udf_sync_inode(struct inode *);
 extern void udf_expand_file_adinicb(struct inode *, int, int *);
 extern struct buffer_head *udf_expand_dir_adinicb(struct inode *, int *, int *);
 extern struct buffer_head *udf_bread(struct inode *, int, int, int *);
-extern void udf_truncate(struct inode *);
+extern int udf_setattr(struct dentry *, struct iattr *);
 extern void udf_read_inode(struct inode *);
 extern void udf_delete_inode(struct inode *);
 extern void udf_clear_inode(struct inode *);
