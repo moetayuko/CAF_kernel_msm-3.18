@@ -1148,7 +1148,7 @@ out:
 	btrfs_end_transaction(trans, root);
 	unlock_extent(&BTRFS_I(src)->io_tree, off, off+len, GFP_NOFS);
 	if (ret)
-		vmtruncate(inode, 0);
+		btrfs_truncate_blocks(inode, 0);
 out_unlock:
 	mutex_unlock(&src->i_mutex);
 	mutex_unlock(&inode->i_mutex);
