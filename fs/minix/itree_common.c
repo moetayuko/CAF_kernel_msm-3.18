@@ -290,7 +290,7 @@ static void free_branches(struct inode *inode, block_t *p, block_t *q, int depth
 		free_data(inode, p, q);
 }
 
-static inline void truncate (struct inode * inode)
+static inline void truncate_blocks(struct inode *inode, loff_t offset)
 {
 	struct super_block *sb = inode->i_sb;
 	block_t *idata = i_data(inode);
@@ -302,8 +302,7 @@ static inline void truncate (struct inode * inode)
 	int first_whole;
 	long iblock;
 
-	iblock = (inode->i_size + sb->s_blocksize -1) >> sb->s_blocksize_bits;
-	block_truncate_page(inode->i_mapping, inode->i_size, get_block);
+	iblock = (offset + sb->s_blocksize - 1) >> sb->s_blocksize_bits;
 
 	n = block_to_path(inode, iblock, offsets);
 	if (!n)

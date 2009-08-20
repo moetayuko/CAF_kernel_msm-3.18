@@ -24,6 +24,7 @@ const struct file_operations minix_file_operations = {
 };
 
 const struct inode_operations minix_file_inode_operations = {
-	.truncate	= minix_truncate,
+	.new_truncate	= 1,
+	.setattr	= minix_setattr,
 	.getattr	= minix_getattr,
 };

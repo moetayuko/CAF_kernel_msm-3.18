@@ -61,9 +61,9 @@ int V2_minix_get_block(struct inode * inode, long block,
 	return get_block(inode, block, bh_result, create);
 }
 
-void V2_minix_truncate(struct inode * inode)
+void V2_minix_truncate_blocks(struct inode *inode, loff_t offset)
 {
-	truncate(inode);
+	truncate_blocks(inode, offset);
 }
 
 unsigned V2_minix_blocks(loff_t size, struct super_block *sb)

@@ -18,15 +18,16 @@
 #include <linux/highuid.h>
 #include <linux/vfs.h>
 
-static int minix_write_inode(struct inode * inode, int wait);
+static int minix_write_inode(struct inode *inode, int wait);
 static int minix_statfs(struct dentry *dentry, struct kstatfs *buf);
-static int minix_remount (struct super_block * sb, int * flags, char * data);
+static int minix_remount(struct super_block *sb, int *flags, char *data);
+static void minix_truncate_blocks(struct inode *inode, loff_t offset);
 
 static void minix_delete_inode(struct inode *inode)
 {
 	truncate_inode_pages(&inode->i_data, 0);
 	inode->i_size = 0;
-	minix_truncate(inode);
+	minix_truncate_blocks(inode, 0);
 	minix_free_inode(inode);
 }
 
@@ -367,8 +368,33 @@ static int minix_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
+	int ret;
+
 	*pagep = NULL;
-	return __minix_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+	ret = __minix_write_begin(file, mapping, pos, len, flags, pagep,fsdata);
+	if (ret < 0) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			minix_truncate_blocks(inode, isize);
+	}
+	return ret;
+}
+
+static int minix_write_end(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned copied,
+			struct page *page, void *fsdata)
+{
+	int ret;
+
+	ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
+	if (ret < len) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			minix_truncate_blocks(inode, isize);
+	}
+	return ret;
 }
 
 static sector_t minix_bmap(struct address_space *mapping, sector_t block)
@@ -381,7 +407,7 @@ static const struct address_space_operations minix_aops = {
 	.writepage = minix_writepage,
 	.sync_page = block_sync_page,
 	.write_begin = minix_write_begin,
-	.write_end = generic_write_end,
+	.write_end = minix_write_end,
 	.bmap = minix_bmap
 };
 
@@ -591,14 +617,54 @@ int minix_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *sta
 /*
  * The function that is called for file truncation.
  */
-void minix_truncate(struct inode * inode)
+static void minix_truncate_blocks(struct inode *inode, loff_t offset)
 {
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode)))
 		return;
 	if (INODE_VERSION(inode) == MINIX_V1)
-		V1_minix_truncate(inode);
+		V1_minix_truncate_blocks(inode, offset);
 	else
-		V2_minix_truncate(inode);
+		V2_minix_truncate_blocks(inode, offset);
+}
+
+static int minix_setsize(struct inode *inode, loff_t newsize)
+{
+	loff_t oldsize;
+	int error;
+
+	error = inode_newsize_ok(inode, newsize);
+	if (error)
+		return error;
+
+	oldsize = inode->i_size;
+	i_size_write(inode, newsize);
+	truncate_pagecache(inode, oldsize, newsize);
+
+	error = block_truncate_page(inode->i_mapping, newsize, minix_get_block);
+	if (error)
+		return error;
+	minix_truncate_blocks(inode, newsize);
+
+	return error;
+}
+
+int minix_setattr(struct dentry *dentry, struct iattr *iattr)
+{
+	struct inode *inode = dentry->d_inode;
+	int error;
+
+	error = inode_change_ok(inode, iattr);
+	if (error)
+		return error;
+	if (iattr->ia_valid & ATTR_SIZE) {
+		error = minix_setsize(inode, iattr->ia_size);
+		if (error)
+			return error;
+	}
+	generic_setattr(inode, iattr);
+	mark_inode_dirty(inode);
+
+	return error;
 }
 
 static int minix_get_sb(struct file_system_type *fs_type,
