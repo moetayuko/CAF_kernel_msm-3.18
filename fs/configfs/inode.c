@@ -56,6 +56,7 @@ static struct backing_dev_info configfs_backing_dev_info = {
 };
 
 static const struct inode_operations configfs_inode_operations ={
+	.new_truncate	= 1,
 	.setattr	= configfs_setattr,
 };
 
@@ -76,9 +77,13 @@ int configfs_setattr(struct dentry * dentry, struct iattr * iattr)
 	if (error)
 		return error;
 
-	error = inode_setattr(inode, iattr);
-	if (error)
-		return error;
+	if (iattr->ia_valid & ATTR_SIZE) {
+		error = simple_setsize(inode, iattr->ia_size);
+		if (error)
+			return error;
+	}
+
+	generic_setattr(inode, iattr);
 
 	if (!sd_iattr) {
 		/* setting attributes for the first time, allocate now */

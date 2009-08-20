@@ -34,6 +34,7 @@ static struct backing_dev_info sysfs_backing_dev_info = {
 };
 
 static const struct inode_operations sysfs_inode_operations ={
+	.new_truncate	= 1,
 	.setattr	= sysfs_setattr,
 };
 
@@ -59,11 +60,7 @@ int sysfs_setattr(struct dentry * dentry, struct iattr * iattr)
 	if (error)
 		return error;
 
-	iattr->ia_valid &= ~ATTR_SIZE; /* ignore size changes */
-
-	error = inode_setattr(inode, iattr);
-	if (error)
-		return error;
+	generic_setattr(inode, iattr);
 
 	if (!sd_iattr) {
 		/* setting attributes for the first time, allocate now */
