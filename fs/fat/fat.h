@@ -302,7 +302,7 @@ extern int fat_generic_ioctl(struct inode *inode, struct file *filp,
 extern const struct file_operations fat_file_operations;
 extern const struct inode_operations fat_file_inode_operations;
 extern int fat_setattr(struct dentry * dentry, struct iattr * attr);
-extern void fat_truncate(struct inode *inode);
+extern void fat_truncate_blocks(struct inode *inode, loff_t offset);
 extern int fat_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		       struct kstat *stat);
 extern int fat_file_fsync(struct file *file, struct dentry *dentry,

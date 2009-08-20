@@ -146,10 +146,19 @@ static int fat_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
+	int err;
+
 	*pagep = NULL;
-	return cont_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+	err = cont_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
 				fat_get_block,
 				&MSDOS_I(mapping->host)->mmu_private);
+	if (err < 0) {
+		struct inode *inode = mapping->host;
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			fat_truncate_blocks(inode, isize);
+	}
+	return err;
 }
 
 static int fat_write_end(struct file *file, struct address_space *mapping,
@@ -159,6 +168,11 @@ static int fat_write_end(struct file *file, struct address_space *mapping,
 	struct inode *inode = mapping->host;
 	int err;
 	err = generic_write_end(file, mapping, pos, len, copied, pagep, fsdata);
+	if (err < len) {
+		loff_t isize = inode->i_size;
+		if (pos + len > isize)
+			fat_truncate_blocks(inode, isize);
+	}
 	if (!(err < 0) && !(MSDOS_I(inode)->i_attrs & ATTR_ARCH)) {
 		inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
 		MSDOS_I(inode)->i_attrs |= ATTR_ARCH;
@@ -173,6 +187,7 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
+	ssize_t ret;
 
 	if (rw == WRITE) {
 		/*
@@ -193,8 +208,12 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 	 * FAT need to use the DIO_LOCKING for avoiding the race
 	 * condition of fat_get_block() and ->truncate().
 	 */
-	return blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
+	ret = blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
 				  offset, nr_segs, fat_get_block, NULL);
+	if (ret < 0 && (rw & WRITE))
+		fat_truncate_blocks(inode, inode->i_size);
+
+	return ret;
 }
 
 static sector_t _fat_bmap(struct address_space *mapping, sector_t block)
@@ -429,7 +448,7 @@ static void fat_delete_inode(struct inode *inode)
 {
 	truncate_inode_pages(&inode->i_data, 0);
 	inode->i_size = 0;
-	fat_truncate(inode);
+	fat_truncate_blocks(inode, 0);
 	clear_inode(inode);
 }
 

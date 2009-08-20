@@ -252,7 +252,7 @@ static int fat_free(struct inode *inode, int skip)
 	return fat_free_clusters(inode, free_start);
 }
 
-void fat_truncate(struct inode *inode)
+void fat_truncate_blocks(struct inode *inode, loff_t offset)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(inode->i_sb);
 	const unsigned int cluster_size = sbi->cluster_size;
@@ -262,10 +262,10 @@ void fat_truncate(struct inode *inode)
 	 * This protects against truncating a file bigger than it was then
 	 * trying to write into the hole.
 	 */
-	if (MSDOS_I(inode)->mmu_private > inode->i_size)
-		MSDOS_I(inode)->mmu_private = inode->i_size;
+	if (MSDOS_I(inode)->mmu_private > offset)
+		MSDOS_I(inode)->mmu_private = offset;
 
-	nr_clusters = (inode->i_size + (cluster_size - 1)) >> sbi->cluster_bits;
+	nr_clusters = (offset + (cluster_size - 1)) >> sbi->cluster_bits;
 
 	fat_free(inode, nr_clusters);
 	fat_flush_inodes(inode->i_sb, inode, NULL);
@@ -333,6 +333,18 @@ static int fat_allow_set_time(struct msdos_sb_info *sbi, struct inode *inode)
 	return 0;
 }
 
+static int fat_setsize(struct inode *inode, loff_t offset)
+{
+	int error;
+
+	error = simple_setsize(inode, offset);
+	if (error)
+		return error;
+	fat_truncate_blocks(inode, offset);
+
+	return error;
+}
+
 #define TIMES_SET_FLAGS	(ATTR_MTIME_SET | ATTR_ATIME_SET | ATTR_TIMES_SET)
 /* valid file mode bits */
 #define FAT_VALID_MODE	(S_IFREG | S_IFDIR | S_IRWXUGO)
@@ -347,7 +359,8 @@ int fat_setattr(struct dentry *dentry, struct iattr *attr)
 	/*
 	 * Expand the file. Since inode_setattr() updates ->i_size
 	 * before calling the ->truncate(), but FAT needs to fill the
-	 * hole before it.
+	 * hole before it. XXX: this is no longer true with new truncate
+	 * sequence.
 	 */
 	if (attr->ia_valid & ATTR_SIZE) {
 		if (attr->ia_size > inode->i_size) {
@@ -396,15 +409,21 @@ int fat_setattr(struct dentry *dentry, struct iattr *attr)
 			attr->ia_valid &= ~ATTR_MODE;
 	}
 
-	if (attr->ia_valid)
-		error = inode_setattr(inode, attr);
+	if (attr->ia_valid & ATTR_SIZE) {
+		error = fat_setsize(inode, attr->ia_size);
+		if (error)
+			goto out;
+	}
+
+	generic_setattr(inode, attr);
+	mark_inode_dirty(inode);
 out:
 	return error;
 }
 EXPORT_SYMBOL_GPL(fat_setattr);
 
 const struct inode_operations fat_file_inode_operations = {
-	.truncate	= fat_truncate,
+	.new_truncate	= 1,
 	.setattr	= fat_setattr,
 	.getattr	= fat_getattr,
 };
