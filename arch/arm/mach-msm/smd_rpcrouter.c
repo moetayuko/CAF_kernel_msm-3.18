@@ -282,16 +282,21 @@ struct msm_rpc_endpoint *msm_rpcrouter_create_local_endpoint(dev_t dev)
 		ept->flags |= MSM_RPC_ENABLE_RECEIVE;
 
 		D("Creating local ept %p @ %08x:%08x\n", ept, srv->prog, srv->vers);
+		snprintf(&ept->wake_lock_name, sizeof(ept->wake_lock_name),
+			 "rpc_read-%08x:%08x", srv->prog, srv->vers);
 	} else {
 		/* mark not connected */
 		ept->dst_pid = 0xffffffff;
 		D("Creating a master local ept %p\n", ept);
+		strlcpy(&ept->wake_lock_name, "rpc_read-master",
+			sizeof(ept->wake_lock_name));
 	}
 
 	init_waitqueue_head(&ept->wait_q);
 	INIT_LIST_HEAD(&ept->read_q);
 	spin_lock_init(&ept->read_q_lock);
-	wake_lock_init(&ept->read_q_wake_lock, WAKE_LOCK_SUSPEND, "rpc_read");
+	wake_lock_init(&ept->read_q_wake_lock, WAKE_LOCK_SUSPEND,
+			ept->wake_lock_name);
 	INIT_LIST_HEAD(&ept->incomplete);
 
 	spin_lock_irqsave(&local_endpoints_lock, flags);
@@ -1175,6 +1180,9 @@ struct msm_rpc_endpoint *msm_rpc_connect(uint32_t prog, uint32_t vers, unsigned 
 	if (IS_ERR(ept))
 		return ept;
 
+	snprintf(&ept->wake_lock_name, sizeof(ept->wake_lock_name),
+		 "rpc_read-con-%08x:%08x", prog, vers);
+
 	ept->flags = flags;
 	ept->dst_pid = server->pid;
 	ept->dst_cid = server->cid;
@@ -1209,6 +1217,9 @@ int msm_rpc_register_server(struct msm_rpc_endpoint *ept,
 	msg.srv.cid = ept->cid;
 	msg.srv.prog = prog;
 	msg.srv.vers = vers;
+
+	snprintf(&ept->wake_lock_name, sizeof(ept->wake_lock_name),
+		 "rpc_read-srv-%08x:%08x", prog, vers);
 
 	RR("x NEW_SERVER id=%d:%08x prog=%08x:%08x\n",
 	   ept->pid, ept->cid, prog, vers);

@@ -145,6 +145,7 @@ struct msm_rpc_endpoint {
 	struct list_head read_q;
 	spinlock_t read_q_lock;
 	struct wake_lock read_q_wake_lock;
+	char wake_lock_name[32];
 	wait_queue_head_t wait_q;
 	unsigned flags;
 
