@@ -130,7 +130,6 @@ struct microp_i2c_client_data {
 	struct microp_led_data jogball;
 	uint16_t version;
 	struct microp_i2c_work work;
-	struct delayed_work ls_on_work;
 	struct delayed_work hpin_work;
 	struct early_suspend early_suspend;
 	uint8_t enable_early_suspend;
@@ -139,10 +138,6 @@ struct microp_i2c_client_data {
 	int auto_backlight_enabled;
 	uint8_t light_sensor_enabled;
 	int headset_is_in;
-};
-
-static struct led_trigger light_sensor_trigger = {
-	.name     = "light-sensor-trigger",
 };
 
 static char *hex2string(uint8_t *data, int len)
@@ -789,8 +784,6 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 	msleep(1);
 	if (intr_status & IRQ_LSENSOR) {
 		ret = microp_auto_backlight_function(&adc_value, &adc_level);
-		if (!ret)
-			led_trigger_event(&light_sensor_trigger, adc_level);
 	}
 #if 0
 	if (intr_status & IRQ_REMOTEKEY) {
@@ -820,18 +813,6 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 	enable_irq(client->irq);
 }
 
-static void microp_i2c_ls_on_work_func(struct work_struct *work)
-{
-	struct microp_i2c_client_data *cdata = container_of(work,
-				struct microp_i2c_client_data, ls_on_work);
-	struct i2c_client *client = private_microp_client;
-
-	cdata->light_sensor_enabled = 1;
-	if (cdata->auto_backlight_enabled)
-		microp_i2c_auto_backlight_mode(client, 1);
-}
-
-
 static int microp_function_initialize(struct i2c_client *client)
 {
 	struct microp_i2c_client_data *cdata;
@@ -849,8 +830,6 @@ static int microp_function_initialize(struct i2c_client *client)
 	ret = i2c_write_block(client, MICROP_I2C_WCMD_ADC_TABLE, data, 20);
 	if (ret)
 		goto exit;
-
-	INIT_DELAYED_WORK(&cdata->ls_on_work, microp_i2c_ls_on_work_func);
 
 	ret = gpio_request(MAHIMAHI_GPIO_LS_EN_N, "microp_i2c");
 	if (ret < 0) {
@@ -882,6 +861,7 @@ void microp_early_suspend(struct early_suspend *h)
 {
 	struct microp_i2c_client_data *cdata;
 	struct i2c_client *client = private_microp_client;
+	int ret;
 
 	if (!client) {
 		printk(KERN_ERR "%s: dataset: client is empty\n", __func__);
@@ -890,13 +870,19 @@ void microp_early_suspend(struct early_suspend *h)
 	cdata = i2c_get_clientdata(client);
 
 	cdata->microp_is_suspend = 1;
+
+	disable_irq(client->irq);
+	ret = cancel_work_sync(&cdata->work.work);
+	if (ret != 0) {
+		enable_irq(client->irq);
+	}
+
 	if (cdata->auto_backlight_enabled)
 		microp_i2c_auto_backlight_mode(client, 0);
 	if (cdata->light_sensor_enabled == 1) {
 		gpio_set_value(MAHIMAHI_GPIO_LS_EN_N, 1);
 		cdata->light_sensor_enabled = 0;
 	}
-	cancel_delayed_work_sync(&cdata->ls_on_work);
 }
 
 void microp_early_resume(struct early_suspend *h)
@@ -911,12 +897,13 @@ void microp_early_resume(struct early_suspend *h)
 	cdata = i2c_get_clientdata(client);
 
 	gpio_set_value(MAHIMAHI_GPIO_LS_EN_N, 0);
-	schedule_delayed_work(&cdata->ls_on_work, msecs_to_jiffies(800));
+	cdata->light_sensor_enabled = 1;
 
 	if (cdata->auto_backlight_enabled)
 		microp_i2c_auto_backlight_mode(client, 1);
 
 	cdata->microp_is_suspend = 0;
+	enable_irq(client->irq);
 }
 #endif
 
@@ -1013,10 +1000,6 @@ static int microp_i2c_probe(struct i2c_client *client
 			 "microp_i2c_present");
 
 	/* Light Sensor */
-	led_trigger_register(&light_sensor_trigger);
-	light_sensor_trigger.activate = light_sensor_activate;
-	light_sensor_trigger.deactivate = light_sensor_deactivate;
-
 	ret = device_create_file(&client->dev, &dev_attr_ls_adc);
 	ret = device_create_file(&client->dev, &dev_attr_ls_auto);
 
