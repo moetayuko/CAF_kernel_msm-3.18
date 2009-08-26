@@ -1124,9 +1124,11 @@ static int do_truncation(struct ubifs_info *c, struct inode *inode,
 		budgeted = 0;
 	}
 
-	err = vmtruncate(inode, new_size);
-	if (err)
-		goto out_budg;
+	mutex_lock(&ui->ui_mutex);
+	i_size_write(inode, new_size);
+	mutex_unlock(&ui->ui_mutex);
+
+	truncate_pagecache(inode, old_size, new_size);
 
 	if (offset) {
 		pgoff_t index = new_size >> PAGE_CACHE_SHIFT;
@@ -1212,10 +1214,14 @@ static int do_setattr(struct ubifs_info *c, struct inode *inode,
 		return err;
 
 	if (attr->ia_valid & ATTR_SIZE) {
-		dbg_gen("size %lld -> %lld", inode->i_size, new_size);
-		err = vmtruncate(inode, new_size);
-		if (err)
-			goto out;
+		loff_t old_size = inode->i_size;
+
+		mutex_lock(&ui->ui_mutex);
+		dbg_gen("size %lld -> %lld", old_size, new_size);
+		i_size_write(inode, new_size);
+		mutex_unlock(&ui->ui_mutex);
+
+		truncate_pagecache(inode, old_size, new_size);
 	}
 
 	mutex_lock(&ui->ui_mutex);
@@ -1243,10 +1249,6 @@ static int do_setattr(struct ubifs_info *c, struct inode *inode,
 		ubifs_release_budget(c, &req);
 	if (IS_SYNC(inode))
 		err = inode->i_sb->s_op->write_inode(inode, 1);
-	return err;
-
-out:
-	ubifs_release_budget(c, &req);
 	return err;
 }
 
@@ -1562,6 +1564,7 @@ const struct address_space_operations ubifs_file_address_operations = {
 };
 
 const struct inode_operations ubifs_file_inode_operations = {
+	.new_truncate = 1,
 	.setattr     = ubifs_setattr,
 	.getattr     = ubifs_getattr,
 #ifdef CONFIG_UBIFS_FS_XATTR
