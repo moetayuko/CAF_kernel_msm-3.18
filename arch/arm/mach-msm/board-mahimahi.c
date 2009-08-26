@@ -29,6 +29,7 @@
 #include <linux/synaptics_i2c_rmi.h>
 #include <linux/a1026.h>
 #include <linux/capella_cm3602.h>
+#include <linux/akm8973.h>
 #include <../../../drivers/staging/android/timed_gpio.h>
 
 #include <asm/mach-types.h>
@@ -266,7 +267,14 @@ static struct a1026_platform_data a1026_data = {
 	/*.gpio_a1026_int = MAHIMAHI_AUD_A1026_INT,*/
 };
 
-static struct i2c_board_info i2c_devices[] = {
+static struct akm8973_platform_data compass_platform_data = {
+	.layouts = MAHIMAHI_LAYOUTS,
+	.project_name = MAHIMAHI_PROJECT_NAME,
+	.reset = MAHIMAHI_GPIO_COMPASS_RST_N,
+	.intr = MAHIMAHI_GPIO_COMPASS_INT_N,
+};
+
+static struct i2c_board_info base_i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("ds2482", 0x30 >> 1),
 	},
@@ -286,11 +294,16 @@ static struct i2c_board_info i2c_devices[] = {
 	},
 };
 
-static struct i2c_board_info Audience_A1026[] = {
+static struct i2c_board_info rev1_i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("audience_a1026", 0x3E),
 		.platform_data = &a1026_data,
 		/*.irq = MSM_GPIO_TO_INT(MAHIMAHI_AUD_A1026_INT)*/
+	},
+	{
+		I2C_BOARD_INFO(AKM8973_I2C_NAME, 0x1C),
+		.platform_data = &compass_platform_data,
+		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_COMPASS_INT_N),
 	},
 };
 
@@ -459,15 +472,20 @@ static void __init mahimahi_init(void)
 	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
 	gpio_direction_output(MAHIMAHI_GPIO_TP_EN, 0);
 	gpio_direction_output(MAHIMAHI_GPIO_PROXIMITY_EN, 1);
+	gpio_direction_output(MAHIMAHI_GPIO_COMPASS_RST_N, 1);
+	gpio_direction_input(MAHIMAHI_GPIO_COMPASS_INT_N);
 
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
+
+	i2c_register_board_info(0, base_i2c_devices,
+		ARRAY_SIZE(base_i2c_devices));
+
 	if (system_rev > 0) {
 		/* Only board after XB with Audience A1026 */
-		i2c_register_board_info(0, Audience_A1026, ARRAY_SIZE(Audience_A1026));
+		i2c_register_board_info(0, rev1_i2c_devices,
+			ARRAY_SIZE(rev1_i2c_devices));
 	}
-	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
-
 	msm_hsusb_set_vbus_state(1);
 
 	ret = mahimahi_init_mmc(system_rev, debug_uart);

@@ -77,6 +77,16 @@
 #define MAHIMAHI_GPIO_PROXIMITY_EN	120
 
 #define MAHIMAHI_GPIO_VIBRATOR_ON	89
+/* Compass */
+#define MAHIMAHI_GPIO_COMPASS_INT_N	153
+#define MAHIMAHI_GPIO_COMPASS_RST_N	107
+#define MAHIMAHI_PROJECT_NAME          "mahimahi"
+#define MAHIMAHI_LAYOUTS { 			   \
+	{ {-1,  0, 0}, { 0, -1,  0}, {0, 0,  1} }, \
+	{ { 0, -1, 0}, { 1,  0,  0}, {0, 0, -1} }, \
+	{ { 0, -1, 0}, { 1,  0,  0}, {0, 0,  1} }, \
+	{ {-1,  0, 0}, { 0,  0, -1}, {0, 1,  0} }  \
+}
 
 /* Audio */
 #define MAHIMAHI_AUD_JACKHP_EN		157
