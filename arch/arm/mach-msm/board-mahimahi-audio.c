@@ -27,6 +27,9 @@
 #define D(fmt, args...) do {} while (0)
 #endif
 
+static struct mutex mic_lock;
+static struct mutex bt_sco_lock;
+
 void mahimahi_analog_init(void)
 {
 	D("%s\n", __func__);
@@ -126,30 +129,43 @@ static uint32_t bt_sco_disable[] = {
 
 void mahimahi_bt_sco_enable(int en)
 {
+	static int bt_sco_refcount;
 	D("%s %d\n", __func__, en);
-	if (en)
-		config_gpio_table(bt_sco_enable, ARRAY_SIZE(bt_sco_enable));
-	else
-		config_gpio_table(bt_sco_disable, ARRAY_SIZE(bt_sco_disable));
+
+	mutex_lock(&bt_sco_lock);
+	if (en) {
+		if (++bt_sco_refcount == 1)
+			config_gpio_table(bt_sco_enable,
+					ARRAY_SIZE(bt_sco_enable));
+	} else {
+		if (--bt_sco_refcount == 0)
+			config_gpio_table(bt_sco_disable,
+					ARRAY_SIZE(bt_sco_disable));
+	}
+	mutex_unlock(&bt_sco_lock);
 }
 
-void mahimahi_int_mic_enable(int en)
+void mahimahi_mic_enable(int en)
 {
-	D("%s %d\n", __func__, en);
-	if (en)
-		pmic_mic_en(ON_CMD);
-	else
-		pmic_mic_en(OFF_CMD);
-}
+	static int old_state = 0, new_state = 0;
 
-void mahimahi_ext_mic_enable(int en)
-{
 	D("%s %d\n", __func__, en);
-	/* TODO
-         * We should make this more flexible here.
-         * Headset driver will need this 2V5 for headset microphone detection.
-         */
-	gpio_set_value(MAHIMAHI_AUD_2V5_EN, !!en);
+
+	mutex_lock(&mic_lock);
+	if (!!en)
+		new_state++;
+	else
+		new_state--;
+
+	if (new_state == 1 && old_state == 0)
+		gpio_set_value(MAHIMAHI_AUD_2V5_EN, 1);
+	else if (new_state == 0 && old_state == 1)
+		gpio_set_value(MAHIMAHI_AUD_2V5_EN, 0);
+	else
+		D("%s: do nothing %d %d\n", __func__, old_state, new_state);
+
+	old_state = new_state;
+	mutex_unlock(&mic_lock);
 }
 
 static struct q6audio_analog_ops ops = {
@@ -158,11 +174,13 @@ static struct q6audio_analog_ops ops = {
 	.headset_enable = mahimahi_headset_enable,
 	.receiver_enable = mahimahi_receiver_enable,
 	.bt_sco_enable = mahimahi_bt_sco_enable,
-	.int_mic_enable = mahimahi_int_mic_enable,
-	.ext_mic_enable = mahimahi_ext_mic_enable,
+	.int_mic_enable = mahimahi_mic_enable,
+	.ext_mic_enable = mahimahi_mic_enable,
 };
 
 void __init mahimahi_audio_init(void)
 {
+	mutex_init(&mic_lock);
+	mutex_init(&bt_sco_lock);
 	q6audio_register_analog_ops(&ops);
 }
