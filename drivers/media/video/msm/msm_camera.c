@@ -22,7 +22,8 @@
 #include <linux/poll.h>
 #include <media/msm_camera.h>
 #include <mach/camera.h>
-
+#include <mach/system.h>
+//#include <asm/system.h>
 #define MSM_MAX_CAMERA_SENSORS 5
 
 #define ERR_USER_COPY(to) pr_err("%s(%d): copy %s user\n", \
@@ -1658,6 +1659,7 @@ static int msm_release_config(struct inode *node, struct file *filep)
 	int rc;
 	struct msm_device *pmsm = filep->private_data;
 	printk("msm_camera: RELEASE %s\n", filep->f_path.dentry->d_name.name);
+	enable_hlt();
 	rc = __msm_release(pmsm->sync);
 	atomic_set(&pmsm->opened, 0);
 	return rc;
@@ -1919,6 +1921,7 @@ static int msm_open_common(struct inode *inode, struct file *filep,
 
 static int msm_open(struct inode *inode, struct file *filep)
 {
+	disable_hlt();
 	return msm_open_common(inode, filep, 1);
 }
 
