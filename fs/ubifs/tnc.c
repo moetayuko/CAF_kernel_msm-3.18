@@ -1433,7 +1433,7 @@ static int maybe_leb_gced(struct ubifs_info *c, int lnum, int gc_seq1)
  * @lnum: LEB number is returned here
  * @offs: offset is returned here
  *
- * This function look up and reads node with key @key. The caller has to make
+ * This function looks up and reads node with key @key. The caller has to make
  * sure the @node buffer is large enough to fit the node. Returns zero in case
  * of success, %-ENOENT if the node was not found, and a negative error code in
  * case of failure. The node location can be returned in @lnum and @offs.
@@ -3268,3 +3268,71 @@ out_unlock:
 	mutex_unlock(&c->tnc_mutex);
 	return err;
 }
+
+#ifdef CONFIG_UBIFS_FS_DEBUG
+
+/**
+ * dbg_check_inode_size - check if inode size is correct.
+ * @c: UBIFS file-system description object
+ * @inum: inode number
+ * @size: inode size
+ *
+ * This function makes sure that the inode size (@size) is correct and it does
+ * not have any pages beyond @size. Returns zero if the inode is OK, %-EINVAL
+ * if it has a data page beyond @size, and other negative error code in case of
+ * other errors.
+ */
+int dbg_check_inode_size(struct ubifs_info *c, const struct inode *inode,
+			 loff_t size)
+{
+	int err, n;
+	union ubifs_key from_key, to_key, *key;
+	struct ubifs_znode *znode;
+	unsigned int block;
+
+	if (!(ubifs_chk_flags & UBIFS_CHK_GEN))
+		return 0;
+
+	block = (size + UBIFS_BLOCK_SIZE - 1) >> UBIFS_BLOCK_SHIFT;
+	data_key_init(c, &from_key, inode->i_ino, block);
+	highest_data_key(c, &to_key, inode->i_ino);
+
+	mutex_lock(&c->tnc_mutex);
+	err = ubifs_lookup_level0(c, &from_key, &znode, &n);
+	if (err < 0)
+		goto out_unlock;
+
+	if (err) {
+		err = -EINVAL;
+		goto out_unlock;
+	}
+
+	while (1) {
+		err = tnc_next(c, &znode, &n);
+		if (err == -ENOENT) {
+			err = 0;
+			goto out_unlock;
+		}
+
+		if (err < 0)
+			goto out_unlock;
+
+		key = &znode->zbranch[n].key;
+		if (key_in_range(c, key, &from_key, &to_key))
+			break;
+	}
+
+	block = key_block(c, key);
+	ubifs_err("inode %lu has size %lld, but there are data at offset %lld "
+		  "(data key %s)", (unsigned long)inode->i_ino, size,
+		  ((loff_t)block) << UBIFS_BLOCK_SHIFT, DBGKEY(key));
+	dbg_dump_inode(c, inode);
+	dbg_dump_stack();
+	err = -EINVAL;
+
+out_unlock:
+	mutex_unlock(&c->tnc_mutex);
+	return err;
+}
+
+#endif /* CONFIG_UBIFS_FS_DEBUG */
