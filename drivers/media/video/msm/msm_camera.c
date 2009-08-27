@@ -22,7 +22,8 @@
 #include <linux/poll.h>
 #include <media/msm_camera.h>
 #include <mach/camera.h>
-
+#include <mach/system.h>
+//#include <asm/system.h>
 #define MSM_MAX_CAMERA_SENSORS 5
 
 #define ERR_USER_COPY(to) pr_err("%s(%d): copy %s user\n", \
@@ -1643,6 +1644,7 @@ static int __msm_release(struct msm_sync *sync)
 		MSM_DRAIN_QUEUE(sync, pict_frame_q);
 
 		sync->sctrl.s_release();
+		enable_hlt();
 		wake_unlock(&sync->wake_lock);
 
 		sync->apps_id = NULL;
@@ -1853,6 +1855,7 @@ static int __msm_open(struct msm_sync *sync, const char *const apps_id)
 
 	if (!sync->opencnt) {
 		wake_lock(&sync->wake_lock);
+		disable_hlt();
 
 		msm_camvfe_fn_init(&sync->vfefn, sync);
 		if (sync->vfefn.vfe_init) {
