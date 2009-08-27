@@ -57,6 +57,9 @@ static int locked_enable_mdp_irq(struct mdp_info *mdp, uint32_t mask)
 		enable_irq(mdp->irq);
 	}
 
+	/* clear out any previous irqs for the requested mask*/
+	mdp_writel(mdp, mask, MDP_INTR_CLEAR);
+
 	/* update the irq mask to reflect the fact that the interrupt is
 	 * enabled */
 	mdp_irq_mask |= mask;
