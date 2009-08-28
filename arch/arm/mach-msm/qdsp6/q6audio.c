@@ -1271,9 +1271,6 @@ int q6audio_close(struct audio_client *ac)
 struct audio_client *q6voice_open(uint32_t bufsz, uint32_t rate,
 				uint32_t channels, uint32_t flags)
 {
-#if 1
-	return 0; /* XXX FIXME */
-#else
 	struct audio_client *ac;
 
 	printk("q6voice_open()\n");
@@ -1291,18 +1288,13 @@ struct audio_client *q6voice_open(uint32_t bufsz, uint32_t rate,
 	else
 		audio_tx_path_enable(1);
 
-	pr_info("*** init voice %p ***\n", ac);
-	audio_init(ac->client, ac->session);
+	pr_info("*** voice start %p (%d) ***\n", ac, ac->session);
 	return ac;
-#endif
 }
 
 int q6voice_close(struct audio_client *ac)
 {
 	pr_info("*** detach voice %p ***\n", ac);
-	dal_detach(ac->client);
-	ac->client = 0;
-
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(0);
 	else
