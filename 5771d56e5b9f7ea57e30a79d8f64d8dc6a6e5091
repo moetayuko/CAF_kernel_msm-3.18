@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAin///rc\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 26,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-28T00:51:19Z",
+      "side": 1,
+      "message": "remove the commented line.",
+      "revId": "5771d56e5b9f7ea57e30a79d8f64d8dc6a6e5091",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAin///rY\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1662,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-08-28T00:51:19Z",
+      "side": 1,
+      "message": "wish we had the viking, since he actually knows what this will mean for power.",
+      "revId": "5771d56e5b9f7ea57e30a79d8f64d8dc6a6e5091",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
