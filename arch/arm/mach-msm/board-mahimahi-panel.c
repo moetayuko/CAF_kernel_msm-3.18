@@ -401,7 +401,6 @@ static void samsung_oled_set_gamma_level(int level)
 {
 	int i;
 
-	pr_info("%s: +(): new gamma level = %d\n", __func__, level);
 	clk_enable(spi_clk);
 
 	for (i = 0; i < OLED_GAMMA_TABLE_SIZE; ++i)
@@ -409,7 +408,6 @@ static void samsung_oled_set_gamma_level(int level)
 			   samsung_oled_gamma_table[level][i].val);
 	gamma_table_bank_select();
 	clk_disable(spi_clk);
-	pr_info("%s: -()\n", __func__);
 }
 
 static int samsung_oled_panel_init(struct msm_lcdc_panel_ops *ops)
