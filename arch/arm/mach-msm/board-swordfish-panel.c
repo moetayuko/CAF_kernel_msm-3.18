@@ -24,6 +24,7 @@
 
 #include <mach/msm_fb.h>
 
+#include "board-swordfish.h"
 #include "devices.h"
 
 #define CLK_NS_TO_RATE(ns)			(1000000000UL / (ns))
@@ -45,9 +46,6 @@ int swordfish_panel_init(struct msm_lcdc_panel_ops *ops)
 	return 0;
 }
 
-/* TODO: Move me to not be here */
-#define MSM_FB_BASE		0x2DE00000
-#define MSM_FB_SIZE		0x00200000
 static struct resource resources_msm_fb[] = {
 	{
 		.start = MSM_FB_BASE,
