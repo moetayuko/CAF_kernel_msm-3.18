@@ -579,6 +579,87 @@ done:
 	return res;
 }
 
+#define CAD_HW_DEVICE_ID_HANDSET_MIC		0x01
+#define CAD_HW_DEVICE_ID_HANDSET_SPKR		0x02
+#define CAD_HW_DEVICE_ID_HEADSET_MIC		0x03
+#define CAD_HW_DEVICE_ID_HEADSET_SPKR_MONO	0x04
+#define CAD_HW_DEVICE_ID_HEADSET_SPKR_STEREO	0x05
+#define CAD_HW_DEVICE_ID_SPKR_PHONE_MIC		0x06
+#define CAD_HW_DEVICE_ID_SPKR_PHONE_MONO	0x07
+#define CAD_HW_DEVICE_ID_SPKR_PHONE_STEREO	0x08
+#define CAD_HW_DEVICE_ID_BT_SCO_MIC		0x09
+#define CAD_HW_DEVICE_ID_BT_SCO_SPKR		0x0A
+#define CAD_HW_DEVICE_ID_BT_A2DP_SPKR		0x0B
+#define CAD_HW_DEVICE_ID_TTY_HEADSET_MIC	0x0C
+#define CAD_HW_DEVICE_ID_TTY_HEADSET_SPKR	0x0D
+
+#define CAD_HW_DEVICE_ID_DEFAULT_TX		0x0E
+/*Starts with CAD_HW_DEVICE_ID_HANDSET_MIC*/
+#define CAD_HW_DEVICE_ID_DEFAULT_RX		0x0F
+/*Starts with CAD_HW_DEVICE_ID_HANDSET_SPKR*/
+
+/* Logical Device to indicate A2DP routing */
+#define CAD_HW_DEVICE_ID_BT_A2DP_TX             0x10
+#define CAD_HW_DEVICE_ID_HEADSET_MONO_PLUS_SPKR_MONO_RX		0x11
+#define CAD_HW_DEVICE_ID_HEADSET_MONO_PLUS_SPKR_STEREO_RX	0x12
+#define CAD_HW_DEVICE_ID_HEADSET_STEREO_PLUS_SPKR_MONO_RX	0x13
+#define CAD_HW_DEVICE_ID_HEADSET_STEREO_PLUS_SPKR_STEREO_RX	0x14
+
+#define CAD_HW_DEVICE_ID_VOICE			0x15
+
+#define CAD_HW_DEVICE_ID_I2S_RX                 0x20
+#define CAD_HW_DEVICE_ID_I2S_TX                 0x21
+
+/* AUXPGA */
+#define CAD_HW_DEVICE_ID_HEADSET_SPKR_STEREO_LB 0x22
+#define CAD_HW_DEVICE_ID_HEADSET_SPKR_MONO_LB   0x23
+#define CAD_HW_DEVICE_ID_SPEAKER_SPKR_STEREO_LB 0x24
+#define CAD_HW_DEVICE_ID_SPEAKER_SPKR_MONO_LB   0x25
+
+#define CAD_HW_DEVICE_ID_NULL_RX		0x2A
+
+#define CAD_HW_DEVICE_ID_MAX_NUM                0x2F
+
+#define CAD_HW_DEVICE_ID_INVALID                0xFF
+
+#define CAD_RX_DEVICE  0x00
+#define CAD_TX_DEVICE  0x01
+
+#define A2C1(n) case ADSP_AUDIO_DEVICE_ID_##n: return CAD_HW_DEVICE_ID_##n
+#define A2C2(n,m) case ADSP_AUDIO_DEVICE_ID_##n: return CAD_HW_DEVICE_ID_##m
+
+static uint32_t adsp_id_to_acdb(uint32_t device_id)
+{
+	switch (device_id) {
+		A2C1(HANDSET_MIC);
+		A2C1(HANDSET_SPKR);
+		A2C1(HEADSET_MIC);
+		A2C1(HEADSET_SPKR_MONO);
+		A2C1(HEADSET_SPKR_STEREO);
+		A2C1(SPKR_PHONE_MIC);
+		A2C1(SPKR_PHONE_MONO);
+		A2C1(SPKR_PHONE_STEREO);
+		A2C1(BT_SCO_MIC);
+		A2C1(BT_SCO_SPKR);
+		A2C1(TTY_HEADSET_MIC);
+		A2C1(TTY_HEADSET_SPKR);
+		A2C2(I2S_SPKR, I2S_RX);
+		A2C2(I2S_MIC, I2S_TX);
+		A2C1(BT_A2DP_SPKR);
+		A2C2(MIXED_PCM_LOOPBACK_TX, BT_A2DP_TX);
+		A2C2(SPKR_PHONE_MONO_W_MONO_HEADSET, HEADSET_MONO_PLUS_SPKR_MONO_RX);
+		A2C2(SPKR_PHONE_STEREO_W_MONO_HEADSET, HEADSET_MONO_PLUS_SPKR_STEREO_RX);
+		A2C2(SPKR_PHONE_MONO_W_STEREO_HEADSET, HEADSET_STEREO_PLUS_SPKR_MONO_RX);
+		A2C2(SPKR_PHONE_STEREO_W_STEREO_HEADSET, HEADSET_STEREO_PLUS_SPKR_STEREO_RX);
+		A2C2(NULL_SINK, NULL_RX);
+		A2C1(VOICE);
+//		A2C2(DEFAULT, DEFAULT_RX);
+	default:
+		pr_err("adsp_id_to_acdb: unknown id 0x%08x\n", device_id);
+		return 0xFFFFFFFF;
+	}
+}
+
 static int acdb_get_config_table(uint32_t device_id, uint32_t sample_rate)
 {
 	struct acdb_cmd_device_table rpc;
@@ -593,8 +674,7 @@ static int acdb_get_config_table(uint32_t device_id, uint32_t sample_rate)
 
 	rpc.size = sizeof(rpc) - (2 * sizeof(uint32_t));
 	rpc.command_id = ACDB_GET_DEVICE_TABLE;
-/* XXX FIXME -- NOW USES CAD ID NUMBERS, ARGH */
-	rpc.device_id = 2; //device_id;
+	rpc.device_id = adsp_id_to_acdb(device_id);
 	rpc.sample_rate_id = sample_rate;
 	rpc.total_bytes = 4096;
 	rpc.unmapped_buf = audio_phys;
@@ -991,9 +1071,54 @@ int q6audio_set_tx_mute(int mute)
 	return 0;
 }
 
-int q6audio_do_routing(uint32_t device_id)
+static void do_rx_routing(uint32_t device_id)
 {
 	int sz;
+
+	if (device_id == audio_rx_device_id)
+		return;
+
+	if (audio_rx_path_refcount > 0) {
+		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
+		_audio_rx_path_disable();
+		_audio_rx_clk_reinit(device_id);
+		_audio_rx_path_enable();
+	} else {
+		sz = acdb_get_config_table(device_id, 48000);
+		audio_set_table(ac_control, device_id, sz);
+		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
+		qdsp6_standby(ac_control);
+		qdsp6_start(ac_control);
+		audio_rx_device_id = device_id;
+		audio_rx_path_id = get_path_id(device_id);
+	}
+}
+
+static void do_tx_routing(uint32_t device_id)
+{
+	int sz;
+
+	if (device_id == audio_tx_device_id)
+		return;
+
+	if (audio_tx_path_refcount > 0) {
+		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
+		_audio_tx_path_disable();
+		_audio_tx_clk_reinit(device_id);
+		_audio_tx_path_enable();
+	} else {
+		sz = acdb_get_config_table(device_id, 8000);
+		audio_set_table(ac_control, device_id, sz);
+		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
+		qdsp6_standby(ac_control);
+		qdsp6_start(ac_control);
+		audio_tx_device_id = device_id;
+		audio_tx_path_id = get_path_id(device_id);
+	}
+}
+
+int q6audio_do_routing(uint32_t device_id)
+{
 	mutex_lock(&audio_path_lock);
 
 	switch(device_id) {
@@ -1009,44 +1134,13 @@ int q6audio_do_routing(uint32_t device_id)
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
-		if (device_id != audio_rx_device_id) {
-			if (audio_rx_path_refcount > 0) {
-				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
-				_audio_rx_path_disable();
-				_audio_rx_clk_reinit(device_id);
-				_audio_rx_path_enable();
-			} else {
-				sz = acdb_get_config_table(device_id, 48000);
-				audio_set_table(ac_control, device_id, sz);
-				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
-				qdsp6_standby(ac_control);
-				qdsp6_start(ac_control);
-				audio_rx_device_id = device_id;
-				audio_rx_path_id = get_path_id(device_id);
-			}
-		}
-		break;
+		do_rx_routing(device_id);
 	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
 	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
 	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
-		if (device_id != audio_tx_device_id) {
-			if (audio_tx_path_refcount > 0) {
-				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
-				_audio_tx_path_disable();
-				_audio_tx_clk_reinit(device_id);
-				_audio_tx_path_enable();
-			} else {
-				sz = acdb_get_config_table(device_id, 8000);
-				audio_set_table(ac_control, device_id, sz);
-				qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
-				qdsp6_standby(ac_control);
-				qdsp6_start(ac_control);
-				audio_tx_device_id = device_id;
-				audio_tx_path_id = get_path_id(device_id);
-			}
-		}
+		do_tx_routing(device_id);
 		break;
 	default:
 		pr_err("%s: unsupported device 0x%08x\n", __func__, device_id);
