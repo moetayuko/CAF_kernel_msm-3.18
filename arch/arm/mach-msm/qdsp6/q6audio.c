@@ -729,6 +729,51 @@ static int qdsp6_start(struct audio_client *ac)
 	return audio_command(ac, ADSP_AUDIO_IOCTL_CMD_DEVICE_SWITCH_COMMIT);
 }
 
+static void audio_rx_analog_enable(int en)
+{
+	switch (audio_rx_device_id) {
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
+		if (analog_ops->headset_enable)
+			analog_ops->headset_enable(en);
+		break;
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO:
+		if (analog_ops->speaker_enable)
+			analog_ops->speaker_enable(en);
+		break;
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_SPKR:
+		if (analog_ops->bt_sco_enable)
+			analog_ops->bt_sco_enable(en);
+		break;
+	}
+}
+
+static void audio_tx_analog_enable(int en)
+{
+	switch (audio_tx_device_id) {
+	case ADSP_AUDIO_DEVICE_ID_HANDSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC:
+		if (analog_ops->int_mic_enable)
+			analog_ops->int_mic_enable(en);
+		break;
+	case ADSP_AUDIO_DEVICE_ID_HEADSET_MIC:
+	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_MIC:
+		if (analog_ops->ext_mic_enable)
+			analog_ops->ext_mic_enable(en);
+		break;
+	case ADSP_AUDIO_DEVICE_ID_BT_SCO_MIC:
+		if (analog_ops->bt_sco_enable)
+			analog_ops->bt_sco_enable(en);
+		break;
+	}
+}
+
 static void _audio_rx_path_enable(void)
 {
 	uint32_t adev;
@@ -744,10 +789,7 @@ static void _audio_rx_path_enable(void)
 	qdsp6_start(ac_control);
 
 	pr_info("audiolib: enable amps\n");
-	if (analog_ops->speaker_enable)
-		analog_ops->speaker_enable(1);
-	if (analog_ops->headset_enable)
-		analog_ops->headset_enable(1);
+	audio_rx_analog_enable(1);
 
 	pr_info("audiolib: set path\n");
 	adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);
@@ -780,10 +822,7 @@ static void _audio_tx_path_enable(void)
 	qdsp6_start(ac_control);
 
 	pr_info("audiolib: enable mic\n");
-	if (analog_ops->int_mic_enable)
-		analog_ops->int_mic_enable(1);
-	if (analog_ops->ext_mic_enable)
-		analog_ops->ext_mic_enable(1);
+	audio_tx_analog_enable(1);
 
 	pr_info("audiolib: set tx path\n");
 	adie_set_path(adie, audio_tx_path_id, ADIE_PATH_TX);
@@ -807,10 +846,7 @@ static void _audio_rx_path_disable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_OFF);
 
 	pr_info("audiolib: disable amps\n");
-	if (analog_ops->speaker_enable)
-		analog_ops->speaker_enable(0);
-	if (analog_ops->headset_enable)
-		analog_ops->headset_enable(0);
+	audio_rx_analog_enable(0);
 }
 
 static void _audio_tx_path_disable(void)
@@ -820,11 +856,7 @@ static void _audio_tx_path_disable(void)
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_OFF);
 
 	pr_info("audiolib: disable mic\n");
-	if (analog_ops->int_mic_enable)
-		analog_ops->int_mic_enable(0);
-	if (analog_ops->ext_mic_enable)
-		analog_ops->ext_mic_enable(0);
-
+	audio_tx_analog_enable(0);
 }
 
 static int icodec_rx_clk_refcount;
