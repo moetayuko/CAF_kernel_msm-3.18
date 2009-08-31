@@ -158,11 +158,27 @@ static struct android_pmem_platform_data android_pmem_gpu1_pdata = {
 	.cached		= 0,
 };
 
+static struct android_pmem_platform_data android_pmem_adsp_pdata = {
+	.name		= "pmem_adsp",
+	.start		= MSM_PMEM_ADSP_BASE,
+	.size		= MSM_PMEM_ADSP_SIZE,
+	.no_allocator	= 0,
+	.cached		= 0,
+};
+
 static struct platform_device android_pmem_mdp_device = {
 	.name		= "android_pmem",
 	.id		= 0,
 	.dev		= {
 		.platform_data = &mdp_pmem_pdata
+	},
+};
+
+static struct platform_device android_pmem_adsp_device = {
+	.name		= "android_pmem",
+	.id		= 1,
+	.dev		= {
+		.platform_data = &android_pmem_adsp_pdata,
 	},
 };
 
@@ -324,6 +340,7 @@ static struct platform_device *devices[] __initdata = {
 	&msm_device_hsusb,
 	&usb_mass_storage_device,
 	&android_pmem_mdp_device,
+	&android_pmem_adsp_device,
 	&android_pmem_gpu0_device,
 	&android_pmem_gpu1_device,
 	&msm_kgsl_device,
