@@ -27,6 +27,7 @@
 #include <linux/usb/mass_storage_function.h>
 #include <linux/android_pmem.h>
 #include <linux/synaptics_i2c_rmi.h>
+#include <linux/a1026.h>
 #include <linux/capella_cm3602.h>
 #include <../../../drivers/staging/android/timed_gpio.h>
 
@@ -258,6 +259,13 @@ static struct synaptics_i2c_rmi_platform_data mahimahi_synaptics_ts_data[] = {
 	},
 };
 
+static struct a1026_platform_data a1026_data = {
+	.gpio_a1026_micsel = MAHIMAHI_AUD_MICPATH_SEL,
+	.gpio_a1026_wakeup = MAHIMAHI_AUD_A1026_WAKEUP,
+	.gpio_a1026_reset = MAHIMAHI_AUD_A1026_RESET,
+	/*.gpio_a1026_int = MAHIMAHI_AUD_A1026_INT,*/
+};
+
 static struct i2c_board_info i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("ds2482", 0x30 >> 1),
@@ -275,6 +283,14 @@ static struct i2c_board_info i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("mahimahi-microp", 0x66),
 		.irq = MSM_GPIO_TO_INT(MAHIMAHI_GPIO_UP_INT_N)
+	},
+};
+
+static struct i2c_board_info Audience_A1026[] = {
+	{
+		I2C_BOARD_INFO("audience_a1026", 0x3E),
+		.platform_data = &a1026_data,
+		/*.irq = MSM_GPIO_TO_INT(MAHIMAHI_AUD_A1026_INT)*/
 	},
 };
 
@@ -446,6 +462,10 @@ static void __init mahimahi_init(void)
 
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
+	if (system_rev > 0) {
+		/* Only board after XB with Audience A1026 */
+		i2c_register_board_info(0, Audience_A1026, ARRAY_SIZE(Audience_A1026));
+	}
 	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 
 	msm_hsusb_set_vbus_state(1);
