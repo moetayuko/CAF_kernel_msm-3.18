@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAj3///xA\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 369,
+      "author": {
+        "id": 1000830
+      },
+      "writtenOn": "2009-09-02T12:04:26Z",
+      "side": 1,
+      "message": "trailing whitespace",
+      "revId": "086eb5b81c567831f90a3276741799f86511898a",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAj3///xE\u003d",
+        "filename": "arch/arm/mach-msm/nand_partitions.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 117,
+      "author": {
+        "id": 1000830
+      },
+      "writtenOn": "2009-09-02T12:04:26Z",
+      "side": 1,
+      "message": "trailing whitespace",
+      "revId": "086eb5b81c567831f90a3276741799f86511898a",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
