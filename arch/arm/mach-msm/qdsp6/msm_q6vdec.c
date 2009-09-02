@@ -67,9 +67,14 @@ enum {
 	VDEC_DALRPC_GETDECATTRIBUTES,
 };
 
+enum {
+	VDEC_ASYNCMSG_DECODE_DONE = 0xdec0de00,
+	VDEC_ASYNCMSG_REUSE_FRAME,
+};
+
 struct vdec_init_cfg {
-	void			*decode_done_evt;
-	void			*reuse_frame_evt;
+	u32			decode_done_evt;
+	u32			reuse_frame_evt;
 	struct vdec_config	cfg;
 };
 
@@ -213,9 +218,9 @@ static int vdec_initialize(struct vdec_data *vd, void *argp)
 		return ret;
 	}
 
-	vi_cfg.decode_done_evt = vd->vdec_handle;
-	vi_cfg.reuse_frame_evt = vd->vdec_handle;
-	vi_cfg.cfg = vdec_cfg_sps.cfg;
+	vi_cfg.decode_done_evt = VDEC_ASYNCMSG_DECODE_DONE;
+	vi_cfg.reuse_frame_evt = VDEC_ASYNCMSG_REUSE_FRAME;
+	memcpy(&vi_cfg.cfg, &vdec_cfg_sps.cfg, sizeof(struct vdec_config));
 
 	header = kmalloc(vdec_cfg_sps.seq.len, GFP_KERNEL);
 	if (!header) {
@@ -596,6 +601,12 @@ static void vdec_dcdone_handler(struct vdec_data *vd, void *frame,
 	unsigned long flags;
 	int found = 0;
 
+	if (frame_size != sizeof(struct vdec_frame_info)) {
+		pr_warning("%s: msg size mismatch %d != %d\n", __func__,
+			   frame_size, sizeof(struct vdec_frame_info));
+		return;
+	}
+
 	memcpy(&msg.vfr_info, (struct vdec_frame_info *)frame,
 	       sizeof(struct vdec_frame_info));
 
@@ -631,6 +642,13 @@ static void vdec_reuseibuf_handler(struct vdec_data *vd, void *bufstat,
 	struct vdec_buffer_status *vdec_bufstat;
 	struct vdec_msg msg;
 
+	/* TODO: how do we signal the client? If they are waiting on a
+	 * message in an ioctl, they may block forever */
+	if (bufstat_size != sizeof(struct vdec_buffer_status)) {
+		pr_warning("%s: msg size mismatch %d != %d\n", __func__,
+			   bufstat_size, sizeof(struct vdec_buffer_status));
+		return;
+	}
 	vdec_bufstat = (struct vdec_buffer_status *)bufstat;
 	msg.id = VDEC_MSG_REUSEINPUTBUFFER;
 	msg.buf_id = vdec_bufstat->data;
@@ -647,15 +665,18 @@ static void callback(void *data, int len, void *cookie)
 		       __func__);
 		return;
 	}
-	if (tmp[2] == sizeof(struct vdec_frame_info))
-		vdec_dcdone_handler(vd, &tmp[3], tmp[2]);
-	else if (tmp[2] == sizeof(struct vdec_buffer_status))
-		vdec_reuseibuf_handler(vd, &tmp[3], tmp[2]);
-	else {
-		pr_err("%s:callback data size is not same as vdec! %d \n",
-		       __func__, tmp[2]);
-	}
 
+	switch (tmp[0]) {
+	case VDEC_ASYNCMSG_DECODE_DONE:
+		vdec_dcdone_handler(vd, &tmp[3], tmp[2]);
+		break;
+	case VDEC_ASYNCMSG_REUSE_FRAME:
+		vdec_reuseibuf_handler(vd, &tmp[3], tmp[2]);
+		break;
+	default:
+		pr_err("%s: Unknown async message from DSP id=0x%08x sz=%u\n",
+		       __func__, tmp[0], tmp[2]);
+	}
 }
 static int vdec_open(struct inode *inode, struct file *file)
 {
