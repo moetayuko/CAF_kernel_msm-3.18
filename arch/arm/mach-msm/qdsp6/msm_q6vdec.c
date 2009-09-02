@@ -240,7 +240,7 @@ static int vdec_initialize(struct vdec_data *vd, void *argp)
 
 	ret = dal_call_f13(vd->vdec_handle, VDEC_DALRPC_INITIALIZE,
 			   &vi_cfg, sizeof(vi_cfg),
-			   vdec_cfg_sps.seq.header, vdec_cfg_sps.seq.len,
+			   header, vdec_cfg_sps.seq.len,
 			   &vdec_buf_req, sizeof(vdec_buf_req));
 
 	kfree(header);
