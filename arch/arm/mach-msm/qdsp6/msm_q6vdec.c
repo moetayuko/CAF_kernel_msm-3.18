@@ -26,6 +26,11 @@
  *
  */
 
+/*
+#define DEBUG_TRACE_VDEC
+#define DEBUG
+*/
+
 #include <linux/cdev.h>
 #include <linux/delay.h>
 #include <linux/file.h>
@@ -55,6 +60,14 @@
 #define VDEC_GET_MAJOR_VERSION(version)	(((version)&MAJOR_MASK)>>16)
 
 #define VDEC_GET_MINOR_VERSION(version)	((version)&MINOR_MASK)
+
+#ifdef DEBUG_TRACE_VDEC
+#define TRACE(fmt,x...)			\
+	do { pr_debug("%s:%d " fmt, __func__, __LINE__, ##x); } while (0)
+#else
+#define TRACE(fmt,x...)		do { } while (0)
+#endif
+
 
 enum {
 	VDEC_DALRPC_INITIALIZE = DAL_OP_FIRST_DEVICE_API,
@@ -143,6 +156,13 @@ static int vdec_get_msg(struct vdec_data *vd, void *msg)
 	list_for_each_entry_reverse(l, &vd->vdec_msg_list_head, list) {
 		if (copy_to_user(msg, &l->vdec_msg, sizeof(struct vdec_msg)))
 			pr_err("vdec_get_msg failed to copy_to_user!\n");
+		if (l->vdec_msg.id == VDEC_MSG_REUSEINPUTBUFFER)
+			TRACE("reuse_input_buffer %d\n", l->vdec_msg.buf_id);
+		else if (l->vdec_msg.id == VDEC_MSG_FRAMEDONE)
+			TRACE("frame_done (stat=%d)\n",
+			      l->vdec_msg.vfr_info.status);
+		else
+			TRACE("unknown msg (msgid=%d)\n", l->vdec_msg.id);
 		list_del(&l->list);
 		list_add(&l->list, &vd->vdec_msg_list_free);
 		ret = 1;
@@ -238,6 +258,13 @@ static int vdec_initialize(struct vdec_data *vd, void *argp)
 		return ret;
 	}
 
+	TRACE("vi_cfg: handle=%p fourcc=0x%x w=%d h=%d order=%d notify_en=%d "
+	      "vc1_rb=%d h264_sd=%d h264_nls=%d pp_flag=%d fruc_en=%d\n",
+	      vd->vdec_handle, vi_cfg.cfg.fourcc, vi_cfg.cfg.width,
+	      vi_cfg.cfg.height, vi_cfg.cfg.order, vi_cfg.cfg.notify_enable,
+	      vi_cfg.cfg.vc1_rowbase, vi_cfg.cfg.h264_startcode_detect,
+	      vi_cfg.cfg.h264_nal_len_size, vi_cfg.cfg.postproc_flag,
+	      vi_cfg.cfg.fruc_enable);
 	ret = dal_call_f13(vd->vdec_handle, VDEC_DALRPC_INITIALIZE,
 			   &vi_cfg, sizeof(vi_cfg),
 			   header, vdec_cfg_sps.seq.len,
@@ -293,6 +320,13 @@ static int vdec_setbuffers(struct vdec_data *vd, void *argp)
 		goto err_get_pmem_file;
 	}
 
+	TRACE("pmem_id=%d (phys=0x%08lx len=0x%lx) buftype=%d num_buf=%d "
+	      "islast=%d src_id=%d offset=0x%08x size=0x%x\n",
+	      vmem.pmem_id, l->mem.phys_addr, l->mem.len,
+	      vmem.buf.buf_type, vmem.buf.num_buf, vmem.buf.islast,
+	      vmem.buf.region.src_id, vmem.buf.region.offset,
+	      vmem.buf.region.size);
+
 	/* input buffers */
 	if ((vmem.buf.region.offset + vmem.buf.region.size) > l->mem.len) {
 		pr_err("%s: invalid input buffer offset!\n", __func__);
@@ -304,6 +338,7 @@ static int vdec_setbuffers(struct vdec_data *vd, void *argp)
 
 	rpc.size = sizeof(vmem.buf);
 	memcpy(&rpc.buf, &vmem.buf, sizeof(struct vdec_buf_info));
+
 
 	ret = dal_call(vd->vdec_handle, VDEC_DALRPC_SETBUFFERS, 5,
 		       &rpc, sizeof(rpc), &res, sizeof(res));
@@ -422,6 +457,7 @@ static int vdec_flush(struct vdec_data *vd, void *argp)
 		return ret;
 	}
 
+	TRACE("flush_type=%d\n", flush_type);
 	ret = dal_call_f0(vd->vdec_handle, VDEC_DALRPC_FLUSH, flush_type);
 	if (ret) {
 		pr_err("%s: remote function failed (%d)\n", __func__, ret);
@@ -436,6 +472,7 @@ static int vdec_close(struct vdec_data *vd, void *argp)
 	struct vdec_mem_list *l;
 	int ret = 0;
 
+	pr_info("q6vdec_close()\n");
 	vd->close_decode = 1;
 	wake_up(&vd->vdec_msg_evt);
 
@@ -540,10 +577,14 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VDEC_IOCTL_QUEUE:
+		TRACE("VDEC_IOCTL_QUEUE (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		ret = vdec_queue(vd, argp);
 		break;
 
 	case VDEC_IOCTL_REUSEFRAMEBUFFER:
+		TRACE("VDEC_IOCTL_REUSEFRAMEBUFFER (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		ret = vdec_reuse_framebuffer(vd, argp);
 		break;
 
@@ -552,6 +593,8 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VDEC_IOCTL_EOS:
+		TRACE("VDEC_IOCTL_EOS (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		ret = dal_call_f0(vd->vdec_handle, VDEC_DALRPC_SIGEOFSTREAM, 0);
 		if (ret)
 			pr_err("%s: remote function failed (%d)\n",
@@ -559,6 +602,8 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VDEC_IOCTL_GETMSG:
+		TRACE("VDEC_IOCTL_GETMSG (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		wait_event_interruptible(vd->vdec_msg_evt,
 					 vdec_get_msg(vd, argp));
 
@@ -571,6 +616,8 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VDEC_IOCTL_GETDECATTRIBUTES:
+		TRACE("VDEC_IOCTL_GETDECATTRIBUTES (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		ret = vdec_getdecattributes(vd, argp);
 
 		if (ret)
@@ -579,6 +626,8 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VDEC_IOCTL_FREEBUFFERS:
+		TRACE("VDEC_IOCTL_FREEBUFFERS (pid=%d tid=%d)\n",
+		      current->group_leader->pid, current->pid);
 		ret = vdec_freebuffers(vd, argp);
 
 		if (ret)
@@ -591,8 +640,13 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = -EINVAL;
 		break;
 	}
+
+	TRACE("ioctl done (pid=%d tid=%d)\n",
+	      current->group_leader->pid, current->pid);
+
 	return ret;
 }
+
 static void vdec_dcdone_handler(struct vdec_data *vd, void *frame,
 				uint32_t frame_size)
 {
@@ -666,6 +720,7 @@ static void callback(void *data, int len, void *cookie)
 		return;
 	}
 
+	TRACE("vdec_async: tmp=0x%08x 0x%08x 0x%08x\n", tmp[0], tmp[1], tmp[2]);
 	switch (tmp[0]) {
 	case VDEC_ASYNCMSG_DECODE_DONE:
 		vdec_dcdone_handler(vd, &tmp[3], tmp[2]);
@@ -685,6 +740,7 @@ static int vdec_open(struct inode *inode, struct file *file)
 	struct vdec_msg_list *l;
 	struct vdec_data *vd;
 
+	pr_info("q6vdec_open()\n");
 	vd = kmalloc(sizeof(struct vdec_data), GFP_KERNEL);
 	if (!vd) {
 		pr_err("%s: kmalloc failed\n", __func__);
