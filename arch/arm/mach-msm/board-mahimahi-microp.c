@@ -26,11 +26,16 @@
 #include <linux/i2c.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
+#include <linux/miscdevice.h>
+#include <linux/input.h>
+#include <asm/uaccess.h>
 #include <linux/wakelock.h>
 #include <asm/mach-types.h>
 #include <mach/htc_pwrsink.h>
 #include <linux/earlysuspend.h>
 #include "board-mahimahi.h"
+#include <linux/bma150.h>
+#include <linux/lightsensor.h>
 
 #define MICROP_I2C_NAME "mahimahi-microp"
 
@@ -83,6 +88,7 @@
 #define IRQ_REMOTEKEY	(1<<7)
 #define IRQ_HEADSETIN	(1<<2)
 #define IRQ_SDCARD	(1<<0)
+
 
 enum led_type {
 	GREEN_LED, AMBER_LED, JOGBALL_LED
@@ -138,6 +144,7 @@ struct microp_i2c_client_data {
 	int auto_backlight_enabled;
 	uint8_t light_sensor_enabled;
 	int headset_is_in;
+	struct input_dev *ls_input_dev;
 };
 
 static char *hex2string(uint8_t *data, int len)
@@ -592,7 +599,7 @@ static int microp_i2c_auto_backlight_mode(struct i2c_client *client,
 	return ret;
 }
 
-static void light_sensor_activate(struct led_classdev *led_cdev)
+static int lightsensor_enable(void)
 {
 	struct i2c_client *client;
 	struct microp_i2c_client_data *cdata;
@@ -604,7 +611,7 @@ static void light_sensor_activate(struct led_classdev *led_cdev)
 	if (cdata->microp_is_suspend) {
 		printk(KERN_ERR "%s: abort, uP is going to suspend after #\n",
 		       __func__);
-		return;
+		return -EIO;
 	}
 
 	ret = microp_i2c_auto_backlight_mode(client, 1);
@@ -612,9 +619,10 @@ static void light_sensor_activate(struct led_classdev *led_cdev)
 		printk(KERN_ERR "%s: set auto light sensor fail\n", __func__);
 	else
 		cdata->auto_backlight_enabled = 1;
+	return 0;
 }
 
-static void light_sensor_deactivate(struct led_classdev *led_cdev)
+static int lightsensor_disable(void)
 {
 	/* update trigger data when done */
 	struct i2c_client *client;
@@ -627,7 +635,7 @@ static void light_sensor_deactivate(struct led_classdev *led_cdev)
 	if (cdata->microp_is_suspend) {
 		printk(KERN_ERR "%s: abort, uP is going to suspend after #\n",
 		       __func__);
-		return;
+		return -EIO;
 	}
 
 	ret = microp_i2c_auto_backlight_mode(client, 0);
@@ -636,9 +644,10 @@ static void light_sensor_deactivate(struct led_classdev *led_cdev)
 		       __func__);
 	else
 		cdata->auto_backlight_enabled = 0;
+	return 0;
 }
 
-static int microp_auto_backlight_function(uint16_t *adc_value,
+static int microp_lightsensor_read(uint16_t *adc_value,
 					  uint8_t *adc_level)
 {
 	struct i2c_client *client;
@@ -677,7 +686,7 @@ static ssize_t microp_i2c_lightsensor_adc_show(struct device *dev,
 	uint16_t adc_value = 0;
 	int ret;
 
-	ret = microp_auto_backlight_function(&adc_value, &adc_level);
+	ret = microp_lightsensor_read(&adc_value, &adc_level);
 
 	ret = sprintf(buf, "ADC[0x%03X] => level %d\n", adc_value, adc_level);
 
@@ -736,6 +745,356 @@ static ssize_t microp_i2c_ls_auto_store(struct device *dev,
 static DEVICE_ATTR(ls_auto, 0644,  microp_i2c_ls_auto_show,
 			microp_i2c_ls_auto_store);
 
+DEFINE_MUTEX(api_lock);
+static int lightsensor_opened;
+
+static int lightsensor_open(struct inode *inode, struct file *file)
+{
+	int rc = 0;
+	pr_info("%s\n", __func__);
+	mutex_lock(&api_lock);
+	if (lightsensor_opened) {
+		pr_err("%s: already opened\n", __func__);
+		rc = -EBUSY;
+	}
+	lightsensor_opened = 1;
+	mutex_unlock(&api_lock);
+	return rc;
+}
+
+static int lightsensor_release(struct inode *inode, struct file *file)
+{
+	pr_info("%s\n", __func__);
+	mutex_lock(&api_lock);
+	lightsensor_opened = 0;
+	mutex_unlock(&api_lock);
+	return 0;
+}
+
+static long lightsensor_ioctl(struct file *file, unsigned int cmd,
+		unsigned long arg)
+{
+	int rc, val;
+	struct i2c_client *client;
+	struct microp_i2c_client_data *cdata;
+
+	mutex_lock(&api_lock);
+
+	client = private_microp_client;
+	cdata = i2c_get_clientdata(client);
+
+	pr_info("%s cmd %d\n", __func__, _IOC_NR(cmd));
+
+	switch (cmd) {
+	case LIGHTSENSOR_IOCTL_ENABLE:
+		if (get_user(val, (unsigned long __user *)arg)) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = val ? lightsensor_enable() : lightsensor_disable();
+		break;
+	case LIGHTSENSOR_IOCTL_GET_ENABLED:
+		val = cdata->auto_backlight_enabled;
+		pr_info("%s enabled %d\n", __func__, val);
+		rc = put_user(val, (unsigned long __user *)arg);
+		break;
+	default:
+		pr_err("%s: invalid cmd %d\n", __func__, _IOC_NR(cmd));
+		rc = -EINVAL;
+	}
+
+	mutex_unlock(&api_lock);
+	return rc;
+}
+
+static struct file_operations lightsensor_fops = {
+	.owner = THIS_MODULE,
+	.open = lightsensor_open,
+	.release = lightsensor_release,
+	.unlocked_ioctl = lightsensor_ioctl
+};
+
+struct miscdevice lightsensor_misc = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "lightsensor",
+	.fops = &lightsensor_fops
+};
+
+/*
+ * G-sensor
+ */
+static int microp_spi_enable(uint8_t on)
+{
+	struct i2c_client *client;
+	int ret;
+
+	client = private_microp_client;
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_SPI_EN, &on, 1);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_write_block fail\n", __func__);
+		return ret;
+	}
+	msleep(10);
+	return ret;
+}
+
+static int gsensor_read_reg(uint8_t reg, uint8_t *data)
+{
+	struct i2c_client *client;
+	int ret;
+	uint8_t tmp[2];
+
+	client = private_microp_client;
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_GSENSOR_REG_DATA_REQ,
+			      &reg, 1);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_write_block fail\n", __func__);
+		return ret;
+	}
+	msleep(10);
+
+	ret = i2c_read_block(client, MICROP_I2C_RCMD_GSENSOR_REG_DATA, tmp, 2);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_read_block fail\n", __func__);
+		return ret;
+	}
+	*data = tmp[1];
+	return ret;
+}
+
+static int gsensor_write_reg(uint8_t reg, uint8_t data)
+{
+	struct i2c_client *client;
+	int ret;
+	uint8_t tmp[2];
+
+	client = private_microp_client;
+
+	tmp[0] = reg;
+	tmp[1] = data;
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_GSENSOR_REG, tmp, 2);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_write_block fail\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int gsensor_read_acceleration(short *buf)
+{
+	struct i2c_client *client;
+	int ret;
+	uint8_t tmp[2];
+
+	client = private_microp_client;
+
+	tmp[0] = 1;
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_GSENSOR_DATA_REQ, tmp, 1);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_write_block fail\n", __func__);
+		return ret;
+	}
+
+	msleep(10);
+
+	/*
+	 * Note the data is a 10bit signed value from the chip.
+	*/
+	ret = i2c_read_block(client, MICROP_I2C_RCMD_GSENSOR_X_DATA, tmp, 2);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_read_block fail\n", __func__);
+		return ret;
+	}
+	buf[0] = (short)(tmp[0] << 8 | tmp[1]);
+	buf[0] >>= 6;
+
+	ret = i2c_read_block(client, MICROP_I2C_RCMD_GSENSOR_Y_DATA, tmp, 2);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_read_block fail\n", __func__);
+		return ret;
+	}
+	buf[1] = (short)(tmp[0] << 8 | tmp[1]);
+	buf[1] >>= 6;
+
+	ret = i2c_read_block(client, MICROP_I2C_RCMD_GSENSOR_Z_DATA, tmp, 2);
+	if (ret < 0) {
+		dev_err(&client->dev,"%s: i2c_read_block fail\n", __func__);
+		return ret;
+	}
+	buf[2] = (short)(tmp[0] << 8 | tmp[1]);
+	buf[2] >>= 6;
+
+	pr_debug("%s x = %x y = %x, z = %x\n", __func__,
+	       buf[0], buf[1], buf[2]);
+
+	return 1;
+}
+
+static int gsensor_init_hw(void)
+{
+	uint8_t reg;
+	int ret;
+
+	pr_debug("%s\n", __func__);
+
+	microp_spi_enable(1);
+
+	ret = gsensor_read_reg(RANGE_BWIDTH_REG, &reg);
+	if (ret < 0 )
+		return -EIO;
+	reg &= 0xe0;
+	ret = gsensor_write_reg(RANGE_BWIDTH_REG, reg);
+	if (ret < 0 )
+		return -EIO;
+
+	ret = gsensor_read_reg(SMB150_CONF2_REG, &reg);
+	if (ret < 0 )
+		return -EIO;
+	reg |= (1 << 3);
+	ret = gsensor_write_reg(SMB150_CONF2_REG, reg);
+
+	return ret;
+}
+
+static int bma150_set_mode(char mode)
+{
+	uint8_t reg;
+	int ret;
+
+	pr_debug("%s mode = %d\n", __func__, mode);
+
+	ret = gsensor_read_reg(SMB150_CTRL_REG, &reg);
+	if (ret < 0 )
+		return -EIO;
+	reg = (reg & 0xfe) | mode;
+	ret = gsensor_write_reg(SMB150_CTRL_REG, reg);
+
+	return ret;
+}
+static int gsensor_read(uint8_t *data)
+{
+	int ret;
+	uint8_t reg = data[0];
+
+	ret = gsensor_read_reg(reg, &data[1]);
+	pr_debug("%s reg = %x data = %x\n", __func__, reg, data[1]);
+	return ret;
+}
+
+static int gsensor_write(uint8_t *data)
+{
+	int ret;
+	uint8_t reg = data[0];
+
+	pr_debug("%s reg = %x data = %x\n", __func__, reg, data[1]);
+	ret = gsensor_write_reg(reg, data[1]);
+	return ret;
+}
+
+static int bma150_open(struct inode *inode, struct file *file)
+{
+	pr_debug("%s\n", __func__);
+	return nonseekable_open(inode, file);
+}
+
+static int bma150_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int bma150_ioctl(struct inode *inode, struct file *file,
+			unsigned int cmd, unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	char rwbuf[8];
+	int ret = -1;
+	short buf[8], temp;
+
+	switch (cmd) {
+	case BMA_IOCTL_READ:
+	case BMA_IOCTL_WRITE:
+	case BMA_IOCTL_SET_MODE:
+		if (copy_from_user(&rwbuf, argp, sizeof(rwbuf)))
+			return -EFAULT;
+		break;
+	case BMA_IOCTL_READ_ACCELERATION:
+		if (copy_from_user(&buf, argp, sizeof(buf)))
+			return -EFAULT;
+		break;
+	default:
+		break;
+	}
+
+	switch (cmd) {
+	case BMA_IOCTL_INIT:
+		ret = gsensor_init_hw();
+		if (ret < 0)
+			return ret;
+		break;
+
+	case BMA_IOCTL_READ:
+		if (rwbuf[0] < 1)
+			return -EINVAL;
+		ret = gsensor_read(rwbuf);
+		if (ret < 0)
+			return ret;
+		break;
+	case BMA_IOCTL_WRITE:
+		if (rwbuf[0] < 2)
+			return -EINVAL;
+		ret = gsensor_write(rwbuf);
+		if (ret < 0)
+			return ret;
+		break;
+	case BMA_IOCTL_READ_ACCELERATION:
+		ret = gsensor_read_acceleration(&buf[0]);
+		if (ret < 0)
+			return ret;
+		break;
+	case BMA_IOCTL_SET_MODE:
+		bma150_set_mode(rwbuf[0]);
+		break;
+	case BMA_IOCTL_GET_INT:
+		temp = 0;
+		break;
+	default:
+		return -ENOTTY;
+	}
+
+	switch (cmd) {
+	case BMA_IOCTL_READ:
+		if (copy_to_user(argp, &rwbuf, sizeof(rwbuf)))
+			return -EFAULT;
+		break;
+	case BMA_IOCTL_READ_ACCELERATION:
+		if (copy_to_user(argp, &buf, sizeof(buf)))
+			return -EFAULT;
+		break;
+	case BMA_IOCTL_GET_INT:
+		if (copy_to_user(argp, &temp, sizeof(temp)))
+			return -EFAULT;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static struct file_operations bma_fops = {
+	.owner = THIS_MODULE,
+	.open = bma150_open,
+	.release = bma150_release,
+	.ioctl = bma150_ioctl,
+};
+
+static struct miscdevice spi_bma_device = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = BMA150_G_SENSOR_NAME,
+	.fops = &bma_fops,
+};
+
 /*
  * Interrupt
  */
@@ -783,7 +1142,9 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 	printk(KERN_DEBUG "intr_status=0x%02x\n", intr_status);
 	msleep(1);
 	if (intr_status & IRQ_LSENSOR) {
-		ret = microp_auto_backlight_function(&adc_value, &adc_level);
+		ret = microp_lightsensor_read(&adc_value, &adc_level);
+		input_report_abs(cdata->ls_input_dev, ABS_MISC, (int)adc_level);
+		input_sync(cdata->ls_input_dev);
 	}
 #if 0
 	if (intr_status & IRQ_REMOTEKEY) {
@@ -932,9 +1293,15 @@ static int __devexit microp_i2c_remove(struct i2c_client *client)
 
 	gpio_free(MAHIMAHI_GPIO_UP_RESET_N);
 
+	misc_deregister(&lightsensor_misc);
+	input_unregister_device(cdata->ls_input_dev);
+	input_free_device(cdata->ls_input_dev);
 	device_remove_file(&client->dev, &dev_attr_ls_adc);
 	device_remove_file(&client->dev, &dev_attr_key_adc);
 	device_remove_file(&client->dev, &dev_attr_ls_auto);
+
+	/* G-sensor */
+	misc_deregister(&spi_bma_device);
 
 	kfree(cdata);
 
@@ -1002,6 +1369,29 @@ static int microp_i2c_probe(struct i2c_client *client
 	/* Light Sensor */
 	ret = device_create_file(&client->dev, &dev_attr_ls_adc);
 	ret = device_create_file(&client->dev, &dev_attr_ls_auto);
+	cdata->ls_input_dev = input_allocate_device();
+	if (!cdata->ls_input_dev) {
+		pr_err("%s: could not allocate input device\n", __func__);
+		ret = -ENOMEM;
+		goto err_request_input_dev;
+	}
+	cdata->ls_input_dev->name = "lightsensor-level";
+	set_bit(EV_ABS, cdata->ls_input_dev->evbit);
+	input_set_abs_params(cdata->ls_input_dev, ABS_MISC, 0, 9, 0, 0);
+
+	ret = input_register_device(cdata->ls_input_dev);
+	if (ret < 0) {
+		dev_err(&client->dev, "%s: can not register input device\n",
+				__func__);
+		goto err_register_input_dev;
+	}
+
+	ret = misc_register(&lightsensor_misc);
+	if (ret < 0) {
+		dev_err(&client->dev, "%s: can not register misc device\n",
+				__func__);
+		goto err_register_misc_register;
+	}
 
 	/* LEDs */
 	ldata = &cdata->green;
@@ -1050,6 +1440,14 @@ static int microp_i2c_probe(struct i2c_client *client
 	/* Headset */
 	ret = device_create_file(&client->dev, &dev_attr_key_adc);
 
+	/* G-sensor */
+	ret = misc_register(&spi_bma_device);
+	if (ret < 0) {
+		printk(KERN_ERR "%s: init bma150 misc_register fail\n",
+				__func__);
+		goto err_register_bma150;
+	}
+
 	/* Setup IRQ handler */
 	INIT_WORK(&cdata->work.work, microp_i2c_intr_work_func);
 	cdata->work.client = client;
@@ -1089,6 +1487,9 @@ static int microp_i2c_probe(struct i2c_client *client
 
 err_fun_init:
 err_intr:
+	misc_deregister(&spi_bma_device);
+
+err_register_bma150:
 	led_classdev_unregister(&cdata->jogball.ldev);
 
 err_register_logball_leddev:
@@ -1102,11 +1503,21 @@ err_register_amber_leddev:
 	device_remove_file(cdata->green.ldev.dev, &dev_attr_off_timer);
 
 err_register_green_leddev:
+	misc_deregister(&lightsensor_misc);
+
+err_register_misc_register:
+	input_unregister_device(cdata->ls_input_dev);
+
+err_register_input_dev:
+	input_free_device(cdata->ls_input_dev);
+
+err_request_input_dev:
 	wake_lock_destroy(&microp_i2c_wakelock);
 	device_remove_file(&client->dev, &dev_attr_ls_adc);
 	device_remove_file(&client->dev, &dev_attr_ls_auto);
 	kfree(cdata);
 	i2c_set_clientdata(client, NULL);
+
 err_cdata:
 err_gpio_reset:
 	gpio_free(MAHIMAHI_GPIO_UP_RESET_N);
