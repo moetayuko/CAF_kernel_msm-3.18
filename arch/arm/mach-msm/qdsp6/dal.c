@@ -176,12 +176,12 @@ check_data:
 		}
 
 		if (hdr->msgid == client->msgid) {
-			client->status = len;
 			if (!client->remote)
 				client->remote = hdr->from;
 			if (len > client->reply_max)
 				len = client->reply_max;
 			memcpy(client->reply, client->data, len);
+			client->status = len;
 			wake_up(&client->wait);
 			goto again;
 		}
@@ -246,7 +246,6 @@ int dal_call_raw(struct dal_client *client,
 {
 	struct dal_channel *dch = client->dch;
 	unsigned long flags;
-	int status;
 
 	client->reply = reply;
 	client->reply_max = reply_max;
@@ -268,14 +267,7 @@ int dal_call_raw(struct dal_client *client,
 
 	wait_event(client->wait, (client->status != -EBUSY));
 
-	status = client->status;
-	if (status > reply_max)
-		status = reply_max;
-
-	if (status > 0)
-		memcpy(reply, client->data, status);
-
-	return status;
+	return client->status;
 }
 
 int dal_call(struct dal_client *client,
