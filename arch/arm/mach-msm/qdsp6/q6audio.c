@@ -21,6 +21,7 @@
 #include <linux/clk.h>
 
 #include <linux/delay.h>
+#include <linux/wakelock.h>
 
 #include "dal.h"
 #include "dal_audio.h"
@@ -30,6 +31,26 @@
 #include <mach/msm_qdsp6_audio.h>
 
 #include <linux/gpio.h>
+
+static struct wake_lock idlelock;
+static int idlecount;
+static DEFINE_MUTEX(idlecount_lock);
+
+void audio_prevent_sleep(void)
+{
+	mutex_lock(&idlecount_lock);
+	if (++idlecount == 1)
+		wake_lock(&idlelock);
+	mutex_unlock(&idlecount_lock);
+}
+
+void audio_allow_sleep(void)
+{
+	mutex_lock(&idlecount_lock);
+	if (--idlecount == 0)
+		wake_unlock(&idlelock);
+	mutex_unlock(&idlecount_lock);
+}
 
 static struct clk *icodec_rx_clk;
 static struct clk *icodec_tx_clk;
@@ -571,6 +592,7 @@ static int q6audio_init(void)
 	res = 0;
 	ac_control = ac;
 
+	wake_lock_init(&idlelock, WAKE_LOCK_IDLE, "audio_pcm_idle");
 done:
 	if ((res < 0) && ac)
 		audio_client_free(ac);
@@ -1251,6 +1273,8 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 		q6audio_read(ac, &ac->buf[0]);
 		q6audio_read(ac, &ac->buf[1]);
 	}
+
+	audio_prevent_sleep();
 	return ac;
 }
 
@@ -1266,6 +1290,7 @@ int q6audio_close(struct audio_client *ac)
 
 	pr_info("*** done %p ***\n", ac);
 	audio_client_free(ac);
+	audio_allow_sleep();
 	return 0;
 }
 
