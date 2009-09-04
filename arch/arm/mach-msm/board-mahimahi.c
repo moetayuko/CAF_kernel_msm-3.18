@@ -486,7 +486,6 @@ static void __init mahimahi_init(void)
 		i2c_register_board_info(0, rev1_i2c_devices,
 			ARRAY_SIZE(rev1_i2c_devices));
 	}
-	msm_hsusb_set_vbus_state(1);
 
 	ret = mahimahi_init_mmc(system_rev, debug_uart);
 	if (ret != 0)
