@@ -134,9 +134,9 @@ static uint32_t mahimahi_sdslot_switchvdd(struct device *dev, unsigned int vdd)
 	return 0;
 }
 
-static unsigned int mahimahi_sdslot_status(struct device *dev)
+static unsigned int mahimahi_sdslot_status_rev0(struct device *dev)
 {
-	return !gpio_get_value(MAHIMAHI_GPIO_SDMC_CD_N);
+	return !gpio_get_value(MAHIMAHI_GPIO_SDMC_CD_REV0_N);
 }
 
 #define MAHIMAHI_MMC_VDD	(MMC_VDD_165_195 | MMC_VDD_20_21 | \
@@ -145,6 +145,16 @@ static unsigned int mahimahi_sdslot_status(struct device *dev)
 				 MMC_VDD_25_26 | MMC_VDD_26_27 | \
 				 MMC_VDD_27_28 | MMC_VDD_28_29 | \
 				 MMC_VDD_29_30)
+
+int mahimahi_microp_sdslot_status_register(void (*cb)(int, void *), void *);
+unsigned int mahimahi_microp_sdslot_status(struct device *);
+
+static struct mmc_platform_data mahimahi_sdslot_data = {
+	.ocr_mask		= MAHIMAHI_MMC_VDD,
+	.status			= mahimahi_microp_sdslot_status,
+	.register_status_notify	= mahimahi_microp_sdslot_status_register,
+	.translate_vdd		= mahimahi_sdslot_switchvdd,
+};
 
 static uint32_t wifi_on_gpio_table[] = {
 	PCOM_GPIO_CFG(51, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA), /* DAT3 */
@@ -185,12 +195,6 @@ static unsigned int mahimahi_wifi_status(struct device *dev)
 {
 	return mahimahi_wifi_cd;
 }
-
-static struct mmc_platform_data mahimahi_sdslot_data = {
-	.ocr_mask	= MAHIMAHI_MMC_VDD,
-	.status		= mahimahi_sdslot_status,
-	.translate_vdd	= mahimahi_sdslot_switchvdd,
-};
 
 static struct mmc_platform_data mahimahi_wifi_data = {
 	.ocr_mask		= MMC_VDD_28_29,
@@ -272,10 +276,17 @@ int __init mahimahi_init_mmc(unsigned int sys_rev, unsigned debug_uart)
 	if (IS_ERR(sdslot_vreg))
 		return PTR_ERR(sdslot_vreg);
 
-	set_irq_wake(MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_N), 1);
-	msm_add_sdcc(2, &mahimahi_sdslot_data,
-		     MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_N),
-		     IORESOURCE_IRQ_LOWEDGE | IORESOURCE_IRQ_HIGHEDGE);
+	if (system_rev > 0)
+		msm_add_sdcc(2, &mahimahi_sdslot_data, 0, 0);
+	else {
+		mahimahi_sdslot_data.status = mahimahi_sdslot_status_rev0;
+		mahimahi_sdslot_data.register_status_notify = NULL;
+		set_irq_wake(MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_REV0_N), 1);
+		msm_add_sdcc(2, &mahimahi_sdslot_data,
+			     MSM_GPIO_TO_INT(MAHIMAHI_GPIO_SDMC_CD_REV0_N),
+			     IORESOURCE_IRQ_LOWEDGE | IORESOURCE_IRQ_HIGHEDGE);
+	}
+
 done:
 	printk("%s()-\n", __func__);
 	return 0;
@@ -338,7 +349,7 @@ static int mahimahimmc_dbg_sd_cd_set(void *data, u64 val)
 
 static int mahimahimmc_dbg_sd_cd_get(void *data, u64 *val)
 {
-	*val = mahimahi_sdslot_status(NULL);
+	*val = mahimahi_sdslot_data.status(NULL);
 	return 0;
 }
 

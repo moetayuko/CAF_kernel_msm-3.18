@@ -33,9 +33,12 @@
 #include <asm/mach-types.h>
 #include <mach/htc_pwrsink.h>
 #include <linux/earlysuspend.h>
-#include "board-mahimahi.h"
 #include <linux/bma150.h>
 #include <linux/lightsensor.h>
+#include <asm/mach/mmc.h>
+
+#include "board-mahimahi.h"
+
 
 #define MICROP_I2C_NAME "mahimahi-microp"
 
@@ -73,7 +76,7 @@
 #define MICROP_I2C_WCMD_GPI_INT_CTL_EN		0x80
 #define MICROP_I2C_WCMD_GPI_INT_CTL_DIS		0x81
 #define MICROP_I2C_RCMD_GPI_INT_STATUS		0x82
-#define MICROP_I2C_RCMD_GPIO_STATUS		0x83
+#define MICROP_I2C_RCMD_GPI_STATUS		0x83
 #define MICROP_I2C_WCMD_GPI_INT_STATUS_CLR	0x84
 #define MICROP_I2C_RCMD_GPI_INT_SETTING		0x85
 #define MICROP_I2C_RCMD_REMOTE_KEYCODE		0x87
@@ -262,6 +265,50 @@ static int microp_read_adc(uint8_t channel, uint16_t *value)
 	}
 	*value = data[0] << 8 | data[1];
 	return 0;
+}
+
+static int microp_read_gpi_status(struct i2c_client *client, uint16_t *status)
+{
+	uint8_t data[2];
+	int ret;
+
+	ret = i2c_read_block(client, MICROP_I2C_RCMD_GPI_STATUS, data, 2);
+	if (ret < 0) {
+		dev_err(&client->dev, "%s: read failed\n", __func__);
+		return -EIO;
+	}
+	*status = (data[0] << 8) | data[1];
+	return 0;
+}
+
+/*
+ * SD slot card-detect support
+ */
+static unsigned int sdslot_cd = 0;
+static void (*sdslot_status_cb)(int card_present, void *dev_id);
+static void *sdslot_mmc_dev;
+
+int mahimahi_microp_sdslot_status_register(
+		void (*cb)(int card_present, void *dev_id),
+		void *dev_id)
+{
+	if (sdslot_status_cb)
+		return -EBUSY;
+	sdslot_status_cb = cb;
+	sdslot_mmc_dev = dev_id;
+	return 0;
+}
+
+unsigned int mahimahi_microp_sdslot_status(struct device *dev)
+{
+	return sdslot_cd;
+}
+
+static void mahimahi_microp_sdslot_update_status(int status)
+{
+	sdslot_cd = !(status & IRQ_SDCARD);
+	if (sdslot_status_cb)
+		sdslot_status_cb(sdslot_cd, sdslot_mmc_dev);
 }
 
 /*
@@ -1119,7 +1166,7 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 	struct i2c_client *client;
 	struct microp_i2c_client_data *cdata;
 	uint8_t data[3], node = 0, adc_level;
-	uint16_t intr_status = 0, adc_value;
+	uint16_t intr_status = 0, adc_value, gpi_status = 0;
 	int insert = 0, keycode = 0, ret = 0;
 
 	up_work = container_of(work, struct microp_i2c_work, work);
@@ -1146,6 +1193,12 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 		input_report_abs(cdata->ls_input_dev, ABS_MISC, (int)adc_level);
 		input_sync(cdata->ls_input_dev);
 	}
+
+	if (intr_status & IRQ_SDCARD) {
+		microp_read_gpi_status(client, &gpi_status);
+		mahimahi_microp_sdslot_update_status(gpi_status);
+	}
+
 #if 0
 	if (intr_status & IRQ_REMOTEKEY) {
 		node = pdata->function_node[MICROP_FUNCTION_REMOTEKEY];
@@ -1153,9 +1206,6 @@ static void microp_i2c_intr_work_func(struct work_struct *work)
 			keycode = (int)datla[1];
 			cnf_driver_event("H2W_3button", &keycode);
 		}
-	}
-	if (intr_status & IRQ_SDCARD) {
-
 	}
 	if (intr_status & cdata->int_pin.int_simcard) {
 
@@ -1178,6 +1228,7 @@ static int microp_function_initialize(struct i2c_client *client)
 {
 	struct microp_i2c_client_data *cdata;
 	uint8_t data[20];
+	uint16_t stat;
 	int i;
 	int ret;
 
@@ -1210,7 +1261,23 @@ static int microp_function_initialize(struct i2c_client *client)
 		data[i] = (uint8_t)(remote_key_adc_table[i] >> 8);
 		data[i + 6] = (uint8_t)(remote_key_adc_table[i]);
 	}
+
+	/* enable the interrupts */
+	data[0] = 0;
+	data[1] = IRQ_SDCARD;
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_GPI_INT_CTL_EN, data, 2);
+	if (ret < 0) {
+		dev_err(&client->dev, "%s: failed to enable gpi irqs\n",
+			__func__);
+		goto err_irq_en;
+	}
+
+	microp_read_gpi_status(client, &stat);
+	mahimahi_microp_sdslot_update_status(stat);
+
 	return 0;
+
+err_irq_en:
 err_gpio_ls:
 	gpio_free(MAHIMAHI_GPIO_LS_EN_N);
 exit:
