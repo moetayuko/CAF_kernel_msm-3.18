@@ -685,12 +685,17 @@ static void audio_rx_analog_enable(int en)
 	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_MONO:
 	case ADSP_AUDIO_DEVICE_ID_HEADSET_SPKR_STEREO:
 	case ADSP_AUDIO_DEVICE_ID_TTY_HEADSET_SPKR:
+		if (analog_ops->headset_enable)
+			analog_ops->headset_enable(en);
+		break;
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_MONO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO_W_STEREO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_MONO_HEADSET:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO_W_STEREO_HEADSET:
 		if (analog_ops->headset_enable)
 			analog_ops->headset_enable(en);
+		if (analog_ops->speaker_enable)
+			analog_ops->speaker_enable(en);
 		break;
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MONO:
 	case ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_STEREO:
