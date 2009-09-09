@@ -59,7 +59,7 @@ int q6audio_write(struct audio_client *ac, struct audio_buffer *ab);
 int q6audio_do_routing(uint32_t route);
 int q6audio_set_tx_mute(int mute);
 int q6audio_update_acdb(uint32_t id);
-
+int q6audio_set_rx_volume(int level);
 
 struct q6audio_analog_ops {
 	void (*init)(void);

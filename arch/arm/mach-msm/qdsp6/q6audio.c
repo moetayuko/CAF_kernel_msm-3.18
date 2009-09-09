@@ -34,6 +34,44 @@
 
 #include "q6audio_devices.h"
 
+struct q6_hw_info {
+	int min_gain;
+	int max_gain;
+};
+
+/* TODO: provide mechanism to configure from board file */
+
+static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
+	[Q6_HW_HANDSET] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+	[Q6_HW_HEADSET] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+	[Q6_HW_HANDSET] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+	[Q6_HW_SPEAKER] = {
+		.min_gain = -1200,
+		.max_gain = 0,
+	},
+	[Q6_HW_TTY] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+	[Q6_HW_BT_SCO] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+	[Q6_HW_BT_A2DP] = {
+		.min_gain = -1800,
+		.max_gain = 0,
+	},
+};
+
 static struct wake_lock idlelock;
 static int idlecount;
 static DEFINE_MUTEX(idlecount_lock);
@@ -106,6 +144,16 @@ static uint32_t q6_device_to_path(uint32_t device_id)
 {
 	struct q6_device_info *di = q6_lookup_device(device_id);
 	return di->path;
+}
+
+int q6_device_volume(uint32_t device_id, int level)
+{
+	struct q6_device_info *di = q6_lookup_device(device_id);
+	struct q6_hw_info *hw;
+
+	hw = &q6_audio_hw[di->hw];
+
+	return hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100;
 }
 
 
@@ -703,7 +751,7 @@ static void _audio_rx_path_enable(void)
 
 	audio_rx_mute(ac_control, adev, 0);
 
-	audio_rx_volume(ac_control, adev, 496);
+	audio_rx_volume(ac_control, adev, q6_device_volume(adev, 100));
 }
 
 static void _audio_tx_path_enable(void)
@@ -737,7 +785,7 @@ static void _audio_tx_path_enable(void)
 	audio_tx_mute(ac_control, adev, tx_mute_status);
 
 	if (!tx_mute_status) {
-		audio_tx_volume(ac_control, adev, 496);
+		audio_tx_volume(ac_control, adev, q6_device_volume(adev, 100));
 	}
 }
 
@@ -992,6 +1040,26 @@ int q6audio_set_tx_mute(int mute)
 	adev = audio_tx_device_id;
 	rc = audio_tx_mute(ac_control, adev, mute);
 	if (!rc) tx_mute_status = mute;
+	mutex_unlock(&audio_path_lock);
+	return 0;
+}
+
+int q6audio_set_rx_volume(int level)
+{
+	uint32_t adev;
+	int vol;
+
+	if (q6audio_init())
+		return 0;
+
+	if (level < 0 || level > 100)
+		return -EINVAL;
+
+	mutex_lock(&audio_path_lock);
+	adev = audio_rx_device_id;
+	vol = q6_device_volume(adev, level);
+	audio_rx_mute(ac_control, adev, 0);
+	audio_rx_volume(ac_control, adev, vol);
 	mutex_unlock(&audio_path_lock);
 	return 0;
 }

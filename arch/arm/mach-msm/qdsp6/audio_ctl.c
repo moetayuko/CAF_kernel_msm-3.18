@@ -83,23 +83,28 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 		    unsigned int cmd, unsigned long arg)
 {
 	int rc;
-	uint32_t dev, mute, acdb_id;
+	uint32_t n;
 
 	switch (cmd) {
 	case AUDIO_SWITCH_DEVICE:
-		rc = copy_from_user(&dev, (void *)arg, sizeof(dev));
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
 		if (!rc)
-			rc = q6audio_do_routing(dev);
+			rc = q6audio_do_routing(n);
+		break;
+	case AUDIO_SET_VOLUME:
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
+		if (!rc)
+			rc = q6audio_set_rx_volume(n);
 		break;
 	case AUDIO_SET_MUTE:
-		rc = copy_from_user(&mute, (void *)arg, sizeof(mute));
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
 		if (!rc)
-			rc = q6audio_set_tx_mute(mute);
+			rc = q6audio_set_tx_mute(n);
 		break;
 	case AUDIO_UPDATE_ACDB:
-		rc = copy_from_user(&acdb_id, (void *)arg, sizeof(acdb_id));
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
 		if (!rc)
-			rc = q6audio_update_acdb(acdb_id);
+			rc = q6audio_update_acdb(n);
 		break;
 	case AUDIO_START_VOICE:
 		rc = q6_voice_start();
