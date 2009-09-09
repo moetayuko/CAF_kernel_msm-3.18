@@ -135,7 +135,7 @@ static void scpll_set_freq(uint32_t lval)
 	regval |= (lval << 3);
 
 	regval &= ~(0x3 << 0);
-	regval |= (SHOT_SWITCH << 0);
+	regval |= (HOP_SWITCH << 0);
 	writel(regval, SCPLL_FSM_CTL_EXT_ADDR);
 
 	dmb();
