@@ -47,6 +47,7 @@
 #include "board-mahimahi.h"
 #include "devices.h"
 #include "proc_comm.h"
+#include <mach/flashlight.h>
 
 static uint debug_uart;
 
@@ -54,6 +55,8 @@ module_param_named(debug_uart, debug_uart, uint, 0);
 
 extern void msm_init_pmic_vibrator(void);
 extern void __init mahimahi_audio_init(void);
+
+static void config_gpio_table(uint32_t *table, int len);
 
 static char *mahimahi_usb_functions[] = {
 	"usb_mass_storage",
@@ -446,6 +449,8 @@ static struct msm_camera_sensor_info msm_camera_sensor_s5k3e2fx_data = {
 	.pdata = &msm_camera_device_data,
 	.resource = msm_camera_resources,
 	.num_resources = ARRAY_SIZE(msm_camera_resources),
+	.camera_flash = flashlight_control,
+	.num_flash_levels = FLASHLIGHT_NUM,
 };
 
 static struct platform_device msm_camera_sensor_s5k3e2fx = {
@@ -482,6 +487,34 @@ static struct platform_device capella_cm3602 = {
 	}
 };
 
+static uint32_t flashlight_gpio_table[] = {
+	PCOM_GPIO_CFG(MAHIMAHI_GPIO_FLASHLIGHT_TORCH, 0, GPIO_OUTPUT,
+						GPIO_NO_PULL, GPIO_2MA),
+	PCOM_GPIO_CFG(MAHIMAHI_GPIO_FLASHLIGHT_FLASH, 0, GPIO_OUTPUT,
+						GPIO_NO_PULL, GPIO_2MA),
+};
+
+
+static int config_mahimahi_flashlight_gpios(void)
+{
+	config_gpio_table(flashlight_gpio_table,
+		ARRAY_SIZE(flashlight_gpio_table));
+	return 0;
+}
+
+static struct flashlight_platform_data mahimahi_flashlight_data = {
+	.gpio_init  = config_mahimahi_flashlight_gpios,
+	.torch = MAHIMAHI_GPIO_FLASHLIGHT_TORCH,
+	.flash = MAHIMAHI_GPIO_FLASHLIGHT_FLASH,
+	.flash_duration_ms = 600
+};
+
+static struct platform_device mahimahi_flashlight_device = {
+	.name = "flashlight",
+	.dev = {
+		.platform_data  = &mahimahi_flashlight_data,
+	},
+};
 static struct timed_gpio timed_gpios[] = {
 	{
 		.name = "vibrator",
@@ -502,6 +535,8 @@ static struct platform_device mahimahi_timed_gpios = {
 		.platform_data = &timed_gpio_data,
 	},
 };
+
+
 
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
@@ -524,6 +559,7 @@ static struct platform_device *devices[] __initdata = {
 	&msm_device_i2c,
 	&capella_cm3602,
 	&msm_camera_sensor_s5k3e2fx,
+	&mahimahi_flashlight_device,
 };
 
 
