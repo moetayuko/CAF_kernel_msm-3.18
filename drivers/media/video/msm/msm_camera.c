@@ -36,6 +36,9 @@
 #include <linux/poll.h>
 #include <media/msm_camera.h>
 #include <mach/camera.h>
+#ifdef CONFIG_FLASHLIGHT
+#include <linux/fl.h>
+#endif
 
 #define MSM_MAX_CAMERA_SENSORS 5
 
@@ -1732,6 +1735,15 @@ static long msm_ioctl_config(struct file *filep, unsigned int cmd,
 	CDBG("msm_ioctl_config cmd = %d DONE\n", _IOC_NR(cmd));
 	return rc;
 }
+
+#ifdef CONFIG_MSM_CAMERA_FLASH
+int msm_camera_flash_set_led_state(unsigned led_state)
+{
+	return flashlight_control(FL_MODE_TORCH,
+			(led_state == MSM_CAMERA_LED_OFF) ?
+				FL_MS_TORCH_OFF : FL_MS_TORCH_ALWAYS_ON);
+}
+#endif
 
 static int msm_unblock_poll_frame(struct msm_sync *);
 
