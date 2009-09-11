@@ -42,14 +42,14 @@ static int q6_voice_start(void)
 		goto done;
 	}
 
-	voc_tx_clnt = q6voice_open(BUFSZ, 8000, 1, AUDIO_FLAG_WRITE);
+	voc_tx_clnt = q6voice_open(AUDIO_FLAG_WRITE);
 	if (!voc_tx_clnt) {
 		pr_err("voice: open voice tx failed.\n");
 		rc = -ENOMEM;
 		goto done;
 	}
 
-	voc_rx_clnt = q6voice_open(BUFSZ, 8000, 1, AUDIO_FLAG_READ);
+	voc_rx_clnt = q6voice_open(AUDIO_FLAG_READ);
 	if (!voc_rx_clnt) {
 		pr_err("voice: open voice rx failed.\n");
 		q6voice_close(voc_tx_clnt);

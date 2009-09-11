@@ -1220,8 +1220,7 @@ int q6audio_close(struct audio_client *ac)
 	return 0;
 }
 
-struct audio_client *q6voice_open(uint32_t bufsz, uint32_t rate,
-				uint32_t channels, uint32_t flags)
+struct audio_client *q6voice_open(uint32_t flags)
 {
 	struct audio_client *ac;
 
@@ -1230,7 +1229,7 @@ struct audio_client *q6voice_open(uint32_t bufsz, uint32_t rate,
 	if (q6audio_init())
 		return 0;
 
-	ac = audio_client_alloc(bufsz);
+	ac = audio_client_alloc(0);
 	if (!ac)
 		return 0;
 
