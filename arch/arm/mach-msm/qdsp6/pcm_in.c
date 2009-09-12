@@ -29,25 +29,39 @@
 #define BUFSZ (4096)
 #define DMASZ (BUFSZ * 2)
 
+static DEFINE_MUTEX(pcm_in_lock);
+static uint32_t sample_rate = 8000;
+static uint32_t channel_count = 1;
+static int pcm_in_opened = 0;
+
+
 static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	struct audio_client *ac = file->private_data;
 	int rc = 0;
 
-	if (cmd == AUDIO_GET_STATS) {
+	switch (cmd) {
+	case AUDIO_SET_VOLUME:
+		break;
+	case AUDIO_GET_STATS: {
 		struct msm_audio_stats stats;
 		memset(&stats, 0, sizeof(stats));
 		if (copy_to_user((void*) arg, &stats, sizeof(stats)))
 			return -EFAULT;
 		return 0;
 	}
-	if (cmd == AUDIO_SET_VOLUME) {
-		return 0;
-	}
-
-	switch (cmd) {
 	case AUDIO_START:
 		printk("AUDIO_START\n");
+		rc = 0;
+		mutex_lock(&pcm_in_lock);
+		if (file->private_data) {
+			rc = -EBUSY;
+		} else {
+			file->private_data = q6audio_open_pcm(
+				BUFSZ, sample_rate, channel_count, AUDIO_FLAG_READ);
+			if (!file->private_data)
+				rc = -ENOMEM;
+		}
+		mutex_unlock(&pcm_in_lock);
 		break;
 	case AUDIO_STOP:
 		printk("AUDIO_STOP\n");
@@ -63,14 +77,16 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		printk("AUDIO_SET_CONFIG sr=%d ch=%d\n",
 		       config.sample_rate, config.channel_count);
+		sample_rate = config.sample_rate;
+		channel_count = config.channel_count;
 		break;
 	}
 	case AUDIO_GET_CONFIG: {
 		struct msm_audio_config config;
 		config.buffer_size = BUFSZ;
 		config.buffer_count = 2;
-		config.sample_rate = 8000;
-		config.channel_count = 1;
+		config.sample_rate = sample_rate;
+		config.channel_count = channel_count;
 		config.unused[0] = 0;
 		config.unused[1] = 0;
 		config.unused[2] = 0;
@@ -88,21 +104,35 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 static int q6_in_open(struct inode *inode, struct file *file)
 {
-	file->private_data = q6audio_open_pcm(BUFSZ, 8000, 1, AUDIO_FLAG_READ);
-	if (!file->private_data)
-		return -ENOMEM;
+	int rc;
 
-	return 0;
+	mutex_lock(&pcm_in_lock);
+	if (pcm_in_opened) {
+		pr_err("pcm_in: busy\n");
+		rc = -EBUSY;
+	} else {
+		pcm_in_opened = 1;
+		rc = 0;
+	}
+	mutex_unlock(&pcm_in_lock);
+	return rc;
 }
 
 static ssize_t q6_in_read(struct file *file, char __user *buf,
 			  size_t count, loff_t *pos)
 {
-	struct audio_client *ac = file->private_data;
+	struct audio_client *ac;
 	struct audio_buffer *ab;
 	const char __user *start = buf;
 	int xfer;
+	int res;
 
+	mutex_lock(&pcm_in_lock);
+	ac = file->private_data;
+	if (!ac) {
+		res = -ENODEV;
+		goto fail;
+	}
 	while (count > 0) {
 		ab = ac->buf + ac->cpu_buf;
 
@@ -113,8 +143,10 @@ static ssize_t q6_in_read(struct file *file, char __user *buf,
 		if (xfer > ab->size)
 			xfer = ab->size;
 
-		if (copy_to_user(buf, ab->data, xfer))
-			return -EFAULT;
+		if (copy_to_user(buf, ab->data, xfer)) {
+			res = -EFAULT;
+			goto fail;
+		}
 
 		buf += xfer;
 		count -= xfer;
@@ -123,13 +155,22 @@ static ssize_t q6_in_read(struct file *file, char __user *buf,
 		q6audio_read(ac, ab);
 		ac->cpu_buf ^= 1;
 	}
+fail:
+	res = buf - start;
+	mutex_unlock(&pcm_in_lock);
 
-	return buf - start;
+	return res;
 }
 
 static int q6_in_release(struct inode *inode, struct file *file)
 {
-	return q6audio_close(file->private_data);
+	int rc = 0;
+	mutex_lock(&pcm_in_lock);
+	if (file->private_data)
+		rc = q6audio_close(file->private_data);
+	pcm_in_opened = 0;
+	mutex_unlock(&pcm_in_lock);
+	return rc;
 }
 
 static struct file_operations q6_in_fops = {

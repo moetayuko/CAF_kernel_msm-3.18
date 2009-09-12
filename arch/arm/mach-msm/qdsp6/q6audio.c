@@ -146,6 +146,12 @@ static uint32_t q6_device_to_path(uint32_t device_id)
 	return di->path;
 }
 
+static uint32_t q6_device_to_rate(uint32_t device_id)
+{
+	struct q6_device_info *di = q6_lookup_device(device_id);
+	return di->rate;
+}
+
 int q6_device_volume(uint32_t device_id, int level)
 {
 	struct q6_device_info *di = q6_lookup_device(device_id);
@@ -609,7 +615,6 @@ done:
 	return res;
 }
 
-
 static int acdb_get_config_table(uint32_t device_id, uint32_t sample_rate)
 {
 	struct acdb_cmd_device_table rpc;
@@ -731,13 +736,13 @@ static void audio_tx_analog_enable(int en)
 
 static void _audio_rx_path_enable(void)
 {
-	uint32_t adev;
+	uint32_t adev, sample_rate;
 	int sz;
 
 	adev = audio_rx_device_id;
-
-	pr_info("audiolib: load %08x cfg table\n", adev);
-	sz = acdb_get_config_table(adev, 48000);
+	sample_rate = q6_device_to_rate(adev);
+	pr_info("audiolib: load %08x cfg table, rate %d\n", adev, sample_rate);
+	sz = acdb_get_config_table(adev, sample_rate);
 	pr_info("cfg table is %d bytes\n", sz);
 	audio_set_table(ac_control, adev, sz);
 	qdsp6_standby(ac_control);
@@ -761,13 +766,14 @@ static void _audio_rx_path_enable(void)
 
 static void _audio_tx_path_enable(void)
 {
-	uint32_t adev;
+	uint32_t adev, sample_rate;
 	int sz;
 
 	adev = audio_tx_device_id;
-
-	pr_info("audiolib: load %08x cfg table\n", adev);
-	sz = acdb_get_config_table(adev, 8000);
+	sample_rate = q6_device_to_rate(adev);
+	pr_info("audiolib: load %08x cfg table, rate %d\n",
+		adev, sample_rate);
+	sz = acdb_get_config_table(adev, sample_rate);
 	pr_info("cfg table is %d bytes\n", sz);
 
 	audio_set_table(ac_control, adev, sz);
@@ -781,7 +787,14 @@ static void _audio_tx_path_enable(void)
 
 	pr_info("audiolib: set tx path\n");
 	adie_set_path(adie, audio_tx_path_id, ADIE_PATH_TX);
-	adie_set_path_freq_plan(adie, ADIE_PATH_TX, 8000);
+
+	if (tx_clk_freq > 8000) {
+		pr_info("set tx_freq_plan as 48000\n");
+		adie_set_path_freq_plan(adie, ADIE_PATH_TX, 48000);
+	} else {
+		pr_info("set tx_freq_plan as 8000\n");
+		adie_set_path_freq_plan(adie, ADIE_PATH_TX, 8000);
+	}
 
 	pr_info("audiolib: enable tx adie\n");
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_READY);
@@ -1072,6 +1085,7 @@ int q6audio_set_rx_volume(int level)
 static void do_rx_routing(uint32_t device_id)
 {
 	int sz;
+	uint32_t sample_rate;
 
 	if (device_id == audio_rx_device_id)
 		return;
@@ -1082,7 +1096,11 @@ static void do_rx_routing(uint32_t device_id)
 		_audio_rx_clk_reinit(device_id);
 		_audio_rx_path_enable();
 	} else {
-		sz = acdb_get_config_table(device_id, 48000);
+		sample_rate = q6_device_to_rate(device_id);
+		pr_info("audiolib: load %08x cfg table, rate %d\n",
+			device_id, sample_rate);
+		sz = acdb_get_config_table(device_id, sample_rate);
+		pr_info("cfg table is %d bytes\n", sz);
 		audio_set_table(ac_control, device_id, sz);
 		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
 		qdsp6_standby(ac_control);
@@ -1095,6 +1113,7 @@ static void do_rx_routing(uint32_t device_id)
 static void do_tx_routing(uint32_t device_id)
 {
 	int sz;
+	uint32_t sample_rate;
 
 	if (device_id == audio_tx_device_id)
 		return;
@@ -1105,7 +1124,11 @@ static void do_tx_routing(uint32_t device_id)
 		_audio_tx_clk_reinit(device_id);
 		_audio_tx_path_enable();
 	} else {
-		sz = acdb_get_config_table(device_id, 8000);
+		sample_rate = q6_device_to_rate(device_id);
+		pr_info("audiolib: load %08x cfg table, rate %d\n",
+			device_id, sample_rate);
+		sz = acdb_get_config_table(device_id, sample_rate);
+		pr_info("cfg table is %d bytes\n", sz);
 		audio_set_table(ac_control, device_id, sz);
 		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
 		qdsp6_standby(ac_control);
@@ -1181,8 +1204,11 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 	ac->flags = flags;
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(1);
-	else
+	else {
+		/* TODO: consider concourrency with voice call */
+		tx_clk_freq = rate;
 		audio_tx_path_enable(1);
+	}
 
 	pr_info("*** open audio %p ***\n", ac);
 	if (ac->flags & AUDIO_FLAG_WRITE)
@@ -1208,7 +1234,6 @@ int q6audio_close(struct audio_client *ac)
 {
 	pr_info("*** close audio %p ***\n", ac);
 	audio_close(ac);
-
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(0);
 	else
@@ -1236,8 +1261,10 @@ struct audio_client *q6voice_open(uint32_t flags)
 	ac->flags = flags;
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(1);
-	else
+	else {
+		tx_clk_freq = 8000;
 		audio_tx_path_enable(1);
+	}
 
 	pr_info("*** voice start %p (%d) ***\n", ac, ac->session);
 	return ac;
