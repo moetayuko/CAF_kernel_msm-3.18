@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAm3///5U\u003d",
+        "filename": "drivers/media/video/msm/s5k3e2fx.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 28,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-09-14T22:30:47Z",
+      "side": 1,
+      "message": "please cleanup this use of block comment with ifdefs.\n\nAlso, and this applies to rest of file, please take out date/author of random line changes.",
+      "revId": "a55eb2270ac5578b206d4ed0419187a1d79256c4",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
