@@ -61,6 +61,8 @@ struct msm_camera_sensor_info {
 	int flash_type;
 	int need_suspend;
 	struct msm_camera_device_platform_data *pdata;
+	struct resource *resource;
+	uint8_t num_resources;
 };
 
 struct snd_endpoint {

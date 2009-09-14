@@ -99,9 +99,10 @@ static void vfe_config_axi(int mode,
 
 #define CHECKED_COPY_FROM_USER(in) {					\
 	if (cmd->length != sizeof(*(in))) {				\
-		pr_err("msm_camera: %s cmd %d: user data size %d "	\
+		pr_err("msm_camera: %s:%d cmd %d: user data size %d "	\
 			"!= kernel data size %d\n",			\
-			__func__, cmd->id, cmd->length, sizeof(*(in)));	\
+			__func__, __LINE__,				\
+			cmd->id, cmd->length, sizeof(*(in)));		\
 		rc = -EIO;						\
 		break;							\
 	}								\
@@ -466,7 +467,7 @@ static int vfe_proc_general(struct msm_vfe_command_8k *cmd)
 static int vfe_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 {
 	struct msm_pmem_region *regptr;
-	struct msm_vfe_command_8k vfecmd;
+	static struct msm_vfe_command_8k vfecmd;
 
 	uint32_t i;
 
@@ -477,7 +478,8 @@ static int vfe_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 	struct vfe_cmd_stats_setting *scfg = NULL;
 
 	if (cmd->cmd_type != CMD_FRAME_BUF_RELEASE &&
-	    cmd->cmd_type != CMD_STATS_BUF_RELEASE) {
+	    cmd->cmd_type != CMD_STATS_BUF_RELEASE &&
+	    cmd->cmd_type != CMD_STATS_AF_BUF_RELEASE) {
 
 		if (copy_from_user(&vfecmd,
 				(void __user *)(cmd->value),
@@ -506,7 +508,7 @@ static int vfe_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 		if (!scfg)
 			return -ENOMEM;
 
-		if (vfecmd.length != sizeof(scfg)) {
+		if (vfecmd.length != sizeof(*scfg)) {
 			pr_err("msm_camera: %s: cmd %d: user-space data size %d"
 					" != kernel data size %d\n",
 					__func__, cmd->cmd_type,
@@ -540,7 +542,7 @@ static int vfe_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 			}
 		}
 
-		vfe_stats_config(scfg);
+		vfe_stats_setting(scfg);
 	}
 		break;
 
