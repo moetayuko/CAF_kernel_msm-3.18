@@ -2,6 +2,57 @@
   "comments": [
     {
       "key": {
+        "uuid": "AAAAm3///48\u003d",
+        "filename": "drivers/media/video/msm/s5k3e2fx.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1301,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-09-14T22:36:44Z",
+      "side": 1,
+      "message": "do you want to just remove this code?",
+      "revId": "bbb01c776c274cbae98653b515b51183db027e32",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAm3///40\u003d",
+        "filename": "drivers/media/video/msm/s5k3e2fx.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1342,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-09-14T22:36:44Z",
+      "side": 1,
+      "message": "gpio_free?",
+      "revId": "bbb01c776c274cbae98653b515b51183db027e32",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAm3///44\u003d",
+        "filename": "drivers/media/video/msm/s5k3e2fx.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1852,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-09-14T22:36:44Z",
+      "side": 1,
+      "message": "and remove this?",
+      "revId": "bbb01c776c274cbae98653b515b51183db027e32",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAm3///5E\u003d",
         "filename": "drivers/media/video/msm/s5k3e2fx.c",
         "patchSetId": 1
