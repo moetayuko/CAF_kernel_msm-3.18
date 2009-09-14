@@ -59,6 +59,7 @@ struct msm_camera_sensor_info {
 	int vcm_pwd;
 	int mclk;
 	int flash_type;
+	int need_suspend;
 	struct msm_camera_device_platform_data *pdata;
 };
 
