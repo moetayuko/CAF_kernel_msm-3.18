@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAm3///0c\u003d",
+        "filename": "drivers/media/video/msm/s5k3e2fx.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 28,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-09-15T16:19:32Z",
+      "side": 1,
+      "message": "This is a big stack, and this is on bottom, so a separate patch is ok. Could you please remove all these named comments about who did what and when? It\u0027s all over this file.",
+      "revId": "61eb9408dfc125d539cf0c60956ae475be0d55c4",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
