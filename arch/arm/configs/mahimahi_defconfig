@@ -826,6 +826,20 @@ CONFIG_BATTERY_DS2784=y
 # CONFIG_WATCHDOG is not set
 CONFIG_SSB_POSSIBLE=y
 
+
+#
+# Qualcomm camera driver
+#
+
+CONFIG_MSM_CAMERA=y
+# CONFIG_MSM_CAMERA_DEBUG is not set
+# CONFIG_MSM_CAMERA_FLASH is not set
+# CONFIG_MT9P012 is not set
+# CONFIG_MT9T013 is not set
+# CONFIG_MT9D112 is not set
+CONFIG_S5K3E2FX=y
+
+
 #
 # Sonics Silicon Backplane
 #
@@ -851,9 +865,21 @@ CONFIG_SSB_POSSIBLE=y
 #
 # Multimedia core support
 #
-# CONFIG_VIDEO_DEV is not set
+CONFIG_VIDEO_DEV=y
+CONFIG_VIDEO_V4L2_COMMON=y
+# CONFIG_VIDEO_ALLOW_V4L1 is not set
+CONFIG_VIDEO_V4L1_COMPAT=y
 # CONFIG_DVB_CORE is not set
 # CONFIG_VIDEO_MEDIA is not set
+
+# Multimedia drivers
+#
+# CONFIG_MEDIA_ATTACH is not set
+# CONFIG_MEDIA_TUNER is not set
+CONFIG_VIDEO_V4L2=y
+# CONFIG_VIDEO_V4L1 is not set
+CONFIG_VIDEO_CAPTURE_DRIVERS=y
+
 
 #
 # Multimedia drivers
