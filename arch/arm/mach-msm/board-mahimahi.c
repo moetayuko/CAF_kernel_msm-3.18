@@ -58,16 +58,23 @@ extern void __init mahimahi_audio_init(void);
 static char *mahimahi_usb_functions[] = {
 	"usb_mass_storage",
 	"adb",
+#if defined(CONFIG_USB_FUNCTION_DIAG)
+	"diag",
+#endif
 };
 
 static struct msm_hsusb_product mahimahi_usb_products[] = {
 	{
-		.product_id     = 0x0d01,
+		.product_id     = 0x0c01,
 		.functions      = 0x00000001, /* "usb_mass_storage" only */
 	},
 	{
-		.product_id     = 0x0d02,
+		.product_id     = 0x0c02,
 		.functions      = 0x00000003, /* "usb_mass_storage" and "adb" */
+	},
+	{
+		.product_id     = 0x0c07,
+		.functions      = 0x00000007, /* "usb_mass_storage" and "adb" */
 	},
 };
 
@@ -121,12 +128,11 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= mahimahi_phy_init_seq,
 	.phy_reset		= mahimahi_usb_phy_reset,
 	.hw_reset		= mahimahi_usb_hw_reset,
-	.vendor_id		= 0x18d1,
-	.product_id		= 0x0d02,
+	.vendor_id		= 0x0bb4,
+	.product_id		= 0x0c02,
 	.version		= 0x0100,
-	.product_name		= "mahimahi",
-	.serial_number		= "42",
-	.manufacturer_name	= "Google",
+	.product_name		= "Android Phone",
+	.manufacturer_name	= "HTC",
 
 	.functions		= mahimahi_usb_functions,
 	.num_functions		= ARRAY_SIZE(mahimahi_usb_functions),
@@ -138,7 +144,7 @@ static struct usb_mass_storage_platform_data mass_storage_pdata = {
 	.nluns		= 1,
 	.buf_size	= 16384,
 	.vendor		= "Google",
-	.product	= "mahimahi",
+	.product	= "Android Phone",
 	.release	= 0x0100,
 };
 
