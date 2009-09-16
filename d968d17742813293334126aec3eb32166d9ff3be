@@ -16,6 +16,24 @@
       "revId": "d968d17742813293334126aec3eb32166d9ff3be",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAm3///rc\u003d",
+        "filename": "drivers/media/video/msm/msm_camera.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 1655,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-09-16T22:07:32Z",
+      "side": 1,
+      "message": "No, it would show up every time you tried to take a picture with flash enabled when in fact there is no flash.  This should not happen, as the camera HAL should query the kernel for the sensor config.",
+      "parentUuid": "AAAAm3///r4\u003d",
+      "revId": "d968d17742813293334126aec3eb32166d9ff3be",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
