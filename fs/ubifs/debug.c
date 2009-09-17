@@ -969,51 +969,70 @@ void dbg_save_space_info(struct ubifs_info *c)
 	ubifs_get_lp_stats(c, &d->saved_lst);
 
 	spin_lock(&c->space_lock);
+	d->saved_avail = ubifs_calc_available(c, c->min_idx_lebs);
 	d->saved_free = ubifs_get_free_space_nolock(c);
 	spin_unlock(&c->space_lock);
 }
 
-/**
- * dbg_check_space_info - check flash space information.
- * @c: UBIFS file-system description object
- *
- * This function compares current flash space information with the information
- * which was saved when the 'dbg_save_space_info()' function was called.
- * Returns zero if the information has not changed, and %-EINVAL it it has
- * changed.
- */
-int dbg_check_space_info(struct ubifs_info *c)
+static void space_dump(struct ubifs_info *c)
 {
 	struct ubifs_debug_info *d = c->dbg;
-	struct ubifs_lp_stats lst;
-	long long avail, free;
+
+	ubifs_msg("saved lprops statistics");
+	dbg_dump_lstats(&d->saved_lst);
+	dbg_dump_lprops(c);
+	dump_stack();
+}
+
+/**
+ * dbg_check_free - check amount of free flash space.
+ * @c: UBIFS file-system description object
+ *
+ * This function compares current amount of free flash space with the previous
+ * value which was saved in 'dbg_save_space_info()'. Returns zero if the
+ * amount of free space did not changed, and %-EINVAL it did.
+ */
+int dbg_check_free(struct ubifs_info *c)
+{
+	struct ubifs_debug_info *d = c->dbg;
+	long long free;
+
+	free = ubifs_get_free_space(c);
+	if (free != d->saved_free) {
+		ubifs_err("free space changed from %lld to %lld",
+			  d->saved_free, free);
+		space_dump(c);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * dbg_check_avail - check amount of available flash space.
+ * @c: UBIFS file-system description object
+ *
+ * This function compares current amount of available flash space with the
+ * previous value which was saved in 'dbg_save_space_info()'. Returns zero if
+ * the amount of available space did not changed, and %-EINVAL it did.
+ */
+int dbg_check_avail(struct ubifs_info *c)
+{
+	struct ubifs_debug_info *d = c->dbg;
+	long long avail;
 
 	spin_lock(&c->space_lock);
 	avail = ubifs_calc_available(c, c->min_idx_lebs);
 	spin_unlock(&c->space_lock);
-	free = ubifs_get_free_space(c);
 
-	if (free != d->saved_free) {
-		ubifs_err("free space changed from %lld to %lld",
-			  d->saved_free, free);
-		goto out;
+	if (d->saved_avail > avail) {
+		ubifs_err("available space lessened from %lld to %lld",
+			  d->saved_avail, avail);
+		space_dump(c);
+		return -EINVAL;
 	}
 
 	return 0;
-
-out:
-	ubifs_msg("saved lprops statistics dump");
-	dbg_dump_lstats(&d->saved_lst);
-	ubifs_get_lp_stats(c, &lst);
-
-	ubifs_msg("current lprops statistics dump");
-	dbg_dump_lstats(&lst);
-
-	spin_lock(&c->space_lock);
-	dbg_dump_budg(c);
-	spin_unlock(&c->space_lock);
-	dump_stack();
-	return -EINVAL;
 }
 
 /**

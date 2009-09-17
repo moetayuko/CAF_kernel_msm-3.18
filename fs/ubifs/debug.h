@@ -45,6 +45,7 @@
  * @new_ihead_offs: used by debugging to check @c->ihead_offs
  *
  * @saved_lst: saved lprops statistics (used by 'dbg_save_space_info()')
+ * @saved_avail: saved available space (used by 'dbg_save_space_info()')
  * @saved_free: saved free space (used by 'dbg_save_space_info()')
  *
  * dfs_dir_name: name of debugfs directory containing this file-system's files
@@ -72,6 +73,7 @@ struct ubifs_debug_info {
 	int new_ihead_offs;
 
 	struct ubifs_lp_stats saved_lst;
+	long long saved_avail;
 	long long saved_free;
 
 	char dfs_dir_name[100];
@@ -304,7 +306,8 @@ int dbg_walk_index(struct ubifs_info *c, dbg_leaf_callback leaf_cb,
 
 /* Checking functions */
 void dbg_save_space_info(struct ubifs_info *c);
-int dbg_check_space_info(struct ubifs_info *c);
+int dbg_check_free(struct ubifs_info *c);
+int dbg_check_avail(struct ubifs_info *c);
 int dbg_check_lprops(struct ubifs_info *c);
 int dbg_old_index_check_init(struct ubifs_info *c, struct ubifs_zbranch *zroot);
 int dbg_check_old_index(struct ubifs_info *c, struct ubifs_zbranch *zroot);
@@ -450,7 +453,8 @@ void dbg_debugfs_exit_fs(struct ubifs_info *c);
 #define dbg_walk_index(c, leaf_cb, znode_cb, priv) 0
 #define dbg_old_index_check_init(c, zroot)         0
 #define dbg_save_space_info(c)                     ({})
-#define dbg_check_space_info(c)                    0
+#define dbg_check_free(c)                          0
+#define dbg_check_avail()                          0
 #define dbg_check_old_index(c, zroot)              0
 #define dbg_check_cats(c)                          0
 #define dbg_check_ltab(c)                          0

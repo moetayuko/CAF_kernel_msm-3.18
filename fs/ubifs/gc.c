@@ -679,6 +679,7 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 
 	/* We expect the write-buffer to be empty on entry */
 	ubifs_assert(!wbuf->used);
+	dbg_save_space_info(c);
 
 	for (i = 0; ; i++) {
 		int space_before = c->leb_size - wbuf->offs - wbuf->used;
@@ -852,8 +853,11 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 	}
 
 	err = ubifs_wbuf_sync_nolock(wbuf);
-	if (!err)
+	if (!err) {
 		err = ubifs_leb_unmap(c, c->gc_lnum);
+		if (!err)
+			err = dbg_check_avail(c);
+	}
 	if (err) {
 		ret = err;
 		ubifs_ro_mode(c, ret);
