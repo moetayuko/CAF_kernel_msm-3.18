@@ -21,4 +21,8 @@
 #define CAMSENSOR_S5K3E2FX
 
 #include <mach/board.h>
+unsigned char g_usPowerDownFlag = false;
+unsigned char g_usLCSettingFlag = false;
+uint16_t g_usModuleVersion = 0; /*0: rev.4, 1: rev.5*/
+
 #endif /* CAMSENSOR_S5K3E2FX */
