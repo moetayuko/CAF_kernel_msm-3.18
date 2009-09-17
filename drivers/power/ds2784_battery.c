@@ -20,6 +20,7 @@
 #include <linux/pm.h>
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
+#include <linux/spinlock.h>
 
 #include <linux/android_alarm.h>
 #include <linux/init.h>
@@ -44,6 +45,7 @@ struct ds2784_device_info {
 	int temp_C;			/* units of 0.1 C */
 	int charge_status;		/* POWER_SUPPLY_STATUS_* */
 	int percentage;			/* battery percentage */
+	int charge_uAh;
 	int guage_status_reg;		/* battery status register offset=01h*/
 
 	int charging_source;		/* 0: no cable, 1:usb, 2:AC */
@@ -63,8 +65,6 @@ static unsigned int cache_time = 1000;
 module_param(cache_time, uint, 0644);
 MODULE_PARM_DESC(cache_time, "cache time in milliseconds");
 
-/* Battery ID
-PS. 0 or other battery ID use the same parameters*/
 #define BATT_NO_SOURCE        (0)  /* 0: No source battery */
 #define BATT_FIRST_SOURCE     (1)  /* 1: Main source battery */
 #define BATT_SECOND_SOURCE    (2)  /* 2: Second source battery */
@@ -89,6 +89,7 @@ static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CURRENT_AVG,
+	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 };
 
 static int battery_initial;
@@ -105,26 +106,56 @@ typedef enum {
 	CHARGER_AC
 } charger_type_t;
 
-/* HTC dedicated attributes */
-static ssize_t battery_show_property(struct device *dev,
-					struct device_attribute *attr,
-					char *buf);
-
 static int battery_get_property(struct power_supply *psy,
 				    enum power_supply_property psp,
 				    union power_supply_propval *val);
 
 static void battery_ext_power_changed(struct power_supply *psy);
 
-static int g_usb_online;
-
 #define to_ds2784_device_info(x) container_of((x), struct ds2784_device_info, \
 					      bat);
+
+static void ds2784_parse_data(struct ds2784_device_info *di)
+{
+	short n;
+
+	/* Get status reg */
+	di->guage_status_reg = di->raw[DS2784_REG_STS];
+
+	/* Get Level */
+	di->percentage = di->raw[DS2784_REG_RARC];
+
+	/* Get Voltage: Unit=4.886mV, range is 0V to 4.99V */
+	n = (((di->raw[DS2784_REG_VOLT_MSB] << 8) |
+	      (di->raw[DS2784_REG_VOLT_LSB])) >> 5);
+
+	di->voltage_uV = n * 4886;
+
+	/* Get Current: Unit= 1.5625uV x Rsnsp(67)=104.68 */
+	n = ((di->raw[DS2784_REG_CURR_MSB]) << 8) |
+		di->raw[DS2784_REG_CURR_LSB];
+	di->current_uA = ((n * 15625) / 10000) * 67;
+
+	n = ((di->raw[DS2784_REG_AVG_CURR_MSB]) << 8) |
+		di->raw[DS2784_REG_AVG_CURR_LSB];
+	di->current_avg_uA = ((n * 15625) / 10000) * 67;
+
+	/* Get Temperature:
+	 * Unit=0.125 degree C,therefore, give up LSB ,
+	 * just caculate MSB for temperature only.
+	 */
+	di->temp_raw = (((signed char)di->raw[DS2784_REG_TEMP_MSB]) << 3) |
+				     (di->raw[DS2784_REG_TEMP_LSB] >> 5);
+	di->temp_C = di->temp_raw + (di->temp_raw / 4);
+
+	/* RAAC is in units of 1.6mAh */
+	di->charge_uAh = ((di->raw[DS2784_REG_RAAC_MSB] << 8) |
+			  di->raw[DS2784_REG_RAAC_LSB]) * 1600;
+}
 
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
-	short n;
 
 	/* The first time we read the entire contents of SRAM/EEPROM,
 	 * but after that we just read the interesting bits that change. */
@@ -168,53 +199,13 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 		di->raw[0x0c], di->raw[0x0d], di->raw[0x0e], di->raw[0x0f]
 		);
 
-#if 0
-	/*
-	 * Get Rsns, get from offset 69H . Rsnsp=1/Rsns
-	 * Judge if this is supported battery
-	 */
-	if (di->raw[DS2784_REG_RSNSP] != BATT_RSNSP)
-		htc_batt_info.rep.batt_id = BATT_UNKNOWN;
-	else
-		htc_batt_info.rep.batt_id = BATT_FIRST_SOURCE;
-#endif
+	ds2784_parse_data(di);
 
-	/* Get status reg */
-	di->guage_status_reg = di->raw[DS2784_REG_STS];
-
-	/* Get Level */
-	di->percentage = di->raw[DS2784_REG_RARC];
-
-	/* Get Voltage: Unit=4.886mV, range is 0V to 4.99V */
-	n = (((di->raw[DS2784_REG_VOLT_MSB] << 8) |
-	      (di->raw[DS2784_REG_VOLT_LSB])) >> 5);
-
-	di->voltage_uV = n * 4886;
-
-	/* Get Current: Unit= 1.5625uV x Rsnsp(67)=104.68 */
-	n = ((di->raw[DS2784_REG_CURR_MSB]) << 8) |
-		di->raw[DS2784_REG_CURR_LSB];
-	di->current_uA = ((n * 15625) / 10000) * 67;
-
-	n = ((di->raw[DS2784_REG_AVG_CURR_MSB]) << 8) |
-		di->raw[DS2784_REG_AVG_CURR_LSB];
-	di->current_avg_uA = ((n * 15625) / 10000) * 67;
-
-	count = (di->raw[DS2784_REG_RAAC_MSB] << 8) |
-		di->raw[DS2784_REG_RAAC_LSB];
-
-	/* Get Temperature:
-	 * Unit=0.125 degree C,therefore, give up LSB ,
-	 * just caculate MSB for temperature only.
-	 */
-	di->temp_raw = (((signed char)di->raw[DS2784_REG_TEMP_MSB]) << 3) |
-				     (di->raw[DS2784_REG_TEMP_LSB] >> 5);
-	di->temp_C = di->temp_raw + (di->temp_raw / 4);
-
-	pr_info("batt: rsnsp=%d, rarc=%d, %d mV, %d mA, %d C %d mAh\n",
-		di->raw[DS2784_REG_RSNSP], di->raw[DS2784_REG_RARC],
+	pr_info("batt: %3d%%, %d mV, %d mA (%d avg), %d C, %d mAh\n",
+		di->raw[DS2784_REG_RARC],
 		di->voltage_uV / 1000, di->current_uA / 1000,
-		di->temp_C, count);
+		di->current_avg_uA / 1000,
+		di->temp_C, di->charge_uAh / 1000);
 	
 	return 0;
 }
@@ -268,6 +259,9 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_AVG:
 		val->intval = di->current_avg_uA;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
+		val->intval = di->charge_uAh;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -275,9 +269,6 @@ static int battery_get_property(struct power_supply *psy,
 	return 0;
 }
 
-/*[TO DO] need to port Battery Algorithm to meet power spec here.
-Only update uevent to upper if percentage changed currently
-*/
 static void ds2784_battery_update_status(struct ds2784_device_info *di)
 {
 	u8 last_level;
@@ -297,18 +288,74 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 		power_supply_changed(&di->bat);
 }
 
+static unsigned last_source = 0xffffffff;
+static unsigned last_status = 0xffffffff;
+static spinlock_t charge_state_lock;
+
+static void battery_adjust_charge_state(struct ds2784_device_info *di)
+{
+	unsigned source;
+	unsigned status;
+	unsigned long flags;
+
+	spin_lock_irqsave(&charge_state_lock, flags);
+
+	source = di->charging_source;
+	status = di->raw[0x01];
+
+	if ((source == last_source) && (status == last_status))
+		goto done;
+
+	last_source = source;
+	last_status = status;
+
+	if (status & 0x80)
+		/* if charge termination flag is set, ignore actual source */
+		source = CHARGER_BATTERY;
+	else
+		source = di->charging_source;
+
+	switch (source) {
+	case CHARGER_BATTERY:
+		/* CHARGER_EN is active low.  Set to 1 to disable. */
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
+		pr_info("batt: charging OFF%s\n",
+			(status & 0x80) ? " [CHGTF]" : "");
+		break;
+	case CHARGER_USB:
+		/* slow charge mode */
+		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		pr_info("batt: charging SLOW\n");
+		break;
+	case CHARGER_AC:
+		/* fast charge mode */
+		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		pr_info("batt: charging FAST\n");
+		break;
+	}
+
+done:
+	spin_unlock_irqrestore(&charge_state_lock, flags);
+}
+
 static void ds2784_battery_work(struct work_struct *work)
 {
 	struct ds2784_device_info *di =
 		container_of(work, struct ds2784_device_info, monitor_work);
 	const ktime_t low_interval = ktime_set(50, 0);
 	const ktime_t slack = ktime_set(20, 0);
+	ktime_t now;
 	ktime_t next_alarm;
 	unsigned long flags;
 
 	ds2784_battery_update_status(di);
 
-	next_alarm = ktime_add(alarm_get_elapsed_realtime(), low_interval);
+	battery_adjust_charge_state(di);
+
+	now = alarm_get_elapsed_realtime();
+	next_alarm = ktime_add(now, low_interval);
 
 	/* prevent suspend before starting the alarm */
 	local_irq_save(flags);
@@ -326,115 +373,6 @@ static void ds2784_battery_alarm(struct alarm *alarm)
 	queue_work(di->monitor_wqueue, &di->monitor_work);
 }
 
-static int battery_charging_ctrl(batt_ctl_t ctl)
-{
-	int result = 0;
-
-	switch (ctl) {
-	case DISABLE:
-		pr_info(" charger OFF\n");
-		/* 0 for enable; 1 disable */
-		result = gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
-		break;
-	case ENABLE_SLOW_CHG:
-		pr_info(" charger ON (SLOW)\n");
-		result = gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
-		result = gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
-		break;
-	case ENABLE_FAST_CHG:
-		pr_info(" charger ON (FAST)\n");
-		result = gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
-		result = gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
-		break;
-	default:
-		printk(KERN_ERR " Not supported battery ctr called.!\n");
-		result = -EINVAL;
-		break;
-	}
-	return result;
-}
-
-#if 0
-static  int battery_set_charging(batt_ctl_t ctl)
-{
-	int rc;
-	rc = battery_charging_ctrl(ctl);
-	if (rc < 0)
-		goto result;
-	if (!battery_initial)
-		htc_batt_info.rep.charging_enabled = ctl & 0x3;
-	else
-		htc_batt_info.rep.charging_enabled = ctl & 0x3;
-result:
-	return rc;
-}
-
-int htc_cable_status_update(int status)
-{
-	int rc = 0;
-	unsigned last_source;
-
-	if (!battery_initial)
-		return 0;
-
-	if (status < CHARGER_BATTERY || status > CHARGER_AC) {
-		BATT("%s: Not supported cable status received!", __func__);
-		return -EINVAL;
-	}
-
-	/* A9 reports USB charging when helf AC cable in and China AC charger. */
-	/* Work arround: notify userspace AC charging first,
-	   and notify USB charging again when receiving usb connected notificaiton
-	   from usb driver. */
-	last_source = htc_batt_info.rep.charging_source;
-	if (status == CHARGER_USB && g_usb_online == 0)
-		htc_batt_info.rep.charging_source = CHARGER_AC;
-	else {
-		htc_batt_info.rep.charging_source  = status;
-		/* usb driver will not notify usb offline. */
-		if (status == CHARGER_BATTERY && g_usb_online == 1)
-			g_usb_online = 0;
-	}
-	battery_set_charging(htc_batt_info.rep.charging_source);
-	msm_hsusb_set_vbus_state(status == CHARGER_USB);
-
-	if (htc_batt_info.rep.charging_source != last_source) {
-		if (htc_batt_info.rep.charging_source == CHARGER_USB ||
-		    htc_batt_info.rep.charging_source == CHARGER_AC) {
-			wake_lock(&vbus_wake_lock);
-		} else {
-			/* give userspace some time to see the uevent and update
-			 * LED state or whatnot...
-			 */
-			wake_lock_timeout(&vbus_wake_lock, HZ / 2);
-		}
-		if (htc_batt_info.rep.charging_source == CHARGER_BATTERY
-		    || last_source == CHARGER_BATTERY)
-			power_supply_changed(&htc_power_supplies[CHARGER_BATTERY]);
-		if (htc_batt_info.rep.charging_source == CHARGER_USB
-		    || last_source == CHARGER_USB)
-			power_supply_changed(&htc_power_supplies[CHARGER_USB]);
-		if (htc_batt_info.rep.charging_source == CHARGER_AC
-		    || last_source == CHARGER_AC)
-			power_supply_changed(&htc_power_supplies[CHARGER_AC]);
-	}
-	return rc;
-}
-
-void notify_usb_connected(int online)
-{
-	if (g_usb_online != online) {
-		g_usb_online = online;
-		if (online && htc_batt_info.rep.charging_source == CHARGER_AC)
-			htc_cable_status_update(CHARGER_USB);
-		else if (online) {
-			BATT("warning: usb connected but charging source=%d",
-			     htc_batt_info.rep.charging_source);
-		}
-	}
-}
-#endif
-
 static void battery_ext_power_changed(struct power_supply *psy)
 {
 	struct ds2784_device_info *di;
@@ -447,16 +385,15 @@ static void battery_ext_power_changed(struct power_supply *psy)
 
 	if (got_power) {
 		di->charging_source = CHARGER_USB;
-		battery_charging_ctrl(ENABLE_SLOW_CHG);
 		wake_lock(&vbus_wake_lock);
 	} else {
 		di->charging_source = CHARGER_BATTERY;
-		battery_charging_ctrl(DISABLE);
 		/* give userspace some time to see the uevent and update
 		 * LED state or whatnot...
 		 */
 		wake_lock_timeout(&vbus_wake_lock, HZ / 2);
 	}
+	battery_adjust_charge_state(di);
 	power_supply_changed(psy);
 }
 
@@ -523,6 +460,7 @@ static struct platform_driver ds2784_battery_driver = {
 
 static int __init ds2784_battery_init(void)
 {
+	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
 	return platform_driver_register(&ds2784_battery_driver);
 }
