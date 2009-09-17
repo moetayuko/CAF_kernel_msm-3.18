@@ -1642,7 +1642,7 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 	c->vfs_sb->s_flags &= ~MS_RDONLY;
 	c->remounting_rw = 0;
 	c->always_chk_crc = 0;
-	err = dbg_check_space_info(c);
+	err = dbg_check_free(c);
 	mutex_unlock(&c->umount_mutex);
 	return err;
 
@@ -1703,7 +1703,7 @@ static void ubifs_remount_ro(struct ubifs_info *c)
 	vfree(c->ileb_buf);
 	c->ileb_buf = NULL;
 	ubifs_lpt_free(c, 1);
-	err = dbg_check_space_info(c);
+	err = dbg_check_free(c);
 	if (err)
 		ubifs_ro_mode(c, err);
 	mutex_unlock(&c->umount_mutex);
