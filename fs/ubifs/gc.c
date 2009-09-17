@@ -672,12 +672,10 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 	if (ubifs_gc_should_commit(c))
 		return -EAGAIN;
 
-	mutex_lock_nested(&wbuf->io_mutex, wbuf->jhead);
+	if (c->ro_media)
+		return -EROFS;
 
-	if (c->ro_media) {
-		ret = -EROFS;
-		goto out_unlock;
-	}
+	mutex_lock_nested(&wbuf->io_mutex, wbuf->jhead);
 
 	/* We expect the write-buffer to be empty on entry */
 	ubifs_assert(!wbuf->used);
@@ -750,16 +748,16 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 				 */
 				ret = gc_sync_wbufs(c);
 				if (ret)
-					goto out;
+					goto out_err;
 				ret = ubifs_change_one_lp(c, lp.lnum,
 							  c->leb_size, 0, 0, 0,
 							  0);
 				if (ret)
-					goto out;
+					goto out_err;
 			}
 			ret = ubifs_leb_unmap(c, lp.lnum);
 			if (ret)
-				goto out;
+				goto out_err;
 			ret = lp.lnum;
 			break;
 		}
@@ -784,7 +782,7 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 					ret = err;
 				break;
 			}
-			goto out;
+			goto out_err;
 		}
 
 		if (ret == LEB_FREED) {
@@ -858,19 +856,19 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 		err = ubifs_leb_unmap(c, c->gc_lnum);
 	if (err) {
 		ret = err;
-		goto out;
+		ubifs_ro_mode(c, ret);
 	}
-out_unlock:
+
 	mutex_unlock(&wbuf->io_mutex);
 	return ret;
 
-out:
+out_err:
 	ubifs_assert(ret < 0);
 	ubifs_assert(ret != -ENOSPC && ret != -EAGAIN);
-	ubifs_ro_mode(c, ret);
-	ubifs_wbuf_sync_nolock(wbuf);
-	mutex_unlock(&wbuf->io_mutex);
 	ubifs_return_leb(c, lp.lnum);
+	ubifs_wbuf_sync_nolock(wbuf);
+	ubifs_ro_mode(c, ret);
+	mutex_unlock(&wbuf->io_mutex);
 	return ret;
 }
 
