@@ -663,7 +663,7 @@ out_inc_seq:
  */
 int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 {
-	int i, err, ret, min_space = c->dead_wm;
+	int i, err, ret, min_space = c->dark_wm;
 	struct ubifs_lprops lp;
 	struct ubifs_wbuf *wbuf = &c->jheads[GCHD].wbuf;
 
@@ -811,9 +811,9 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 
 		if (space_after > space_before) {
 			/* GC makes progress, keep working */
-			min_space >>= 1;
-			if (min_space < c->dead_wm)
-				min_space = c->dead_wm;
+//			min_space >>= 1;
+//			if (min_space < c->dead_wm)
+//				min_space = c->dead_wm;
 			continue;
 		}
 
@@ -840,9 +840,9 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 			continue;
 		}
 
-		min_space <<= 1;
-		if (min_space > c->dark_wm)
-			min_space = c->dark_wm;
+//		min_space <<= 1;
+//		if (min_space > c->dark_wm)
+//			min_space = c->dark_wm;
 		dbg_gc("set min. space to %d", min_space);
 	}
 
