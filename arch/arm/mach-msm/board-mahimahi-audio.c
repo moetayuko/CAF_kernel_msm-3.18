@@ -38,7 +38,7 @@ void mahimahi_analog_init(void)
 	pmic_spkr_set_gain(LEFT_SPKR, SPKR_GAIN_PLUS12DB);
 	pmic_spkr_set_gain(RIGHT_SPKR, SPKR_GAIN_PLUS12DB);
 	pmic_spkr_en_right_chan(OFF_CMD);
-	pmic_spkr_en_left_chan(ON_CMD);
+	pmic_spkr_en_left_chan(OFF_CMD);
 	pmic_spkr_add_right_left_chan(OFF_CMD);
 	pmic_spkr_en_stereo(OFF_CMD);
 	pmic_spkr_select_usb_with_hpf_20hz(OFF_CMD);
@@ -67,22 +67,20 @@ void mahimahi_speaker_enable(int en)
 
 	D("%s %d\n", __func__, en);
 	if (en) {
-		scm.is_right_chan_en = 1;
+		scm.is_right_chan_en = 0;
 		scm.is_left_chan_en = 1;
-		scm.is_stereo_en = 1;
+		scm.is_stereo_en = 0;
 		scm.is_hpf_en = 1;
 		pmic_spkr_en_mute(LEFT_SPKR, 0);
 		pmic_spkr_en_mute(RIGHT_SPKR, 0);
 		pmic_set_spkr_configuration(&scm);
 		pmic_spkr_en(LEFT_SPKR, 1);
-		pmic_spkr_en(RIGHT_SPKR, 1);
+		pmic_spkr_en(RIGHT_SPKR, 0);
 
 		/* unmute */
 		pmic_spkr_en_mute(LEFT_SPKR, 1);
-		pmic_spkr_en_mute(RIGHT_SPKR, 1);
 	} else {
 		pmic_spkr_en_mute(LEFT_SPKR, 0);
-		pmic_spkr_en_mute(RIGHT_SPKR, 0);
 
 		pmic_spkr_en(LEFT_SPKR, 0);
 		pmic_spkr_en(RIGHT_SPKR, 0);
