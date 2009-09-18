@@ -484,8 +484,8 @@ int ubifs_calc_dark(const struct ubifs_info *c, int spc)
 	 * anyway safely assume it we'll be able to write a node of the
 	 * smallest size there.
 	 */
-	if (spc - c->dark_wm < MIN_WRITE_SZ)
-		return spc - MIN_WRITE_SZ;
+//	if (spc - c->dark_wm < MIN_WRITE_SZ)
+//		return spc - MIN_WRITE_SZ;
 
 	return c->dark_wm;
 }

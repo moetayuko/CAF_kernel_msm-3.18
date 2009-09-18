@@ -668,18 +668,21 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 	struct ubifs_wbuf *wbuf = &c->jheads[GCHD].wbuf;
 
 	ubifs_assert_cmt_locked(c);
-
 	if (ubifs_gc_should_commit(c))
 		return -EAGAIN;
 
 	if (c->ro_media)
 		return -EROFS;
 
+	up_read(&c->commit_sem);
+	down_write(&c->commit_sem);
+
 	mutex_lock_nested(&wbuf->io_mutex, wbuf->jhead);
 
 	/* We expect the write-buffer to be empty on entry */
 	ubifs_assert(!wbuf->used);
 	dbg_save_space_info(c);
+	dbg_dump_lprops(c);
 
 	for (i = 0; ; i++) {
 		int space_before = c->leb_size - wbuf->offs - wbuf->used;
@@ -864,6 +867,9 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 	}
 
 	mutex_unlock(&wbuf->io_mutex);
+	up_write(&c->commit_sem);
+	down_read(&c->commit_sem);
+
 	return ret;
 
 out_err:
@@ -872,6 +878,8 @@ out_err:
 	ubifs_return_leb(c, lp.lnum);
 	ubifs_wbuf_sync_nolock(wbuf);
 	ubifs_ro_mode(c, ret);
+	up_write(&c->commit_sem);
+	down_read(&c->commit_sem);
 	mutex_unlock(&wbuf->io_mutex);
 	return ret;
 }
