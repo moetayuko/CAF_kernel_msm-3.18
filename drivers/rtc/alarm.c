@@ -507,8 +507,7 @@ static int __init alarm_late_init(void)
 	ktime_get_ts(&system_time);
 	alarms[ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP].delta =
 		alarms[ANDROID_ALARM_ELAPSED_REALTIME].delta =
-		ktime_sub(alarms[ANDROID_ALARM_ELAPSED_REALTIME].delta,
-			timespec_to_ktime(timespec_sub(tmp_time, system_time)));
+			timespec_to_ktime(timespec_sub(tmp_time, system_time));
 
 	spin_unlock_irqrestore(&alarm_slock, flags);
 	return 0;
