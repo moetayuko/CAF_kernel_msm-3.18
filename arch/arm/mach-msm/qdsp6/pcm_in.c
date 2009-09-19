@@ -50,7 +50,6 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return 0;
 	}
 	case AUDIO_START:
-		printk("AUDIO_START\n");
 		rc = 0;
 		mutex_lock(&pcm_in_lock);
 		if (file->private_data) {
@@ -64,10 +63,8 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		mutex_unlock(&pcm_in_lock);
 		break;
 	case AUDIO_STOP:
-		printk("AUDIO_STOP\n");
 		break;
 	case AUDIO_FLUSH:
-		printk("AUDIO_FLUSH\n");
 		break;
 	case AUDIO_SET_CONFIG: {
 		struct msm_audio_config config;
@@ -75,8 +72,6 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			rc = -EFAULT;
 			break;
 		}
-		printk("AUDIO_SET_CONFIG sr=%d ch=%d\n",
-		       config.sample_rate, config.channel_count);
 		sample_rate = config.sample_rate;
 		channel_count = config.channel_count;
 		break;
@@ -90,7 +85,6 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		config.unused[0] = 0;
 		config.unused[1] = 0;
 		config.unused[2] = 0;
-		printk("AUDIO_GET_CONFIG\n");
 		if (copy_to_user((void*) arg, &config, sizeof(config))) {
 			rc = -EFAULT;
 		}

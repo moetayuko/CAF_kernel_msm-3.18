@@ -239,7 +239,6 @@ static void session_free(int n, struct audio_client *ac)
 
 static void audio_client_free(struct audio_client *ac)
 {
-	pr_info("CLIENT FREE %p %d\n", ac, ac->session);
 	session_free(ac->session, ac);
 
 	if (ac->buf[0].data)
@@ -282,7 +281,6 @@ static struct audio_client *audio_client_alloc(unsigned bufsz)
 	init_waitqueue_head(&ac->wait);
 	ac->client = adsp;
 
-	pr_info("CLIENT ALLOC %p %d\n", ac, ac->session);
 	return ac;
 
 fail:
@@ -378,9 +376,7 @@ static int audio_in_open(struct audio_client *ac, uint32_t bufsz,
 
 static int audio_close(struct audio_client *ac)
 {
-	printk("audio_close: stop\n");
 	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_STREAM_STOP);
-	printk("audio_close: close\n");
 	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_CLOSE);
 	return 0;
 }
@@ -515,8 +511,9 @@ static void callback(void *data, int len, void *cookie)
 		return;
 	}
 
-	pr_info("CB s=%d e=%08x status=%d\n",
-		e->context, e->event_id, e->status);
+	if (e->status)
+		pr_warning("audio_cb: s=%d e=%08x status=%d\n",
+			   e->context, e->event_id, e->status);
 
 	if (ac->cb_status == -EBUSY) {
 		ac->cb_status = e->status;
@@ -554,7 +551,6 @@ static int q6audio_init(void)
 	sdac_clk = clk_get(0, "sdac_clk");
 
 	audio_data = dma_alloc_coherent(NULL, 4096, &audio_phys, GFP_KERNEL);
-	printk("q6audio_init() dma @ %p (%x)\n", audio_data, audio_phys);
 
 	adsp = dal_attach(AUDIO_DAL_DEVICE, AUDIO_DAL_PORT,
 			  callback, 0);
@@ -602,7 +598,6 @@ static int q6audio_init(void)
 	if (analog_ops->init)
 		analog_ops->init();
 
-	pr_info("audio_init: OKAY\n");
 	res = 0;
 	ac_control = ac;
 
@@ -741,21 +736,17 @@ static void _audio_rx_path_enable(void)
 
 	adev = audio_rx_device_id;
 	sample_rate = q6_device_to_rate(adev);
-	pr_info("audiolib: load %08x cfg table, rate %d\n", adev, sample_rate);
+
 	sz = acdb_get_config_table(adev, sample_rate);
-	pr_info("cfg table is %d bytes\n", sz);
 	audio_set_table(ac_control, adev, sz);
 	qdsp6_standby(ac_control);
 	qdsp6_start(ac_control);
 
-	pr_info("audiolib: enable amps\n");
 	audio_rx_analog_enable(1);
 
-	pr_info("audiolib: set path\n");
 	adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);
 	adie_set_path_freq_plan(adie, ADIE_PATH_RX, 48000);
 
-	pr_info("audiolib: enable adie\n");
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_READY);
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
@@ -771,10 +762,8 @@ static void _audio_tx_path_enable(void)
 
 	adev = audio_tx_device_id;
 	sample_rate = q6_device_to_rate(adev);
-	pr_info("audiolib: load %08x cfg table, rate %d\n",
-		adev, sample_rate);
+
 	sz = acdb_get_config_table(adev, sample_rate);
-	pr_info("cfg table is %d bytes\n", sz);
 
 	audio_set_table(ac_control, adev, sz);
 
@@ -782,48 +771,37 @@ static void _audio_tx_path_enable(void)
 
 	qdsp6_start(ac_control);
 
-	pr_info("audiolib: enable mic\n");
 	audio_tx_analog_enable(1);
 
-	pr_info("audiolib: set tx path\n");
 	adie_set_path(adie, audio_tx_path_id, ADIE_PATH_TX);
 
-	if (tx_clk_freq > 8000) {
-		pr_info("set tx_freq_plan as 48000\n");
+	if (tx_clk_freq > 8000)
 		adie_set_path_freq_plan(adie, ADIE_PATH_TX, 48000);
-	} else {
-		pr_info("set tx_freq_plan as 8000\n");
+	else
 		adie_set_path_freq_plan(adie, ADIE_PATH_TX, 8000);
-	}
 
-	pr_info("audiolib: enable tx adie\n");
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_READY);
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 
 	audio_tx_mute(ac_control, adev, tx_mute_status);
 
-	if (!tx_mute_status) {
+	if (!tx_mute_status)
 		audio_tx_volume(ac_control, adev, q6_device_volume(adev, 100));
-	}
 }
 
 static void _audio_rx_path_disable(void)
 {
-	pr_info("audiolib: disable adie\n");
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_ANALOG_OFF);
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_OFF);
 
-	pr_info("audiolib: disable amps\n");
 	audio_rx_analog_enable(0);
 }
 
 static void _audio_tx_path_disable(void)
 {
-	pr_info("audiolib: disable adie\n");
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_ANALOG_OFF);
 	adie_proceed_to_stage(adie, ADIE_PATH_TX, ADIE_STAGE_DIGITAL_OFF);
 
-	pr_info("audiolib: disable mic\n");
 	audio_tx_analog_enable(0);
 }
 
@@ -1097,10 +1075,7 @@ static void do_rx_routing(uint32_t device_id)
 		_audio_rx_path_enable();
 	} else {
 		sample_rate = q6_device_to_rate(device_id);
-		pr_info("audiolib: load %08x cfg table, rate %d\n",
-			device_id, sample_rate);
 		sz = acdb_get_config_table(device_id, sample_rate);
-		pr_info("cfg table is %d bytes\n", sz);
 		audio_set_table(ac_control, device_id, sz);
 		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_RX_DEVICE, device_id);
 		qdsp6_standby(ac_control);
@@ -1125,10 +1100,7 @@ static void do_tx_routing(uint32_t device_id)
 		_audio_tx_path_enable();
 	} else {
 		sample_rate = q6_device_to_rate(device_id);
-		pr_info("audiolib: load %08x cfg table, rate %d\n",
-			device_id, sample_rate);
 		sz = acdb_get_config_table(device_id, sample_rate);
-		pr_info("cfg table is %d bytes\n", sz);
 		audio_set_table(ac_control, device_id, sz);
 		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, device_id);
 		qdsp6_standby(ac_control);
@@ -1192,8 +1164,6 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 {
 	struct audio_client *ac;
 
-	printk("q6audio_open()\n");
-
 	if (q6audio_init())
 		return 0;
 
@@ -1210,13 +1180,11 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 		audio_tx_path_enable(1);
 	}
 
-	pr_info("*** open audio %p ***\n", ac);
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_out_open(ac, bufsz, rate, channels);
 	else
 		audio_in_open(ac, bufsz, rate, channels);
 
-	pr_info("*** session start %p (%d) ***\n", ac, ac->session);
 	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_SESSION_START);
 
 	if (!(ac->flags & AUDIO_FLAG_WRITE)) {
@@ -1232,14 +1200,12 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 
 int q6audio_close(struct audio_client *ac)
 {
-	pr_info("*** close audio %p ***\n", ac);
 	audio_close(ac);
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(0);
 	else
 		audio_tx_path_enable(0);
 
-	pr_info("*** done %p ***\n", ac);
 	audio_client_free(ac);
 	audio_allow_sleep();
 	return 0;
@@ -1248,8 +1214,6 @@ int q6audio_close(struct audio_client *ac)
 struct audio_client *q6voice_open(uint32_t flags)
 {
 	struct audio_client *ac;
-
-	printk("q6voice_open()\n");
 
 	if (q6audio_init())
 		return 0;
@@ -1266,19 +1230,16 @@ struct audio_client *q6voice_open(uint32_t flags)
 		audio_tx_path_enable(1);
 	}
 
-	pr_info("*** voice start %p (%d) ***\n", ac, ac->session);
 	return ac;
 }
 
 int q6voice_close(struct audio_client *ac)
 {
-	pr_info("*** detach voice %p ***\n", ac);
 	if (ac->flags & AUDIO_FLAG_WRITE)
 		audio_rx_path_enable(0);
 	else
 		audio_tx_path_enable(0);
 
-	pr_info("*** done %p ***\n", ac);
 	audio_client_free(ac);
 	return 0;
 }

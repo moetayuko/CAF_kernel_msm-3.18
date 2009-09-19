@@ -48,13 +48,10 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case AUDIO_START:
-		printk("AUDIO_START\n");
 		break;
 	case AUDIO_STOP:
-		printk("AUDIO_STOP\n");
 		break;
 	case AUDIO_FLUSH:
-		printk("AUDIO_FLUSH\n");
 		break;
 	case AUDIO_SET_CONFIG: {
 		struct msm_audio_config config;
@@ -62,8 +59,6 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			rc = -EFAULT;
 			break;
 		}
-		printk("AUDIO_SET_CONFIG sr=%d ch=%d\n",
-		       config.sample_rate, config.channel_count);
 		break;
 	}
 	case AUDIO_GET_CONFIG: {
@@ -75,7 +70,6 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		config.unused[0] = 0;
 		config.unused[1] = 0;
 		config.unused[2] = 0;
-		printk("AUDIO_GET_CONFIG\n");
 		if (copy_to_user((void*) arg, &config, sizeof(config))) {
 			rc = -EFAULT;
 		}
