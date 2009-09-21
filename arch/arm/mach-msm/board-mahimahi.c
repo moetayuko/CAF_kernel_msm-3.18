@@ -578,6 +578,13 @@ static uint32_t bt_gpio_table[] = {
 		      GPIO_PULL_DOWN, GPIO_4MA),
 };
 
+static uint32_t misc_gpio_table[] = {
+	PCOM_GPIO_CFG(MAHIMAHI_GPIO_LCD_RST_N, 0, GPIO_OUTPUT,
+		      GPIO_NO_PULL, GPIO_2MA),
+	PCOM_GPIO_CFG(MAHIMAHI_GPIO_LED_3V3_EN, 0, GPIO_OUTPUT,
+		      GPIO_NO_PULL, GPIO_2MA),
+};
+
 static int __init board_serialno_setup(char *serialno)
 {
 	msm_hsusb_pdata.serial_number = serialno;
@@ -652,6 +659,8 @@ static void __init mahimahi_init(void)
 
 	msm_serial_debug_init(MSM_UART1_PHYS, INT_UART1,
 			      &msm_device_uart1.dev, 1, MSM_GPIO_TO_INT(139));
+
+	config_gpio_table(misc_gpio_table, ARRAY_SIZE(misc_gpio_table));
 
 	config_gpio_table(bt_gpio_table, ARRAY_SIZE(bt_gpio_table));
 	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
