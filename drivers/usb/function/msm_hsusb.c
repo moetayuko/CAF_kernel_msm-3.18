@@ -822,7 +822,7 @@ static void handle_endpoint(struct usb_info *ui, unsigned bit)
 	spin_unlock_irqrestore(&ui->lock, flags);
 }
 
-#define FLUSH_WAIT_US	10
+#define FLUSH_WAIT_US	5
 #define FLUSH_TIMEOUT	(2 * (USEC_PER_SEC / FLUSH_WAIT_US))
 static void flush_endpoint_hw(struct usb_info *ui, unsigned bits)
 {
@@ -857,10 +857,8 @@ err:
 	pr_warning("%s: Could not complete flush! NOT GOOD! "
 		   "stat: %x unflushed: %x bits: %x\n", __func__,
 		   stat, unflushed, bits);
-	return;
-
 done:
-	pr_info("%s: Flush took ~%dus\n", __func__, cnt * FLUSH_WAIT_US);
+	return;
 }
 
 static void flush_endpoint_sw(struct usb_endpoint *ept)
