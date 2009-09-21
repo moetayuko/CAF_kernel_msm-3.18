@@ -49,11 +49,16 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 
 struct audio_client *q6voice_open(uint32_t flags);
 
+struct audio_client *q6audio_open_mp3(uint32_t bufsz, uint32_t rate,
+				      uint32_t channels);
+
 int q6audio_close(struct audio_client *ac);
 int q6voice_close(struct audio_client *ac);
+int q6audio_mp3_close(struct audio_client *ac);
 
 int q6audio_read(struct audio_client *ac, struct audio_buffer *ab);
 int q6audio_write(struct audio_client *ac, struct audio_buffer *ab);
+int q6audio_async(struct audio_client *ac);
 
 int q6audio_do_routing(uint32_t route);
 int q6audio_set_tx_mute(int mute);

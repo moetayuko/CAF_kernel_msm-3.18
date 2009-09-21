@@ -395,6 +395,31 @@ static int audio_in_open(struct audio_client *ac, uint32_t bufsz,
 	return audio_ioctl(ac, &rpc, sizeof(rpc));
 }
 
+static int audio_mp3_open(struct audio_client *ac, uint32_t bufsz,
+			  uint32_t rate, uint32_t channels)
+{
+	struct adsp_audio_standard_format *fmt = audio_data;
+	struct adsp_open_command rpc;
+
+	fmt->format = ADSP_AUDIO_FORMAT_MP3;
+	fmt->channels = channels;
+	fmt->bits_per_sample = 16;
+	fmt->sampling_rate = rate;
+	fmt->is_signed = 1;
+	fmt->is_interleaved = 0;
+
+	memset(&rpc, 0, sizeof(rpc));
+	rpc.hdr.opcode = ADSP_AUDIO_IOCTL_CMD_OPEN_WRITE;
+	rpc.num_devices = 1;
+	rpc.device[0] = ADSP_AUDIO_DEVICE_ID_DEFAULT;
+	rpc.stream_context = ADSP_AUDIO_DEVICE_CONTEXT_PLAYBACK;
+	rpc.format_block = (void*) audio_phys;
+	rpc.format_block_len = sizeof(*fmt);
+	rpc.buf_max_size = bufsz; /* XXX ??? */
+
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
+}
+
 static int audio_close(struct audio_client *ac)
 {
 	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_STREAM_STOP);
@@ -519,6 +544,17 @@ static void callback(void *data, int len, void *cookie)
 	if (!ac) {
 		pr_err("audio callback: unknown session %d\n",
 		       e->context);
+		return;
+	}
+
+	if (e->event_id == ADSP_AUDIO_IOCTL_CMD_STREAM_EOS) {
+		pr_info("playback done\n");
+		if (e->status)
+			pr_err("playback status %d\n", e->status);
+		if (ac->cb_status == -EBUSY) {
+			ac->cb_status = e->status;
+			wake_up(&ac->wait);
+		}
 		return;
 	}
 
@@ -1260,3 +1296,42 @@ int q6voice_close(struct audio_client *ac)
 	return 0;
 }
 
+struct audio_client *q6audio_open_mp3(uint32_t bufsz, uint32_t rate,
+				      uint32_t channels)
+{
+	struct audio_client *ac;
+
+	printk("q6audio_open_mp3()\n");
+
+	if (q6audio_init())
+		return 0;
+
+	ac = audio_client_alloc(bufsz);
+	if (!ac)
+		return 0;
+
+	ac->flags = AUDIO_FLAG_WRITE;
+	audio_rx_path_enable(1);
+
+	audio_mp3_open(ac, bufsz, rate, channels);
+	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_SESSION_START);
+
+	return ac;
+}
+
+int q6audio_mp3_close(struct audio_client *ac)
+{
+	audio_close(ac);
+	audio_rx_path_enable(0);
+	audio_client_free(ac);
+	return 0;
+}
+
+int q6audio_async(struct audio_client *ac)
+{
+	struct adsp_command_hdr rpc;
+	memset(&rpc, 0, sizeof(rpc));
+	rpc.opcode = ADSP_AUDIO_IOCTL_CMD_STREAM_EOS;
+	rpc.response_type = ADSP_AUDIO_RESPONSE_ASYNC;
+	return audio_ioctl(ac, &rpc, sizeof(rpc));
+}
