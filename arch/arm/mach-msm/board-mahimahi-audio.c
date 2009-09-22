@@ -31,28 +31,6 @@
 static struct mutex mic_lock;
 static struct mutex bt_sco_lock;
 
-void mahimahi_analog_init(void)
-{
-	D("%s\n", __func__);
-	/* stereo pmic init */
-	pmic_spkr_set_gain(LEFT_SPKR, SPKR_GAIN_PLUS12DB);
-	pmic_spkr_set_gain(RIGHT_SPKR, SPKR_GAIN_PLUS12DB);
-	pmic_spkr_en_right_chan(OFF_CMD);
-	pmic_spkr_en_left_chan(OFF_CMD);
-	pmic_spkr_add_right_left_chan(OFF_CMD);
-	pmic_spkr_en_stereo(OFF_CMD);
-	pmic_spkr_select_usb_with_hpf_20hz(OFF_CMD);
-	pmic_spkr_bypass_mux(OFF_CMD);
-	pmic_spkr_en_hpf(ON_CMD);
-	pmic_spkr_en_sink_curr_from_ref_volt_cir(OFF_CMD);
-	pmic_spkr_set_mux_hpf_corner_freq(SPKR_FREQ_0_73KHZ);
-	pmic_mic_set_volt(MIC_VOLT_1_80V);
-
-	gpio_direction_output(MAHIMAHI_AUD_JACKHP_EN, 1);
-	gpio_set_value(MAHIMAHI_AUD_JACKHP_EN, 0);
-	gpio_set_value(MAHIMAHI_AUD_2V5_EN, 0);
-}
-
 void mahimahi_headset_enable(int en)
 {
 	D("%s %d\n", __func__, en);
@@ -105,25 +83,25 @@ static void config_gpio_table(uint32_t *table, int len)
 }
 
 static uint32_t bt_sco_enable[] = {
-	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_OUT, 1, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_OUT, 1, GPIO_OUTPUT,
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_IN, 1, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_SYNC, 2, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_CLK, 2, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 };
 
 static uint32_t bt_sco_disable[] = {
-	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_OUT, 0, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_OUT, 0, GPIO_OUTPUT,
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_IN, 0, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_SYNC, 0, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 	PCOM_GPIO_CFG(MAHIMAHI_BT_PCM_CLK, 0, GPIO_INPUT,
-			GPIO_PULL_DOWN, GPIO_2MA),
+			GPIO_NO_PULL, GPIO_2MA),
 };
 
 void mahimahi_bt_sco_enable(int en)
@@ -137,9 +115,11 @@ void mahimahi_bt_sco_enable(int en)
 			config_gpio_table(bt_sco_enable,
 					ARRAY_SIZE(bt_sco_enable));
 	} else {
-		if (--bt_sco_refcount == 0)
+		if (--bt_sco_refcount == 0) {
 			config_gpio_table(bt_sco_disable,
 					ARRAY_SIZE(bt_sco_disable));
+			gpio_set_value(MAHIMAHI_BT_PCM_OUT, 0);
+		}
 	}
 	mutex_unlock(&bt_sco_lock);
 }
@@ -165,6 +145,34 @@ void mahimahi_mic_enable(int en)
 
 	old_state = new_state;
 	mutex_unlock(&mic_lock);
+}
+
+void mahimahi_analog_init(void)
+{
+	D("%s\n", __func__);
+	/* stereo pmic init */
+	pmic_spkr_set_gain(LEFT_SPKR, SPKR_GAIN_PLUS12DB);
+	pmic_spkr_set_gain(RIGHT_SPKR, SPKR_GAIN_PLUS12DB);
+	pmic_spkr_en_right_chan(OFF_CMD);
+	pmic_spkr_en_left_chan(OFF_CMD);
+	pmic_spkr_add_right_left_chan(OFF_CMD);
+	pmic_spkr_en_stereo(OFF_CMD);
+	pmic_spkr_select_usb_with_hpf_20hz(OFF_CMD);
+	pmic_spkr_bypass_mux(OFF_CMD);
+	pmic_spkr_en_hpf(ON_CMD);
+	pmic_spkr_en_sink_curr_from_ref_volt_cir(OFF_CMD);
+	pmic_spkr_set_mux_hpf_corner_freq(SPKR_FREQ_0_73KHZ);
+	pmic_mic_set_volt(MIC_VOLT_1_80V);
+
+	gpio_direction_output(MAHIMAHI_AUD_JACKHP_EN, 1);
+	gpio_set_value(MAHIMAHI_AUD_JACKHP_EN, 0);
+	gpio_set_value(MAHIMAHI_AUD_2V5_EN, 0);
+
+	mutex_lock(&bt_sco_lock);
+	config_gpio_table(bt_sco_disable,
+			ARRAY_SIZE(bt_sco_disable));
+	gpio_set_value(MAHIMAHI_BT_PCM_OUT, 0);
+	mutex_unlock(&bt_sco_lock);
 }
 
 static struct qsd_acoustic_ops acoustic = {
