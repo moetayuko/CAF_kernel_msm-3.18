@@ -32,6 +32,8 @@
 #include "../w1/w1.h"
 #include "../w1/slaves/w1_ds2784.h"
 
+extern int is_ac_power_supplied(void);
+
 struct ds2784_device_info {
 	struct device *dev;
 
@@ -384,7 +386,10 @@ static void battery_ext_power_changed(struct power_supply *psy)
 	pr_info("*** batt ext power changed (%d) ***\n", got_power);
 
 	if (got_power) {
-		di->charging_source = CHARGER_USB;
+		if (is_ac_power_supplied())
+			di->charging_source = CHARGER_AC;
+		else
+			di->charging_source = CHARGER_USB;
 		wake_lock(&vbus_wake_lock);
 	} else {
 		di->charging_source = CHARGER_BATTERY;
@@ -396,11 +401,6 @@ static void battery_ext_power_changed(struct power_supply *psy)
 	battery_adjust_charge_state(di);
 	power_supply_changed(psy);
 }
-
-void notify_usb_connected(int online) 
-{
-}
-
 
 static int ds2784_battery_probe(struct platform_device *pdev)
 {
