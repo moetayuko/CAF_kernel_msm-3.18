@@ -53,6 +53,7 @@ static uint debug_uart;
 
 module_param_named(debug_uart, debug_uart, uint, 0);
 
+extern void notify_usb_connected(int);
 extern void msm_init_pmic_vibrator(void);
 extern void __init mahimahi_audio_init(void);
 
@@ -131,6 +132,7 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= mahimahi_phy_init_seq,
 	.phy_reset		= mahimahi_usb_phy_reset,
 	.hw_reset		= mahimahi_usb_hw_reset,
+	.usb_connected		= notify_usb_connected,
 	.vendor_id		= 0x0bb4,
 	.product_id		= 0x0c02,
 	.version		= 0x0100,
