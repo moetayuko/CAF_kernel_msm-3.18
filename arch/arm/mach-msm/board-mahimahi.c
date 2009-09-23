@@ -65,6 +65,9 @@ static char *mahimahi_usb_functions[] = {
 #if defined(CONFIG_USB_FUNCTION_DIAG)
 	"diag",
 #endif
+#if defined(CONFIG_USB_FUNCTION_SERIAL)
+	"fserial",
+#endif
 };
 
 static struct msm_hsusb_product mahimahi_usb_products[] = {
@@ -78,7 +81,15 @@ static struct msm_hsusb_product mahimahi_usb_products[] = {
 	},
 	{
 		.product_id     = 0x0c07,
-		.functions      = 0x00000007, /* "usb_mass_storage" and "adb" */
+		.functions      = 0x00000007, /* ums, usb, diag */
+	},
+	{
+		.product_id     = 0x0c04,
+		.functions      = 0x0000000b, /* ums, adb, fserial */
+	},
+	{
+		.product_id     = 0x0c09,
+		.functions      = 0x0000000f, /* ums, adb, diag, fserial */
 	},
 };
 
