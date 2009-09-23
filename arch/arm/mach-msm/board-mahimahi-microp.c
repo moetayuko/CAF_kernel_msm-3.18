@@ -94,7 +94,10 @@
 
 
 enum led_type {
-	GREEN_LED, AMBER_LED, JOGBALL_LED
+	GREEN_LED,
+	AMBER_LED,
+	JOGBALL_LED,
+	NUM_LEDS,
 };
 
 static uint16_t lsensor_adc_table[10] = {
@@ -134,9 +137,7 @@ struct microp_i2c_work {
 };
 
 struct microp_i2c_client_data {
-	struct microp_led_data green;
-	struct microp_led_data amber;
-	struct microp_led_data jogball;
+	struct microp_led_data leds[NUM_LEDS];
 	uint16_t version;
 	struct microp_i2c_work work;
 	struct delayed_work hpin_work;
@@ -583,6 +584,11 @@ static void microp_led_brightness_set(struct led_classdev *led_cdev,
 			 "led_brightness_set failed to set mode\n");
 	}
 }
+
+struct device_attribute *green_amber_attrs[] = {
+	&dev_attr_blink,
+	&dev_attr_off_timer,
+};
 
 static void microp_led_jogball_brightness_set(struct led_classdev *led_cdev,
 			       enum led_brightness brightness)
@@ -1335,46 +1341,6 @@ void microp_early_resume(struct early_suspend *h)
 }
 #endif
 
-static int __devexit microp_i2c_remove(struct i2c_client *client)
-{
-	struct microp_i2c_client_data *cdata;
-
-	cdata = i2c_get_clientdata(client);
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	if (cdata->enable_early_suspend) {
-		unregister_early_suspend(&cdata->early_suspend);
-	}
-#endif
-	led_classdev_unregister(&cdata->jogball.ldev);
-
-	led_classdev_unregister(&cdata->amber.ldev);
-	device_remove_file(cdata->amber.ldev.dev, &dev_attr_blink);
-	device_remove_file(cdata->amber.ldev.dev, &dev_attr_off_timer);
-
-	led_classdev_unregister(&cdata->green.ldev);
-	device_remove_file(cdata->green.ldev.dev, &dev_attr_blink);
-	device_remove_file(cdata->green.ldev.dev, &dev_attr_off_timer);
-
-	free_irq(client->irq, &client->dev);
-
-	gpio_free(MAHIMAHI_GPIO_UP_RESET_N);
-
-	misc_deregister(&lightsensor_misc);
-	input_unregister_device(cdata->ls_input_dev);
-	input_free_device(cdata->ls_input_dev);
-	device_remove_file(&client->dev, &dev_attr_ls_adc);
-	device_remove_file(&client->dev, &dev_attr_key_adc);
-	device_remove_file(&client->dev, &dev_attr_ls_auto);
-
-	/* G-sensor */
-	misc_deregister(&spi_bma_device);
-
-	kfree(cdata);
-
-	return 0;
-}
-
 static int microp_i2c_suspend(struct i2c_client *client,
 	pm_message_t mesg)
 {
@@ -1386,14 +1352,38 @@ static int microp_i2c_resume(struct i2c_client *client)
 	return 0;
 }
 
-static int microp_i2c_probe(struct i2c_client *client
-	, const struct i2c_device_id *id)
+static struct {
+	const char *name;
+	void (*led_set)(struct led_classdev *, enum led_brightness);
+	struct device_attribute **attrs;
+	int attr_cnt;
+} microp_leds[] = {
+	[GREEN_LED] = {
+		.name		= "green",
+		.led_set	= microp_led_brightness_set,
+		.attrs		= green_amber_attrs,
+		.attr_cnt	= ARRAY_SIZE(green_amber_attrs)
+	},
+	[AMBER_LED] = {
+		.name		= "amber",
+		.led_set	= microp_led_brightness_set,
+		.attrs		= green_amber_attrs,
+		.attr_cnt	= ARRAY_SIZE(green_amber_attrs)
+	},
+	[JOGBALL_LED] = {
+		.name		= "jogball-backlight",
+		.led_set	= microp_led_jogball_brightness_set,
+	},
+};
+
+static int microp_i2c_probe(struct i2c_client *client,
+			    const struct i2c_device_id *id)
 {
 	struct microp_i2c_client_data *cdata;
-	struct microp_led_data *ldata;
 	uint8_t data[6];
 	int ret;
-	int lcd = -1;
+	int i;
+	int j;
 
 	private_microp_client = client;
 	ret = i2c_read_block(client, MICROP_I2C_RCMD_VERSION, data, 2);
@@ -1461,47 +1451,27 @@ static int microp_i2c_probe(struct i2c_client *client
 	}
 
 	/* LEDs */
-	ldata = &cdata->green;
-	ldata->type = GREEN_LED;
-	ldata->ldev.name = "green";
-	ldata->ldev.brightness_set = microp_led_brightness_set;
-	ldata->ldev.brightness = 0;
-	mutex_init(&ldata->led_data_mutex);
-	ret = led_classdev_register(&client->dev, &ldata->ldev);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed on led_classdev_register "
-					"for green led\n");
-		goto err_register_green_leddev;
-	}
-	ret = device_create_file(ldata->ldev.dev, &dev_attr_blink);
-	ret = device_create_file(ldata->ldev.dev, &dev_attr_off_timer);
+	ret = 0;
+	for (i = 0; i < ARRAY_SIZE(microp_leds) && !ret; ++i) {
+		struct microp_led_data *ldata = &cdata->leds[i];
 
-	ldata = &cdata->amber;
-	ldata->type = AMBER_LED;
-	ldata->ldev.name = "amber";
-	ldata->ldev.brightness_set = microp_led_brightness_set;
-	ldata->ldev.brightness = 0;
-	mutex_init(&ldata->led_data_mutex);
-	ret = led_classdev_register(&client->dev, &ldata->ldev);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed on led_classdev_register "
-					"for amber led\n");
-		goto err_register_amber_leddev;
-	}
-	ret = device_create_file(ldata->ldev.dev, &dev_attr_blink);
-	ret = device_create_file(ldata->ldev.dev, &dev_attr_off_timer);
+		ldata->type = i;
+		ldata->ldev.name = microp_leds[i].name;
+		ldata->ldev.brightness_set = microp_leds[i].led_set;
+		mutex_init(&ldata->led_data_mutex);
+		ret = led_classdev_register(&client->dev, &ldata->ldev);
+		if (ret) {
+			ldata->ldev.name = NULL;
+			break;
+		}
 
-	ldata = &cdata->jogball;
-	ldata->type = JOGBALL_LED;
-	ldata->ldev.name = "jogball" ;
-	ldata->ldev.brightness_set = microp_led_jogball_brightness_set;
-	ldata->ldev.brightness = 0;
-	mutex_init(&ldata->led_data_mutex);
-	ret = led_classdev_register(&client->dev, &ldata->ldev);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed on led_classdev_register "
-					"for jogball led\n");
-		goto err_register_logball_leddev;
+		for (j = 0; j < microp_leds[i].attr_cnt && !ret; ++j)
+			ret = device_create_file(ldata->ldev.dev,
+						 microp_leds[i].attrs[j]);
+	}
+	if (ret) {
+		dev_err(&client->dev, "failed to add leds\n");
+		goto err_add_leds;
 	}
 
 	/* Headset */
@@ -1557,19 +1527,16 @@ err_intr:
 	misc_deregister(&spi_bma_device);
 
 err_register_bma150:
-	led_classdev_unregister(&cdata->jogball.ldev);
+err_add_leds:
+	for (i = 0; i < ARRAY_SIZE(microp_leds); ++i) {
+		if (!cdata->leds[i].ldev.name)
+			continue;
+		led_classdev_unregister(&cdata->leds[i].ldev);
+		for (j = 0; j < microp_leds[i].attr_cnt; ++j)
+			device_remove_file(cdata->leds[i].ldev.dev,
+					   microp_leds[i].attrs[j]);
+	}
 
-err_register_logball_leddev:
-	led_classdev_unregister(&cdata->amber.ldev);
-	device_remove_file(cdata->amber.ldev.dev, &dev_attr_blink);
-	device_remove_file(cdata->amber.ldev.dev, &dev_attr_off_timer);
-
-err_register_amber_leddev:
-	led_classdev_unregister(&cdata->green.ldev);
-	device_remove_file(cdata->green.ldev.dev, &dev_attr_blink);
-	device_remove_file(cdata->green.ldev.dev, &dev_attr_off_timer);
-
-err_register_green_leddev:
 	misc_deregister(&lightsensor_misc);
 
 err_register_misc_register:
@@ -1590,6 +1557,48 @@ err_gpio_reset:
 	gpio_free(MAHIMAHI_GPIO_UP_RESET_N);
 err_exit:
 	return ret;
+}
+
+static int __devexit microp_i2c_remove(struct i2c_client *client)
+{
+	struct microp_i2c_client_data *cdata;
+	int i;
+	int j;
+
+	cdata = i2c_get_clientdata(client);
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	if (cdata->enable_early_suspend) {
+		unregister_early_suspend(&cdata->early_suspend);
+	}
+#endif
+
+	for (i = 0; i < ARRAY_SIZE(microp_leds); ++i) {
+		if (!cdata->leds[i].ldev.name)
+			continue;
+		led_classdev_unregister(&cdata->leds[i].ldev);
+		for (j = 0; j < microp_leds[i].attr_cnt; ++j)
+			device_remove_file(cdata->leds[i].ldev.dev,
+					   microp_leds[i].attrs[j]);
+	}
+
+	free_irq(client->irq, &client->dev);
+
+	gpio_free(MAHIMAHI_GPIO_UP_RESET_N);
+
+	misc_deregister(&lightsensor_misc);
+	input_unregister_device(cdata->ls_input_dev);
+	input_free_device(cdata->ls_input_dev);
+	device_remove_file(&client->dev, &dev_attr_ls_adc);
+	device_remove_file(&client->dev, &dev_attr_key_adc);
+	device_remove_file(&client->dev, &dev_attr_ls_auto);
+
+	/* G-sensor */
+	misc_deregister(&spi_bma_device);
+
+	kfree(cdata);
+
+	return 0;
 }
 
 static const struct i2c_device_id microp_i2c_id[] = {
