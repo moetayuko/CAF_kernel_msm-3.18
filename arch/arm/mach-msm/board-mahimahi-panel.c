@@ -17,6 +17,7 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/err.h>
+#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/leds.h>
@@ -67,37 +68,11 @@ static int lcm_writeb(uint8_t reg, uint8_t val)
 	return 0;
 }
 
-static DEFINE_MUTEX(panel_lock);
-
-static int samsung_oled_panel_blank(struct msm_lcdc_panel_ops *ops)
+static int lcm_writew(uint8_t reg, uint16_t val)
 {
-	pr_info("%s: +()\n", __func__);
-	mutex_lock(&panel_lock);
-
-	clk_enable(spi_clk);
-	lcm_writeb(0x14, 0x1);
-	lcm_writeb(0x1d, 0xa1);
-	msleep(200);
-	clk_disable(spi_clk);
-
-	mutex_unlock(&panel_lock);
-	pr_info("%s: -()\n", __func__);
-	return 0;
-}
-
-static int samsung_oled_panel_unblank(struct msm_lcdc_panel_ops *ops)
-{
-	pr_info("%s: +()\n", __func__);
-	mutex_lock(&panel_lock);
-
-	clk_enable(spi_clk);
-	lcm_writeb(0x1d, 0xa0);
-	lcm_writeb(0x14, 0x03);
-	msleep(200);
-	clk_disable(spi_clk);
-
-	mutex_unlock(&panel_lock);
-	pr_info("%s: -()\n", __func__);
+	qspi_send(0x0, reg);
+	qspi_send(0x1, val >> 8);
+	qspi_send(0x1, val & 0xff);
 	return 0;
 }
 
@@ -389,6 +364,8 @@ static struct lcm_tbl samsung_oled_gamma_table[][OLED_GAMMA_TABLE_SIZE] = {
 };
 #define SAMSUNG_OLED_NUM_LEVELS		ARRAY_SIZE(samsung_oled_gamma_table)
 
+static DEFINE_MUTEX(panel_lock);
+static uint8_t last_level = SAMSUNG_OLED_NUM_LEVELS / 2;
 static uint8_t table_sel_vals[] = { 0x43, 0x34 };
 static int table_sel_idx = 0;
 static void gamma_table_bank_select(void)
@@ -408,6 +385,7 @@ static void samsung_oled_set_gamma_level(int level)
 			   samsung_oled_gamma_table[level][i].val);
 	gamma_table_bank_select();
 	clk_disable(spi_clk);
+	last_level = level;
 }
 
 static int samsung_oled_panel_init(struct msm_lcdc_panel_ops *ops)
@@ -429,6 +407,58 @@ static int samsung_oled_panel_init(struct msm_lcdc_panel_ops *ops)
 	return 0;
 }
 
+static int samsung_oled_panel_unblank(struct msm_lcdc_panel_ops *ops)
+{
+	int i;
+
+	pr_info("%s: +()\n", __func__);
+
+	mutex_lock(&panel_lock);
+
+	gpio_set_value(MAHIMAHI_GPIO_LCD_RST_N, 1);
+	udelay(50);
+	gpio_set_value(MAHIMAHI_GPIO_LCD_RST_N, 0);
+	udelay(20);
+	gpio_set_value(MAHIMAHI_GPIO_LCD_RST_N, 1);
+	msleep(20);
+
+	clk_enable(spi_clk);
+
+	lcm_writeb(0x1d, 0xa0);
+	for (i = 0; i < ARRAY_SIZE(samsung_oled_init_table); i++)
+		lcm_writeb(samsung_oled_init_table[i].reg,
+			   samsung_oled_init_table[i].val);
+	table_sel_idx = 0;
+	gamma_table_bank_select();
+	samsung_oled_set_gamma_level(last_level);
+	msleep(200);
+	lcm_writew(0xef, 0xd0e8);
+	lcm_writeb(0x14, 0x03);
+	clk_disable(spi_clk);
+
+	mutex_unlock(&panel_lock);
+
+	pr_info("%s: -()\n", __func__);
+	return 0;
+}
+
+static int samsung_oled_panel_blank(struct msm_lcdc_panel_ops *ops)
+{
+	pr_info("%s: +()\n", __func__);
+	mutex_lock(&panel_lock);
+
+	clk_enable(spi_clk);
+	lcm_writeb(0x14, 0x1);
+	lcm_writeb(0x1d, 0xa1);
+	clk_disable(spi_clk);
+	msleep(200);
+
+	gpio_set_value(MAHIMAHI_GPIO_LCD_RST_N, 0);
+
+	mutex_unlock(&panel_lock);
+	pr_info("%s: -()\n", __func__);
+	return 0;
+}
 
 static struct msm_lcdc_panel_ops mahimahi_lcdc_panel_ops = {
 	.init		= samsung_oled_panel_init,
