@@ -23,17 +23,12 @@
 #include <mach/msm_rpcrouter.h>
 #include <mach/board.h>
 
-typedef enum {
-	CHARGER_BATTERY = 0,
-	CHARGER_USB,
-	CHARGER_AC
-} charger_type_t;
-
-static unsigned cable_status = CHARGER_BATTERY;
-
 static char *supply_list[] = {
 	"battery",
 };
+
+static int vbus_present;
+static int usb_status;
 
 static int power_get_property(struct power_supply *psy,
 			      enum power_supply_property psp,
@@ -43,9 +38,9 @@ static int power_get_property(struct power_supply *psy,
 		return -EINVAL;
 
 	if (psy->type == POWER_SUPPLY_TYPE_MAINS) {
-		val->intval = (cable_status == CHARGER_AC);
+		val->intval = (vbus_present && (usb_status == 2));
 	} else {
-		val->intval = (cable_status == CHARGER_USB);
+		val->intval = (vbus_present && (usb_status == 1));
 	}
 	return 0;
 }
@@ -160,15 +155,28 @@ static int handle_battery_call(struct msm_rpc_server *server,
 	args->status = be32_to_cpu(args->status);
 	pr_info("cable_status_update: status=%d\n",args->status);
 
-	if (cable_status != args->status) {
-		cable_status = args->status;
+	args->status = !!args->status;
 
-		msm_hsusb_set_vbus_state(cable_status ? 1 : 0);
-
+	if (vbus_present != args->status) {
+		vbus_present = args->status;
+		msm_hsusb_set_vbus_state(vbus_present);
 		power_supply_changed(&ac_supply);
 		power_supply_changed(&usb_supply);
 	}
 	return 0;
+}
+
+void notify_usb_connected(int status)
+{
+	printk("### notify_usb_connected(%d) ###\n", status);
+	usb_status = status;
+	power_supply_changed(&ac_supply);
+	power_supply_changed(&usb_supply);
+}
+
+int is_ac_power_supplied(void)
+{
+	return vbus_present && (usb_status == 2);
 }
 
 static struct msm_rpc_server battery_server = {
