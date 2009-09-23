@@ -49,6 +49,7 @@
 #define MICROP_I2C_WCMD_SPI_EN			0x21
 #define MICROP_I2C_WCMD_AUTO_BL_CTL		0x23
 #define MICROP_I2C_RCMD_SPI_BL_STATUS		0x24
+#define MICROP_I2C_WCMD_BUTTONS_LED_CTRL	0x25
 #define MICROP_I2C_RCMD_VERSION			0x30
 #define MICROP_I2C_WCMD_ADC_TABLE		0x42
 #define MICROP_I2C_WCMD_LED_MODE		0x53
@@ -97,6 +98,7 @@ enum led_type {
 	GREEN_LED,
 	AMBER_LED,
 	JOGBALL_LED,
+	BUTTONS_LED,
 	NUM_LEDS,
 };
 
@@ -589,6 +591,31 @@ struct device_attribute *green_amber_attrs[] = {
 	&dev_attr_blink,
 	&dev_attr_off_timer,
 };
+
+static void microp_led_buttons_brightness_set(struct led_classdev *led_cdev,
+				enum led_brightness brightness)
+{
+	struct i2c_client *client;
+	uint8_t data[4] = {0, 0, 0};
+	int ret = 0;
+
+	client = to_i2c_client(led_cdev->dev->parent);
+
+	dev_info(&client->dev, "Setting buttons brightness current %d new %d\n",
+		 led_cdev->brightness, brightness);
+
+	/* in 40ms */
+	data[0] = 0x05;
+	/* duty cycle 0-255 */
+	data[1] = brightness >= 255 ? 0x20 : 0;
+	/* bit2 == change brightness */
+	data[3] = 0x04;
+
+	ret = i2c_write_block(client, MICROP_I2C_WCMD_BUTTONS_LED_CTRL,
+			      data, 4);
+	if (ret < 0)
+		dev_err(&client->dev, "%s failed on set buttons\n", __func__);
+}
 
 static void microp_led_jogball_brightness_set(struct led_classdev *led_cdev,
 			       enum led_brightness brightness)
@@ -1373,6 +1400,10 @@ static struct {
 	[JOGBALL_LED] = {
 		.name		= "jogball-backlight",
 		.led_set	= microp_led_jogball_brightness_set,
+	},
+	[BUTTONS_LED] = {
+		.name		= "button-backlight",
+		.led_set	= microp_led_buttons_brightness_set,
 	},
 };
 
