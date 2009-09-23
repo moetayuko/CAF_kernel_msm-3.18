@@ -121,7 +121,6 @@ struct userial_context {
 };
 
 static struct userial_context _context;
-struct device fserial_dev;
 
 /* Functions */
 
@@ -225,7 +224,7 @@ static struct usb_function usb_func_userial = {
 	.ifc_ept_count = 2,
 	.ifc_ept_type = { EPT_BULK_OUT, EPT_BULK_IN },
 
-	.disabled = 0,
+	.disabled = 1,
 };
 
 /* Module */
@@ -247,7 +246,21 @@ MODULE_PARM_DESC(write_buf_size, "Write buffer size, default=8192");
 module_init(fs_module_init);
 module_exit(fs_module_exit);
 
-static void fserial_dev_release(struct device *dev) {}
+static int fserial_set_enabled(const char *val, struct kernel_param *kp)
+{
+	int enabled = simple_strtol(val, NULL, 0);
+	usb_func_userial.disabled = !enabled;
+	usb_function_enable("fserial", enabled);
+	return 0;
+}
+
+static int fserial_get_enabled(char *buffer, struct kernel_param *kp)
+{
+	buffer[0] = '0' + !usb_func_userial.disabled;
+	return 1;
+}
+
+module_param_call(enabled, fserial_set_enabled, fserial_get_enabled, 0, 0664);
 
 static int fserial_probe(struct platform_device *pdev)
 {
@@ -260,41 +273,6 @@ static struct platform_driver fserial_driver = {
 	.probe = fserial_probe,
 	.driver = { .name = FS_SHORT_NAME, },
 };
-
-static void fserial_release(struct device *dev) {}
-
-static struct platform_device fserial_device = {
-	.name = FS_SHORT_NAME,
-	.id = -1,
-	.dev = {
-		.release = fserial_release,
-	},
-};
-
-static ssize_t store_fserial_enable(struct device *dev, struct device_attribute *attr,
-		const char *buf, size_t count)
-{
-	unsigned long ul;
-
-	if ((buf[0] != '0' && buf[0] != '1') && buf[1] != '\n') {
-		printk(KERN_WARNING "Can't enable/disable fserial %s\n", buf);
-		return -EINVAL;
-	}
-
-	ul = simple_strtoul(buf, NULL, 10);
-	usb_function_enable(FS_SHORT_NAME, ul);
-	return count;
-}
-
-static ssize_t show_fserial_enable(struct device *dev, struct device_attribute *attr,
-		char *buf)
-{
-	int rc;
-
-	rc = sprintf(buf, "%d", is_usb_function_enabled(FS_SHORT_NAME));
-	return rc;
-}
-static DEVICE_ATTR(fserial_enable, 0644, show_fserial_enable, store_fserial_enable);
 
 /*
  *  fs_module_init
@@ -339,10 +317,6 @@ static int __init fs_module_init(void)
 	if (retval < 0)
 		return retval;
 
-	retval = platform_device_register(&fserial_device);
-	if (retval < 0)
-		goto err_register_device;
-
 	retval = usb_function_register(&usb_func_userial);
 	if (retval) {
 		printk(KERN_ERR "fs_module_init: cannot register function driver, ret=%d\n", retval);
@@ -351,10 +325,6 @@ static int __init fs_module_init(void)
 
 	printk(KERN_INFO "fs_module_init: %s %s loaded\n", FS_LONG_NAME, FS_VERSION_STR);
 	return 0;
-
-err_register_device:
-	platform_driver_unregister(&fserial_driver);
-	return retval;
 }
 
 /*
@@ -1135,22 +1105,6 @@ static void fs_bind(struct usb_endpoint **ept, void *_ctxt)
 		}
 	}
 
-	fserial_dev.release = fserial_dev_release;
-	fserial_dev.parent = &ctxt->pdev->dev;
-	strcpy(fserial_dev.bus_id, "interface");
-
-	ret = device_register(&fserial_dev);
-	if (ret != 0) {
-		printk(KERN_WARNING "fserial_dev failed to register device: %d\n", ret);
-		goto fail;
-	}
-
-	ret = device_create_file(&fserial_dev, &dev_attr_fserial_enable);
-	if (ret != 0) {
-		printk(KERN_WARNING "fserial_dev device_create_file failed: %d\n", ret);
-		device_unregister(&fserial_dev);
-		goto fail;
-	}
 	ctxt->registered = 1;
 
 	printk(KERN_ERR "fs_bind: %s bound\n", FS_LONG_NAME);
@@ -1181,8 +1135,6 @@ static void fs_unbind(void *_ctxt)
 			usb_ep_disable(dev->dev_out_ep);
 #endif
 		if (ctxt->registered) {
-			device_remove_file(&fserial_dev, &dev_attr_fserial_enable);
-			device_unregister(&fserial_dev);
 			ctxt->registered = 0;
 		}
 	}
