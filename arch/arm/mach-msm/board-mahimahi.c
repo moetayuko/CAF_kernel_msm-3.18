@@ -30,6 +30,7 @@
 #include <linux/a1026.h>
 #include <linux/capella_cm3602.h>
 #include <linux/akm8973.h>
+#include <linux/regulator/machine.h>
 #include <../../../drivers/staging/android/timed_gpio.h>
 
 #include <asm/mach-types.h>
@@ -342,6 +343,54 @@ static struct akm8973_platform_data compass_platform_data = {
 	.intr = MAHIMAHI_GPIO_COMPASS_INT_N,
 };
 
+static struct regulator_consumer_supply tps65023_dcdc1_supplies[] = {
+	{
+		.supply = "acpu_vcore",
+	},
+};
+
+static struct regulator_init_data tps65023_data[5] = {
+	{
+		.constraints = {
+			.name = "dcdc1", /* VREG_MSMC2_1V29 */
+			.min_uV = 1000000,
+			.max_uV = 1250000,
+			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+		},
+		.consumer_supplies = tps65023_dcdc1_supplies,
+		.num_consumer_supplies = ARRAY_SIZE(tps65023_dcdc1_supplies),
+	},
+	/* dummy values for unused regulators to not crash driver: */
+	{
+		.constraints = {
+			.name = "dcdc2", /* VREG_MSMC1_1V26 */
+			.min_uV = 1260000,
+			.max_uV = 1260000,
+		},
+	},
+	{
+		.constraints = {
+			.name = "dcdc3", /* unused */
+			.min_uV = 800000,
+			.max_uV = 3300000,
+		},
+	},
+	{
+		.constraints = {
+			.name = "ldo1", /* unused */
+			.min_uV = 1000000,
+			.max_uV = 3150000,
+		},
+	},
+	{
+		.constraints = {
+			.name = "ldo2", /* V_USBPHY_3V3 */
+			.min_uV = 3300000,
+			.max_uV = 3300000,
+		},
+	},
+};
+
 static struct i2c_board_info base_i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("ds2482", 0x30 >> 1),
@@ -362,6 +411,10 @@ static struct i2c_board_info base_i2c_devices[] = {
 	},
 	{
 		I2C_BOARD_INFO("s5k3e2fx", 0x20 >> 1),
+	},
+	{
+		I2C_BOARD_INFO("tps65023", 0x48),
+		.platform_data = tps65023_data,
 	},
 };
 
