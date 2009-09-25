@@ -26,13 +26,19 @@
 
 #include <mach/msm_qdsp6_audio.h>
 
-//#define BUFSZ (4096)
 #define BUFSZ (8192)
 #define DMASZ (BUFSZ * 2)
 
-static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+struct pcm {
+	struct mutex lock;
+	struct audio_client *ac;
+	uint32_t sample_rate;
+	uint32_t channel_count;
+};
+
+static long pcm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	struct audio_client *ac = file->private_data;
+	struct pcm *pcm = file->private_data;
 	int rc = 0;
 
 	if (cmd == AUDIO_GET_STATS) {
@@ -42,12 +48,21 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		return 0;
 	}
-	if (cmd == AUDIO_SET_VOLUME) {
-		return 0;
-	}
 
+	mutex_lock(&pcm->lock);
 	switch (cmd) {
+	case AUDIO_SET_VOLUME:
+		break;
 	case AUDIO_START:
+		if (pcm->ac) {
+			rc = -EBUSY;
+		} else {
+			pcm->ac = q6audio_open_pcm(BUFSZ, pcm->sample_rate,
+						   pcm->channel_count,
+						   AUDIO_FLAG_WRITE);
+			if (!pcm->ac)
+				rc = -ENOMEM;
+		}
 		break;
 	case AUDIO_STOP:
 		break;
@@ -55,18 +70,28 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case AUDIO_SET_CONFIG: {
 		struct msm_audio_config config;
+		if (pcm->ac) {
+			rc = -EBUSY;
+			break;
+		}
 		if (copy_from_user(&config, (void*) arg, sizeof(config))) {
 			rc = -EFAULT;
 			break;
 		}
+		if (config.channel_count < 1 || config.channel_count > 2) {
+			rc = -EINVAL;
+			break;
+		}
+		pcm->sample_rate = config.sample_rate;
+		pcm->channel_count = config.channel_count;
 		break;
 	}
 	case AUDIO_GET_CONFIG: {
 		struct msm_audio_config config;
 		config.buffer_size = BUFSZ;
 		config.buffer_count = 2;
-		config.sample_rate = 44100;
-		config.channel_count = 2;
+		config.sample_rate = pcm->sample_rate;
+		config.channel_count = pcm->channel_count;
 		config.unused[0] = 0;
 		config.unused[1] = 0;
 		config.unused[2] = 0;
@@ -78,25 +103,41 @@ static long q6_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	default:
 		rc = -EINVAL;
 	}
+		mutex_unlock(&pcm->lock);
 	return rc;
 }
 
-static int q6_open(struct inode *inode, struct file *file)
+static int pcm_open(struct inode *inode, struct file *file)
 {
-	file->private_data = q6audio_open_pcm(BUFSZ, 44100, 2, AUDIO_FLAG_WRITE);
-	if (!file->private_data)
+	struct pcm *pcm;
+	pcm = kzalloc(sizeof(struct pcm), GFP_KERNEL);
+
+	if (!pcm)
 		return -ENOMEM;
 
+	mutex_init(&pcm->lock);
+	pcm->channel_count = 2;
+	pcm->sample_rate = 44100;
+
+	file->private_data = pcm;
 	return 0;
 }
 
-static ssize_t q6_write(struct file *file, const char __user *buf,
+static ssize_t pcm_write(struct file *file, const char __user *buf,
 			   size_t count, loff_t *pos)
 {
-	struct audio_client *ac = file->private_data;
+	struct pcm *pcm = file->private_data;
+	struct audio_client *ac;
 	struct audio_buffer *ab;
 	const char __user *start = buf;
 	int xfer;
+
+	if (!pcm->ac)
+		pcm_ioctl(file, AUDIO_START, 0);
+
+	ac = pcm->ac;
+	if (!ac)
+		return -ENODEV;
 
 	while (count > 0) {
 		ab = ac->buf + ac->cpu_buf;
@@ -122,27 +163,31 @@ static ssize_t q6_write(struct file *file, const char __user *buf,
 	return buf - start;
 }
 
-static int q6_release(struct inode *inode, struct file *file)
+static int pcm_release(struct inode *inode, struct file *file)
 {
-	return q6audio_close(file->private_data);
+	struct pcm *pcm = file->private_data;
+	if (pcm->ac)
+		q6audio_close(pcm->ac);
+	kfree(pcm);
+	return 0;
 }
 
-static struct file_operations q6_fops = {
+static struct file_operations pcm_fops = {
 	.owner		= THIS_MODULE,
-	.open		= q6_open,
-	.write		= q6_write,
-	.release	= q6_release,
-	.unlocked_ioctl	= q6_ioctl,
+	.open		= pcm_open,
+	.write		= pcm_write,
+	.release	= pcm_release,
+	.unlocked_ioctl	= pcm_ioctl,
 };
 
-struct miscdevice q6_misc = {
+struct miscdevice pcm_misc = {
 	.minor	= MISC_DYNAMIC_MINOR,
 	.name	= "msm_pcm_out",
-	.fops	= &q6_fops,
+	.fops	= &pcm_fops,
 };
 
-static int __init q6_init(void) {
-	return misc_register(&q6_misc);
+static int __init pcm_init(void) {
+	return misc_register(&pcm_misc);
 }
 
-device_initcall(q6_init);
+device_initcall(pcm_init);
