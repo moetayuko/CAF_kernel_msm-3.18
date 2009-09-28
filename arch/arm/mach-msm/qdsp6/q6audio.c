@@ -162,10 +162,14 @@ int q6_device_volume(uint32_t device_id, int level)
 	return hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100;
 }
 
-
 static inline int adie_open(struct dal_client *client) 
 {
 	return dal_call_f0(client, DAL_OP_OPEN, 0);
+}
+
+static inline int adie_close(struct dal_client *client) 
+{
+	return dal_call_f0(client, DAL_OP_CLOSE, 0);
 }
 
 static inline int adie_set_path(struct dal_client *client,
@@ -194,10 +198,27 @@ static inline int adie_mute_path(struct dal_client *client,
 	return dal_call_f1(client, ADIE_OP_MUTE_PATH, path_type, mute_state);
 }
 
+static int adie_refcount;
 
 static struct dal_client *adie;
 static struct dal_client *adsp;
 static struct dal_client *acdb;
+
+static int adie_enable(void)
+{
+	adie_refcount++;
+	if (adie_refcount == 1)
+		adie_open(adie);
+	return 0;
+}
+
+static int adie_disable(void)
+{
+	adie_refcount--;
+	if (adie_refcount == 0)
+		adie_close(adie);
+	return 0;
+}
 
 /* 4k DMA scratch page used for exchanging acdb device config tables
  * and stream format descriptions with the DSP.
@@ -549,7 +570,6 @@ static int q6audio_init(void)
 	icodec_tx_clk = clk_get(0, "icodec_tx_clk");
 	ecodec_clk = clk_get(0, "ecodec_clk");
 	sdac_clk = clk_get(0, "sdac_clk");
-
 	audio_data = dma_alloc_coherent(NULL, 4096, &audio_phys, GFP_KERNEL);
 
 	adsp = dal_attach(AUDIO_DAL_DEVICE, AUDIO_DAL_PORT,
@@ -587,14 +607,6 @@ static int q6audio_init(void)
 		res = -ENODEV;
 		goto done;
 	}
-
-	res = adie_open(adie);
-	if (res) {
-		pr_err("audio_init: adie open failed\n");
-		res = -ENODEV;
-		goto done;
-	}
-
 	if (analog_ops->init)
 		analog_ops->init();
 
@@ -976,6 +988,7 @@ static int audio_rx_path_enable(int en)
 	if (en) {
 		audio_rx_path_refcount++;
 		if (audio_rx_path_refcount == 1) {
+			adie_enable();
 			_audio_rx_clk_enable();
 			_audio_rx_path_enable();
 		}
@@ -984,6 +997,7 @@ static int audio_rx_path_enable(int en)
 		if (audio_rx_path_refcount == 0) {
 			_audio_rx_path_disable();
 			_audio_rx_clk_disable();
+			adie_disable();
 		}
 	}
 	mutex_unlock(&audio_path_lock);
@@ -996,6 +1010,7 @@ static int audio_tx_path_enable(int en)
 	if (en) {
 		audio_tx_path_refcount++;
 		if (audio_tx_path_refcount == 1) {
+			adie_enable();
 			_audio_tx_clk_enable();
 			_audio_tx_path_enable();
 		}
@@ -1004,6 +1019,7 @@ static int audio_tx_path_enable(int en)
 		if (audio_tx_path_refcount == 0) {
 			_audio_tx_path_disable();
 			_audio_tx_clk_disable();
+			adie_disable();
 		}
 	}
 	mutex_unlock(&audio_path_lock);
