@@ -1,0 +1,89 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAn3///2A\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 961,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-10-02T08:34:47Z",
+      "side": 1,
+      "message": "you\u0027ll leak msg here.\n\nAlso, does the vfe_proc_ops() call below transfer ownership of msg to that function so that it can free it later?",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///14\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1300,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-10-02T08:34:47Z",
+      "side": 1,
+      "message": "atomic? why not GFP_KERNEL? can this be called in interrupt context?",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///18\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1306,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-10-02T08:34:47Z",
+      "side": 1,
+      "message": "same thing, you\u0027ll leak msg. You should just move this check above kzalloc.",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///10\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1683,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-10-02T08:34:47Z",
+      "side": 1,
+      "message": "do you really want to be allocating inside every irq? how many outstanding irq messages do you expect to have? depending on the answer to the last question, do you think it may make sense to preallocate a small pool of qcmd\u0027s?",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///1w\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1854,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-10-02T08:34:47Z",
+      "side": 1,
+      "message": "cpu_relax() afterwords maybe",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
