@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAn3///1k\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 961,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-10-02T09:07:51Z",
+      "side": 1,
+      "message": "Thanks, I didn\u0027t actually look at the function, just removed the comments.  I\u0027ll reupload a fix.",
+      "parentUuid": "AAAAn3///2A\u003d",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAn3///14\u003d",
         "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
         "patchSetId": 1
@@ -30,6 +48,24 @@
       "writtenOn": "2009-10-02T08:34:47Z",
       "side": 1,
       "message": "atomic? why not GFP_KERNEL? can this be called in interrupt context?",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///1g\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1300,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-10-02T09:07:51Z",
+      "side": 1,
+      "message": "I think this might be called from an interrupt context, I\u0027ll need to check.  It\u0027s a different fix though.",
+      "parentUuid": "AAAAn3///14\u003d",
       "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
@@ -53,6 +89,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAn3///1c\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1306,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-10-02T09:07:51Z",
+      "side": 1,
+      "message": "Same as before, didn\u0027t look at the surrounding code--will fix.",
+      "parentUuid": "AAAAn3///18\u003d",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAn3///10\u003d",
         "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
         "patchSetId": 1
@@ -64,6 +118,24 @@
       "writtenOn": "2009-10-02T08:34:47Z",
       "side": 1,
       "message": "do you really want to be allocating inside every irq? how many outstanding irq messages do you expect to have? depending on the answer to the last question, do you think it may make sense to preallocate a small pool of qcmd\u0027s?",
+      "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAn3///1Y\u003d",
+        "filename": "drivers/media/video/msm/msm_vfe8x_proc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1683,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2009-10-02T09:07:51Z",
+      "side": 1,
+      "message": "I know, it might make sense to pre-allocate.  That\u0027s a different fix, again.  I\u0027ve eliminated some of the useless kmallocs already--this one isn\u0027t obvious.",
+      "parentUuid": "AAAAn3///10\u003d",
       "revId": "11a5f966cbdd93e9c8a462e3338edec5a15c950b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
