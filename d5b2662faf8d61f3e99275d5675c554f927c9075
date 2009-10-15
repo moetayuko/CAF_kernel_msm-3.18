@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAoH///vE\u003d",
+        "filename": "drivers/usb/function/adb.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 180,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2009-10-15T14:40:04Z",
+      "side": 1,
+      "message": "either this needs to be a non-interruptible wait, or we need to cancel the inflight rx transaction if we\u0027re interrupted.  Making it non-interruptible is probably a lot simpler and should have no impact on userspace.",
+      "revId": "d5b2662faf8d61f3e99275d5675c554f927c9075",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
