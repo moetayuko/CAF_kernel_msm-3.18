@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAoH///gU\u003d",
+        "filename": "drivers/usb/function/mass_storage.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1603,
+      "author": {
+        "id": 1002752
+      },
+      "writtenOn": "2009-10-23T10:16:02Z",
+      "side": 1,
+      "message": "testing",
+      "revId": "12fe38b097b5feade6448da832b58ceb46a45fd7",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
