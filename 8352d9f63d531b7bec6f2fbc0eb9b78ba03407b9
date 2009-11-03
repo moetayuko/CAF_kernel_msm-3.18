@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAo3////A\u003d",
+        "filename": "drivers/mtd/devices/Kconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 61,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2009-11-03T06:47:22Z",
+      "side": 1,
+      "message": "coudl you rename this to MTD_MSM_BADBLOCK_HANDLING otherwise it sounds too generic, but is clearly an msm only option.",
+      "revId": "8352d9f63d531b7bec6f2fbc0eb9b78ba03407b9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
