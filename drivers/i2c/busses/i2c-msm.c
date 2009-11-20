@@ -491,13 +491,6 @@ msm_i2c_probe(struct platform_device *pdev)
 		"MSM I2C adapter",
 		sizeof(dev->adapter.name));
 
-	dev->adapter.nr = pdev->id;
-	ret = i2c_add_numbered_adapter(&dev->adapter);
-	if (ret) {
-		dev_err(&pdev->dev, "i2c_add_adapter failed\n");
-		goto err_i2c_add_adapter_failed;
-	}
-
 	ret = request_irq(dev->irq, msm_i2c_interrupt,
 			IRQF_DISABLED | IRQF_TRIGGER_RISING, pdev->name, dev);
 	if (ret) {
@@ -505,12 +498,20 @@ msm_i2c_probe(struct platform_device *pdev)
 		goto err_request_irq_failed;
 	}
 	disable_irq(dev->irq);
+
+	dev->adapter.nr = pdev->id;
+	ret = i2c_add_numbered_adapter(&dev->adapter);
+	if (ret) {
+		dev_err(&pdev->dev, "i2c_add_adapter failed\n");
+		goto err_i2c_add_adapter_failed;
+	}
 	return 0;
 
-/*	free_irq(dev->irq, dev); */
-err_request_irq_failed:
-	i2c_del_adapter(&dev->adapter);
+/*	i2c_del_adapter(&dev->adapter); */
 err_i2c_add_adapter_failed:
+	enable_irq(dev->irq);
+	free_irq(dev->irq, dev);
+err_request_irq_failed:
 	iounmap(dev->base);
 err_ioremap_failed:
 	kfree(dev);
@@ -528,9 +529,9 @@ msm_i2c_remove(struct platform_device *pdev)
 	struct resource		*mem;
 
 	platform_set_drvdata(pdev, NULL);
+	i2c_del_adapter(&dev->adapter);
 	enable_irq(dev->irq);
 	free_irq(dev->irq, dev);
-	i2c_del_adapter(&dev->adapter);
 	wake_lock_destroy(&dev->wakelock);
 	clk_put(dev->clk);
 	iounmap(dev->base);
