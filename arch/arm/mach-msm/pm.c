@@ -201,7 +201,10 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		exit_state = 0;
 	}
 
-	clk_enter_sleep(from_idle);
+	/* Skip if already called from arch_idle */
+	if (!from_idle)
+		clk_enter_sleep(0);
+
 	msm_irq_enter_sleep1(!!enter_state, from_idle);
 	msm_gpio_enter_sleep(from_idle);
 
@@ -317,7 +320,9 @@ enter_failed:
 	msm_irq_exit_sleep3();
 	msm_gpio_exit_sleep();
 	smd_sleep_exit();
-	clk_exit_sleep();
+	if (!from_idle)
+		clk_exit_sleep();
+
 	return rv;
 }
 
@@ -341,6 +346,7 @@ void arch_idle(void)
 	if (msm_pm_reset_vector == NULL)
 		return;
 
+	clk_enter_sleep(1);
 	sleep_time = msm_timer_enter_idle();
 #ifdef CONFIG_MSM_IDLE_STATS
 	t1 = ktime_to_ns(ktime_get());
@@ -397,6 +403,7 @@ void arch_idle(void)
 	}
 abort_idle:
 	msm_timer_exit_idle(low_power);
+	clk_exit_sleep();
 #ifdef CONFIG_MSM_IDLE_STATS
 	t2 = ktime_to_ns(ktime_get());
 	msm_pm_add_stat(exit_stat, t2 - t1);
