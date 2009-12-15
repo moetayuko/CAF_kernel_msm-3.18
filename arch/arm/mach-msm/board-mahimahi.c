@@ -34,6 +34,7 @@
 #include <linux/regulator/machine.h>
 #include <linux/ds2784_battery.h>
 #include <../../../drivers/staging/android/timed_gpio.h>
+#include <linux/smb329.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -465,6 +466,9 @@ static struct i2c_board_info rev_CX_i2c_devices[] = {
 		I2C_BOARD_INFO("tpa2018d1", 0x58),
 		.platform_data = &tpa2018_data,
 	},
+	{
+		I2C_BOARD_INFO("smb329", 0x6E >> 1),
+	},
 };
 
 static void config_gpio_table(uint32_t *table, int len);
@@ -684,14 +688,22 @@ static int ds2784_charge(int how) {
 	switch(how) {
 	case CHARGE_OFF:
 		/* CHARGER_EN is active low.  Set to 1 to disable. */
+		if (is_cdma_version(system_rev))
+			set_charger_ctrl(SMB329_DISABLE_CHG);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
 		break;
 	case CHARGE_SLOW:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
+		if (is_cdma_version(system_rev))
+			set_charger_ctrl(SMB329_ENABLE_SLOW_CHG);
+		else
+			gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		break;
 	case CHARGE_FAST:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
+		if (is_cdma_version(system_rev))
+			set_charger_ctrl(SMB329_ENABLE_FAST_CHG);
+		else
+			gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		break;
 	default:
