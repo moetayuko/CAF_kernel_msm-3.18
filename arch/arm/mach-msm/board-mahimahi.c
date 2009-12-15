@@ -54,6 +54,7 @@
 #include "proc_comm.h"
 #include "board-mahimahi-flashlight.h"
 #include "board-mahimahi-tpa2018d1.h"
+#include "board-mahimahi-smb329.h"
 
 static uint debug_uart;
 
@@ -466,6 +467,9 @@ static struct i2c_board_info rev_CX_i2c_devices[] = {
 		I2C_BOARD_INFO("tpa2018d1", 0x58),
 		.platform_data = &tpa2018_data,
 	},
+	{
+		I2C_BOARD_INFO("smb329", 0x6E >> 1),
+	},
 };
 
 static void config_gpio_table(uint32_t *table, int len);
@@ -670,14 +674,22 @@ static int ds2784_charge(int how) {
 	switch(how) {
 	case DS2784_BATTERY_CHARGE_OFF:
 		/* CHARGER_EN is active low.  Set to 1 to disable. */
+		if (is_cdma_version(system_rev))
+			smb329_set_charger_ctrl(SMB329_DISABLE_CHG);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
 		break;
 	case DS2784_BATTERY_CHARGE_SLOW:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
+		if (is_cdma_version(system_rev))
+			smb329_set_charger_ctrl(SMB329_ENABLE_SLOW_CHG);
+		else
+			gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		break;
 	case DS2784_BATTERY_CHARGE_FAST:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
+		if (is_cdma_version(system_rev))
+			smb329_set_charger_ctrl(SMB329_ENABLE_FAST_CHG);
+		else
+			gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		break;
 	default:
