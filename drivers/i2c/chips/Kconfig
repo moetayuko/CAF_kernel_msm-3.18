@@ -137,4 +137,10 @@ config VP_A1026
 	help
 	  A1026 Voice Processor Driver implemented by HTC.
 
+config AMP_TPA2018D1
+	tristate "TI TPA2018D1 Speaker AMP Driver"
+	depends on I2C
+	help
+	 TI TPA2018D1 Speaker AMP Driver implemented by HTC.
+
 endmenu
