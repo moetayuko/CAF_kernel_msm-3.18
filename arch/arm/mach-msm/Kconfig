@@ -356,6 +356,15 @@ config AMP_TPA2018D1
 	help
 	 TI TPA2018D1 Speaker AMP Driver implemented by HTC.
 
+config SMB329
+	tristate "SMB329 Switch Charger Driver"
+	depends on I2C
+	help
+	 SMB329 switch charger driver implemented by HTC.
+	 This could enable battery driver to set
+	 charging current as 100mA~500mA or 500mA~1000mA
+	 by GPIO or register
+
 if MSM_CPU_FREQ_SCREEN
 
 config MSM_CPU_FREQ_SCREEN_OFF
