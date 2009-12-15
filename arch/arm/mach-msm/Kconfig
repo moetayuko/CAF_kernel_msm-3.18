@@ -350,6 +350,12 @@ config MSM_CPU_FREQ_SCREEN
 	help
 	  Simple cpufreq scaling based on screen ON/OFF.
 
+config AMP_TPA2018D1
+	tristate "TI TPA2018D1 Speaker AMP Driver"
+	depends on I2C
+	help
+	 TI TPA2018D1 Speaker AMP Driver implemented by HTC.
+
 if MSM_CPU_FREQ_SCREEN
 
 config MSM_CPU_FREQ_SCREEN_OFF
