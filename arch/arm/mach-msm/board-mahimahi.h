@@ -123,6 +123,9 @@
 /* speaker amplifier enable pin for mahimahi CDMA version */
 #define MAHIMAHI_CDMA_GPIO_AUD_SPK_AMP_EN	104
 
+#define MAHIMAHI_CDMA_GPIO_BT_WAKE		28
+#define MAHIMAHI_CDMA_GPIO_FLASHLIGHT_TORCH	26
+
 #define is_cdma_version(rev) (((rev) & 0xF0) == 0xC0)
 
 #endif /* __ARCH_ARM_MACH_MSM_BOARD_MAHIMAHI_H */
