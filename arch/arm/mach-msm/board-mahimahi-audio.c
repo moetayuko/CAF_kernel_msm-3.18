@@ -22,6 +22,7 @@
 #include "board-mahimahi.h"
 #include "proc_comm.h"
 #include "pmic.h"
+#include "board-mahimahi-tpa2018d1.h"
 
 #if 0
 #define D(fmt, args...) printk(KERN_INFO "Audio: "fmt, ##args)
@@ -67,6 +68,11 @@ void mahimahi_speaker_enable(int en)
 
 		pmic_set_spkr_configuration(&scm);
 	}
+
+#ifdef CONFIG_AMP_TPA2018D1
+	if (is_cdma_version(system_rev))
+		tpa2018d1_set_speaker_amp(en);
+#endif
 }
 
 void mahimahi_receiver_enable(int en)
