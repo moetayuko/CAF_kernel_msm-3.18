@@ -16,6 +16,7 @@
 
 #include <linux/gpio.h>
 #include <linux/delay.h>
+#include <linux/tpa2018d1.h>
 #include <mach/msm_qdsp6_audio.h>
 #include <mach/htc_acoustic_qsd.h>
 
@@ -67,6 +68,11 @@ void mahimahi_speaker_enable(int en)
 
 		pmic_set_spkr_configuration(&scm);
 	}
+
+#ifdef CONFIG_AMP_TPA2018D1
+	if (is_cdma_version(system_rev))
+		set_speaker_amp(en);
+#endif
 }
 
 void mahimahi_receiver_enable(int en)
