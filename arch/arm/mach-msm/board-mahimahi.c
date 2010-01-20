@@ -32,6 +32,7 @@
 #include <linux/capella_cm3602.h>
 #include <linux/akm8973.h>
 #include <linux/regulator/machine.h>
+#include <linux/ds2784_battery.h>
 #include <../../../drivers/staging/android/timed_gpio.h>
 
 #include <asm/mach-types.h>
@@ -658,6 +659,63 @@ struct platform_device bcm_bt_lpm_device = {
 	},
 };
 
+#define GPIO_BATTERY_CHARGER_EN		22
+#define GPIO_BATTERY_CHARGER_CURRENT	16
+
+static int ds2784_charge(int how) {
+
+	int rc;
+
+	rc = gpio_request(GPIO_BATTERY_CHARGER_EN, "charger_en");
+	if (rc < 0) {
+		pr_err("%s: gpio_request(%d) failed: %d\n", __func__,
+			GPIO_BATTERY_CHARGER_EN, rc);
+		return rc;
+	}
+
+	rc = gpio_request(GPIO_BATTERY_CHARGER_CURRENT, "charger_current");
+	if (rc < 0) {
+		pr_err("%s: gpio_request(%d) failed: %d\n", __func__,
+			GPIO_BATTERY_CHARGER_CURRENT, rc);
+		gpio_free(GPIO_BATTERY_CHARGER_EN);
+		return rc;
+	}
+
+	switch(how) {
+	case CHARGE_OFF:
+		/* CHARGER_EN is active low.  Set to 1 to disable. */
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
+		break;
+	case CHARGE_SLOW:
+		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		break;
+	case CHARGE_FAST:
+		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		break;
+	default:
+		pr_err("%s: unknown charge request %d\n", __func__, how);
+		rc = -EINVAL;
+	}
+
+	gpio_free(GPIO_BATTERY_CHARGER_EN);
+	gpio_free(GPIO_BATTERY_CHARGER_CURRENT);
+	return rc;
+}
+
+static struct ds2784_platform_data ds2784_pdata = {
+	.charge = ds2784_charge,
+};
+
+static struct platform_device ds2784_device = {
+	.name = "ds2784-battery",
+	.id = -1,
+	.dev = {
+		.platform_data = &ds2784_pdata,
+	},
+};
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart1,
@@ -678,6 +736,7 @@ static struct platform_device *devices[] __initdata = {
 	&capella_cm3602,
 	&msm_camera_sensor_s5k3e2fx,
 	&mahimahi_flashlight_device,
+	&ds2784_device,
 };
 
 
