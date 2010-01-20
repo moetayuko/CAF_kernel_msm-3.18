@@ -667,7 +667,7 @@ static struct bcm_bt_lpm_platform_data bcm_bt_lpm_pdata = {
 	.request_clock_on_locked = msm_hs_request_clock_on_locked,
 };
 
-struct platform_device bcm_bt_lpm_device = {
+static struct platform_device bcm_bt_lpm_device = {
 	.name = "bcm_bt_lpm",
 	.id = 0,
 	.dev = {
