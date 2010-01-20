@@ -36,10 +36,10 @@
 #define DS2784_CURRENT_OFFSET_BIAS	0x33
 #define DS2784_ACTIVE_EMPTY		0x3b
 
-extern int w1_ds2784_read(struct device *dev, char *buf, int addr,
-			  size_t count);
-extern int w1_ds2784_write(struct device *dev, char *buf, int addr,
-			   size_t count);
+extern int w1_ds2784_init(void (*cb)(void *));
+extern void w1_ds2784_exit(void);
+extern int w1_ds2784_read(void *handle, char *buf, int addr, size_t count);
+extern int w1_ds2784_write(void *handle, char *buf, int addr, size_t count);
 
 
 /**

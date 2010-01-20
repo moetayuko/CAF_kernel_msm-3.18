@@ -27,7 +27,6 @@
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/wakelock.h>
-#include <linux/gpio.h>
 
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
@@ -35,6 +34,8 @@
 
 #include "../w1/w1.h"
 #include "../w1/slaves/w1_ds2784.h"
+
+#include <linux/ds2784_battery.h>
 
 extern int is_ac_power_supplied(void);
 
@@ -134,11 +135,12 @@ struct ds2784_device_info {
 	struct battery_status status;
 
 	struct power_supply bat;
-	struct device *w1_dev;
 	struct workqueue_struct *monitor_wqueue;
 	struct work_struct monitor_work;
 	struct alarm alarm;
 	struct wake_lock work_wake_lock;
+
+	int (*charge)(int);
 
 	u8 dummy; /* dummy battery flag */
 	u8 last_charge_mode; /* previous charger state */
@@ -152,10 +154,6 @@ struct ds2784_device_info {
 static struct wake_lock vbus_wake_lock;
 
 #define BATT_RSNSP			(67)	/*Passion battery source 1*/
-
-#define GPIO_BATTERY_DETECTION		39
-#define GPIO_BATTERY_CHARGER_EN		22
-#define GPIO_BATTERY_CHARGER_CURRENT	16
 
 static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_STATUS,
@@ -220,6 +218,8 @@ static void ds2784_parse_data(u8 *raw, struct battery_status *s)
 			  raw[DS2784_REG_RAAC_LSB]) * 1600;
 }
 
+static void *w1_handle;
+
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
@@ -234,10 +234,10 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 		count = DS2784_REG_CURR_LSB - start + 1;
 	}
 
-	ret = w1_ds2784_read(di->w1_dev, di->raw + start, start, count);
+	ret = w1_ds2784_read(w1_handle, di->raw + start, start, count);
 	if (ret != count) {
 		dev_warn(di->dev, "call to w1_ds2784_read failed (0x%p)\n",
-			 di->w1_dev);
+			w1_handle);
 		return 1;
 	}
 
@@ -251,7 +251,7 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 			/* reset ACC register to ~500mAh, since it may have zeroed out */
 			acr[0] = 0x05;
 			acr[1] = 0x06;
-			w1_ds2784_write(di->w1_dev, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
+			w1_ds2784_write(w1_handle, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
 		}
 		battery_initial = 1;
 	}
@@ -420,10 +420,10 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	di->last_charge_mode = charge_mode;
 	di->status.charge_mode = charge_mode;
 
+	di->charge(charge_mode);
+
 	switch (charge_mode) {
 	case CHARGE_OFF:
-		/* CHARGER_EN is active low.  Set to 1 to disable. */
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
 		if (temp >= TEMP_CRITICAL)
 			pr_info("batt: charging OFF [OVERTEMP]\n");
 		else if (di->status.cooldown)
@@ -434,13 +434,9 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 			pr_info("batt: charging OFF\n");
 		break;
 	case CHARGE_SLOW:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging SLOW\n");
 		break;
 	case CHARGE_FAST:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging FAST\n");
 		break;
 	}
@@ -532,8 +528,15 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, di);
 
 	pdata = pdev->dev.platform_data;
+	if (!pdata || !pdata->charge) {
+		pr_err("%s: no pdata or charge function!\n", __func__);
+		rc = -EINVAL;
+		goto fail_register;
+	}
+
+	di->charge = pdata->charge;
+
 	di->dev = &pdev->dev;
-	di->w1_dev = pdev->dev.parent;
 
 	di->bat.name = "battery";
 	di->bat.type = POWER_SUPPLY_TYPE_BATTERY;
@@ -613,7 +616,7 @@ static struct platform_driver ds2784_battery_driver = {
 		.name = "ds2784-battery",
 		.pm = &ds2784_pm_ops,
 	},
-	.probe	  = ds2784_battery_probe,
+	.probe = ds2784_battery_probe,
 };
 
 static int battery_log_open(struct inode *inode, struct file *file)
@@ -628,12 +631,23 @@ static struct file_operations battery_log_fops = {
 	.release = single_release,
 };
 
-static int __init ds2784_battery_init(void)
-{
+static void w1_cb(void *w1) {
+	int rc;
+
 	debugfs_create_file("battery_log", 0444, NULL, NULL, &battery_log_fops);
 	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
-	return platform_driver_register(&ds2784_battery_driver);
+	w1_handle = w1;
+	pr_info("%s: w1 handle %p\n", __func__, w1);
+	rc = platform_driver_register(&ds2784_battery_driver);
+	if (rc < 0)
+		pr_err("%s: failed to register platform driver: %d\n",
+			__func__, rc);
+}
+
+static int __init ds2784_battery_init(void)
+{
+	return w1_ds2784_init(w1_cb);
 }
 
 module_init(ds2784_battery_init);
