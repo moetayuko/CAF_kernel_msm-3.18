@@ -2168,6 +2168,7 @@ dhd_module_init(void)
 	if (down_timeout(&dhd_registration_sem,  msecs_to_jiffies(10000)) != 0) {
 		error = -EINVAL;
 		DHD_ERROR(("%s: sdio_register_driver timeout\n", __FUNCTION__));
+		dhd_bus_unregister();
 		goto fail_1;
 	}
 #endif
