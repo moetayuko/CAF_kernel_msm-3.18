@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///fU\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 878,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-21T20:13:45Z",
+      "side": 1,
+      "message": "why is this check necessary? cdma devices have the same layout and DVT2+ for umts devices.",
+      "revId": "cf1839b4ad3f41e0e3f4be8262b6d59a2ff42ba1",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
