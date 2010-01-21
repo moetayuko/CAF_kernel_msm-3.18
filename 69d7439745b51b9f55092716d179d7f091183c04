@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAr3///eo\u003d",
+        "filename": "drivers/i2c/chips/Makefile",
+        "patchSetId": 1
+      },
+      "lineNbr": 25,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:48:23Z",
+      "side": 1,
+      "message": "no, the diff output is messed up.  It\u0027s tabbed like the rest.",
+      "parentUuid": "AAAAr3///hA\u003d",
+      "revId": "69d7439745b51b9f55092716d179d7f091183c04",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///hM\u003d",
         "filename": "drivers/i2c/chips/smb329.c",
         "patchSetId": 1
@@ -30,6 +48,24 @@
       "writtenOn": "2010-01-21T08:05:47Z",
       "side": 1,
       "message": "unused, remove",
+      "revId": "69d7439745b51b9f55092716d179d7f091183c04",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///eQ\u003d",
+        "filename": "drivers/i2c/chips/smb329.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 28,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:48:23Z",
+      "side": 1,
+      "message": "Removed.",
+      "parentUuid": "AAAAr3///hM\u003d",
       "revId": "69d7439745b51b9f55092716d179d7f091183c04",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
@@ -53,6 +89,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAr3///eM\u003d",
+        "filename": "drivers/i2c/chips/smb329.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 33,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:48:23Z",
+      "side": 1,
+      "message": "Removed.",
+      "parentUuid": "AAAAr3///hE\u003d",
+      "revId": "69d7439745b51b9f55092716d179d7f091183c04",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///hI\u003d",
         "filename": "drivers/i2c/chips/smb329.c",
         "patchSetId": 1
@@ -64,6 +118,24 @@
       "writtenOn": "2010-01-21T08:05:47Z",
       "side": 1,
       "message": "int",
+      "revId": "69d7439745b51b9f55092716d179d7f091183c04",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///eI\u003d",
+        "filename": "drivers/i2c/chips/smb329.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 39,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:48:23Z",
+      "side": 1,
+      "message": "Replaced with a mutex and an int.",
+      "parentUuid": "AAAAr3///hI\u003d",
       "revId": "69d7439745b51b9f55092716d179d7f091183c04",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
@@ -98,6 +170,24 @@
       "writtenOn": "2010-01-21T08:05:47Z",
       "side": 1,
       "message": "a more verbose description would be better",
+      "revId": "69d7439745b51b9f55092716d179d7f091183c04",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///eE\u003d",
+        "filename": "drivers/i2c/chips/smb329.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 194,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:48:23Z",
+      "side": 1,
+      "message": "Done.",
+      "parentUuid": "AAAAr3///hQ\u003d",
       "revId": "69d7439745b51b9f55092716d179d7f091183c04",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
