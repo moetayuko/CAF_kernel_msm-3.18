@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///iA\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 124,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-21T02:33:16Z",
+      "side": 1,
+      "message": "(!!((rev) \u0026 0xF0) \u003d\u003d 0xC0)",
+      "revId": "b4304e7d813a8ac988b57e81b8eb6247c80d3c03",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
