@@ -16,6 +16,24 @@
       "revId": "b4304e7d813a8ac988b57e81b8eb6247c80d3c03",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///ew\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 124,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-21T21:26:29Z",
+      "side": 1,
+      "message": "Updated.  ((rev) \u0026 0xF0) \u003d\u003d 0xC0) is enough, the expression evaluates to boolean already, without the !!.",
+      "parentUuid": "AAAAr3///iA\u003d",
+      "revId": "b4304e7d813a8ac988b57e81b8eb6247c80d3c03",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
