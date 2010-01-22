@@ -27,11 +27,11 @@
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/wakelock.h>
-#include <linux/gpio.h>
 
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/mutex.h>
+#include <linux/ds2784_battery.h>
 
 #include "../w1/w1.h"
 #include "w1_ds2784.h"
@@ -61,10 +61,6 @@ struct battery_status {
 #define SOURCE_NONE	0
 #define SOURCE_USB	1
 #define SOURCE_AC	2
-
-#define CHARGE_OFF	0
-#define CHARGE_SLOW	1
-#define CHARGE_FAST	2
 
 #define TEMP_CRITICAL	600 /* no charging at all */
 #define TEMP_HOT	500 /* no fast charge, no charge > 4.1v */
@@ -139,6 +135,9 @@ struct ds2784_device_info {
 	struct alarm alarm;
 	struct wake_lock work_wake_lock;
 
+	int (*charge)(int);
+	struct w1_slave *w1_slave;
+
 	u8 dummy; /* dummy battery flag */
 	u8 last_charge_mode; /* previous charger state */
 	u8 slow_poll;
@@ -151,10 +150,6 @@ struct ds2784_device_info {
 static struct wake_lock vbus_wake_lock;
 
 #define BATT_RSNSP			(67)	/*Passion battery source 1*/
-
-#define GPIO_BATTERY_DETECTION		39
-#define GPIO_BATTERY_CHARGER_EN		22
-#define GPIO_BATTERY_CHARGER_CURRENT	16
 
 static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_STATUS,
@@ -262,8 +257,6 @@ static int w1_ds2784_write(void *handle, char *buf, int addr, size_t count)
 	return w1_ds2784_io(handle, buf, addr, count, 1);
 }
 
-static struct w1_slave *w1_handle;
-
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
@@ -278,10 +271,10 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 		count = DS2784_REG_CURR_LSB - start + 1;
 	}
 
-	ret = w1_ds2784_read(w1_handle, di->raw + start, start, count);
+	ret = w1_ds2784_read(di->w1_slave, di->raw + start, start, count);
 	if (ret != count) {
 		dev_warn(di->dev, "call to w1_ds2784_read failed (0x%p)\n",
-			w1_handle);
+			di->w1_slave);
 		return 1;
 	}
 
@@ -295,7 +288,7 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 			/* reset ACC register to ~500mAh, since it may have zeroed out */
 			acr[0] = 0x05;
 			acr[1] = 0x06;
-			w1_ds2784_write(w1_handle, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
+			w1_ds2784_write(di->w1_slave, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
 		}
 		battery_initial = 1;
 	}
@@ -321,11 +314,11 @@ static int battery_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		switch (di->status.charge_source) {
-		case CHARGE_OFF:
+		case DS2784_BATTERY_CHARGE_OFF:
 			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
 			break;
-		case CHARGE_FAST:
-		case CHARGE_SLOW:
+		case DS2784_BATTERY_CHARGE_FAST:
+		case DS2784_BATTERY_CHARGE_SLOW:
 			if (di->status.battery_full)
 				val->intval = POWER_SUPPLY_STATUS_FULL;
 			else
@@ -424,7 +417,7 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	    (di->status.current_uA <= 80000) &&
 	    (di->status.percentage == 100)) {
 		di->status.battery_full = 1;
-		charge_mode = CHARGE_OFF;
+		charge_mode = DS2784_BATTERY_CHARGE_OFF;
 	} else {
 		/* We don't move from full to not-full until
 		 * we drop below 99%, to avoid confusing the
@@ -438,7 +431,7 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 
 	if (temp >= TEMP_HOT) {
 		if (temp >= TEMP_CRITICAL)
-			charge_mode = CHARGE_OFF;
+			charge_mode = DS2784_BATTERY_CHARGE_OFF;
 
 		/* once we charge to max voltage when hot, disable
 		 * charging until the temp drops or the voltage drops
@@ -448,14 +441,14 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	}
 
 	/* when the battery is warm, only charge in slow charge mode */
-	if ((temp >= TEMP_WARM) && (charge_mode == CHARGE_FAST))
-		charge_mode = CHARGE_SLOW;
+	if ((temp >= TEMP_WARM) && (charge_mode == DS2784_BATTERY_CHARGE_FAST))
+		charge_mode = DS2784_BATTERY_CHARGE_SLOW;
 
 	if (di->status.cooldown) {
 		if ((temp < TEMP_WARM) || (volt <= TEMP_HOT_MIN_MV))
 			di->status.cooldown = 0;
 		else
-			charge_mode = CHARGE_OFF;
+			charge_mode = DS2784_BATTERY_CHARGE_OFF;
 	}
 
 	if (di->last_charge_mode == charge_mode)
@@ -464,10 +457,10 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	di->last_charge_mode = charge_mode;
 	di->status.charge_mode = charge_mode;
 
+	di->charge(charge_mode);
+
 	switch (charge_mode) {
-	case CHARGE_OFF:
-		/* CHARGER_EN is active low.  Set to 1 to disable. */
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
+	case DS2784_BATTERY_CHARGE_OFF:
 		if (temp >= TEMP_CRITICAL)
 			pr_info("batt: charging OFF [OVERTEMP]\n");
 		else if (di->status.cooldown)
@@ -477,14 +470,10 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 		else
 			pr_info("batt: charging OFF\n");
 		break;
-	case CHARGE_SLOW:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+	case DS2784_BATTERY_CHARGE_SLOW:
 		pr_info("batt: charging SLOW\n");
 		break;
-	case CHARGE_FAST:
-		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
-		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+	case DS2784_BATTERY_CHARGE_FAST:
 		pr_info("batt: charging FAST\n");
 		break;
 	}
@@ -576,11 +565,14 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, di);
 
 	pdata = pdev->dev.platform_data;
-	if (!pdata) {
-		pr_err("%s: no pdata!\n", __func__);
+	if (!pdata || !pdata->charge || !pdata->w1_slave) {
+		pr_err("%s: pdata missing or invalid\n", __func__);
 		rc = -EINVAL;
 		goto fail_register;
 	}
+
+	di->charge = pdata->charge;
+	di->w1_slave = pdata->w1_slave;
 
 	di->dev = &pdev->dev;
 
@@ -677,38 +669,15 @@ static struct file_operations battery_log_fops = {
 	.release = single_release,
 };
 
-static int w1_ds2784_add_slave(struct w1_slave *sl)
+static int __init ds2784_battery_init(void)
 {
-	int rc;
-
 	debugfs_create_file("battery_log", 0444, NULL, NULL, &battery_log_fops);
 	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
-	w1_handle = sl;
-	pr_info("%s: w1 handle %p\n", __func__, sl);
-	rc = platform_driver_register(&ds2784_battery_driver);
-	if (rc < 0)
-		pr_err("%s: failed to register platform driver: %d\n",
-			__func__, rc);
-	return rc;
-}
-
-static struct w1_family_ops w1_ds2784_fops = {
-	.add_slave    = w1_ds2784_add_slave,
-};
-
-static struct w1_family w1_ds2784_family = {
-	.fid = W1_FAMILY_DS2784,
-	.fops = &w1_ds2784_fops,
-};
-
-static int __init ds2784_battery_init(void)
-{
-	return w1_register_family(&w1_ds2784_family);
+	return platform_driver_register(&ds2784_battery_driver);
 }
 
 module_init(ds2784_battery_init);
-
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Justin Lin <Justin_lin@htc.com>");
