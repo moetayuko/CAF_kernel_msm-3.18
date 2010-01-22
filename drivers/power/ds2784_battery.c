@@ -34,7 +34,7 @@
 #include <linux/mutex.h>
 
 #include "../w1/w1.h"
-#include "../w1/slaves/w1_ds2784.h"
+#include "w1_ds2784.h"
 
 extern int is_ac_power_supplied(void);
 
@@ -134,7 +134,6 @@ struct ds2784_device_info {
 	struct battery_status status;
 
 	struct power_supply bat;
-	struct device *w1_dev;
 	struct workqueue_struct *monitor_wqueue;
 	struct work_struct monitor_work;
 	struct alarm alarm;
@@ -220,6 +219,51 @@ static void ds2784_parse_data(u8 *raw, struct battery_status *s)
 			  raw[DS2784_REG_RAAC_LSB]) * 1600;
 }
 
+static int w1_ds2784_io(struct w1_slave *sl, char *buf, int addr, size_t count, int io)
+{
+	if (!sl)
+		return 0;
+
+	mutex_lock(&sl->master->mutex);
+
+	if (addr > DS2784_DATA_SIZE || addr < 0) {
+		count = 0;
+		goto out;
+	}
+	if (addr + count > DS2784_DATA_SIZE)
+		count = DS2784_DATA_SIZE - addr;
+
+	if (!w1_reset_select_slave(sl)) {
+		if (!io) {
+			w1_write_8(sl->master, W1_DS2784_READ_DATA);
+			w1_write_8(sl->master, addr);
+			count = w1_read_block(sl->master, buf, count);
+		} else {
+			w1_write_8(sl->master, W1_DS2784_WRITE_DATA);
+			w1_write_8(sl->master, addr);
+			w1_write_block(sl->master, buf, count);
+			/* XXX w1_write_block returns void, not n_written */
+		}
+	}
+
+out:
+	mutex_unlock(&sl->master->mutex);
+
+	return count;
+}
+
+static int w1_ds2784_read(void *handle, char *buf, int addr, size_t count)
+{
+	return w1_ds2784_io(handle, buf, addr, count, 0);
+}
+
+static int w1_ds2784_write(void *handle, char *buf, int addr, size_t count)
+{
+	return w1_ds2784_io(handle, buf, addr, count, 1);
+}
+
+static struct w1_slave *w1_handle;
+
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
@@ -234,10 +278,10 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 		count = DS2784_REG_CURR_LSB - start + 1;
 	}
 
-	ret = w1_ds2784_read(di->w1_dev, di->raw + start, start, count);
+	ret = w1_ds2784_read(w1_handle, di->raw + start, start, count);
 	if (ret != count) {
 		dev_warn(di->dev, "call to w1_ds2784_read failed (0x%p)\n",
-			 di->w1_dev);
+			w1_handle);
 		return 1;
 	}
 
@@ -251,7 +295,7 @@ static int ds2784_battery_read_status(struct ds2784_device_info *di)
 			/* reset ACC register to ~500mAh, since it may have zeroed out */
 			acr[0] = 0x05;
 			acr[1] = 0x06;
-			w1_ds2784_write(di->w1_dev, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
+			w1_ds2784_write(w1_handle, acr, DS2784_REG_ACCUMULATE_CURR_MSB, 2);
 		}
 		battery_initial = 1;
 	}
@@ -532,8 +576,13 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, di);
 
 	pdata = pdev->dev.platform_data;
+	if (!pdata) {
+		pr_err("%s: no pdata!\n", __func__);
+		rc = -EINVAL;
+		goto fail_register;
+	}
+
 	di->dev = &pdev->dev;
-	di->w1_dev = pdev->dev.parent;
 
 	di->bat.name = "battery";
 	di->bat.type = POWER_SUPPLY_TYPE_BATTERY;
@@ -613,7 +662,7 @@ static struct platform_driver ds2784_battery_driver = {
 		.name = "ds2784-battery",
 		.pm = &ds2784_pm_ops,
 	},
-	.probe	  = ds2784_battery_probe,
+	.probe = ds2784_battery_probe,
 };
 
 static int battery_log_open(struct inode *inode, struct file *file)
@@ -628,15 +677,38 @@ static struct file_operations battery_log_fops = {
 	.release = single_release,
 };
 
-static int __init ds2784_battery_init(void)
+static int w1_ds2784_add_slave(struct w1_slave *sl)
 {
+	int rc;
+
 	debugfs_create_file("battery_log", 0444, NULL, NULL, &battery_log_fops);
 	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
-	return platform_driver_register(&ds2784_battery_driver);
+	w1_handle = sl;
+	pr_info("%s: w1 handle %p\n", __func__, sl);
+	rc = platform_driver_register(&ds2784_battery_driver);
+	if (rc < 0)
+		pr_err("%s: failed to register platform driver: %d\n",
+			__func__, rc);
+	return rc;
+}
+
+static struct w1_family_ops w1_ds2784_fops = {
+	.add_slave    = w1_ds2784_add_slave,
+};
+
+static struct w1_family w1_ds2784_family = {
+	.fid = W1_FAMILY_DS2784,
+	.fops = &w1_ds2784_fops,
+};
+
+static int __init ds2784_battery_init(void)
+{
+	return w1_register_family(&w1_ds2784_family);
 }
 
 module_init(ds2784_battery_init);
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Justin Lin <Justin_lin@htc.com>");

@@ -36,12 +36,6 @@
 #define DS2784_CURRENT_OFFSET_BIAS	0x33
 #define DS2784_ACTIVE_EMPTY		0x3b
 
-extern int w1_ds2784_read(struct device *dev, char *buf, int addr,
-			  size_t count);
-extern int w1_ds2784_write(struct device *dev, char *buf, int addr,
-			   size_t count);
-
-
 /**
  * The DS2482 registers - there are 3 registers that are addressed by a read
  * pointer. The read pointer is set by the last command executed.
