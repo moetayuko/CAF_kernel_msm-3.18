@@ -1,0 +1,72 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///ck\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 669,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-01-22T04:07:54Z",
+      "side": 1,
+      "message": "Don\u0027t request and free the gpios every time.",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///cY\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 66,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-01-22T04:07:54Z",
+      "side": 1,
+      "message": "Does this compile without a warning? You also defined this in the header you added.",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///cg\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 264,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-01-22T04:07:54Z",
+      "side": 1,
+      "message": "This belongs in the device info.",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///cc\u003d",
+        "filename": "include/linux/ds2784_battery.h",
+        "patchSetId": 2
+      },
+      "lineNbr": 22,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-01-22T04:07:54Z",
+      "side": 1,
+      "message": "This is not a good name to use in a global header",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
