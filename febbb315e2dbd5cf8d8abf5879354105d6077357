@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAr3///cM\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 669,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-22T04:36:27Z",
+      "side": 1,
+      "message": "I\u0027m not sure where to request and release those GPIOs. In the original code, that was not happening.  Perhaps in the suspend/resume handlers?",
+      "parentUuid": "AAAAr3///ck\u003d",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///cY\u003d",
         "filename": "drivers/power/ds2784_battery.c",
         "patchSetId": 2
@@ -36,6 +54,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAr3///cI\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 66,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-22T04:36:27Z",
+      "side": 1,
+      "message": "That was defined twice, in the old w1 driver, and in here.  I\u0027ll remove this.",
+      "parentUuid": "AAAAr3///cY\u003d",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///cg\u003d",
         "filename": "drivers/power/ds2784_battery.c",
         "patchSetId": 2
@@ -47,6 +83,24 @@
       "writtenOn": "2010-01-22T04:07:54Z",
       "side": 1,
       "message": "This belongs in the device info.",
+      "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///cE\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 264,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-01-22T04:36:27Z",
+      "side": 1,
+      "message": "We get this information before we call probe().  The device info is set up in the probe() call.",
+      "parentUuid": "AAAAr3///cg\u003d",
       "revId": "febbb315e2dbd5cf8d8abf5879354105d6077357",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
