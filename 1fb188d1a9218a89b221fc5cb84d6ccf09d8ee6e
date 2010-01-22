@@ -16,6 +16,23 @@
       "revId": "1fb188d1a9218a89b221fc5cb84d6ccf09d8ee6e",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///bY\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-audio.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 74,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:46:03Z",
+      "side": 1,
+      "message": "is it ok to turn off the amp after you set the configuration on the pmic? seems that for umts, on the mute case, we first turn off the spkr, and then set the new pmic config.",
+      "revId": "1fb188d1a9218a89b221fc5cb84d6ccf09d8ee6e",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
