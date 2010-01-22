@@ -103,6 +103,24 @@
       "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///bk\u003d",
+        "filename": "drivers/i2c/chips/tpa2018d1.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 208,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:32:37Z",
+      "side": 1,
+      "message": "what i\u0027m saying is that there\u0027s no point in allocating memory for a structure that you can\u0027t possibly use correctly since the board didn\u0027t provide the gpio. So, if there\u0027s no pdata, error out.\n\nAlso, you bring up a good point. the whole \u0027set_speaker_amp\u0027 interface is scary... you should probably check to see if the driver probe\u0027d correctly, and if not, leave.",
+      "parentUuid": "AAAAr3///bo\u003d",
+      "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
