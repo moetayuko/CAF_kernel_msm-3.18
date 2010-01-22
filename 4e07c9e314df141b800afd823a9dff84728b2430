@@ -36,6 +36,23 @@
     },
     {
       "key": {
+        "uuid": "AAAAr3///bg\u003d",
+        "filename": "drivers/i2c/chips/tpa2018d1.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 120,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:39:30Z",
+      "side": 1,
+      "message": "thinking more about this, this is not acceptable. Calling into this driver from the board file is not correct.",
+      "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///hw\u003d",
         "filename": "drivers/i2c/chips/tpa2018d1.c",
         "patchSetId": 1
