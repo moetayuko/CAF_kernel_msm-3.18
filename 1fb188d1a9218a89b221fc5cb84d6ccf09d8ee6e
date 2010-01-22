@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///bs\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-audio.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 72,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:40:26Z",
+      "side": 1,
+      "message": "why do we even need the ifdef?",
+      "revId": "1fb188d1a9218a89b221fc5cb84d6ccf09d8ee6e",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
