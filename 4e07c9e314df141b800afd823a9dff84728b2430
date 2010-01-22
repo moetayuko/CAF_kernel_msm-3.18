@@ -2,6 +2,40 @@
   "comments": [
     {
       "key": {
+        "uuid": "AAAAr3///co\u003d",
+        "filename": "drivers/i2c/chips/tpa2018d1.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 40,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:03:39Z",
+      "side": 1,
+      "message": "lower case..",
+      "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///b0\u003d",
+        "filename": "drivers/i2c/chips/tpa2018d1.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 120,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:03:39Z",
+      "side": 1,
+      "message": "could you rename to something like tpa2018d1_speake_amp_enable() or something... \"set_speaker_amp\" exported to the global namespace is kind of messy",
+      "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3///hw\u003d",
         "filename": "drivers/i2c/chips/tpa2018d1.c",
         "patchSetId": 1
@@ -31,6 +65,23 @@
       "side": 1,
       "message": "Not yet, they will provide it in a separate patch.  The amp is configured from the board file by calling set_speaker_amp().  The ioctl() is for overriding the configuration.",
       "parentUuid": "AAAAr3///hw\u003d",
+      "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///cs\u003d",
+        "filename": "drivers/i2c/chips/tpa2018d1.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 208,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-22T05:03:39Z",
+      "side": 1,
+      "message": "this seems pretty silly. just error out if there\u0027s no pdata.",
       "revId": "4e07c9e314df141b800afd823a9dff84728b2430",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
