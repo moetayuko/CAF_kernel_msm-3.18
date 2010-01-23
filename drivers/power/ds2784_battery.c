@@ -386,17 +386,12 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 		power_supply_changed(&di->bat);
 }
 
-static spinlock_t charge_state_lock;
-
 static int battery_adjust_charge_state(struct ds2784_device_info *di)
 {
-	unsigned long flags;
 	unsigned source;
 	int rc = 0;
 	int temp, volt;
 	u8 charge_mode;
-
-	spin_lock_irqsave(&charge_state_lock, flags);
 
 	temp = di->status.temp_C;
 	volt = di->status.voltage_uV / 1000;
@@ -479,7 +474,6 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	}
 	rc = 1;
 done:
-	spin_unlock_irqrestore(&charge_state_lock, flags);
 	return rc;
 }
 
@@ -566,7 +560,9 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 
 	pdata = pdev->dev.platform_data;
 	if (!pdata || !pdata->charge || !pdata->w1_slave) {
-		pr_err("%s: pdata missing or invalid\n", __func__);
+		pr_err("%s: pdata %p missing or invalid\n", __func__, pdata);
+		if (pdata)
+			pr_err("%s: pdata charge %p slave %p\n", __func__, pdata->charge, pdata->w1_slave);
 		rc = -EINVAL;
 		goto fail_register;
 	}
@@ -672,7 +668,6 @@ static struct file_operations battery_log_fops = {
 static int __init ds2784_battery_init(void)
 {
 	debugfs_create_file("battery_log", 0444, NULL, NULL, &battery_log_fops);
-	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
 	return platform_driver_register(&ds2784_battery_driver);
 }
