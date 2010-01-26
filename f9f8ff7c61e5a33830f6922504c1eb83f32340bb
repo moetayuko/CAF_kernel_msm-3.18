@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///Qs\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-audio.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 72,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:49:21Z",
+      "side": 1,
+      "message": "don\u0027t need the ifdef if you remove the config option, since it\u0027s not necessary.",
+      "revId": "f9f8ff7c61e5a33830f6922504c1eb83f32340bb",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
