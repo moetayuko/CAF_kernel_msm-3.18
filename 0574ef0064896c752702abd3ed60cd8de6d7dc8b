@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///QI\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 565,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T05:04:46Z",
+      "side": 1,
+      "message": "80 chars.",
+      "revId": "0574ef0064896c752702abd3ed60cd8de6d7dc8b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
