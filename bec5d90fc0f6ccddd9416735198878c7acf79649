@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///QQ\u003d",
+        "filename": "drivers/power/ds2784_battery.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 317,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T05:01:37Z",
+      "side": 1,
+      "message": "You have to be a little bit careful here since before, SOURCE_xxx and CHARGE_xxx were both defined in this file, and had sync\u0027d the values of off\u003dnone, usb\u003dslow, ac\u003dfast. Since these are now in different files, it\u0027s a little bit more fragile. Maybe these should reference SOURCE_NONE/SOURCE_USB/SOURCE_AC, and below where mode \u003d source, we could use little look up table? Probably silly, but safer.",
+      "revId": "bec5d90fc0f6ccddd9416735198878c7acf79649",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
