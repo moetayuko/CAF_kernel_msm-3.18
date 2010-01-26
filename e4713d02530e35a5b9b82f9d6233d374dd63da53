@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///Qk\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 3
+      },
+      "lineNbr": 359,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:51:00Z",
+      "side": 1,
+      "message": "don\u0027t need the config option.",
+      "revId": "e4713d02530e35a5b9b82f9d6233d374dd63da53",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///Qg\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-smb329.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 107,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:51:00Z",
+      "side": 1,
+      "message": "don\u0027t need the export_symbol",
+      "revId": "e4713d02530e35a5b9b82f9d6233d374dd63da53",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///Qc\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-smb329.h",
+        "patchSetId": 3
+      },
+      "lineNbr": 27,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:51:00Z",
+      "side": 1,
+      "message": "remove.",
+      "revId": "e4713d02530e35a5b9b82f9d6233d374dd63da53",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
