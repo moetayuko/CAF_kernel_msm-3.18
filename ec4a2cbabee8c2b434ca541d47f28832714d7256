@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3///RA\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 2
+      },
+      "lineNbr": 353,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:47:53Z",
+      "side": 1,
+      "message": "You don\u0027t need this config option, remove it. Since mahimahi kernels will need to support CDMA and UMTS versions, I don\u0027t see why we\u0027d need to turn this off.",
+      "revId": "ec4a2cbabee8c2b434ca541d47f28832714d7256",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///Q8\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-tpa2018d1.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 82,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:47:53Z",
+      "side": 1,
+      "message": "you don\u0027t need to export symbols here.",
+      "revId": "ec4a2cbabee8c2b434ca541d47f28832714d7256",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3///Q4\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-tpa2018d1.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 127,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-01-26T04:47:53Z",
+      "side": 1,
+      "message": "the nop functions aren\u0027t necessary. remove them. Though, on second thought, should we turn the amp off on suspend? Dunno how this is supposed to work.",
+      "revId": "ec4a2cbabee8c2b434ca541d47f28832714d7256",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
