@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+x8\u003d",
+        "filename": "arch/arm/mach-msm/qdsp6/pcm_in.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 69,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-02-03T22:24:46Z",
+      "side": 1,
+      "message": "line exceeds 80 columns",
+      "revId": "5de4dc3e212980ca63eefde4fc87d3a162e97809",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+yA\u003d",
+        "filename": "arch/arm/mach-msm/qdsp6/pcm_in.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 86,
+      "author": {
+        "id": 1000866
+      },
+      "writtenOn": "2010-02-03T22:24:46Z",
+      "side": 1,
+      "message": "if (!config.channel_count || config.channel_count \u003e 2) is better, since channel_count is a uint32_t",
+      "revId": "5de4dc3e212980ca63eefde4fc87d3a162e97809",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
