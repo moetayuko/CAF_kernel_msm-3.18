@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+P4\u003d",
+        "filename": "arch/arm/configs/mahimahi_defconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 450,
+      "author": {
+        "id": 1000830
+      },
+      "writtenOn": "2010-02-17T22:43:08Z",
+      "side": 1,
+      "message": "Don\u0027t we want to turn all these off too?",
+      "revId": "f10df69083c831ce5d0a70dea4e30b1fd99e9194",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
