@@ -330,7 +330,6 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	long timeout;
 	unsigned long flags;
 
-	wake_lock(&dev->wakelock);
 	clk_enable(dev->clk);
 	enable_irq(dev->irq);
 
@@ -540,8 +539,31 @@ msm_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_SUSPEND
+static int msm_i2c_suspend(struct platform_device *pdev, pm_message_t state) {
+	unsigned long flags;
+	struct msm_i2c_dev *dev = platform_get_drvdata(pdev);
+	spin_lock_irqsave(&dev->lock, flags);
+	if (dev->complete)
+		wake_lock(&dev->wakelock);
+	spin_unlock_irqrestore(&dev->lock, flags);
+	return 0;
+}
+
+static int msm_i2c_resume(struct platform_device *pdev) {
+	struct msm_i2c_dev *dev = platform_get_drvdata(pdev);
+	wake_unlock(&dev->wakelock);
+	return 0;
+}
+#else
+static int suspend(struct platform_device *dev, pm_message_t state);
+static int resume(struct platform_device *dev);
+#endif
+
 static struct platform_driver msm_i2c_driver = {
 	.probe		= msm_i2c_probe,
+	.suspend 	= msm_i2c_suspend,
+	.resume 	= msm_i2c_resume,
 	.remove		= msm_i2c_remove,
 	.driver		= {
 		.name	= "msm_i2c",
