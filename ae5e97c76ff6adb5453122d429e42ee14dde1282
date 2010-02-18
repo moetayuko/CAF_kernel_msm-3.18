@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+Ng\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 559,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-02-18T02:34:07Z",
+      "side": 1,
+      "message": "huh? don\u0027t you mean static inline msm_i2c_suspend() { return 0;}?",
+      "revId": "ae5e97c76ff6adb5453122d429e42ee14dde1282",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
