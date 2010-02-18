@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+L4\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 554,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:01:03Z",
+      "side": 1,
+      "message": "I don\u0027t think you need the spinlock here.",
+      "revId": "5a14f4a5882946ca26addae665cfdae588eea4a9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+L8\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 567,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:01:03Z",
+      "side": 1,
+      "message": "this is always true. If you want it to be conditional check dev-\u003ecomplete.",
+      "revId": "5a14f4a5882946ca26addae665cfdae588eea4a9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+L0\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 573,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:01:03Z",
+      "side": 1,
+      "message": "What does this do?",
+      "revId": "5a14f4a5882946ca26addae665cfdae588eea4a9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
