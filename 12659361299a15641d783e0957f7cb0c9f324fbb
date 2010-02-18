@@ -50,6 +50,23 @@
       "revId": "12659361299a15641d783e0957f7cb0c9f324fbb",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+LI\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 5
+      },
+      "lineNbr": 560,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:34:39Z",
+      "side": 1,
+      "message": "And you need to read this before clearing dev-\u003eis_suspended, or release the wakelock unconditionally.",
+      "revId": "12659361299a15641d783e0957f7cb0c9f324fbb",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
