@@ -50,6 +50,24 @@
       "revId": "5a14f4a5882946ca26addae665cfdae588eea4a9",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+Lw\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 573,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:06:52Z",
+      "side": 1,
+      "message": "pxa driver does this:\r\nstatic struct dev_pm_ops i2c_pxa_dev_pm_ops \u003d {\r\n        .suspend_noirq \u003d i2c_pxa_suspend_noirq,\r\n        .resume_noirq \u003d i2c_pxa_resume_noirq,\r\n};\r\n\r\n#define I2C_PXA_DEV_PM_OPS (\u0026i2c_pxa_dev_pm_ops)\r\n#else\r\n#define I2C_PXA_DEV_PM_OPS NULL\r\n#endif",
+      "parentUuid": "AAAAr3//+L0\u003d",
+      "revId": "5a14f4a5882946ca26addae665cfdae588eea4a9",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
