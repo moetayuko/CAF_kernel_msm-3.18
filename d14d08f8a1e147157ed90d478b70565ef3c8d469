@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+JA\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 8
+      },
+      "lineNbr": 572,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T22:46:24Z",
+      "side": 1,
+      "message": "what does this barrier do?",
+      "revId": "d14d08f8a1e147157ed90d478b70565ef3c8d469",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+JE\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 8
+      },
+      "lineNbr": 584,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T22:46:24Z",
+      "side": 1,
+      "message": "what does this barrier do?",
+      "revId": "d14d08f8a1e147157ed90d478b70565ef3c8d469",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
