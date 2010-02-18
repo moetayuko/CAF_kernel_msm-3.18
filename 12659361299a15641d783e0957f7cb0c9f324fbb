@@ -2,6 +2,23 @@
   "comments": [
     {
       "key": {
+        "uuid": "AAAAr3//+Lc\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 5
+      },
+      "lineNbr": 546,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:29:19Z",
+      "side": 1,
+      "message": "Where did #ifdef CONFIG_SUSPEND go?",
+      "revId": "12659361299a15641d783e0957f7cb0c9f324fbb",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAr3//+Lo\u003d",
         "filename": "drivers/i2c/busses/i2c-msm.c",
         "patchSetId": 5
@@ -13,6 +30,23 @@
       "writtenOn": "2010-02-18T05:20:03Z",
       "side": 1,
       "message": "container_of(pdev, ...) not container_of(\u0026pdev, ...)",
+      "revId": "12659361299a15641d783e0957f7cb0c9f324fbb",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+LY\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 5
+      },
+      "lineNbr": 552,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-18T05:29:19Z",
+      "side": 1,
+      "message": "Actually you do need the spinlock here. Combined with your conditional wake_unlock in resume, this could leave the wakelock locked forever.",
       "revId": "12659361299a15641d783e0957f7cb0c9f324fbb",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
