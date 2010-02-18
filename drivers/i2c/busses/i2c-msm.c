@@ -75,6 +75,7 @@ struct msm_i2c_dev {
 	int                 flush_cnt;
 	void                *complete;
 	struct wake_lock    wakelock;
+	int                 is_suspended;
 };
 
 #if DEBUG
@@ -330,7 +331,8 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	long timeout;
 	unsigned long flags;
 
-	wake_lock(&dev->wakelock);
+	if (dev->is_suspended)
+		wake_lock(&dev->wakelock);
 	clk_enable(dev->clk);
 	enable_irq(dev->irq);
 
@@ -393,7 +395,8 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 err:
 	disable_irq(dev->irq);
 	clk_disable(dev->clk);
-	wake_unlock(&dev->wakelock);
+	if (dev->is_suspended)
+		wake_unlock(&dev->wakelock);
 	return ret;
 }
 
@@ -540,12 +543,48 @@ msm_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_SUSPEND
+static int msm_i2c_suspend(struct device *pdev)
+{
+	unsigned long flags;
+	struct msm_i2c_dev *dev = container_of(pdev, struct msm_i2c_dev, dev);
+
+	dev->is_suspended = 1;
+	barrier();
+	spin_lock_irqsave(&dev->lock, flags);
+	if (dev->complete)
+		wake_lock(&dev->wakelock);
+	spin_unlock_irqrestore(&dev->lock, flags);
+	return 0;
+}
+
+static int msm_i2c_resume(struct device *pdev) {
+	struct msm_i2c_dev *dev = container_of(pdev, struct msm_i2c_dev, dev);
+	int state = dev->is_suspended;
+
+	dev->is_suspended = 0;
+	barrier();
+	if (state)
+		wake_unlock(&dev->wakelock);
+	return 0;
+}
+#else
+static int suspend(struct device *dev);
+static int resume(struct device *dev);
+#endif
+
+static struct dev_pm_ops msm_i2c_pm_ops = {
+	.suspend 	= msm_i2c_suspend,
+	.resume 	= msm_i2c_resume,
+};
+
 static struct platform_driver msm_i2c_driver = {
 	.probe		= msm_i2c_probe,
 	.remove		= msm_i2c_remove,
 	.driver		= {
 		.name	= "msm_i2c",
 		.owner	= THIS_MODULE,
+		.pm = &msm_i2c_pm_ops,
 	},
 };
 
