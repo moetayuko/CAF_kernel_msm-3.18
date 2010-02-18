@@ -75,6 +75,8 @@ struct msm_i2c_dev {
 	int                 flush_cnt;
 	void                *complete;
 	struct wake_lock    wakelock;
+	bool                is_suspended;
+	bool                locked;
 };
 
 #if DEBUG
@@ -330,7 +332,11 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	long timeout;
 	unsigned long flags;
 
-	wake_lock(&dev->wakelock);
+	if (dev->is_suspended) {
+		dev->locked = true;
+		barrier();
+		wake_lock(&dev->wakelock);
+	}
 	clk_enable(dev->clk);
 	enable_irq(dev->irq);
 
@@ -393,7 +399,17 @@ msm_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 err:
 	disable_irq(dev->irq);
 	clk_disable(dev->clk);
-	wake_unlock(&dev->wakelock);
+
+	/*
+	 * Wakelock could have been acquired in this function or suspend,
+	 * always release the wakelock when finished.
+	 */
+	if (dev->locked)
+		wake_unlock(&dev->wakelock);
+
+	dev->locked = false;
+	barrier();
+
 	return ret;
 }
 
@@ -540,12 +556,51 @@ msm_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int msm_i2c_suspend_noirq(struct device *device)
+{
+	unsigned long flags;
+	struct platform_device *pdev = to_platform_device(device);
+	struct msm_i2c_dev *dev = platform_get_drvdata(pdev);
+
+	dev->is_suspended = true;
+	barrier();
+
+	spin_lock_irqsave(&dev->lock, flags);
+	/*
+	 * If there is a pending xfer, grab wakelock. Check dev->locked
+	 * to guard against the case of suspend -> resume -> suspend
+	 * causing a double lock durring xfer.
+	 */
+	if (dev->complete && !dev->locked) {
+		dev->locked = true;
+		barrier();
+		wake_lock(&dev->wakelock);
+	}
+	spin_unlock_irqrestore(&dev->lock, flags);
+	return 0;
+}
+
+static int msm_i2c_resume_noirq(struct device *device) {
+	struct platform_device *pdev = to_platform_device(device);
+	struct msm_i2c_dev *dev = platform_get_drvdata(pdev);
+
+	dev->is_suspended = false;
+	barrier();
+	return 0;
+}
+
+static struct dev_pm_ops msm_i2c_pm_ops = {
+	.suspend_noirq	= msm_i2c_suspend_noirq,
+	.resume_noirq	= msm_i2c_resume_noirq,
+};
+
 static struct platform_driver msm_i2c_driver = {
 	.probe		= msm_i2c_probe,
 	.remove		= msm_i2c_remove,
 	.driver		= {
 		.name	= "msm_i2c",
 		.owner	= THIS_MODULE,
+		.pm = &msm_i2c_pm_ops,
 	},
 };
 
