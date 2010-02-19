@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+IY\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 10
+      },
+      "lineNbr": 570,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-19T01:07:35Z",
+      "side": 1,
+      "message": "This is an internal flag. Don\u0027t use it.",
+      "revId": "ca7ef8e0903a0a4fb74d013128694c69316ca7db",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
