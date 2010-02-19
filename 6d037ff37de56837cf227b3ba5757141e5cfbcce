@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+Ho\u003d",
+        "filename": "drivers/i2c/busses/i2c-msm.c",
+        "patchSetId": 12
+      },
+      "lineNbr": 571,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-02-19T03:25:51Z",
+      "side": 1,
+      "message": "lock the bus here too, and get rid of dev-\u003elocked.",
+      "revId": "6d037ff37de56837cf227b3ba5757141e5cfbcce",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
