@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAr3//+Do\u003d",
+        "filename": "arch/arm/mach-msm/qdsp6/dsp_debug.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 101,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-02-22T07:34:48Z",
+      "side": 1,
+      "message": "remove this value as it\u0027s unused (it is bumped in read, but never utilized).",
+      "revId": "d96f9936d9935288d883f991bf61ce5d03ba1c31",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAr3//+Ds\u003d",
+        "filename": "arch/arm/mach-msm/qdsp6/dsp_debug.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 108,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-02-22T07:34:48Z",
+      "side": 1,
+      "message": "unsigned long",
+      "revId": "d96f9936d9935288d883f991bf61ce5d03ba1c31",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
