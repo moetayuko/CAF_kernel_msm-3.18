@@ -288,6 +288,31 @@ void clk_exit_sleep(void)
 {
 }
 
+int clks_allow_tcxo_locked_debug(void)
+{
+	struct clk *clk;
+	int clk_on_count = 0;
+	struct hlist_node *pos;
+	char buf[100];
+	char *pbuf = buf;
+	int size = sizeof(buf);
+	int wr;
+
+	hlist_for_each_entry(clk, pos, &clocks, list) {
+		if (clk->count) {
+			wr = snprintf(pbuf, size, " %s", clk->name);
+			pbuf += wr;
+			size -= wr;
+			clk_on_count++;
+		}
+	}
+	if (clk_on_count)
+		pr_info("clocks on: %s\n", buf);
+
+	return !clk_on_count;
+}
+EXPORT_SYMBOL(clks_allow_tcxo_locked_debug);
+
 void __init msm_clock_init(void)
 {
 	struct clk *clk;
