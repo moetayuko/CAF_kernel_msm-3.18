@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAtn///7s\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 291,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-02-25T20:56:20Z",
+      "side": 1,
+      "message": "the name implies that this function is called with a lock held, but it\u0027s not. it\u0027s called from pm.c, which isn\u0027t holding the clocks_lock.\nSo, you need to take the clocks_lock spinlock inside here as clk-\u003ecount can change.\n\nFurthermore, I\u0027m not sure the name of this function makes sense at all. It really is a \"clks_check_enabled\" or something.",
+      "revId": "99f18636285f2f941d24f484d77106bfa0fbbaa2",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAtn///70\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 303,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-02-25T20:56:20Z",
+      "side": 1,
+      "message": "bump clk_on_count first.\nThen, check if wr \u003e\u003d size and if it is, break out of the of the loop since your output was already truncated and you shouldn\u0027t be calling this anymore.",
+      "revId": "99f18636285f2f941d24f484d77106bfa0fbbaa2",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
