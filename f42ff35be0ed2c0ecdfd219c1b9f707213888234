@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAtn///7k\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 437,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-02T02:04:41Z",
+      "side": 1,
+      "message": "whitespace is all messed up here. replace the leading spaces with tabs in this block.",
+      "revId": "f42ff35be0ed2c0ecdfd219c1b9f707213888234",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAun////M\u003d",
+        "filename": "arch/arm/mach-msm/smd_debug.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 351,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-02T02:04:41Z",
+      "side": 1,
+      "message": "what\u0027s the parens for? make the string:\n\"smd_debug: no sleep statistics\"",
+      "revId": "f42ff35be0ed2c0ecdfd219c1b9f707213888234",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
