@@ -21,6 +21,10 @@
 
 struct mddi_info;
 
+/* pixel format */
+#define MSM_PIX_FMT_RGB565	0
+#define MSM_PIX_FMT_RGB666	1
+
 struct msm_fb_data {
 	int xres;	/* x resolution in pixels */
 	int yres;	/* y resolution in pixels */
