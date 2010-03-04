@@ -16,6 +16,24 @@
       "revId": "180041f0edc74962f4d36a5face1d18082346a40",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAu3///+o\u003d",
+        "filename": "arch/arm/mach-msm/include/mach/msm_fb.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 25,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-04T01:13:00Z",
+      "side": 1,
+      "message": "or maybe MSM_FB_OUTPUT_IF_RGB565",
+      "parentUuid": "AAAAu3///+w\u003d",
+      "revId": "180041f0edc74962f4d36a5face1d18082346a40",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
