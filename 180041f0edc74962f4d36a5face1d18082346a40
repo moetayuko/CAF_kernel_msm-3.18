@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAu3///+w\u003d",
+        "filename": "arch/arm/mach-msm/include/mach/msm_fb.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 25,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-04T01:09:30Z",
+      "side": 1,
+      "message": "It\u0027s not a pixel format, but more of an output interface format. Pixel format could be confused with the MDP_xxx color formats by an unsuspecting party.\n\nCould you switch em to\nMSM_OUT_IF_FMT_RGB565\nMSM_OUT_IF_FMT_RGB666",
+      "revId": "180041f0edc74962f4d36a5face1d18082346a40",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
