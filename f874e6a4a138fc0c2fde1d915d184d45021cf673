@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAvX///6I\u003d",
+        "filename": "drivers/usb/gadget/diag.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 627,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-08T22:47:20Z",
+      "side": 1,
+      "message": "superfluous parenthesis",
+      "revId": "f874e6a4a138fc0c2fde1d915d184d45021cf673",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAvX///6M\u003d",
+        "filename": "drivers/usb/gadget/diag.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 644,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-08T22:47:20Z",
+      "side": 1,
+      "message": "remove",
+      "revId": "f874e6a4a138fc0c2fde1d915d184d45021cf673",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAvX///58\u003d",
+        "filename": "drivers/usb/gadget/diag.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 657,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-08T22:47:20Z",
+      "side": 1,
+      "message": "should you clear in_busy_dsp if usb_ep_queue failed?",
+      "revId": "f874e6a4a138fc0c2fde1d915d184d45021cf673",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
