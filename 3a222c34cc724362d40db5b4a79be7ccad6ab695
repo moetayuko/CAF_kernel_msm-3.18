@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAvX///4k\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-microp.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 636,
+      "author": {
+        "id": 1002359
+      },
+      "writtenOn": "2010-03-08T23:58:13Z",
+      "side": 1,
+      "message": "I agree that there is a bug here.  The previous comparison is broken.  But this still has a flaw.  Only one comparision should have the equal on it.  That will cause a match with 2 ranges.",
+      "revId": "3a222c34cc724362d40db5b4a79be7ccad6ab695",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
