@@ -26,6 +26,7 @@
 #include <linux/input.h>
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
+#include <linux/suspend.h>
 #include <linux/akm8973.h>
 
 #define DEBUG 0
@@ -553,7 +554,7 @@ static irqreturn_t akm8973_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void akm8973_suspend(struct device *device)
+static void akm8973_suspend(void)
 {
 	atomic_set(&suspend_flag, 1);
 	atomic_set(&reserve_open_flag, atomic_read(&open_flag));
@@ -562,7 +563,7 @@ static void akm8973_suspend(struct device *device)
 	disable_irq(this_client->irq);
 }
 
-static void akm8973_resume(struct device *device)
+static void akm8973_resume(void)
 {
 	enable_irq(this_client->irq);
 	atomic_set(&suspend_flag, 0);
@@ -740,9 +741,21 @@ static const struct i2c_device_id akm8973_id[] = {
 	{ }
 };
 
-static struct dev_pm_ops akm8973_pm_ops = {
-	.suspend_noirq = akm8973_suspend,
-	.resume_noirq = akm8973_resume,
+static int akm8973_pm_event(struct notifier_block *this, unsigned long event,
+				void *ptr)
+{
+	switch(event) {
+		case PM_SUSPEND_PREPARE:
+			akm8973_suspend();
+			break;
+		case PM_POST_SUSPEND:
+			akm8973_resume();
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block akm8973_pm_notifier = {
+	.notifier_call = akm8973_pm_event,
 };
 
 static struct i2c_driver akm8973_driver = {
@@ -751,13 +764,13 @@ static struct i2c_driver akm8973_driver = {
 	.id_table	= akm8973_id,
 	.driver = {
 		   .name = AKM8973_I2C_NAME,
-		   .pm = &akm8973_pm_ops,
 		   },
 };
 
 static int __init akm8973_init(void)
 {
 	printk(KERN_INFO "AKM8973 compass driver: init\n");
+	register_pm_notifier(&akm8973_pm_notifier);
 	return i2c_add_driver(&akm8973_driver);
 }
 
