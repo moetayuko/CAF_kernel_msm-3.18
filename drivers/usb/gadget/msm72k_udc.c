@@ -81,7 +81,6 @@ struct msm_request {
 	struct msm_request *next;
 
 	unsigned busy:1;
-	unsigned live:1;
 	unsigned alloced:1;
 	unsigned dead:1;
 
@@ -421,27 +420,18 @@ static void usb_ept_start(struct msm_endpoint *ept)
 	struct usb_info *ui = ept->ui;
 	struct msm_request *req = ept->req;
 
-	BUG_ON(req->live);
-
 	/* link the hw queue head to the request's transaction item */
 	ept->head->next = req->item_dma;
 	ept->head->info = 0;
 
 	/* start the endpoint */
 	writel(1 << ept->bit, USB_ENDPTPRIME);
-
-	/* mark this chain of requests as live */
-	while (req) {
-		req->live = 1;
-		req = req->next;
-	}
 }
 
 int usb_ept_queue_xfer(struct msm_endpoint *ept, struct usb_request *_req)
 {
 	unsigned long flags;
 	struct msm_request *req = to_msm_request(_req);
-	struct msm_request *last;
 	struct usb_info *ui = ept->ui;
 	struct ept_queue_item *item = req->item;
 	unsigned length = req->req.length;
@@ -466,7 +456,6 @@ int usb_ept_queue_xfer(struct msm_endpoint *ept, struct usb_request *_req)
 	}
 
 	req->busy = 1;
-	req->live = 0;
 	req->next = 0;
 	req->req.status = -EBUSY;
 
@@ -483,19 +472,12 @@ int usb_ept_queue_xfer(struct msm_endpoint *ept, struct usb_request *_req)
 	item->page3 = (req->dma + 0x3000) & 0xfffff000;
 
 	/* Add the new request to the end of the queue */
-	last = ept->last;
-	if (last) {
+	if (ept->last) {
 		/* Already requests in the queue. add us to the
 		 * end, but let the completion interrupt actually
 		 * start things going, to avoid hw issues
 		 */
-		last->next = req;
-
-		/* only modify the hw transaction next pointer if
-		 * that request is not live
-		 */
-		if (!last->live)
-			last->item->next = req->item_dma;
+		ept->last->next = req;
 	} else {
 		/* queue was empty -- kick the hardware */
 		ept->req = req;
@@ -756,55 +738,51 @@ static void handle_endpoint(struct usb_info *ui, unsigned bit)
 
 	/* expire all requests that are no longer active */
 	spin_lock_irqsave(&ui->lock, flags);
-	while ((req = ept->req)) {
-		info = req->item->info;
+	req = ept->req;
+	if (!req)
+		goto out;
+	info = req->item->info;
 
-		/* if we've processed all live requests, time to
-		 * restart the hardware on the next non-live request
-		 */
-		if (!req->live) {
-			usb_ept_start(ept);
-			break;
-		}
+	/* if the transaction is still in-flight, stop here */
+	if (info & INFO_ACTIVE)
+		goto out;
 
-		/* if the transaction is still in-flight, stop here */
-		if (info & INFO_ACTIVE)
-			break;
+	/* start next request if there is one */
+	ept->req = req->next;
+	if (ept->req)
+		usb_ept_start(ept);
+	else
+		ept->last = 0;
 
-		/* advance ept queue to the next request */
-		ept->req = req->next;
-		if (ept->req == 0)
-			ept->last = 0;
+	dma_unmap_single(NULL, req->dma, req->req.length,
+			 (ept->flags & EPT_FLAG_IN) ?
+			 DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
-		dma_unmap_single(NULL, req->dma, req->req.length,
-				 (ept->flags & EPT_FLAG_IN) ?
-				 DMA_TO_DEVICE : DMA_FROM_DEVICE);
-
-		if (info & (INFO_HALTED | INFO_BUFFER_ERROR | INFO_TXN_ERROR)) {
-			/* XXX pass on more specific error code */
-			req->req.status = -EIO;
-			req->req.actual = 0;
-			INFO("msm72k_udc: ept %d %s error. info=%08x\n",
-			       ept->num,
-			       (ept->flags & EPT_FLAG_IN) ? "in" : "out",
-			       info);
-		} else {
-			req->req.status = 0;
-			req->req.actual =
-				req->req.length - ((info >> 16) & 0x7FFF);
-		}
-		req->busy = 0;
-		req->live = 0;
-
-		if (req->req.complete) {
-			spin_unlock_irqrestore(&ui->lock, flags);
-			req->req.complete(&ept->ep, &req->req);
-			spin_lock_irqsave(&ui->lock, flags);
-		}
-
-		if (req->dead)
-			do_free_req(ui, req);
+	if (info & (INFO_HALTED | INFO_BUFFER_ERROR | INFO_TXN_ERROR)) {
+		/* XXX pass on more specific error code */
+		req->req.status = -EIO;
+		req->req.actual = 0;
+		INFO("msm72k_udc: ept %d %s error. info=%08x\n",
+		       ept->num,
+		       (ept->flags & EPT_FLAG_IN) ? "in" : "out",
+		       info);
+	} else {
+		req->req.status = 0;
+		req->req.actual =
+			req->req.length - ((info >> 16) & 0x7FFF);
 	}
+	req->busy = 0;
+
+	if (req->req.complete) {
+		spin_unlock_irqrestore(&ui->lock, flags);
+		req->req.complete(&ept->ep, &req->req);
+		spin_lock_irqsave(&ui->lock, flags);
+	}
+
+	if (req->dead)
+		do_free_req(ui, req);
+
+out:
 	spin_unlock_irqrestore(&ui->lock, flags);
 }
 
@@ -868,7 +846,6 @@ static void flush_endpoint_sw(struct msm_endpoint *ept)
 	ept->last = 0;
 	while (req != 0) {
 		req->busy = 0;
-		req->live = 0;
 		req->req.status = -ECONNRESET;
 		req->req.actual = 0;
 		if (req->req.complete) {
@@ -1390,8 +1367,7 @@ static ssize_t debug_read_status(struct file *file, char __user *ubuf,
 				       "  req @%08x next=%08x info=%08x page0=%08x %c %c\n",
 				       req->item_dma, req->item->next,
 				       req->item->info, req->item->page0,
-				       req->busy ? 'B' : ' ',
-				       req->live ? 'L' : ' '
+				       req->busy ? 'B' : ' '
 				);
 	}
 
@@ -1555,7 +1531,6 @@ static int msm72k_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 	while (cur != 0) {
 		if (cur == req) {
 			req->busy = 0;
-			req->live = 0;
 			req->req.status = -ECONNRESET;
 			req->req.actual = 0;
 			if (req->req.complete) {
