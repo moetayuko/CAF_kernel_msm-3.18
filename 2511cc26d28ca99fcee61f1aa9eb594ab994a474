@@ -2,6 +2,40 @@
   "comments": [
     {
       "key": {
+        "uuid": "AAAAv3///+A\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 64,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-12T01:00:38Z",
+      "side": 1,
+      "message": "insert tabs between type and name",
+      "revId": "2511cc26d28ca99fcee61f1aa9eb594ab994a474",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAv3///98\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 743,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-12T01:00:38Z",
+      "side": 1,
+      "message": "you don\u0027t need to save ptrs to this struct device in the info struct?",
+      "revId": "2511cc26d28ca99fcee61f1aa9eb594ab994a474",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAv3///+M\u003d",
         "filename": "arch/arm/mach-msm/hw3d.c",
         "patchSetId": 1
