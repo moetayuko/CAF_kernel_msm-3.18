@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAv3///9c\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 62,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-12T02:07:41Z",
+      "side": 1,
+      "message": "align this correctly with the rest of teh structure members is what i meant.",
+      "revId": "595a71d7a24ebded1b2d3ec9d5d871de7588f40c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
