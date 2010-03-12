@@ -136,12 +136,17 @@ struct msm_lcdc_panel_ops {
 	int	(*unblank)(struct msm_lcdc_panel_ops *);
 };
 
+#define PANEL_INTERFACE_888  0
+#define PANEL_INTERFACE_655  1
+#define PANEL_INTERFACE_666  2
+
 struct msm_lcdc_platform_data {
 	struct msm_lcdc_panel_ops	*panel_ops;
 	struct msm_lcdc_timing		*timing;
 	int				fb_id;
 	struct msm_fb_data		*fb_data;
 	struct resource			*fb_resource;
+	int				panel_interface;
 };
 
 struct mdp_blit_req;

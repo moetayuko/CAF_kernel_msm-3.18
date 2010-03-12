@@ -88,6 +88,7 @@ static struct msm_lcdc_platform_data swordfish_lcdc_platform_data = {
 	.fb_id		= 0,
 	.fb_data	= &swordfish_lcdc_fb_data,
 	.fb_resource = &resources_msm_fb[0],
+	.panel_interface = PANEL_INTERFACE_888,
 };
 
 static struct platform_device swordfish_lcdc_device = {

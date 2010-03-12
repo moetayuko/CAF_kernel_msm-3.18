@@ -526,6 +526,7 @@ static struct msm_lcdc_platform_data mahimahi_lcdc_platform_data = {
 	.fb_id		= 0,
 	.fb_data	= &mahimahi_lcdc_fb_data,
 	.fb_resource	= &resources_msm_fb[0],
+	.panel_interface = PANEL_INTERFACE_655,
 };
 
 static struct platform_device mahimahi_lcdc_device = {
