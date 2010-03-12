@@ -117,6 +117,34 @@ config MACH_MAHIMAHI
 	help
 	  Select this to support the Mahi-Mahi device
 
+config MACH_QSD8X50_FFA
+       depends on ARCH_QSD8X50
+       default y
+       bool "8x50-ffa"
+       help
+         Select this to support the 8x50 ffa device
+
+config MACH_MSM7X30_SURF
+       depends on ARCH_MSM7X30
+       default y
+       bool "MSM7x30 SURF"
+       help
+         Support for the Qualcomm MSM7x30 SURF eval board.
+
+config MACH_MSM7X30_FFA
+       depends on ARCH_MSM7X30
+       default y
+       bool "MSM7x30 FFA"
+       help
+         Support for the Qualcomm MSM7x30 FFA eval board.
+
+config MACH_MSM7X30_FLUID
+       depends on ARCH_MSM7X30
+       default y
+       bool "MSM7x30 FLUID"
+       help
+         Support for the Qualcomm MSM7x30 FLUID eval board.
+
 config HTC_HEADSET
 	tristate "HTC 2 Wire detection driver"
 	default n
