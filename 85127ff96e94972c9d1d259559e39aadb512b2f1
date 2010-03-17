@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAv3///2M\u003d",
+        "filename": "arch/arm/mach-msm/board-swordfish.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 356,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-03-17T00:56:16Z",
+      "side": 1,
+      "message": "convert all your spaces to tabs. look at the above machine definition.",
+      "revId": "85127ff96e94972c9d1d259559e39aadb512b2f1",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
