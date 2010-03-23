@@ -793,7 +793,6 @@ static void handle_endpoint(struct usb_info *ui, unsigned bit)
 			req->req.actual =
 				req->req.length - ((info >> 16) & 0x7FFF);
 		}
-		req->busy = 0;
 		req->live = 0;
 
 		if (req->req.complete) {
@@ -801,6 +800,11 @@ static void handle_endpoint(struct usb_info *ui, unsigned bit)
 			req->req.complete(&ept->ep, &req->req);
 			spin_lock_irqsave(&ui->lock, flags);
 		}
+		/* Clear the busy flag after calling the completion routine
+		 * to ensure it will not free the request. Then we can safely
+		 * free it below instead.
+		 */
+		req->busy = 0;
 
 		if (req->dead)
 			do_free_req(ui, req);
@@ -867,7 +871,6 @@ static void flush_endpoint_sw(struct msm_endpoint *ept)
 	ept->req = 0;
 	ept->last = 0;
 	while (req != 0) {
-		req->busy = 0;
 		req->live = 0;
 		req->req.status = -ECONNRESET;
 		req->req.actual = 0;
@@ -876,6 +879,11 @@ static void flush_endpoint_sw(struct msm_endpoint *ept)
 			req->req.complete(&ept->ep, &req->req);
 			spin_lock_irqsave(&ui->lock, flags);
 		}
+		/* Clear the busy flag after calling the completion routine
+		 * to ensure it will not free the request so we can safely
+		 * free it below instead.
+		 */
+		req->busy = 0;
 		if (req->dead)
 			do_free_req(ui, req);
 		req = req->next;
@@ -1554,7 +1562,6 @@ static int msm72k_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 
 	while (cur != 0) {
 		if (cur == req) {
-			req->busy = 0;
 			req->live = 0;
 			req->req.status = -ECONNRESET;
 			req->req.actual = 0;
@@ -1563,6 +1570,11 @@ static int msm72k_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 				req->req.complete(&ep->ep, &req->req);
 				spin_lock_irqsave(&ui->lock, flags);
 			}
+			/* Clear the busy flag after calling the completion routine
+			 * to ensure it will not free the request. Then we can safely
+			 * free it below instead.
+			 */
+			req->busy = 0;
 			if (req->dead)
 				do_free_req(ui, req);
 			/* remove from linked list */
@@ -1570,7 +1582,8 @@ static int msm72k_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 				prev->next = cur->next;
 			else
 				ep->req = cur->next;
-			prev = cur;
+			if (ep->last == cur)
+				ep->last = prev;
 			/* break from loop */
 			cur = NULL;
 		} else
