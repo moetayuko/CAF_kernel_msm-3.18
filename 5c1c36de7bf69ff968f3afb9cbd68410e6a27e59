@@ -16,6 +16,23 @@
       "revId": "5c1c36de7bf69ff968f3afb9cbd68410e6a27e59",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwH///1M\u003d",
+        "filename": "drivers/usb/gadget/msm72k_udc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1554,
+      "author": {
+        "id": 1001286
+      },
+      "writtenOn": "2010-03-24T21:38:32Z",
+      "side": 1,
+      "message": "I think this is (still?) broken.\n\nprev is never updated in the loop, so it will always be NULL and we will not correctly remove a transaction that\u0027s in the middle of the list (the previous item\u0027s next will point at the removed item still).",
+      "revId": "5c1c36de7bf69ff968f3afb9cbd68410e6a27e59",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
