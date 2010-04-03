@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwX///xQ\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-microp.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 1836,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-03T14:13:53Z",
+      "side": 1,
+      "message": "should this be i \u003c\u003d BLUE_LED or something?",
+      "revId": "b7620a424ca8e1a33bf3f35c297947d4d6abe011",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
