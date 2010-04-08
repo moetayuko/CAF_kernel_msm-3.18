@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAAwX///hQ\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 409,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T08:06:37Z",
+      "side": 1,
+      "message": "right now never, since all the apps are behaving correctly. It can certainly still happen.",
+      "parentUuid": "AAAAwX///hk\u003d",
+      "revId": "3d4c3502edb8e1bed02f8f529e8b6189a5823946",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAAwX///hg\u003d",
         "filename": "arch/arm/mach-msm/hw3d.c",
         "patchSetId": 2
@@ -30,6 +48,24 @@
       "writtenOn": "2010-04-08T06:31:35Z",
       "side": 1,
       "message": "I don\u0027t think you need to return an error just because wait_event_interruptible failed. If you have no more blocking operations to do it should be ok to return success.",
+      "revId": "3d4c3502edb8e1bed02f8f529e8b6189a5823946",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///hM\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 419,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T08:06:37Z",
+      "side": 1,
+      "message": "I\u0027m not sure it\u0027s worth continuing if we got interrupted by a signal here.",
+      "parentUuid": "AAAAwX///hg\u003d",
       "revId": "3d4c3502edb8e1bed02f8f529e8b6189a5823946",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
