@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwX///hk\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 409,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-04-08T06:31:35Z",
+      "side": 1,
+      "message": "How often do you see this new kernel message?",
+      "revId": "3d4c3502edb8e1bed02f8f529e8b6189a5823946",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///hg\u003d",
+        "filename": "arch/arm/mach-msm/hw3d.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 419,
+      "author": {
+        "id": 1000205
+      },
+      "writtenOn": "2010-04-08T06:31:35Z",
+      "side": 1,
+      "message": "I don\u0027t think you need to return an error just because wait_event_interruptible failed. If you have no more blocking operations to do it should be ok to return success.",
+      "revId": "3d4c3502edb8e1bed02f8f529e8b6189a5823946",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
