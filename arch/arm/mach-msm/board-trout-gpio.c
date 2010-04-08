@@ -18,6 +18,8 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 
+#include <mach/htc_pwrsink.h>
+
 #include "board-trout.h"
 
 static uint8_t trout_int_mask[2] = {
@@ -37,6 +39,18 @@ struct msm_gpio_chip {
 
 #define to_msm_gpio_chip(c) container_of(c, struct msm_gpio_chip, chip)
 
+static void update_pwrsink(unsigned gpio, unsigned on)
+{
+	switch(gpio) {
+	case TROUT_GPIO_UI_LED_EN:
+		htc_pwrsink_set(PWRSINK_LED_BUTTON, on ? 100 : 0);
+		break;
+	case TROUT_GPIO_QTKEY_LED_EN:
+		htc_pwrsink_set(PWRSINK_LED_KEYBOARD, on ? 100 : 0);
+		break;
+	}
+}
+
 static int msm_gpiolib_get(struct gpio_chip *chip, unsigned offset)
 {
 	struct msm_gpio_chip *msm_gpio = to_msm_gpio_chip(chip);
@@ -49,6 +63,8 @@ static void msm_gpiolib_set(struct gpio_chip *chip, unsigned offset, int val)
 {
 	struct msm_gpio_chip *msm_gpio = to_msm_gpio_chip(chip);
 	unsigned mask = 1 << offset;
+
+	update_pwrsink(chip->base + offset, val);
 
 	if (val)
 		msm_gpio->shadow |= mask;
