@@ -1,0 +1,89 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwX///gE\u003d",
+        "filename": "drivers/video/msm/mdp.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 430,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T10:10:35Z",
+      "side": 1,
+      "message": "brace needs to be on a new line",
+      "revId": "2257d4eb2cf90923fbdf40bf27f122df8aa77057",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///gI\u003d",
+        "filename": "drivers/video/msm/mdp.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 472,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T10:10:35Z",
+      "side": 1,
+      "message": "missing braces? also, you\u0027ll be pringing the same dump twice.",
+      "revId": "2257d4eb2cf90923fbdf40bf27f122df8aa77057",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///f4\u003d",
+        "filename": "drivers/video/msm/mdp.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 540,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T10:10:35Z",
+      "side": 1,
+      "message": "you never set this to NULL when you are done blitting.",
+      "revId": "2257d4eb2cf90923fbdf40bf27f122df8aa77057",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///gA\u003d",
+        "filename": "drivers/video/msm/mdp.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 582,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T10:10:35Z",
+      "side": 1,
+      "message": "do you need to go to end here?",
+      "revId": "2257d4eb2cf90923fbdf40bf27f122df8aa77057",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///f8\u003d",
+        "filename": "include/linux/msm_mdp.h",
+        "patchSetId": 2
+      },
+      "lineNbr": 39,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T10:10:35Z",
+      "side": 1,
+      "message": "why does this need to be shared with userspace?! and why does it need to be included in every file that includes this? If you need this info in multiple places, wouldn\u0027t it be better to export a function that does returns the values from this mapping?",
+      "revId": "2257d4eb2cf90923fbdf40bf27f122df8aa77057",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
