@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwX///Z0\u003d",
+        "filename": "arch/arm/mach-msm/smd_private.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 126,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T23:50:51Z",
+      "side": 1,
+      "message": "I don\u0027t see how this is related to your change",
+      "revId": "677c17a2d92005df7fb1b55bb196762d63ea4f3d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwX///Zw\u003d",
+        "filename": "arch/arm/mach-msm/smd_private.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 340,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-08T23:50:51Z",
+      "side": 1,
+      "message": "why do these need to be in a header file as inline? I don\u0027t understand.",
+      "revId": "677c17a2d92005df7fb1b55bb196762d63ea4f3d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
