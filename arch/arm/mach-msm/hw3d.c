@@ -79,6 +79,7 @@ struct hw3d_info {
 	struct timer_list	revoke_timer;
 	wait_queue_head_t	revoke_wq;
 	wait_queue_head_t	revoke_done_wq;
+	unsigned int		open_waiter_cnt;
 
 	spinlock_t		lock;
 
@@ -375,6 +376,48 @@ static int hw3d_flush(struct file *filp, fl_owner_t id)
 	return 0;
 }
 
+static int locked_open_wait_for_gpu(struct hw3d_info *info,
+				    unsigned long *flags)
+{
+	unsigned int my_cnt;
+	int ret;
+
+	my_cnt = info->open_waiter_cnt++;
+
+	pr_debug("%s: wait_for_open %d %d\n", __func__, my_cnt,
+		info->open_waiter_cnt);
+
+	if (info->suspending)
+		pr_info("%s: suspended, waiting (%d %d)\n", __func__,
+			current->group_leader->pid, current->pid);
+	if (info->client_file)
+		pr_info("%s: has client, waiting (%d %d)\n", __func__,
+			current->group_leader->pid, current->pid);
+	spin_unlock_irqrestore(&info->lock, *flags);
+	ret = wait_event_interruptible(info->revoke_done_wq,
+				       !info->suspending && !info->client_file);
+	pr_debug("%s: woke up (%d %p)\n", __func__, info->suspending,
+		info->client_file);
+	spin_lock_irqsave(&info->lock, *flags);
+
+	if (ret >= 0) {
+		if (info->suspending || info->client_file) {
+			pr_err("%s: couldn't get the gpu for %d:%d (%d %p)\n",
+			       __func__, current->group_leader->pid,
+			       current->pid, info->suspending,
+			       info->client_file);
+			ret = -EBUSY;
+		} else if (((int)((my_cnt + 1) - info->open_waiter_cnt)) < 0) {
+			pr_info("%s: someone else asked for gpu after us %d:%d"
+				"(%d %d)\n", __func__,
+				current->group_leader->pid, current->pid,
+				my_cnt, info->open_waiter_cnt);
+			ret = -EBUSY;
+		} else
+			ret = 0;
+	}
+	return ret;
+}
 
 static int hw3d_open(struct inode *inode, struct file *file)
 {
@@ -405,31 +448,18 @@ static int hw3d_open(struct inode *inode, struct file *file)
 		return 0;
 
 	spin_lock_irqsave(&info->lock, flags);
-	if (info->suspending) {
-		pr_warning("%s: can't open hw3d while suspending\n", __func__);
-		ret = -EPERM;
-		spin_unlock_irqrestore(&info->lock, flags);
-		goto err;
-	}
-
 	if (info->client_file) {
 		pr_debug("hw3d: have client_file, need revoke\n");
 		locked_hw3d_revoke(info);
-		spin_unlock_irqrestore(&info->lock, flags);
-		ret = wait_event_interruptible(info->revoke_done_wq,
-					       !info->client_file);
-		if (ret < 0)
-			goto err;
-		spin_lock_irqsave(&info->lock, flags);
-		if (info->client_file) {
-			/* between is waking up and grabbing the lock,
-			 * someone else tried to open the gpu, and got here
-			 * first, let them have it. */
-			spin_unlock_irqrestore(&info->lock, flags);
-			ret = -EBUSY;
-			goto err;
-		}
 	}
+
+	ret = locked_open_wait_for_gpu(info, &flags);
+	if (ret < 0) {
+		spin_unlock_irqrestore(&info->lock, flags);
+		goto err;
+	}
+	pr_info("%s: pid %d tid %d got gpu\n", __func__,
+		current->group_leader->pid, current->pid);
 
 	info->client_file = file;
 	get_task_struct(current->group_leader);
@@ -646,6 +676,7 @@ static void hw3d_late_resume(struct early_suspend *h)
 	if (info->suspending)
 		pr_info("%s: resuming\n", __func__);
 	info->suspending = 0;
+	wake_up(&info->revoke_done_wq);
 	spin_unlock_irqrestore(&info->lock, flags);
 }
 
