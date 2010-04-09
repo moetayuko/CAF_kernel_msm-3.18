@@ -323,15 +323,6 @@ static void __init swordfish_init(void)
 		pr_crit("%s: MMC init failure (%d)\n", __func__, rc);
 }
 
-static void __init swordfish_fixup(struct machine_desc *desc, struct tag *tags,
-				 char **cmdline, struct meminfo *mi)
-{
-	mi->nr_banks = 1;
-	mi->bank[0].start = PHYS_OFFSET;
-	mi->bank[0].node = PHYS_TO_NID(PHYS_OFFSET);
-	mi->bank[0].size = (101*1024*1024);
-}
-
 static void __init swordfish_map_io(void)
 {
 	msm_map_common_io();
@@ -344,7 +335,6 @@ MACHINE_START(SWORDFISH, "Swordfish Board (QCT SURF8250)")
 	.io_pg_offst    = ((MSM_DEBUG_UART_BASE) >> 18) & 0xfffc,
 #endif
 	.boot_params	= 0x20000100,
-	.fixup		= swordfish_fixup,
 	.map_io		= swordfish_map_io,
 	.init_irq	= msm_init_irq,
 	.init_machine	= swordfish_init,
@@ -357,7 +347,6 @@ MACHINE_START(QSD8X50_FFA, "qsd8x50 FFA Board (QCT FFA8250)")
 	.io_pg_offst	= ((MSM_DEBUG_UART_BASE) >> 18) & 0xfffc,
 #endif
 	.boot_params	= 0x20000100,
-	.fixup		= swordfish_fixup,
 	.map_io		= swordfish_map_io,
 	.init_irq	= msm_init_irq,
 	.init_machine	= swordfish_init,
