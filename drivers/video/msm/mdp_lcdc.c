@@ -159,6 +159,8 @@ static int lcdc_hw_init(struct mdp_lcdc_info *lcdc)
 
 	if (fb_panel->fb_data->output_format == MSM_MDP_OUT_IF_FMT_RGB666)
 		dma_cfg |= DMA_DSTC0G_6BITS | DMA_DSTC1B_6BITS | DMA_DSTC2R_6BITS;
+	else if (fb_panel->fb_data->output_format == MSM_MDP_OUT_IF_FMT_RGB888)
+		dma_cfg |= DMA_DSTC0G_8BITS | DMA_DSTC1B_8BITS | DMA_DSTC2R_8BITS;
 	else
 		dma_cfg |= DMA_DSTC0G_6BITS | DMA_DSTC1B_5BITS | DMA_DSTC2R_5BITS;
 
