@@ -73,7 +73,7 @@ static struct msm_fb_data swordfish_lcdc_fb_data = {
 	.yres		= 480,
 	.width		= 94,
 	.height		= 57,
-	.output_format	= 0,
+	.output_format	= MSM_MDP_OUT_IF_FMT_RGB888,
 };
 
 static struct msm_lcdc_panel_ops swordfish_lcdc_panel_ops = {
