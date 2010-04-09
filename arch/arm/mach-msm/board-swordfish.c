@@ -34,6 +34,7 @@
 #include <mach/msm_iomap.h>
 #include <mach/msm_hsusb.h>
 #include <mach/msm_ts.h>
+#include <mach/msm_serial_debugger.h>
 #include <linux/usb/android_composite.h>
 
 #include "board-swordfish.h"
@@ -302,9 +303,6 @@ static struct msm_acpu_clock_platform_data swordfish_clock_data = {
 	.wait_for_irq_khz	= 128000000,
 };
 
-void msm_serial_debug_init(unsigned int base, int irq,
-			   struct device *clk_device, int signal_irq);
-
 static void __init swordfish_init(void)
 {
 	int rc;
@@ -312,7 +310,8 @@ static void __init swordfish_init(void)
 	msm_acpu_clock_init(&swordfish_clock_data);
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	msm_serial_debug_init(MSM_UART3_PHYS, INT_UART3,
-			      &msm_device_uart3.dev, 1);
+			      &msm_device_uart3.dev, 1,
+			      MSM_GPIO_TO_INT(86));
 #endif
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_device_touchscreen.dev.platform_data = &swordfish_ts_pdata;
