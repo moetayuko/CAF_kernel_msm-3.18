@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwX///S8\u003d",
+        "filename": "arch/arm/configs/msm_defconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 1131,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-12T18:55:43Z",
+      "side": 1,
+      "message": "turn all these MEDIA_TUNER_xxx off. they cost like 30K for kernel binary. it\u0027s kind of a pain though. You have to set customise\u003dy, set these to n, then call to oldconfig so that it regenerates... then, it will still ask you questions and you have to say n manually.",
+      "revId": "cd35787116d3d1ac4943c48659c0e02636d748a3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
