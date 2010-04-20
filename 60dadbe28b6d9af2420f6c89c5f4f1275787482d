@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAwn///mQ\u003d",
+        "filename": "arch/arm/mach-msm/Kconfig",
+        "patchSetId": 2
+      },
+      "lineNbr": 329,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-20T08:40:39Z",
+      "side": 1,
+      "message": "deafult n?",
+      "revId": "60dadbe28b6d9af2420f6c89c5f4f1275787482d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAwn///mU\u003d",
+        "filename": "arch/arm/mach-msm/smd.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 629,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-04-20T08:40:39Z",
+      "side": 1,
+      "message": "the name is kind of silly, it should just be __smd_alloc_channel, and there\u0027s no need for it to be inline.",
+      "revId": "60dadbe28b6d9af2420f6c89c5f4f1275787482d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
