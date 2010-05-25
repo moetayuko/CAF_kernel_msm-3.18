@@ -271,6 +271,19 @@ static uint8_t msm_pmem_region_lookup(struct hlist_head *ptype,
 	return rc;
 }
 
+static void invalidate_pmem_region_cache(struct msm_pmem_region *region)
+{
+	int cline_mask;
+	unsigned long end;
+
+	cline_mask = cache_line_size() - 1;
+	end = region->kvaddr + region->len;
+	end = (end + cline_mask) & ~cline_mask;
+
+	dmac_inv_range((const void *)region->kvaddr,
+			(const void *)end);
+}
+
 static int msm_pmem_frame_ptov_lookup(struct msm_sync *sync,
 		unsigned long pyaddr, unsigned long pcbcraddr,
 		struct msm_pmem_region **pmem_region,
@@ -285,6 +298,7 @@ static int msm_pmem_frame_ptov_lookup(struct msm_sync *sync,
 						region->info.cbcr_off) &&
 				region->info.vfe_can_write) {
 			*pmem_region = region;
+			invalidate_pmem_region_cache(region);
 			region->info.vfe_can_write = !take_from_vfe;
 			return 0;
 		}
@@ -304,6 +318,7 @@ static unsigned long msm_pmem_stats_ptov_lookup(struct msm_sync *sync,
 			/* offset since we could pass vaddr inside a
 			 * registered pmem buffer */
 			*fd = region->info.fd;
+			invalidate_pmem_region_cache(region);
 			region->info.vfe_can_write = 0;
 			return (unsigned long)(region->info.vaddr);
 		}
@@ -1465,8 +1480,6 @@ static int msm_get_pic(struct msm_sync *sync, void __user *arg)
 	struct msm_ctrl_cmd ctrlcmd;
 	struct msm_pmem_region pic_pmem_region;
 	int rc;
-	unsigned long end;
-	int cline_mask;
 
 	if (copy_from_user(&ctrlcmd,
 				arg,
@@ -1502,16 +1515,7 @@ static int msm_get_pic(struct msm_sync *sync, void __user *arg)
 		return -EIO;
 	}
 
-	cline_mask = cache_line_size() - 1;
-	end = pic_pmem_region.kvaddr + pic_pmem_region.len;
-	end = (end + cline_mask) & ~cline_mask;
-
-	pr_info("%s: flushing cache for [%08lx, %08lx)\n",
-		__func__,
-		pic_pmem_region.kvaddr, end);
-
-	dmac_inv_range((const void *)pic_pmem_region.kvaddr,
-			(const void *)end);
+	invalidate_pmem_region_cache(&pic_pmem_region);
 
 	CDBG("%s: copy snapshot frame to user\n", __func__);
 	if (copy_to_user((void *)arg,
