@@ -1088,7 +1088,13 @@ int __msm_rpc_read(struct msm_rpc_endpoint *ept,
 	*frag_ret = pkt->first;
 	rq = (void*) pkt->first->data;
 	if ((rc >= (sizeof(uint32_t) * 3)) && (rq->type == 0)) {
-		IO("READ on ept %p is a CALL on %08x:%08x proc %d xid %d\n",
+/* enable this log to help track down spurious RPC wakeup behavior */
+#if 1
+		printk("[RPC] "
+#else
+		IO(
+#endif
+			"READ on ept %p is a CALL on %08x:%08x proc %d xid %d\n",
 			ept, be32_to_cpu(rq->prog), be32_to_cpu(rq->vers),
 			be32_to_cpu(rq->procedure),
 			be32_to_cpu(rq->xid));
