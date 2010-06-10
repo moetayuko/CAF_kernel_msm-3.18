@@ -839,9 +839,17 @@ error_setup_fbmem:
 	return ret;
 }
 
+static void msmfb_shutdown(struct platform_device *pdev)
+{
+	struct msm_panel_data *panel = pdev->dev.platform_data;
+	if (panel->blank)
+		panel->blank(panel);
+}
+
 static struct platform_driver msm_panel_driver = {
 	/* need to write remove */
 	.probe = msmfb_probe,
+	.shutdown = msmfb_shutdown,
 	.driver = {.name = "msm_panel"},
 };
 
