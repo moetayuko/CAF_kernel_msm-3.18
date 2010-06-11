@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAAzX//+vg\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 640,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-06-11T10:16:12Z",
+      "side": 1,
+      "message": "should this all be in a table?",
+      "revId": "f1d4f6b76eff6b922da607db8288ceb2de4391d3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAAzX//+vk\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 718,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-06-11T10:16:12Z",
+      "side": 1,
+      "message": "remove useless chatter",
+      "revId": "f1d4f6b76eff6b922da607db8288ceb2de4391d3",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
