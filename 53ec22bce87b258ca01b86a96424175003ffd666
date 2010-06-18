@@ -1,0 +1,55 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA0X///7k\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 81,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-06-18T15:29:25Z",
+      "side": 1,
+      "message": "i\u0027m not sure I understand why this extra function is necessary. Why can\u0027t they ise the qspi_send? Could HTC fill us in?",
+      "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA0X///7g\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 640,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-06-18T15:29:25Z",
+      "side": 1,
+      "message": "This seems like a constant table with just the new pwm value. Any idea why they\u0027d want to write it everytime we change brightness? Can we just have HTC be able to comment on this change? :)",
+      "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA0X///7c\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 960,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2010-06-18T15:29:25Z",
+      "side": 1,
+      "message": "i think you should register the platform device \u003cafter\u003e you\u0027ve configured the vreg\u0027s and set the \"tft_panel_on\" value.",
+      "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
