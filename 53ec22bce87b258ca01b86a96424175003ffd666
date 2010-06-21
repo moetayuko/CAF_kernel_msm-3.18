@@ -19,6 +19,24 @@
     },
     {
       "key": {
+        "uuid": "AAAA0X///2o\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 81,
+      "author": {
+        "id": 1002335
+      },
+      "writtenOn": "2010-06-21T02:26:48Z",
+      "side": 1,
+      "message": "This is driver ic dependent. We should send 9 bits to driver ic, MSB \u003d 0 means register and MSB \u003d 1 means parameter.",
+      "parentUuid": "AAAA0X///7k\u003d",
+      "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "AAAA0X///7g\u003d",
         "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
         "patchSetId": 2
@@ -30,6 +48,24 @@
       "writtenOn": "2010-06-18T15:29:25Z",
       "side": 1,
       "message": "This seems like a constant table with just the new pwm value. Any idea why they\u0027d want to write it everytime we change brightness? Can we just have HTC be able to comment on this change? :)",
+      "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA0X///2k\u003d",
+        "filename": "arch/arm/mach-msm/board-mahimahi-panel.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 640,
+      "author": {
+        "id": 1002335
+      },
+      "writtenOn": "2010-06-21T02:26:48Z",
+      "side": 1,
+      "message": "Register 0xf0, 0xf1, and 0xd0 are unlock registers. PWM register stored in another page, we have to unlock it before access it. I can try to move the unlock to unblank().",
+      "parentUuid": "AAAA0X///7g\u003d",
       "revId": "53ec22bce87b258ca01b86a96424175003ffd666",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
