@@ -371,6 +371,11 @@ static int irqs[] = {
 #ifdef CONFIG_ARCH_OMAP3
 	INT_34XX_BENCH_MPU_EMUL,
 #endif
+#ifdef CONFIG_ARCH_MSM
+#ifdef CONFIG_ARCH_MSM_SCORPION
+        INT_ARM11_PM,
+#endif
+#endif
 };
 
 static void armv7_pmnc_stop(void)
@@ -385,6 +390,11 @@ static void armv7_pmnc_stop(void)
 static int armv7_pmnc_start(void)
 {
 	int ret;
+
+        if(ARRAY_SIZE(irqs) == 0) {
+            printk(KERN_ERR "oprofile: no interrupts for this CPU\n");
+            return -EINVAL;
+        }
 
 #ifdef DEBUG
 	armv7_pmnc_dump_regs();
