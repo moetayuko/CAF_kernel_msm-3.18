@@ -20,7 +20,7 @@
 #if defined(CONFIG_ARCH_QSD8X50)
 #define PHYS_OFFSET		UL(0x20000000)
 #else
-#define PHYS_OFFSET		UL(0x10000000)
+#define PHYS_OFFSET		UL(0x02000000)
 #endif
 
 #define HAS_ARCH_IO_REMAP_PFN_RANGE
