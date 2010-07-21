@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA3H///wA\u003d",
+        "filename": "arch/arm/oprofile/op_model_v7.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 376,
+      "author": {
+        "id": 1002274
+      },
+      "writtenOn": "2010-07-21T22:20:02Z",
+      "side": 1,
+      "message": "looks right. this is the correct performance monitor interrupt for Scorpion.",
+      "revId": "141c059c99b4a35821654994dece425d3779cfee",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
