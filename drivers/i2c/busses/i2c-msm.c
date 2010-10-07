@@ -429,6 +429,8 @@ msm_i2c_probe(struct platform_device *pdev)
 	int clk_ctl;
 	int target_clk;
 	struct clk *clk;
+	int gpio_clk;
+	int gpio_dat;
 
 	printk(KERN_INFO "msm_i2c_probe\n");
 
@@ -476,6 +478,13 @@ msm_i2c_probe(struct platform_device *pdev)
 	wake_lock_init(&dev->wakelock, WAKE_LOCK_SUSPEND, "i2c");
 	platform_set_drvdata(pdev, dev);
 
+	msm_set_i2c_mux(true, &gpio_clk, &gpio_dat);
+	ret = gpio_request(gpio_clk, "i2c-clk");
+	if (ret)
+		goto err_req_gpio_clk;
+	ret = gpio_request(gpio_dat, "i2c-dat");
+	if (ret)
+		goto err_req_gpio_dat;
 	msm_set_i2c_mux(false, NULL, NULL);
 
 	clk_enable(clk);
@@ -520,6 +529,10 @@ msm_i2c_probe(struct platform_device *pdev)
 err_request_irq_failed:
 	i2c_del_adapter(&dev->adapter);
 err_i2c_add_adapter_failed:
+	gpio_free(gpio_dat);
+err_req_gpio_dat:
+	gpio_free(gpio_clk);
+err_req_gpio_clk:
 	iounmap(dev->base);
 err_ioremap_failed:
 	kfree(dev);
@@ -535,6 +548,13 @@ msm_i2c_remove(struct platform_device *pdev)
 {
 	struct msm_i2c_dev	*dev = platform_get_drvdata(pdev);
 	struct resource		*mem;
+	int gpio_clk;
+	int gpio_dat;
+
+	msm_set_i2c_mux(true, &gpio_clk, &gpio_dat);
+	gpio_free(gpio_clk);
+	gpio_free(gpio_dat);
+	msm_set_i2c_mux(false, NULL, NULL);
 
 	platform_set_drvdata(pdev, NULL);
 	enable_irq(dev->irq);
