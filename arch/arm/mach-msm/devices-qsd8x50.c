@@ -26,6 +26,7 @@
 
 #include "devices.h"
 #include "proc_comm.h"
+#include "clock-voter.h"
 
 #include <asm/mach/flash.h>
 #include <linux/mtd/nand.h>
@@ -604,7 +605,13 @@ struct platform_device msm_device_spi = {
 
 struct clk msm_clocks_8x50[] = {
 	CLK_PCOM("adm_clk",	ADM_CLK,	NULL, 0),
-	CLK_PCOM("ebi1_clk",	EBI1_CLK,	NULL, CLK_MIN | CLKFLAG_SHARED),
+	CLK_PCOM("ebi1_clk",	EBI1_CLK,	NULL, CLK_MIN),
+	CLK_VOTER("ebi1_pm_clk",	EBI_PM,		"ebi1_clk", NULL, 0),
+	CLK_VOTER("ebi1_acpu_clk",	EBI_ACPU,	"ebi1_clk", NULL, 0),
+	CLK_VOTER("ebi1_kgsl_clk",	EBI_KGSL,	"ebi1_clk", NULL, 0),
+	CLK_VOTER("ebi1_usb_clk",	EBI_USB,	"ebi1_clk", NULL, 0),
+	CLK_VOTER("ebi1_vfe_clk",	EBI_VFE,	"ebi1_clk", NULL, 0),
+	CLK_VOTER("ebi1_mdp_clk",	EBI_MDP,	"ebi1_clk", NULL, 0),
 	CLK_PCOM("ebi2_clk",	EBI2_CLK,	NULL, 0),
 	CLK_PCOM("ecodec_clk",	ECODEC_CLK,	NULL, 0),
 	CLK_PCOM("mddi_clk",	EMDH_CLK,	&msm_device_mddi1.dev, OFF | CLK_MINMAX),

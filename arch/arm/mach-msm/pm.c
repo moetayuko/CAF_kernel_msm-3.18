@@ -730,13 +730,13 @@ EXPORT_SYMBOL(msm_pm_set_max_sleep_time);
 /* axi 128 screen on, 61mhz screen off */
 static void axi_early_suspend(struct early_suspend *handler) {
 	axi_rate = 0;
-	clk_set_rate(axi_clk, axi_rate);
+	clk_disable(axi_clk);
 }
 
 static void axi_late_resume(struct early_suspend *handler) {
 	axi_rate = 128000000;
 	sleep_axi_rate = 120000000;
-	clk_set_rate(axi_clk, axi_rate);
+	clk_enable(axi_clk);
 }
 
 static struct early_suspend axi_screen_suspend = {
@@ -748,7 +748,7 @@ static struct early_suspend axi_screen_suspend = {
 static void __init msm_pm_axi_init(void)
 {
 #if defined(CONFIG_EARLYSUSPEND) && defined(CONFIG_ARCH_MSM_SCORPION)
-	axi_clk = clk_get(NULL, "ebi1_clk");
+	axi_clk = clk_get(NULL, "ebi1_pm_clk");
 	if (IS_ERR(axi_clk)) {
 		int result = PTR_ERR(axi_clk);
 		pr_err("clk_get(ebi1_clk) returned %d\n", result);
@@ -757,6 +757,7 @@ static void __init msm_pm_axi_init(void)
 	axi_rate = 128000000;
 	sleep_axi_rate = 120000000;
 	clk_set_rate(axi_clk, axi_rate);
+	clk_enable(axi_clk);
 	register_early_suspend(&axi_screen_suspend);
 #else
 	axi_rate = 0;

@@ -1215,7 +1215,7 @@ static void usb_do_work(struct work_struct *w)
 		case USB_STATE_IDLE:
 			if (flags & USB_FLAG_START) {
 				pr_info("msm72k_udc: IDLE -> ONLINE\n");
-				clk_set_rate(ui->ebi1clk, 128000000);
+				clk_enable(ui->ebi1clk);
 				udelay(10);
 				if (ui->coreclk)
 					clk_enable(ui->coreclk);
@@ -1265,7 +1265,7 @@ static void usb_do_work(struct work_struct *w)
 					clk_disable(ui->otgclk);
 				if (ui->coreclk)
 					clk_disable(ui->coreclk);
-				clk_set_rate(ui->ebi1clk, 0);
+				clk_disable(ui->ebi1clk);
 				spin_unlock_irqrestore(&ui->lock, iflags);
 
 				ui->state = USB_STATE_OFFLINE;
@@ -1285,7 +1285,7 @@ static void usb_do_work(struct work_struct *w)
 			 */
 			if ((flags & USB_FLAG_VBUS_ONLINE) && _vbus) {
 				pr_info("msm72k_udc: OFFLINE -> ONLINE\n");
-				clk_set_rate(ui->ebi1clk, 128000000);
+				clk_enable(ui->ebi1clk);
 				udelay(10);
 				if (ui->coreclk)
 					clk_enable(ui->coreclk);
@@ -1779,9 +1779,10 @@ static int msm72k_probe(struct platform_device *pdev)
 	if (IS_ERR(ui->coreclk))
 		ui->coreclk = NULL;
 
-	ui->ebi1clk = clk_get(NULL, "ebi1_clk");
+	ui->ebi1clk = clk_get(NULL, "ebi1_usb_clk");
 	if (IS_ERR(ui->ebi1clk))
 		return usb_free(ui, PTR_ERR(ui->ebi1clk));
+	clk_set_rate(ui->ebi1clk, 128000000);
 
 	/* clear interrupts before requesting irq */
 	if (ui->coreclk)

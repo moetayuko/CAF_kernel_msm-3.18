@@ -116,7 +116,7 @@ struct device *kgsl_driver_getdevnode(void)
  * with mutex held */
 static void kgsl_clk_enable(void)
 {
-	clk_set_rate(kgsl_driver.ebi1_clk, 128000000);
+	clk_enable(kgsl_driver.ebi1_clk);
 	clk_enable(kgsl_driver.imem_clk);
 	if (kgsl_driver.grp_pclk)
 		clk_enable(kgsl_driver.grp_pclk);
@@ -129,7 +129,7 @@ static void kgsl_clk_disable(void)
 	if (kgsl_driver.grp_pclk)
 		clk_disable(kgsl_driver.grp_pclk);
 	clk_disable(kgsl_driver.imem_clk);
-	clk_set_rate(kgsl_driver.ebi1_clk, 0);
+	clk_disable(kgsl_driver.ebi1_clk);
 }
 
 static void kgsl_hw_disable(void)
@@ -1129,13 +1129,14 @@ static int __devinit kgsl_platform_probe(struct platform_device *pdev)
 	}
 	kgsl_driver.imem_clk = clk;
 
-	clk = clk_get(&pdev->dev, "ebi1_clk");
+	clk = clk_get(&pdev->dev, "ebi1_kgsl_clk");
 	if (IS_ERR(clk)) {
 		result = PTR_ERR(clk);
 		KGSL_DRV_ERR("clk_get(ebi1_clk) returned %d\n", result);
 		goto done;
 	}
 	kgsl_driver.ebi1_clk = clk;
+	clk_set_rate(kgsl_driver.ebi1_clk, 128000000);
 
 	/*acquire interrupt */
 	kgsl_driver.interrupt_num = platform_get_irq(pdev, 0);

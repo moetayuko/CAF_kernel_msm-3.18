@@ -30,7 +30,6 @@
 #define CLKFLAG_AUTO_OFF		0x00000200
 #define CLKFLAG_MIN			0x00000400
 #define CLKFLAG_MAX			0x00000800
-#define CLKFLAG_SHARED			0x00001000
 
 struct clk_ops {
 	int (*enable)(unsigned id);
@@ -56,14 +55,8 @@ struct clk {
 	const char *dbg_name;
 	struct hlist_node list;
 	struct device *dev;
-	struct hlist_head handles;
 	struct hlist_head voters;
-};
-
-struct clk_handle {
-	struct clk clk;
-	struct clk *source;
-	unsigned long rate;
+	const char *aggregator;
 };
 
 #define OFF CLKFLAG_AUTO_OFF

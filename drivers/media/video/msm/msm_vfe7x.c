@@ -56,7 +56,7 @@ static uint8_t vfestopped;
 static struct stop_event stopevent;
 
 static struct clk *ebi1_clk;
-static const char *const ebi1_clk_name = "ebi1_clk";
+static const char *const ebi1_clk_name = "ebi1_vfe_clk";
 
 static void vfe_7x_convert(struct msm_vfe_phy_info *pinfo,
 			   enum vfe_resp_msg type,
@@ -257,9 +257,9 @@ static void vfe_7x_release(struct platform_device *pdev)
 	msm_camio_disable(pdev);
 
 	if (ebi1_clk) {
-		clk_set_rate(ebi1_clk, 0);
+		clk_disable(ebi1_clk);
 		clk_put(ebi1_clk);
-		ebi1_clk = 0;
+		ebi1_clk = NULL;
 	}
 
 	kfree(extdata);
@@ -292,6 +292,7 @@ static int vfe_7x_init(struct msm_vfe_callback *presp,
 			ebi1_clk_name, rc);
 		return rc;
 	}
+	clk_enable(ebi1_clk);
 
 	/* Bring up all the required GPIOs and Clocks */
 	rc = msm_camio_enable(dev);

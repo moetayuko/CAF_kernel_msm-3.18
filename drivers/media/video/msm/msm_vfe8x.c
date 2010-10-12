@@ -28,7 +28,7 @@
 
 static void *vfe_syncdata;
 static struct clk *ebi1_clk;
-static const char *const clk_name = "ebi1_clk";
+static const char *const clk_name = "ebi1_vfe_clk";
 
 static int vfe_enable(struct camera_enable_cmd *enable)
 {
@@ -59,6 +59,7 @@ static int vfe_init(struct msm_vfe_callback *presp, struct platform_device *dev)
 			clk_name, rc);
 		return rc;
 	}
+	clk_enable(ebi1_clk);
 
 	rc = vfe_cmd_init(presp, dev, vfe_syncdata);
 	if (rc < 0)
@@ -74,9 +75,9 @@ static void vfe_release(struct platform_device *dev)
 		&((struct msm_sync *)vfe_syncdata)->sctrl;
 
 	if (ebi1_clk) {
-		clk_set_rate(ebi1_clk, 0);
+		clk_disable(ebi1_clk);
 		clk_put(ebi1_clk);
-		ebi1_clk = 0;
+		ebi1_clk = NULL;
 	}
 
 	if (sctrl)

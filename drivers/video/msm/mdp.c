@@ -52,7 +52,7 @@ static int locked_enable_mdp_irq(struct mdp_info *mdp, uint32_t mask)
 	}
 	/* if the mdp irq is not already enabled enable it */
 	if (!mdp_irq_mask) {
-		clk_set_rate(mdp->ebi1_clk, 128000000);
+		clk_enable(mdp->ebi1_clk);
 		clk_enable(mdp->clk);
 		if (mdp->pclk)
 			clk_enable(mdp->pclk);
@@ -100,7 +100,7 @@ static int locked_disable_mdp_irq(struct mdp_info *mdp, uint32_t mask)
 			clk_disable(mdp->pclk);
 		if (mdp->clk)
 			clk_disable(mdp->clk);
-		clk_set_rate(mdp->ebi1_clk, 0);
+		clk_disable(mdp->ebi1_clk);
 	}
 	return 0;
 }
@@ -481,12 +481,13 @@ int mdp_probe(struct platform_device *pdev)
 	if (IS_ERR(mdp->pclk))
 		mdp->pclk = NULL;
 
-	mdp->ebi1_clk = clk_get(NULL, "ebi1_clk");
+	mdp->ebi1_clk = clk_get(NULL, "ebi1_mdp_clk");
 	if (IS_ERR(mdp->ebi1_clk)) {
 		pr_err("mdp: failed to get ebi1 clk\n");
 		ret = PTR_ERR(mdp->ebi1_clk);
 		goto error_get_ebi1_clk;
 	}
+	clk_set_rate(mdp->ebi1_clk, 128000000);
 
 
 	ret = request_irq(mdp->irq, mdp_isr, IRQF_DISABLED, "msm_mdp", mdp);

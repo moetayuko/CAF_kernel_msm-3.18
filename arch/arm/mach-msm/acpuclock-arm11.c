@@ -471,6 +471,7 @@ static void __init acpuclk_init(void)
 	rc = clk_set_rate(ebi1_clk, speed->axiclk_khz * 1000);
 	if (rc < 0)
 		pr_err("Setting AXI min rate failed!\n");
+	clk_enable(ebi1_clk);
 
 	printk(KERN_INFO "ACPU running at %d KHz\n", speed->a11clk_khz);
 }
@@ -510,7 +511,7 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 {
 	pr_info("acpu_clock_init()\n");
 
-	ebi1_clk = clk_get(NULL, "ebi1_clk");
+	ebi1_clk = clk_get(NULL, "ebi1_acpu_clk");
 
 	mutex_init(&drv_state.lock);
 	drv_state.acpu_switch_time_us = clkdata->acpu_switch_time_us;

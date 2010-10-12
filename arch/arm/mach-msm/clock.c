@@ -41,32 +41,6 @@ static HLIST_HEAD(clocks);
 struct clk *msm_clocks;
 unsigned msm_num_clocks;
 
-static struct clk *clk_allocate_handle(struct clk *sclk)
-{
-	unsigned long flags;
-	struct clk_handle *clkh = kzalloc(sizeof(*clkh), GFP_KERNEL);
-	if (!clkh)
-		return ERR_PTR(ENOMEM);
-	clkh->clk.flags = CLKFLAG_VOTER;
-	clkh->source = sclk;
-
-	spin_lock_irqsave(&clocks_lock, flags);
-	hlist_add_head(&clkh->clk.list, &sclk->handles);
-	spin_unlock_irqrestore(&clocks_lock, flags);
-	return &clkh->clk;
-}
-
-static struct clk *source_clk(struct clk *clk)
-{
-	struct clk_handle *clkh;
-
-	if (clk->flags & CLKFLAG_VOTER) {
-		clkh = container_of(clk, struct clk_handle, clk);
-		clk = clkh->source;
-	}
-	return clk;
-}
-
 /*
  * Standard clock functions defined in include/linux/clk.h
  */
@@ -87,8 +61,6 @@ struct clk *clk_get(struct device *dev, const char *id)
 
 	clk = ERR_PTR(-ENOENT);
 found_it:
-	if (!IS_ERR(clk) && (clk->flags & CLKFLAG_SHARED))
-		clk = clk_allocate_handle(clk);
 	mutex_unlock(&clocks_mutex);
 	return clk;
 }
@@ -96,35 +68,17 @@ EXPORT_SYMBOL(clk_get);
 
 void clk_put(struct clk *clk)
 {
-	struct clk_handle *clkh;
-	unsigned long flags;
-
-	if (WARN_ON(IS_ERR(clk)))
-		return;
-
-	if (!(clk->flags & CLKFLAG_VOTER))
-		return;
-
-	clk_set_rate(clk, 0);
-
-	spin_lock_irqsave(&clocks_lock, flags);
-	clkh = container_of(clk, struct clk_handle, clk);
-	hlist_del(&clk->list);
-	kfree(clkh);
-	spin_unlock_irqrestore(&clocks_lock, flags);
 }
 EXPORT_SYMBOL(clk_put);
 
 int clk_enable(struct clk *clk)
 {
-	clk = source_clk(clk);
 	return clk->ops->enable(clk->id);
 }
 EXPORT_SYMBOL(clk_enable);
 
 void clk_disable(struct clk *clk)
 {
-	clk = source_clk(clk);
 	clk->ops->disable(clk->id);
 }
 EXPORT_SYMBOL(clk_disable);
@@ -139,52 +93,27 @@ EXPORT_SYMBOL(clk_reset);
 
 unsigned long clk_get_rate(struct clk *clk)
 {
-	clk = source_clk(clk);
 	return clk->ops->get_rate(clk->id);
 }
 EXPORT_SYMBOL(clk_get_rate);
 
-static unsigned long clk_find_min_rate_locked(struct clk *clk)
-{
-	unsigned long rate = 0;
-	struct clk_handle *clkh;
-	struct hlist_node *pos;
-
-	hlist_for_each_entry(clkh, pos, &clk->handles, clk.list)
-		if (clkh->rate > rate)
-			rate = clkh->rate;
-	return rate;
-}
-
 int clk_set_rate(struct clk *clk, unsigned long rate)
 {
 	int ret;
-	unsigned long flags;
-
-	spin_lock_irqsave(&clocks_lock, flags);
-	if (clk->flags & CLKFLAG_VOTER) {
-		struct clk_handle *clkh;
-		clkh = container_of(clk, struct clk_handle, clk);
-		clkh->rate = rate;
-		clk = clkh->source;
-		rate = clk_find_min_rate_locked(clk);
-	}
 
 	if (clk->flags & CLKFLAG_MAX) {
 		ret = clk->ops->set_max_rate(clk->id, rate);
 		if (ret)
-			goto err;
+			return ret;
 	}
 	if (clk->flags & CLKFLAG_MIN) {
 		ret = clk->ops->set_min_rate(clk->id, rate);
 		if (ret)
-			goto err;
+			return ret;
 	}
 
 	if (!(clk->flags & (CLKFLAG_MAX | CLKFLAG_MIN)))
 		ret = clk->ops->set_rate(clk->id, rate);
-err:
-	spin_unlock_irqrestore(&clocks_lock, flags);
 	return ret;
 }
 EXPORT_SYMBOL(clk_set_rate);
@@ -225,7 +154,6 @@ int clk_set_flags(struct clk *clk, unsigned long flags)
 {
 	if (clk == NULL || IS_ERR(clk))
 		return -EINVAL;
-	clk = source_clk(clk);
 	return clk->ops->set_flags(clk->id, flags);
 }
 EXPORT_SYMBOL(clk_set_flags);
@@ -249,6 +177,7 @@ static void __init set_clock_ops(struct clk *clk)
 void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
 {
 	unsigned n;
+	struct clk *clk;
 
 	mutex_lock(&clocks_mutex);
 	msm_clocks = clock_tbl;
@@ -258,6 +187,16 @@ void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
 		hlist_add_head(&msm_clocks[n].list, &clocks);
 	}
 	mutex_unlock(&clocks_mutex);
+
+	for (n = 0; n < msm_num_clocks; n++) {
+		clk = &msm_clocks[n];
+		if (clk->flags & CLKFLAG_VOTER) {
+			struct clk *agg_clk = clk_get(NULL, clk->aggregator);
+			BUG_ON(IS_ERR(agg_clk));
+
+			clk_set_parent(clk, agg_clk);
+		}
+	}
 }
 
 #if defined(CONFIG_DEBUG_FS)
@@ -344,21 +283,12 @@ static void clk_info_seq_stop(struct seq_file *seq, void *v)
 static int clk_info_seq_show(struct seq_file *seq, void *v)
 {
 	struct clk *clk = v;
-	unsigned long flags;
-	struct clk_handle *clkh;
-	struct hlist_node *pos;
 
 	seq_printf(seq, "Clock %s\n", clk->dbg_name);
 	seq_printf(seq, "  Id          %d\n", clk->id);
 	seq_printf(seq, "  Flags       %x\n", clk->flags);
 	seq_printf(seq, "  Dev         %p %s\n",
 			clk->dev, clk->dev ? dev_name(clk->dev) : "");
-	seq_printf(seq, "  Handles     %p\n", clk->handles.first);
-	spin_lock_irqsave(&clocks_lock, flags);
-	hlist_for_each_entry(clkh, pos, &clk->handles, clk.list)
-		seq_printf(seq, "    Requested rate    %ld\n", clkh->rate);
-	spin_unlock_irqrestore(&clocks_lock, flags);
-
 	seq_printf(seq, "  Enabled     %d\n", clk->ops->is_enabled(clk->id));
 	seq_printf(seq, "  Rate        %ld\n", clk_get_rate(clk));
 
