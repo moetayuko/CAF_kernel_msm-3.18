@@ -50,11 +50,9 @@ struct clk {
 	uint32_t id;
 	uint32_t remote_id;
 	uint32_t flags;
-	const char *name;
 	struct clk_ops *ops;
 	const char *dbg_name;
 	struct hlist_node list;
-	struct device *dev;
 	struct hlist_head voters;
 	const char *aggregator;
 };

@@ -22,7 +22,6 @@
 #include <linux/err.h>
 #include <linux/clk.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include <linux/debugfs.h>
 #include <linux/ctype.h>
 #include <linux/pm_qos_params.h>
@@ -30,46 +29,15 @@
 #include <linux/seq_file.h>
 #include <mach/clk.h>
 
+#include <asm/clkdev.h>
+
 #include "clock.h"
 #include "proc_comm.h"
 #include "clock-7x30.h"
 #include "clock-pcom.h"
 
 static DEFINE_MUTEX(clocks_mutex);
-static DEFINE_SPINLOCK(clocks_lock);
 static HLIST_HEAD(clocks);
-struct clk *msm_clocks;
-unsigned msm_num_clocks;
-
-/*
- * Standard clock functions defined in include/linux/clk.h
- */
-struct clk *clk_get(struct device *dev, const char *id)
-{
-	struct clk *clk;
-	struct hlist_node *pos;
-
-	mutex_lock(&clocks_mutex);
-
-	hlist_for_each_entry(clk, pos, &clocks, list)
-		if (!strcmp(id, clk->name) && clk->dev == dev)
-			goto found_it;
-
-	hlist_for_each_entry(clk, pos, &clocks, list)
-		if (!strcmp(id, clk->name) && clk->dev == NULL)
-			goto found_it;
-
-	clk = ERR_PTR(-ENOENT);
-found_it:
-	mutex_unlock(&clocks_mutex);
-	return clk;
-}
-EXPORT_SYMBOL(clk_get);
-
-void clk_put(struct clk *clk)
-{
-}
-EXPORT_SYMBOL(clk_put);
 
 int clk_enable(struct clk *clk)
 {
@@ -174,22 +142,22 @@ static void __init set_clock_ops(struct clk *clk)
 	}
 }
 
-void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
+void __init msm_clock_init(struct clk_lookup *clock_tbl, unsigned num_clocks)
 {
 	unsigned n;
 	struct clk *clk;
 
 	mutex_lock(&clocks_mutex);
-	msm_clocks = clock_tbl;
-	msm_num_clocks = num_clocks;
-	for (n = 0; n < msm_num_clocks; n++) {
-		set_clock_ops(&msm_clocks[n]);
-		hlist_add_head(&msm_clocks[n].list, &clocks);
+
+	for (n = 0; n < num_clocks; n++) {
+		set_clock_ops(clock_tbl[n].clk);
+		clkdev_add(&clock_tbl[n]);
+		hlist_add_head(&clock_tbl[n].clk->list, &clocks);
 	}
 	mutex_unlock(&clocks_mutex);
 
-	for (n = 0; n < msm_num_clocks; n++) {
-		clk = &msm_clocks[n];
+	for (n = 0; n < num_clocks; n++) {
+		clk = clock_tbl[n].clk;
 		if (clk->flags & CLKFLAG_VOTER) {
 			struct clk *agg_clk = clk_get(NULL, clk->aggregator);
 			BUG_ON(IS_ERR(agg_clk));
@@ -287,8 +255,6 @@ static int clk_info_seq_show(struct seq_file *seq, void *v)
 	seq_printf(seq, "Clock %s\n", clk->dbg_name);
 	seq_printf(seq, "  Id          %d\n", clk->id);
 	seq_printf(seq, "  Flags       %x\n", clk->flags);
-	seq_printf(seq, "  Dev         %p %s\n",
-			clk->dev, clk->dev ? dev_name(clk->dev) : "");
 	seq_printf(seq, "  Enabled     %d\n", clk->ops->is_enabled(clk->id));
 	seq_printf(seq, "  Rate        %ld\n", clk_get_rate(clk));
 
