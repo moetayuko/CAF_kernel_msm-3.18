@@ -32,6 +32,7 @@
 #include <linux/mtd/partitions.h>
 
 #include <mach/mmc.h>
+#include "clock-pcom.h"
 
 static struct resource resources_uart1[] = {
 	{

@@ -29,6 +29,7 @@
 #include <asm/mach/flash.h>
 
 #include "clock-pcom.h"
+#include "clock-7x30.h"
 
 #include <mach/mmc.h>
 

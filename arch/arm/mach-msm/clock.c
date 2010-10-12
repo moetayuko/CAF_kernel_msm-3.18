@@ -33,19 +33,13 @@
 #include "clock.h"
 #include "proc_comm.h"
 #include "clock-7x30.h"
+#include "clock-pcom.h"
 
 static DEFINE_MUTEX(clocks_mutex);
 static DEFINE_SPINLOCK(clocks_lock);
 static HLIST_HEAD(clocks);
 struct clk *msm_clocks;
 unsigned msm_num_clocks;
-
-/*
- * Bitmap of enabled clocks, excluding ACPU which is always
- * enabled
- */
-static DECLARE_BITMAP(clock_map_enabled, NR_CLKS);
-static DEFINE_SPINLOCK(clock_map_lock);
 
 static struct clk *clk_allocate_handle(struct clk *sclk)
 {
@@ -127,12 +121,8 @@ int clk_enable(struct clk *clk)
 	spin_lock_irqsave(&clocks_lock, flags);
 	clk = source_clk(clk);
 	clk->count++;
-	if (clk->count == 1) {
+	if (clk->count == 1)
 		clk->ops->enable(clk->id);
-		spin_lock(&clock_map_lock);
-		clock_map_enabled[BIT_WORD(clk->id)] |= BIT_MASK(clk->id);
-		spin_unlock(&clock_map_lock);
-	}
 	spin_unlock_irqrestore(&clocks_lock, flags);
 	return 0;
 }
@@ -145,12 +135,8 @@ void clk_disable(struct clk *clk)
 	clk = source_clk(clk);
 	BUG_ON(clk->count == 0);
 	clk->count--;
-	if (clk->count == 0) {
+	if (clk->count == 0)
 		clk->ops->disable(clk->id);
-		spin_lock(&clock_map_lock);
-		clock_map_enabled[BIT_WORD(clk->id)] &= ~BIT_MASK(clk->id);
-		spin_unlock(&clock_map_lock);
-	}
 	spin_unlock_irqrestore(&clocks_lock, flags);
 }
 EXPORT_SYMBOL(clk_disable);
@@ -305,7 +291,6 @@ void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
 {
 	unsigned n;
 
-	spin_lock_init(&clocks_lock);
 	mutex_lock(&clocks_mutex);
 	msm_clocks = clock_tbl;
 	msm_num_clocks = num_clocks;
@@ -317,14 +302,6 @@ void __init msm_clock_init(struct clk *clock_tbl, unsigned num_clocks)
 }
 
 #if defined(CONFIG_DEBUG_FS)
-static struct clk *msm_clock_get_nth(unsigned index)
-{
-	if (index < msm_num_clocks)
-		return msm_clocks + index;
-	else
-		return 0;
-}
-
 static int clock_debug_rate_set(void *data, u64 val)
 {
 	struct clk *clock = data;
