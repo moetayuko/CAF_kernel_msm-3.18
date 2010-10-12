@@ -412,7 +412,7 @@ static int clk_info_seq_show(struct seq_file *seq, void *v)
 	struct clk_handle *clkh;
 	struct hlist_node *pos;
 
-	seq_printf(seq, "Clock %s\n", clk->name);
+	seq_printf(seq, "Clock %s\n", clk->dbg_name);
 	seq_printf(seq, "  Id          %d\n", clk->id);
 	seq_printf(seq, "  Count       %d\n", clk->count);
 	seq_printf(seq, "  Flags       %x\n", clk->flags);
