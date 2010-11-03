@@ -117,27 +117,15 @@ EXPORT_SYMBOL(clk_put);
 
 int clk_enable(struct clk *clk)
 {
-	unsigned long flags;
-	spin_lock_irqsave(&clocks_lock, flags);
 	clk = source_clk(clk);
-	clk->count++;
-	if (clk->count == 1)
-		clk->ops->enable(clk->id);
-	spin_unlock_irqrestore(&clocks_lock, flags);
-	return 0;
+	return clk->ops->enable(clk->id);
 }
 EXPORT_SYMBOL(clk_enable);
 
 void clk_disable(struct clk *clk)
 {
-	unsigned long flags;
-	spin_lock_irqsave(&clocks_lock, flags);
 	clk = source_clk(clk);
-	BUG_ON(clk->count == 0);
-	clk->count--;
-	if (clk->count == 0)
-		clk->ops->disable(clk->id);
-	spin_unlock_irqrestore(&clocks_lock, flags);
+	clk->ops->disable(clk->id);
 }
 EXPORT_SYMBOL(clk_disable);
 
@@ -247,37 +235,6 @@ void clk_enter_sleep(int from_idle)
 void clk_exit_sleep(void)
 {
 }
-
-int clks_print_running(void)
-{
-	struct clk *clk;
-	int clk_on_count = 0;
-	struct hlist_node *pos;
-	char buf[100];
-	char *pbuf = buf;
-	int size = sizeof(buf);
-	int wr;
-	unsigned long flags;
-
-	spin_lock_irqsave(&clocks_lock, flags);
-
-	hlist_for_each_entry(clk, pos, &clocks, list) {
-		if (clk->count) {
-			clk_on_count++;
-			wr = snprintf(pbuf, size, " %s", clk->name);
-			if (wr >= size)
-				break;
-			pbuf += wr;
-			size -= wr;
-		}
-	}
-	if (clk_on_count)
-		pr_info("clocks on:%s\n", buf);
-
-	spin_unlock_irqrestore(&clocks_lock, flags);
-	return !clk_on_count;
-}
-EXPORT_SYMBOL(clks_print_running);
 
 static void __init set_clock_ops(struct clk *clk)
 {
@@ -391,7 +348,6 @@ static int clk_info_seq_show(struct seq_file *seq, void *v)
 
 	seq_printf(seq, "Clock %s\n", clk->dbg_name);
 	seq_printf(seq, "  Id          %d\n", clk->id);
-	seq_printf(seq, "  Count       %d\n", clk->count);
 	seq_printf(seq, "  Flags       %x\n", clk->flags);
 	seq_printf(seq, "  Dev         %p %s\n",
 			clk->dev, clk->dev ? dev_name(clk->dev) : "");
@@ -481,26 +437,14 @@ late_initcall(clock_debug_init);
  */
 static int __init clock_late_init(void)
 {
-	unsigned long flags;
 	struct clk *clk;
 	struct hlist_node *pos;
-	unsigned count = 0;
 
 	mutex_lock(&clocks_mutex);
-	hlist_for_each_entry(clk, pos, &clocks, list) {
-		if (clk->flags & CLKFLAG_AUTO_OFF) {
-			spin_lock_irqsave(&clocks_lock, flags);
-			if (!clk->count) {
-				count++;
-				clk->ops->auto_off(clk->id);
-			}
-			spin_unlock_irqrestore(&clocks_lock, flags);
-		}
-	}
+	hlist_for_each_entry(clk, pos, &clocks, list)
+		if (clk->flags & CLKFLAG_AUTO_OFF)
+			clk->ops->auto_off(clk->id);
 	mutex_unlock(&clocks_mutex);
-	pr_info("clock_late_init() disabled %d unused clocks\n", count);
 	return 0;
 }
-
 late_initcall(clock_late_init);
-
