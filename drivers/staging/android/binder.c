@@ -1389,7 +1389,7 @@ static void binder_transaction(struct binder_proc *proc,
 	wait_queue_head_t *target_wait;
 	struct binder_transaction *in_reply_to = NULL;
 	struct binder_transaction_log_entry *e;
-	uint32_t return_error;
+	uint32_t return_error = BR_ERROR;
 
 	e = binder_transaction_log_add(&binder_transaction_log);
 	e->call_type = reply ? 2 : !!(tr->flags & TF_ONE_WAY);
@@ -1610,6 +1610,7 @@ static void binder_transaction(struct binder_proc *proc,
 					proc->pid, thread->pid,
 					fp->binder, node->debug_id,
 					fp->cookie, node->cookie);
+				return_error = BR_FAILED_REPLY;
 				goto err_binder_get_ref_for_node_failed;
 			}
 			ref = binder_get_ref_for_node(target_proc, node);
@@ -1776,6 +1777,7 @@ err_no_context_mgr_node:
 	}
 
 	BUG_ON(thread->return_error != BR_OK);
+	BUG_ON(return_error == BR_ERROR);
 	if (in_reply_to) {
 		thread->return_error = BR_TRANSACTION_COMPLETE;
 		binder_send_failed_reply(in_reply_to, return_error);
