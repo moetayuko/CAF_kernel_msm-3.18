@@ -47,7 +47,7 @@ static struct clk *clk_allocate_handle(struct clk *sclk)
 	struct clk_handle *clkh = kzalloc(sizeof(*clkh), GFP_KERNEL);
 	if (!clkh)
 		return ERR_PTR(ENOMEM);
-	clkh->clk.flags = CLKFLAG_HANDLE;
+	clkh->clk.flags = CLKFLAG_VOTER;
 	clkh->source = sclk;
 
 	spin_lock_irqsave(&clocks_lock, flags);
@@ -60,7 +60,7 @@ static struct clk *source_clk(struct clk *clk)
 {
 	struct clk_handle *clkh;
 
-	if (clk->flags & CLKFLAG_HANDLE) {
+	if (clk->flags & CLKFLAG_VOTER) {
 		clkh = container_of(clk, struct clk_handle, clk);
 		clk = clkh->source;
 	}
@@ -102,7 +102,7 @@ void clk_put(struct clk *clk)
 	if (WARN_ON(IS_ERR(clk)))
 		return;
 
-	if (!(clk->flags & CLKFLAG_HANDLE))
+	if (!(clk->flags & CLKFLAG_VOTER))
 		return;
 
 	clk_set_rate(clk, 0);
@@ -162,7 +162,7 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 	unsigned long flags;
 
 	spin_lock_irqsave(&clocks_lock, flags);
-	if (clk->flags & CLKFLAG_HANDLE) {
+	if (clk->flags & CLKFLAG_VOTER) {
 		struct clk_handle *clkh;
 		clkh = container_of(clk, struct clk_handle, clk);
 		clkh->rate = rate;

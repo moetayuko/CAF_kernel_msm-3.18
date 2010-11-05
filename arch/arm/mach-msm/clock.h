@@ -24,7 +24,7 @@
 #define CLKFLAG_NOINVERT		0x00000002
 #define CLKFLAG_NONEST			0x00000004
 #define CLKFLAG_NORESET			0x00000008
-#define CLKFLAG_HANDLE			0x00000010
+#define CLKFLAG_VOTER			0x00000010
 
 #define CLK_FIRST_AVAILABLE_FLAG	0x00000100
 #define CLKFLAG_AUTO_OFF		0x00000200
@@ -57,6 +57,7 @@ struct clk {
 	struct hlist_node list;
 	struct device *dev;
 	struct hlist_head handles;
+	struct hlist_head voters;
 };
 
 struct clk_handle {
