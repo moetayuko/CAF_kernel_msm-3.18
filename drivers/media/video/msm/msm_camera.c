@@ -1732,17 +1732,20 @@ static int msm_set_crop(struct msm_sync *sync, void __user *arg)
 		return -EFAULT;
 	}
 
+	if (crop.len != CROP_LEN)
+		return -EINVAL;
+
 	if (!sync->croplen) {
 		sync->cropinfo = kmalloc(crop.len, GFP_KERNEL);
 		if (!sync->cropinfo)
 			return -ENOMEM;
-	} else if (sync->croplen < crop.len)
-		return -EINVAL;
+	}
 
 	if (copy_from_user(sync->cropinfo,
 				crop.info,
 				crop.len)) {
 		ERR_COPY_FROM_USER();
+		sync->croplen = 0;
 		kfree(sync->cropinfo);
 		return -EFAULT;
 	}
