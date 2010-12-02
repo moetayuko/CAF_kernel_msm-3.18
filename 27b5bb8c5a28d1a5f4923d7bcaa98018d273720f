@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA9n//92A\u003d",
+        "filename": "drivers/video/msm/gpu/kgsl/kgsl_drawctxt.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 178,
+      "author": {
+        "id": 1005085
+      },
+      "writtenOn": "2010-12-02T16:21:24Z",
+      "side": 1,
+      "message": "yeah, 23 will work correctly.",
+      "revId": "27b5bb8c5a28d1a5f4923d7bcaa98018d273720f",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
