@@ -16,6 +16,24 @@
       "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7d4\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 415,
+      "author": {
+        "id": 1003489
+      },
+      "writtenOn": "2011-01-26T23:46:10Z",
+      "side": 1,
+      "message": "The problem there is that when we move to clkdev the clk-\u003ename is gone and so is the device name.",
+      "parentUuid": "AAAA+3//7eI\u003d",
+      "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
