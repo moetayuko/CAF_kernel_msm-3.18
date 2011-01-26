@@ -34,6 +34,24 @@
       "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7dc\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 415,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-26T23:53:24Z",
+      "side": 1,
+      "message": "isn\u0027t it up to the implementation? Can\u0027t we still keep the name that is used for con_id lookup?",
+      "parentUuid": "AAAA+3//7d4\u003d",
+      "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
