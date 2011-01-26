@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA+3//7ds\u003d",
+        "filename": "arch/arm/mach-msm/clock-pcom.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-26T23:50:05Z",
+      "side": 1,
+      "message": "i don\u0027t like this. Clock ref counting belongs in the clock code and not in the specific implementation of the on/off functions.",
+      "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}

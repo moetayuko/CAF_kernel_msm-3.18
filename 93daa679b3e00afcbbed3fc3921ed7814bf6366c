@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA+3//7do\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 251,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-26T23:50:05Z",
+      "side": 0,
+      "message": "this code is useful and is used and thus cannot be dropped. If your new implementation can\u0027t support doing this then it\u0027s not sufficient and you must fix it to support this functionality.\n\nBeing able to print running clocks during suspend is critical.",
+      "revId": "93daa679b3e00afcbbed3fc3921ed7814bf6366c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7dk\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 492,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-26T23:50:05Z",
+      "side": 0,
+      "message": "as mentioned in the other file, I don\u0027t like moving the locking down to the proc_comm level functions.",
+      "revId": "93daa679b3e00afcbbed3fc3921ed7814bf6366c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
