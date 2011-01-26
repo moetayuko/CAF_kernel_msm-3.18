@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA+3//7eI\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 415,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-26T23:39:47Z",
+      "side": 1,
+      "message": "the issue with this is that this clk name is not the same as you\u0027d request from a driver but rather the stringified define of the id. Perhaps we can print both?\n\"%s(%s)\", clk-\u003ename, clk-\u003edbg_name",
+      "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
