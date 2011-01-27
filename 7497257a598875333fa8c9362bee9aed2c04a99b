@@ -70,6 +70,24 @@
       "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7bk\u003d",
+        "filename": "arch/arm/mach-msm/clock-voter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T06:20:31Z",
+      "side": 1,
+      "message": "I can\u0027t tell you that it\u0027s okay as is because I don\u0027t have the other patches to see how you fixed it.\n\nI just don\u0027t understand the need for adding a useless enum value for a new votee. There are better ways of doing it.\n\nwhat do you to change to upstream clkdev? Note that we realy should not mess much with upstream clkdev considering that the more generic clk code will proabbly make it in sometimes around 39.",
+      "parentUuid": "AAAA+3//7b8\u003d",
+      "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
