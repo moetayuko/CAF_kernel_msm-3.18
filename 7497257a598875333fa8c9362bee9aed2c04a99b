@@ -52,6 +52,24 @@
       "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7b8\u003d",
+        "filename": "arch/arm/mach-msm/clock-voter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1003665
+      },
+      "writtenOn": "2011-01-27T04:58:59Z",
+      "side": 1,
+      "message": "Dima,\n\nThe names are fixed in a later patch after we move to clkdev. Those patches weren\u0027t pushed yet because we weren\u0027t sure if you were willing to move to clkdev. If you pick up clkdev, the only issue would be having to add a new enum if we add a clock votee (which is still manual).\n\nWe can actually make the whole thing dynamic, including adding new votees, but it would need a minor change to clkdev in upstream. I didn\u0027t want to block the rest of the clean up trying to get the clkdev change done.\n\nIf the clk name is fixed in a later patch, is this okay as is then?",
+      "parentUuid": "AAAA+3//7cE\u003d",
+      "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
