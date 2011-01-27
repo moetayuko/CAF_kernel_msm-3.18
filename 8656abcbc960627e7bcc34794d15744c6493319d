@@ -70,6 +70,24 @@
       "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7bc\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 415,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T06:23:23Z",
+      "side": 1,
+      "message": "hmm, good point. Ok, this is fine then. If we find that the output is not enough we can address it later.",
+      "parentUuid": "AAAA+3//7b0\u003d",
+      "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
