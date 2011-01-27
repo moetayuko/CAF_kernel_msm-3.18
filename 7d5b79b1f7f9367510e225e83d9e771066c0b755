@@ -34,6 +34,24 @@
       "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7bs\u003d",
+        "filename": "arch/arm/mach-msm/clock-pcom.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T05:59:52Z",
+      "side": 1,
+      "message": "It depends on how you setup your locking. Having a single global lock can introduce locking issues if you have clock dependencies. This can be mitigated by having an individual lock per clock at the top level, which is what tegra does if you look at it more closely. \n\nI do not like pushing ref-counting down to each level because you have to replicate this code for all the soc\u0027s. It\u0027s error prone and there\u0027s just no need for it. At the clk_api level we should have a ref count that will worry about each individual clock enable/disable. We can write that code once and prove it correct.\n\nWhich voter code does not allow multiple enable/disables? Though each handle did not have an individual refcnt, it relied on the main clock\u0027s refcnt which works just fine in the current system. The drivers already have to refcount clocks technically, since they have to balance the calls to clk_enable/clk_disable. I\u0027m really not sure what point you are trying to make.\n\nNote that I\u0027m not advocating for keeping clock handles, I think your goal of moving to clkdev is definitely something I agree with. I just don\u0027t like the voter mechanism you put in place and I don\u0027t like the refcount and locking being down here at the lowest level several times over. Let\u0027s fix it.",
+      "parentUuid": "AAAA+3//7cM\u003d",
+      "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
