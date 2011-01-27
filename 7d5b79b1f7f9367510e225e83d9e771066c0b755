@@ -16,6 +16,24 @@
       "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7cM\u003d",
+        "filename": "arch/arm/mach-msm/clock-pcom.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1003665
+      },
+      "writtenOn": "2011-01-27T04:19:51Z",
+      "side": 1,
+      "message": "The voter clocks which need to call enable/disable on the parent clocks inside their enable/disable. If we have the refcount at the top level, we have locking issues (grabbing a lock that\u0027s already held).\n\nWe have to move the refcounting into the individual sub clock drivers so that we don\u0027t have locking issues. Not that it makes it right/wrong, but the tegra code has refcounting at two levels -- both top and inside the \"subdriver\".\n\nAlso, your voter clocks don\u0027t allow the user to do multiple enables/disables on the same clock. This would force each individual driver to refcounting in their code instead of just having matching enable/disables and not having to worry about it.\n\nSo, can we please have the ref counts pushed in?",
+      "parentUuid": "AAAA+3//7ds\u003d",
+      "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
