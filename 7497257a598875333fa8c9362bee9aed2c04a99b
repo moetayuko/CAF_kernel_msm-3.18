@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA+3//7dQ\u003d",
+        "filename": "arch/arm/mach-msm/clock-voter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T00:39:37Z",
+      "side": 1,
+      "message": "this is silly. We shouldn\u0027t hard code it like this. I don\u0027t like this voter mechanism. We should use clkdev to define clk duplicates for the shared clocks. Look at how Colin did shared clocks it for tegra. I like that approach much better and more extensible. To that end, i\u0027d like to rename voter to shared. Take a look at:\n\nhttp://android.git.kernel.org/?p\u003dkernel/tegra.git;a\u003dblob;f\u003darch/arm/mach-tegra/tegra2_clocks.c;h\u003d2f809e0219b753a709506583be03301a212b9094;hb\u003drefs/heads/linux-tegra-2.6.36\n\nclkdev wrappers are in:\n\nhttp://android.git.kernel.org/?p\u003dkernel/tegra.git;a\u003dblob;f\u003darch/arm/mach-tegra/clock.c;h\u003de97cc2532aef3d35cc849810a5c6bfba03a2b912;hb\u003drefs/heads/linux-tegra-2.6.36",
+      "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
