@@ -34,6 +34,24 @@
       "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7cE\u003d",
+        "filename": "arch/arm/mach-msm/clock-voter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T04:36:57Z",
+      "side": 1,
+      "message": "I do mind because I disagree with this design.\n\nThe issue is that your approach need a predefined enum to support a new clock votee. You also need to define a new clock name. Then, when a driver needs to get a reference on the clock, every driver requests it with a different name. I would much prefer them all to use the same name since they are all getting an alias to the requested clock. Furthermore, i don\u0027t think we should be calling it \"ebi1_clk\" either because ebi1 is very specific to the chips in question. For instance, on 8960 will \"ebi1_clk\" make sense? I doubt it.",
+      "parentUuid": "AAAA+3//7cU\u003d",
+      "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
