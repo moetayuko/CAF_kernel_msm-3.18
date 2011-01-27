@@ -52,6 +52,24 @@
       "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7Xc\u003d",
+        "filename": "arch/arm/mach-msm/clock-pcom.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1003665
+      },
+      "writtenOn": "2011-01-27T20:52:56Z",
+      "side": 1,
+      "message": "Yes, single global lock has locking dependency issue. So, we make it one lock per clock \"subdriver\" -- Eg: clock-pcom, clock-local, clock-rpm, etc.\n\nTo me having one lock per clock seemed like an overkill on the number of locks. It also increases the no. of locks to mentally keep track of to avoid locking issues. Yes, neither of these are insurmountable, but these were what affected our decision.\n\nBut I do see your point about not having to implement refcount several times and make sure it\u0027s correct. If you look at our tree, local clock control code is a library that\u0027s used by various soc\u0027s that have local clock control - 7x30, 8660, etc. So, right now we have 3 refcounting code - pcom, rpm and local. Since local clock control code is shared, hopefully we won\u0027t have as much repetition of refcounting code.\n\nLong story short, both of us have some concerns that need to be addressed in code. I think this patch set is not perfect, but still a move in the right direction. Can we get this in and work on the refcounting clean up later?\n\nGoing to my comment on you tegra code:\n* Pick a shared clock (not the parent, but the votee handle).\n* set rate on it.\n* Enable\n* Enable\n* Disable\n* Yes, parent clock is still on, but your vote is no longer counted.\n\nThis is not how clk APIs are expected to work. The disable\u0027s shouldn\u0027t have an impact till you call the last matching one.",
+      "parentUuid": "AAAA+3//7bs\u003d",
+      "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
