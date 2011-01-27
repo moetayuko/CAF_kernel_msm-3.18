@@ -70,6 +70,24 @@
       "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7XI\u003d",
+        "filename": "arch/arm/mach-msm/clock-pcom.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-01-27T21:25:21Z",
+      "side": 1,
+      "message": "You don\u0027t have to mentally keep track of anything. If you use the APIs, the locking is done correctly for you. You just need to make sure that you only ever traverse the tree in one direction.\n\nIf you want to use a single lock, then it is still possible very easily by adding internal clk_enable_locked() etc functions and call those from all the places. Only the clk api entry points would ever take the locks. This is doable, but I think with the number of clocks and potential re-parenting etc, doing it on a per-clock comes out to be easier to reason about.\n\nYour point of having *only* 3 implementations is itself problematic. Why do you want to take the raciest, most dangerous code out of one place and put it into 3. I still disagree with this.\n\nI honestly don\u0027t see how this patch is a move in the right direction. It doesn\u0027t buy us anything by itself. Yes we need to move to clkdev, but let\u0027s do it the right way so we don\u0027t have to rewrite this code 100 times later.\n\nregarding your tegra concert, you are making the mistake of looking at the clock ops which is where you are suggesting to put the refcounting and the locking. However when you look at clock.c, you will notice that ALL the refcounting is done at that level and then the actual management of the clock info is done at the lower levels (setting bits in registers, aggregating votes, etc.). This is what I want to see in your implementation. If you are not willing to do that, then I will have to do it myself. I believe architecturally it is the right thing to do.",
+      "parentUuid": "AAAA+3//7Xc\u003d",
+      "revId": "7d5b79b1f7f9367510e225e83d9e771066c0b755",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
