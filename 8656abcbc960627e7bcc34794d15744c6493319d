@@ -52,6 +52,24 @@
       "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7b0\u003d",
+        "filename": "arch/arm/mach-msm/clock.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 415,
+      "author": {
+        "id": 1003665
+      },
+      "writtenOn": "2011-01-27T05:15:08Z",
+      "side": 1,
+      "message": "Clkdev technically allows the use of aliases. So, which one do we print? con_id could be NULL too. In fact, upstream is insisting we make it NULL for the core clocks. So the name could be NULL.\n\nWe could leave in a copy \"con_id\" in clk-\u003ename and have it repeat between clk_lookup and clk and print both here clk-\u003ename and clk-\u003edbg_name here. We will also have to check for clk-\u003ename !\u003d NULL then.\n\nI\u0027m fine with doing all that if you really want that here. Let me know what you prefer.",
+      "parentUuid": "AAAA+3//7dc\u003d",
+      "revId": "8656abcbc960627e7bcc34794d15744c6493319d",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
