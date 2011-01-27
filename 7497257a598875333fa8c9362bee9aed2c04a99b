@@ -16,6 +16,24 @@
       "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "AAAA+3//7cU\u003d",
+        "filename": "arch/arm/mach-msm/clock-voter.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1003665
+      },
+      "writtenOn": "2011-01-27T04:13:53Z",
+      "side": 1,
+      "message": "Dima,\n\nI took a look at the latest code in your android-tegra-2.6.36 tree. Colin uses strings and we use enum list. Both the tegra code and this one need to manually add entries to a table if you want to add more voters. I\u0027m not sure it makes much of a difference.\n\nThe aggregation code is similar too. Our code does some extra short circuiting to avoid having to update the parent clock\u0027s rate since it might be a clock controlled by a remote processor.\n\nCan you mind accepting this as is?",
+      "parentUuid": "AAAA+3//7dQ\u003d",
+      "revId": "7497257a598875333fa8c9362bee9aed2c04a99b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
