@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "AAAA/H///vY\u003d",
+        "filename": "drivers/usb/gadget/msm72k_udc.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 522,
+      "author": {
+        "id": 1000413
+      },
+      "writtenOn": "2011-03-02T02:49:49Z",
+      "side": 1,
+      "message": "r-\u003egadget_complete \u003d NULL;",
+      "revId": "05e9a8bb9fb2d58de61bf60b4c1130de5c449ba0",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
