@@ -2753,7 +2753,7 @@ void dbg_debugfs_exit(void)
 static int open_debugfs_file(struct inode *inode, struct file *file)
 {
 	file->private_data = inode->i_private;
-	return 0;
+	return nonseekable_open(inode, file);
 }
 
 static ssize_t write_debugfs_file(struct file *file, const char __user *buf,
@@ -2783,7 +2783,7 @@ static const struct file_operations dfs_fops = {
 	.open = open_debugfs_file,
 	.write = write_debugfs_file,
 	.owner = THIS_MODULE,
-	.llseek = default_llseek,
+	.llseek = no_llseek,
 };
 
 /**
