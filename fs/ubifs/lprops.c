@@ -295,6 +295,12 @@ void ubifs_add_to_cat(struct ubifs_info *c, struct ubifs_lprops *lprops,
 		c->freeable_cnt += 1;
 		break;
 	case LPROPS_FRDI_IDX:
+		/*
+		 * TODO: why these LEBs are not counted? We should count them
+		 * and take into account in budgeting calculations. If we do
+		 * that, make sure we zero-out this in 'dbg_save_space_info()'
+		 * just like we do this for @c->freeable_cnt.
+		 */
 		list_add(&lprops->list, &c->frdi_idx_list);
 		break;
 	default:
