@@ -277,6 +277,11 @@ static int kick_a_thread(void)
 	return 0;
 }
 
+/*
+ * TODO: nowadays we have additional 'shrink' argument which can be used to
+ * detect the context. So we can make shrinkers per-file system and remove the
+ * UBIFS code which is about the custom list of superblocks.
+ */
 int ubifs_shrinker(struct shrinker *shrink, int nr, gfp_t gfp_mask)
 {
 	int freed, contention = 0;
