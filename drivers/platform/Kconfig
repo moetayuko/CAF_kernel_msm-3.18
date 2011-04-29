@@ -1,3 +1,5 @@
+# drivers/platform/Kconfig
+
 if X86
 source "drivers/platform/x86/Kconfig"
 endif
@@ -6,5 +8,9 @@ source "drivers/platform/mips/Kconfig"
 endif
 
 source "drivers/platform/goldfish/Kconfig"
+
+if ARM
+source "drivers/platform/arm/Kconfig"
+endif
 
 source "drivers/platform/chrome/Kconfig"
