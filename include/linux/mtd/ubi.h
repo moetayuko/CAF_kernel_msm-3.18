@@ -219,6 +219,13 @@ int ubi_sync(int ubi_num);
  * This function is the same as the 'ubi_leb_read()' function, but it does not
  * provide the checking capability.
  */
+/* TODO: we should accept void *buf, not char *buf, because otherwise we force
+ * the users to do ugly casts. Indeed, we do not care about the type of the
+ * data in the buffer. Do the same for 'ubi_leb_read()'.
+ *
+ * And when it is done, check all users and make sure they do not cast any
+ * more.
+ */
 static inline int ubi_read(struct ubi_volume_desc *desc, int lnum, char *buf,
 			   int offset, int len)
 {
