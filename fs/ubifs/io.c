@@ -957,6 +957,11 @@ int ubifs_wbuf_init(struct ubifs_info *c, struct ubifs_wbuf *wbuf)
 	 * set it to something smaller so that it ends at the closest max.
 	 * write size boundary.
 	 */
+	/*
+	 * TODO: Oh, feels my heart that this is not enough... Feels it that a
+	 * setup where LEB offset 0 is not max. write size-aligned will not
+	 * work. Test it!.
+	 */
 	size = c->max_write_size - (c->leb_start % c->max_write_size);
 	wbuf->avail = wbuf->size = size;
 	wbuf->dtype = UBI_UNKNOWN;
