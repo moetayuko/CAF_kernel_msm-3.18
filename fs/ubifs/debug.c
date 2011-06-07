@@ -2585,7 +2585,7 @@ static int power_cut_emulated(struct ubifs_info *c, int lnum, int write)
 			return 0;
 		ubifs_warn("failing in super block LEB %d", lnum);
 	} else if (lnum == UBIFS_MST_LNUM || lnum == UBIFS_MST_LNUM + 1) {
-		if (chance(19, 20))
+		if (chance(5, 20))
 			return 0;
 		ubifs_warn("failing in master LEB %d", lnum);
 	} else if (lnum >= UBIFS_LOG_LNUM && lnum <= c->log_last) {
