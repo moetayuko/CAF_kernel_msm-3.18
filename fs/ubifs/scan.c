@@ -264,6 +264,9 @@ void ubifs_scanned_corruption(const struct ubifs_info *c, int lnum, int offs,
  *
  * If @quiet is non-zero, this function does not print large and scary
  * error messages and flash dumps in case of errors.
+ *
+ * Temporarily, if quiet == 2, we do not free the scan buffer on exit. Later on
+ * this will be the default for quiet != 0, when all the callers are ready.
  */
 struct ubifs_scan_leb *ubifs_scan(const struct ubifs_info *c, int lnum,
 				  int offs, void *sbuf, int quiet)
@@ -352,7 +355,8 @@ corrupted:
 		ubifs_err("LEB %d scanning failed", lnum);
 	}
 	err = -EUCLEAN;
-	ubifs_scan_destroy(sleb);
+	if (quiet != 2)
+		ubifs_scan_destroy(sleb);
 	return ERR_PTR(err);
 
 error:
