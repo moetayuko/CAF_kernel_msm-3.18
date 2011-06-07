@@ -867,14 +867,31 @@ void dbg_dump_lpt_info(struct ubifs_info *c)
 	spin_unlock(&dbg_lock);
 }
 
+void dbg_dump_sleb(const struct ubifs_info *c,
+		   const struct ubifs_scan_leb *sleb)
+{
+	struct ubifs_scan_node *snod;
+
+	printk(KERN_DEBUG "(pid %d) start dumping LEB %d\n",
+	       current->pid, sleb->lnum);
+	printk(KERN_DEBUG "LEB %d has %d valid nodes ending at %d\n",
+	       sleb->lnum, sleb->nodes_cnt, sleb->endpt);
+
+	list_for_each_entry(snod, &sleb->nodes, list) {
+		cond_resched();
+		printk(KERN_DEBUG "Dumping node at LEB %d:%d len %d\n",
+		       sleb->lnum, snod->offs, snod->len);
+		dbg_dump_node(c, snod->node);
+	}
+
+	printk(KERN_DEBUG "(pid %d) finish dumping LEB %d\n",
+	       current->pid, sleb->lnum);
+}
+
 void dbg_dump_leb(const struct ubifs_info *c, int lnum)
 {
 	struct ubifs_scan_leb *sleb;
-	struct ubifs_scan_node *snod;
 	void *buf;
-
-	printk(KERN_DEBUG "(pid %d) start dumping LEB %d\n",
-	       current->pid, lnum);
 
 	buf = __vmalloc(c->leb_size, GFP_NOFS, PAGE_KERNEL);
 	if (!buf) {
@@ -888,18 +905,7 @@ void dbg_dump_leb(const struct ubifs_info *c, int lnum)
 		goto out;
 	}
 
-	printk(KERN_DEBUG "LEB %d has %d nodes ending at %d\n", lnum,
-	       sleb->nodes_cnt, sleb->endpt);
-
-	list_for_each_entry(snod, &sleb->nodes, list) {
-		cond_resched();
-		printk(KERN_DEBUG "Dumping node at LEB %d:%d len %d\n", lnum,
-		       snod->offs, snod->len);
-		dbg_dump_node(c, snod->node);
-	}
-
-	printk(KERN_DEBUG "(pid %d) finish dumping LEB %d\n",
-	       current->pid, lnum);
+	dbg_dump_sleb(c, sleb);
 	ubifs_scan_destroy(sleb);
 
 out:

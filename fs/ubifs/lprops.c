@@ -1237,7 +1237,7 @@ out_print:
 	ubifs_err("bad accounting of LEB %d: free %d, dirty %d flags %#x, "
 		  "should be free %d, dirty %d",
 		  lnum, lp->free, lp->dirty, lp->flags, free, dirty);
-	dbg_dump_leb(c, lnum);
+	dbg_dump_sleb(c, sleb);
 out_destroy:
 	ubifs_scan_destroy(sleb);
 	ret = -EINVAL;
