@@ -63,6 +63,10 @@ static int scan_for_master(struct ubifs_info *c)
 	sleb = ubifs_scan(c, lnum, 0, c->sbuf, 1);
 	if (IS_ERR(sleb))
 		return PTR_ERR(sleb);
+	if (!sleb->nodes_cnt && !nodes_cnt) {
+		ubifs_err("no master nodes found");
+		goto out_unrecoverable;
+	}
 	if (sleb->nodes_cnt != nodes_cnt)
 		goto out_recoverable;
 	if (!sleb->nodes_cnt)
