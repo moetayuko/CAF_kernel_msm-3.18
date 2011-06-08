@@ -77,8 +77,11 @@ static int scan_for_master(struct ubifs_info *c)
 			  snod->type, lnum, snod->offs);
 		goto out_unrecoverable;
 	}
-	if (snod->offs != offs)
-		goto out_recoverable;
+	if (snod->offs != offs) {
+		ubifs_err("different master node offsets: %d and %d",
+			  offs, snod->offs);
+		goto out_unrecoverable;
+	}
 	if (memcmp((void *)c->mst_node + UBIFS_CH_SZ,
 		   (void *)snod->node + UBIFS_CH_SZ,
 		   UBIFS_MST_NODE_SZ - UBIFS_CH_SZ))
