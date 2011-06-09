@@ -1463,12 +1463,16 @@ static int fix_size_in_place(struct ubifs_info *c, struct size_entry *e)
 	len = le32_to_cpu(ino->ch.len);
 	crc = crc32(UBIFS_CRC32_INIT, (void *)ino + 8, len - 8);
 	ino->ch.crc = cpu_to_le32(crc);
+	ubifs_msg("fixing inode size at LEB %d:%d, node len %d, crc %#x", lnum, offs, len, crc);
+
 	/* Work out where data in the LEB ends and free space begins */
 	p = c->sbuf;
 	len = c->leb_size - 1;
 	while (p[len] == 0xff)
 		len -= 1;
+	ubifs_msg("first non-0xff byte is at %d", len);
 	len = ALIGN(len + 1, c->min_io_size);
+	ubifs_msg("aligned len %d", len);
 	/* Atomically write the fixed LEB back again */
 	err = ubifs_leb_change(c, lnum, c->sbuf, len, UBI_UNKNOWN);
 	if (err)
@@ -1478,8 +1482,8 @@ static int fix_size_in_place(struct ubifs_info *c, struct size_entry *e)
 	return 0;
 
 out:
-	ubifs_warn("inode %lu failed to fix size %lld -> %lld error %d",
-		   (unsigned long)e->inum, e->i_size, e->d_size, err);
+	ubifs_warn("failed to fix inode %lu size at %d:%d, size %lld -> %lld",
+		   (unsigned long)e->inum, lnum, offs, i_size, e->d_size);
 	return err;
 }
 
