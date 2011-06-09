@@ -153,6 +153,31 @@ int ubifs_leb_change(struct ubifs_info *c, int lnum, const void *buf, int len,
 		ubifs_ro_mode(c, err);
 		dbg_dump_stack();
 	}
+
+	/* Temporary hack to catch incorrect recovery, if we have such */
+	if (!err && (lnum < c->lpt_first || lnum > c->lpt_last)) {
+		void *buf = vmalloc(c->leb_size);
+		struct ubifs_scan_leb *sleb;
+
+		if (!buf)
+			return 0;
+
+		sleb = ubifs_scan(c, lnum, 0, buf, 0);
+		if (!IS_ERR(sleb)) {
+			/* Scan succeeded */
+			vfree(buf);
+			return 0;
+		}
+
+		err = PTR_ERR(sleb);
+		ubifs_err("scanning after LEB %d len %d change failed, error %d!", lnum, len, err);
+		print_hex_dump(KERN_ERR, "", DUMP_PREFIX_OFFSET, 32, 1,
+			       buf, c->leb_size, 1);
+		dump_stack();
+		vfree(buf);
+		return -EINVAL;
+	}
+
 	return err;
 }
 
