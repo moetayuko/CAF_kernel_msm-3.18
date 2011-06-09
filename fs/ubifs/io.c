@@ -880,8 +880,11 @@ int ubifs_write_node(struct ubifs_info *c, void *buf, int len, int lnum,
 
 	ubifs_prepare_node(c, buf, len, 1);
 	err = ubifs_leb_write(c, lnum, buf, offs, buf_len, dtype);
-	if (err)
+	if (err) {
+		ubifs_err("failed to write a %d bytes long node to LEB %d:%d, "
+			  "error %d, node dump follows", len, lnum, offs, err);
 		dbg_dump_node(c, buf);
+	}
 
 	return err;
 }
