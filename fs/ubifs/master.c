@@ -48,8 +48,11 @@ static int scan_for_master(struct ubifs_info *c)
 	if (nodes_cnt > 0) {
 		snod = list_entry(sleb->nodes.prev, struct ubifs_scan_node,
 				  list);
-		if (snod->type != UBIFS_MST_NODE)
+		if (snod->type != UBIFS_MST_NODE) {
+			ubifs_err("unexpected node type %d master LEB %d:%d",
+				  snod->type, lnum, snod->offs);
 			goto out_unrecoverable;
+		}
 		memcpy(c->mst_node, snod->node, snod->len);
 		offs = snod->offs;
 	}
@@ -65,8 +68,11 @@ static int scan_for_master(struct ubifs_info *c)
 	if (!sleb->nodes_cnt)
 		goto out_recoverable;
 	snod = list_entry(sleb->nodes.prev, struct ubifs_scan_node, list);
-	if (snod->type != UBIFS_MST_NODE)
+	if (snod->type != UBIFS_MST_NODE) {
+		ubifs_err("unexpected node type %d master LEB %d:%d",
+			  snod->type, lnum, snod->offs);
 		goto out_unrecoverable;
+	}
 	if (snod->offs != offs)
 		goto out_recoverable;
 	if (memcmp((void *)c->mst_node + UBIFS_CH_SZ,
@@ -82,8 +88,6 @@ out_recoverable:
 	return -EUCLEAN;
 
 out_unrecoverable:
-	ubifs_err("unexpected node type %d master LEB %d:%d",
-		  snod->type, lnum, snod->offs);
 	ubifs_scan_destroy(sleb);
 	return -EINVAL;
 }
