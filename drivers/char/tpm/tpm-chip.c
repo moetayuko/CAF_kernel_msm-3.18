@@ -154,6 +154,7 @@ struct tpm_chip *tpm_chip_alloc(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&chip->tpm_mutex);
+	mutex_init(&chip->resume_mutex);
 	init_rwsem(&chip->ops_sem);
 
 	chip->ops = ops;
