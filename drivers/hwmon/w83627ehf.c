@@ -192,6 +192,7 @@ static const u16 W83627EHF_REG_TEMP_CONFIG[] = { 0, 0x152, 0x252, 0 };
 #define W83627EHF_REG_FANDIV2		0x4B
 #define W83627EHF_REG_VBAT		0x5D
 #define W83627EHF_REG_DIODE		0x59
+#define W83627EHF_REG_DIODE_2		0x5E
 #define W83627EHF_REG_SMI_OVT		0x4C
 
 /* NCT6775F has its own fan divider registers */
@@ -1912,6 +1913,11 @@ static inline void w83627ehf_init_device(struct w83627ehf_data *data,
 		break;
 	case w83627uhg:
 		diode = 0x00;
+		break;
+	case nct6775:
+	case nct6776:
+		/* Select current vs. voltage mode */
+		diode = w83627ehf_read_value(data, W83627EHF_REG_DIODE_2) << 3;
 		break;
 	default:
 		diode = 0x70;
