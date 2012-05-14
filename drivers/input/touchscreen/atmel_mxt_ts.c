@@ -3214,6 +3214,20 @@ static const struct mxt_platform_data *mxt_parse_acpi(struct i2c_client *client)
 }
 #endif
 
+static struct mxt_platform_data *mxt_default_pdata(struct i2c_client *client)
+{
+	struct mxt_platform_data *pdata;
+
+	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata)
+		return ERR_PTR(-ENOMEM);
+
+	/* Set default parameters */
+	pdata->irqflags = IRQF_TRIGGER_FALLING;
+
+	return pdata;
+}
+
 static const struct mxt_platform_data *
 mxt_get_platform_data(struct i2c_client *client)
 {
@@ -3229,6 +3243,10 @@ mxt_get_platform_data(struct i2c_client *client)
 
 	pdata = mxt_parse_acpi(client);
 	if (!IS_ERR(pdata) || PTR_ERR(pdata) != -ENOENT)
+		return pdata;
+
+	pdata = mxt_default_pdata(client);
+	if (!IS_ERR(pdata))
 		return pdata;
 
 	dev_err(&client->dev, "No platform data specified\n");
