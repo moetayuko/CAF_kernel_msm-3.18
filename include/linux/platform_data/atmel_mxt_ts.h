@@ -26,6 +26,8 @@ struct mxt_platform_data {
 	u8 t19_num_keys;
 	const unsigned int *t19_keymap;
 	enum mxt_suspend_mode suspend_mode;
+	int t15_num_keys;
+	const unsigned int *t15_keymap;
 };
 
 #endif /* __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H */
