@@ -3406,7 +3406,7 @@ static int ci13xxx_pullup(struct usb_gadget *_gadget, int is_active)
 }
 
 static int ci13xxx_start(struct usb_gadget_driver *driver,
-		int (*bind)(struct usb_gadget *));
+		int (*bind)(struct usb_gadget *, struct usb_gadget_driver *));
 static int ci13xxx_stop(struct usb_gadget_driver *driver);
 /**
  * Device operations part of the API to the USB controller hardware,
@@ -3431,7 +3431,7 @@ static const struct usb_gadget_ops usb_gadget_ops = {
  * Interrupts are enabled here.
  */
 static int ci13xxx_start(struct usb_gadget_driver *driver,
-		int (*bind)(struct usb_gadget *))
+		int (*bind)(struct usb_gadget *, struct usb_gadget_driver *))
 {
 	struct ci13xxx *udc = _udc;
 	unsigned long flags;
@@ -3538,7 +3538,7 @@ static int ci13xxx_start(struct usb_gadget_driver *driver,
 
 	spin_unlock_irqrestore(udc->lock, flags);
 	pm_runtime_get_sync(&udc->gadget.dev);
-	retval = bind(&udc->gadget);                /* MAY SLEEP */
+	retval = bind(&udc->gadget, driver);                /* MAY SLEEP */
 	spin_lock_irqsave(udc->lock, flags);
 
 	if (retval) {
