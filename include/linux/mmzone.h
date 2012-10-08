@@ -381,6 +381,10 @@ struct zone {
 	unsigned long		compact_cached_free_pfn;
 	unsigned long		compact_cached_migrate_pfn;
 	unsigned long		compact_blockskip_expire;
+
+	/* pfns where compaction scanners should start */
+	unsigned long		compact_cached_free_pfn;
+	unsigned long		compact_cached_migrate_pfn;
 #endif
 #ifdef CONFIG_MEMORY_HOTPLUG
 	/* see spanned/present_pages for more description */
