@@ -844,7 +844,7 @@ static void __init reserve_ion_memory(void)
 					heap->priv,
 					heap->size,
 					0,
-					0xa0000000);
+					0xb0000000);
 			}
 		}
 	}
