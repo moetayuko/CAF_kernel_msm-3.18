@@ -295,6 +295,13 @@ config BATTERY_MSM
 	help
 	  Say Y to enable support for the battery in Qualcomm MSM.
 
+config BATTERY_MSM_FAKE
+	tristate "Fake MSM battery"
+	depends on ARCH_MSM && BATTERY_MSM
+	default n
+	help
+	  Say Y to bypass actual battery queries.
+
 config BATTERY_MSM8X60
 	tristate "MSM8X60 battery"
 	select PMIC8XXX_BATTALARM
@@ -344,12 +351,17 @@ config SMB349_CHARGER
 	  SMB349 be operated as a slave device via the power supply
 	  framework.
 
-config BATTERY_MSM_FAKE
-	tristate "Fake MSM battery"
-	depends on ARCH_MSM && BATTERY_MSM
-	default n
+config SMB350_CHARGER
+	tristate "smb350 charger"
+	depends on I2C
 	help
-	  Say Y to bypass actual battery queries.
+	  Say Y to enable battery charging by SMB350 switching mode based
+	  external charger. The device supports stack-cell battery charging.
+	  The driver configures the device volatile parameters
+	  and the charger device works autonomously.
+	  The driver supports charger-enable and charger-suspend/resume.
+	  The driver reports the charger status via the power supply framework.
+	  A charger status change triggers an IRQ via the device STAT pin.
 
 config PM8058_FIX_USB
 	tristate "pmic8058 software workaround for usb removal"
@@ -375,6 +387,13 @@ config BATTERY_BQ27520
 	help
 	  Say Y here to enable support for batteries with BQ27520 (I2C) chips.
 
+config BQ27520_TEST_ENABLE
+	bool "Enable BQ27520 Fuel Gauge Chip Test"
+	depends on BATTERY_BQ27520
+	default n
+	help
+	  Say Y here to enable Test sysfs Interface for BQ27520 Drivers.
+
 config BATTERY_BQ27541
 	tristate "BQ27541 battery driver"
 	depends on I2C
@@ -382,12 +401,17 @@ config BATTERY_BQ27541
 	help
 	  Say Y here to enable support for batteries with BQ27541 (I2C) chips.
 
-config BQ27520_TEST_ENABLE
-	bool "Enable BQ27520 Fuel Gauge Chip Test"
-	depends on BATTERY_BQ27520
+config BATTERY_BQ28400
+	tristate "BQ28400 battery driver"
+	depends on I2C
 	default n
 	help
-	  Say Y here to enable Test sysfs Interface for BQ27520 Drivers.
+	  Say Y here to enable support for batteries with BQ28400 (I2C) chips.
+	  The bq28400 Texas Instruments Inc device monitors the battery
+	  charging/discharging status via Rsens resistor, typically 10 mohm.
+	  It monitors the battery temperature via Thermistor.
+	  The device monitors the battery level (Relative-State-Of-Charge).
+	  The device is SBS compliant, providing battery info over I2C.
 
 config PM8921_CHARGER
 	tristate "PM8921 Charger driver"

@@ -769,13 +769,6 @@ config RTC_DRV_DAVINCI
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-davinci.
 
-config RTC_DRV_MSM7X00A
-	tristate "MSM7X00A"
-	depends on ARCH_MSM
-	default y
-	help
-	  RTC driver for Qualcomm MSM7K chipsets
-
 config RTC_DRV_OMAP
 	tristate "TI OMAP1"
 	depends on ARCH_OMAP15XX || ARCH_OMAP16XX || ARCH_OMAP730 || ARCH_DAVINCI_DA8XX
@@ -1114,15 +1107,6 @@ config RTC_DRV_PUV3
 
 	  This drive can also be built as a module. If so, the module
 	  will be called rtc-puv3.
-
-config RTC_DRV_PM8XXX
-	tristate "Qualcomm PMIC8XXX RTC"
-	depends on MFD_PM8XXX
-	help
-	  Say Y here if you want to support the Qualcomm PMIC8XXX RTC.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called rtc-pm8xxx.
 
 config RTC_DRV_LOONGSON1
 	tristate "loongson1 RTC support"
