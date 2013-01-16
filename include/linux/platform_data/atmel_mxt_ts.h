@@ -14,11 +14,7 @@
 #define __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H
 
 #include <linux/types.h>
-
-enum mxt_suspend_mode {
-	MXT_SUSPEND_DEEP_SLEEP	= 0,
-	MXT_SUSPEND_T9_CTRL	= 1,
-};
+#include <dt-bindings/input/atmel_mxt_ts.h>
 
 /* The platform data for the Atmel maXTouch touchscreen driver */
 struct mxt_platform_data {
@@ -28,6 +24,7 @@ struct mxt_platform_data {
 	enum mxt_suspend_mode suspend_mode;
 	int t15_num_keys;
 	const unsigned int *t15_keymap;
+	unsigned long gpio_reset;
 };
 
 #endif /* __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H */
