@@ -30,6 +30,9 @@ Optional properties for main touchpad device:
 
 - atmel,reset-gpio: Configure RESET GPIO. Required for regulator support.
 
+- atmel,cfg_name: Provide name of configuration file in OBP_RAW format. This
+    will be downloaded from the firmware loader on probe to the device.
+
 Example:
 
 	touch@4b {
