@@ -737,6 +737,7 @@ invalid_key:
 
 int smp_conn_security(struct l2cap_conn *conn, __u8 sec_level)
 {
+	//struct  hci_conn *hcon = conn->hcon;
 	struct hci_conn *hcon = conn->hcon;
 	__u8 authreq;
 
