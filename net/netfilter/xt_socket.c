@@ -107,7 +107,7 @@ xt_socket_get4_sk(const struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct iphdr *iph = ip_hdr(skb);
 	struct udphdr _hdr, *hp = NULL;
-	struct sock *sk;
+	struct sock *sk = 0;
 	__be32 daddr = 0, saddr = 0;
 	__be16 dport = 0, sport = 0;
 	u8 protocol = 0;
