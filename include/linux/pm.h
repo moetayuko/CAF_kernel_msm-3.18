@@ -538,6 +538,7 @@ enum rpm_request {
 struct wakeup_source;
 struct wake_irq;
 struct pm_domain_data;
+struct dev_dark_resume;
 
 struct pm_subsys_data {
 	spinlock_t lock;
@@ -566,7 +567,7 @@ struct dev_pm_info {
 	struct list_head	entry;
 	struct completion	completion;
 	struct wakeup_source	*wakeup;
-	struct dev_pm_dark	*dpd;
+	struct dev_dark_resume	*dark_resume;
 	bool			wakeup_path:1;
 	bool			syscore:1;
 	bool			no_pm_callbacks:1;	/* Owned by the PM core */
@@ -635,17 +636,6 @@ struct dev_pm_domain {
 };
 
 /*
- * For devices that determine if a dark resume should happen or not. caused_wake
- * should be called one time after resume.
- */
-struct dev_pm_dark {
-	struct list_head list_node;
-	struct device *dev;
-	bool (*caused_wake)(struct device *dev);
-	bool is_source;
-};
-
-/*
  * The PM_EVENT_ messages are also used by drivers implementing the legacy
  * suspend framework, based on the ->suspend() and ->resume() callbacks common
  * for suspend and hibernation transitions, according to the rules below.
@@ -708,9 +698,6 @@ extern void dpm_resume_early(pm_message_t state);
 extern void dpm_resume(pm_message_t state);
 extern void dpm_complete(pm_message_t state);
 
-extern int dpm_set_dark_source(struct dev_pm_dark *dpd, bool is_source);
-extern bool dpm_is_dark_resume(void);
-
 extern void device_pm_unlock(void);
 extern int dpm_suspend_end(pm_message_t state);
 extern int dpm_suspend_start(pm_message_t state);
@@ -755,16 +742,6 @@ extern void pm_complete_with_resume_check(struct device *dev);
 
 #define device_pm_lock() do {} while (0)
 #define device_pm_unlock() do {} while (0)
-
-static inline int dpm_set_dark_source(struct dev_pm_dark *dpd, bool is_source)
-{
-	return -EINVAL;
-}
-
-static inline bool dpm_is_dark_resume(void)
-{
-	return false;
-}
 
 static inline int dpm_suspend_start(pm_message_t state)
 {
