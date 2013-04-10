@@ -968,7 +968,7 @@ static void pr_args(struct verity_args *args)
 	printk(KERN_INFO "VERITY args: version=%d data_device=%s hash_device=%s"
 		" data_block_size_bits=%d hash_block_size_bits=%d"
 		" num_data_blocks=%lld hash_start_block=%lld"
-		" algorithm=%s digest=%s salt=%s\n",
+		" algorithm=%s digest=%s salt=%s error_behavior=%s\n",
 		args->version,
 		args->data_device,
 		args->hash_device,
@@ -978,7 +978,8 @@ static void pr_args(struct verity_args *args)
 		args->hash_start_block,
 		args->algorithm,
 		args->digest,
-		args->salt);
+		args->salt,
+		args->error_behavior);
 }
 
 /*
@@ -1134,6 +1135,7 @@ int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	int i;
 	sector_t hash_position;
 
+	args.error_behavior = error_behavior;
 	if (argc >= DM_VERITY_NUM_POSITIONAL_ARGS)
 		ti->error = positional_args(argc, argv, &args);
 	else
@@ -1321,10 +1323,9 @@ int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 				       __alignof__(struct dm_verity_io));
 
 	/* chromeos allows setting error_behavior from both the module
-	 * parameters and the device args. However, chromeos only uses
-	 * the module parameters
+	 * parameters and the device args.
 	 */
-	v->error_behavior = verity_parse_error_behavior(error_behavior);
+	v->error_behavior = verity_parse_error_behavior(args.error_behavior);
 	if (v->error_behavior == -1) {
 		ti->error = "Bad error_behavior supplied";
 		r = -EINVAL;
