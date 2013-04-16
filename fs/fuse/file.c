@@ -678,6 +678,16 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 			return -ENOMEM;
 		}
 
+		if (is_cma_pageblock(newpage)) {
+			page_cache_release(oldpage);
+			__free_page(newpage);
+			pr_err("%s: page is still cma", __func__);
+			return -ENOMEM;
+		}
+
+		if (!trylock_page(newpage))
+			lock_page(newpage);
+
 		err = replace_page_cache_page(oldpage, newpage, GFP_KERNEL);
 		if (err) {
 			__free_page(newpage);
@@ -689,7 +699,7 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 		 * Decrement the count on new page to make page cache the only
 		 * owner of it
 		 */
-		lock_page(newpage);
+		//lock_page(newpage);
 		put_page(newpage);
 
 		/* finally release the old page and swap pointers */
