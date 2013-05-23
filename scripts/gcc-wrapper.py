@@ -45,6 +45,15 @@ allowed_warnings = set([
     "return_address.c:62",
     "transport.c:653", # 'midQ' may be used uninitialized in this function with gcc >= 4.8
     "bapRsnTxRx.c:222", # 'pPacket' may be used uninitialized in this function with gcc >= 4.8
+    "ci13xxx_udc.c:2544", # warning: 'err' may be used uninitialized in this function with gcc >= 4.8
+    "f_qdss.c:586", # warning: argument to 'sizeof' in 'strncmp' call is the same expression as the second source; did you mean to provide an explicit length? with gcc >= 4.8
+    "f_qdss.c:740", # warning: argument to 'sizeof' in 'strncmp' call is the same expression as the second source; did you mean to provide an explicit length? with gcc >= 4.8
+    "hci_conn.c:313", # warning: argument to 'sizeof' in 'memcpy' call is the same pointer type '__u8 *' as the destination; expected '__u8' or an explicit length with gcc >= 4.8
+    "nf_tproxy_core.h:75", # warning: 'protocol' may be used uninitialized in this function with gcc >= 4.8
+    "swab.h:34", # warning: 'sport' may be used uninitialized in this function [-Wmaybe-uninitialized] with gcc >= 4.8
+    "inet_hashtables.h:356", # warning: 'saddr' may be used uninitialized in this function [-Wmaybe-uninitialized] with gcc >= 4.8
+    "inet_hashtables.h:359", # warning: 'daddr' may be used uninitialized in this function with gcc >= 4.8
+    "nf_tproxy_core.h:175", # warning: 'saddr' may be used uninitialized in this function [-Wmaybe-uninitialized] with gcc >= 4.8
  ])
 
 # Capture the name of the object file, can find it.
