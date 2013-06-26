@@ -490,6 +490,11 @@ int diag_process_dci_transaction(unsigned char *buf, int len)
 		return DIAG_DCI_SEND_DATA_FAIL;
 	}
 
+	if (!temp) {
+		pr_err("diag: Invalid buffer in %s\n", __func__);
+		return -ENOMEM;
+	}
+
 	/* This is Pkt request/response transaction */
 	if (*(int *)temp > 0) {
 		/* enter this UID into kernel table and return index */
