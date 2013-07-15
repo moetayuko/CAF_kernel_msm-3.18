@@ -1,0 +1,388 @@
+From aa9b8188b807ae08c4586da10882975d35c35793 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 28 Jun 2013 18:08:17 +0800
+Subject: [PATCH 1/3] CAF:QRD_BSP:KERNEL:None:none:add a new dts file to
+ support 8x12 bringup
+
+	Component Name: KERNEL
+	Feature Name: None
+	Fixed CRs: none
+	Targets: msm8x10_skuAA
+	Required VUs:
+	Dependency Notes:
+	Limitations:
+	Suggested Testing: none
+	Peer Review:
+	Reference Build or VU:
+	Comments:
+	(*commit tool - 1.2.8)
+
+Change-Id: I6ebbb76626c1b8f9f5a08e32ee28c0066a34f1bb
+---
+ arch/arm/boot/dts/msm8610-qrd-skuac.dts |  292 +++++++++++++++++++++++++++++++
+ arch/arm/mach-msm/Makefile.boot         |    1 +
+ arch/arm/mach-msm/socinfo.c             |   28 +++-
+ 3 files changed, 320 insertions(+), 1 deletions(-)
+ create mode 100644 arch/arm/boot/dts/msm8610-qrd-skuac.dts
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+new file mode 100644
+index 0000000..b9b3103
+--- /dev/null
++++ b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+@@ -0,0 +1,292 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/dts-v1/;
++
++/include/ "msm8610.dtsi"
++/include/ "dsi-v2-panel-hx8379a-wvga-video.dtsi"
++/include/ "msm8610-qrd-camera-sensor.dtsi"
++
++/ {
++	model = "Qualcomm MSM 8610 QRD";
++	compatible = "qcom,msm8610-qrd", "qcom,msm8610", "qcom,qrd";
++	qcom,board-id = <11 4>;
++        qcom,msm-id = <147 0>, <165 0>, <161 0>, <162 0>,
++                                  <163 0>, <164 0>, <166 0>;
++};
++
++&soc {
++	i2c@f9923000{
++		focaltech@38{
++			compatible = "focaltech,5x06";
++			reg = <0x38>;
++			interrupt-parent = <&msmgpio>;
++			interrupts = <1 0x2>;
++			vdd-supply = <&pm8110_l19>;
++			vcc_i2c-supply = <&pm8110_l14>;
++			focaltech,family-id = <0x06>;
++			focaltech,reset-gpio = <&msmgpio 0 0x00>;
++			focaltech,irq-gpio = <&msmgpio 1 0x00>;
++			focaltech,display-coords = <0 0 480 800>;
++			focaltech,panel-coords = <0 0 480 800>;
++			focaltech,button-map= <139 102 158>;
++			focaltech,no-force-update;
++			focaltech,i2c-pull-up;
++		};
++	};
++
++	gen-vkeys {
++		compatible = "qcom,gen-vkeys";
++		label = "ft5x06_ts";
++		qcom,disp-maxx = <480>;
++		qcom,disp-maxy = <800>;
++		qcom,panel-maxx = <481>;
++		qcom,panel-maxy = <940>;
++		qcom,key-codes = <139 0 102 158 0 0 0>;
++		qcom,y-offset = <0>;
++	};
++	serial@f991e000 {
++		status = "ok";
++	};
++
++	i2c@f9925000 { /* BLSP-1 QUP-3 */
++		kionix@f {
++			compatible = "kionix,kxtj9";
++			reg = <0x0f>;
++			interrupt-parent = <&msmgpio>;
++			interrupts = <81 0x2>;
++			vdd-supply = <&pm8110_l19>;
++			vio-supply = <&pm8110_l14>;
++			kionix,min-interval = <5>;
++			kionix,init-interval = <200>;
++			kionix,axis-map-x = <1>;
++			kionix,axis-map-y = <0>;
++			kionix,axis-map-z = <2>;
++			kionix,g-range = <2>;
++			kionix,negate-x;
++			kionix,negate-y;
++			kionix,negate-z;
++			kionix,res-12bit;
++		};
++	};
++
++	gpio_keys {
++                compatible = "gpio-keys";
++                input-name = "gpio-keys";
++
++                camera_snapshot {
++                        label = "camera_snapshot";
++                        gpios = <&msmgpio 73 0x1>;
++                        linux,input-type = <1>;
++                        linux,code = <0x2fe>;
++                        gpio-key,wakeup;
++                        debounce-interval = <15>;
++                };
++
++                camera_focus {
++                        label = "camera_focus";
++                        gpios = <&msmgpio 74 0x1>;
++                        linux,input-type = <1>;
++                        linux,code = <0x210>;
++                        gpio-key,wakeup;
++                        debounce-interval = <15>;
++                };
++
++                vol_up {
++                        label = "volume_up";
++                        gpios = <&msmgpio 72 0x1>;
++                        linux,input-type = <1>;
++                        linux,code = <115>;
++                        gpio-key,wakeup;
++                        debounce-interval = <15>;
++		};
++	};
++
++	i2c@f9927000  {
++                        msm8x10_wcd_codec@0d{
++                        compatible = "qcom,msm8x10-wcd-i2c";
++                        reg = <0x0d>;
++                        cdc-vdda-cp-supply = <&pm8110_s4>;
++                        qcom,cdc-vdda-cp-voltage = <2150000 2150000>;
++                        qcom,cdc-vdda-cp-current = <650000>;
++
++                        cdc-vdda-h-supply = <&pm8110_l6>;
++                        qcom,cdc-vdda-h-voltage = <1800000 1800000>;
++                        qcom,cdc-vdda-h-current = <250000>;
++
++                        cdc-vdd-px-supply = <&pm8110_l6>;
++                        qcom,cdc-vdd-px-voltage = <1800000 1800000>;
++                        qcom,cdc-vdd-px-current = <10000>;
++
++                        cdc-vdd-1p2v-supply = <&pm8110_l4>;
++                        qcom,cdc-vdd-1p2v-voltage = <1200000 1200000>;
++                        qcom,cdc-vdd-1p2v-current = <5000>;
++
++                        cdc-vdd-mic-bias-supply = <&pm8110_l20>;
++                        qcom,cdc-vdd-mic-bias-voltage = <3075000 3075000>;
++                        qcom,cdc-vdd-mic-bias-current = <25000>;
++
++                        qcom,cdc-micbias-cfilt-sel = <0x0>;
++                        qcom,cdc-micbias-cfilt-mv = <1800000>;
++                        qcom,cdc-mclk-clk-rate = <12288000>;
++                };
++
++                msm8x10_wcd_codec@77{
++                        compatible = "qcom,msm8x10-wcd-i2c";
++                        reg = <0x77>;
++                };
++
++                msm8x10_wcd_codec@66{
++                        compatible = "qcom,msm8x10-wcd-i2c";
++                        reg = <0x66>;
++                };
++
++                msm8x10_wcd_codec@55{
++                        compatible = "qcom,msm8x10-wcd-i2c";
++                        reg = <0x55>;
++                };
++	};
++
++    sound {
++        qcom,audio-routing =
++            "RX_BIAS", "MCLK",
++            "INT_LDO_H", "MCLK",
++            "MIC BIAS Internal1", "Handset Mic",
++            "MIC BIAS Internal2", "Headset Mic",
++            "AMIC1", "MIC BIAS Internal1",
++            "AMIC2", "MIC BIAS Internal2";
++    };
++};
++
++&spmi_bus {
++	qcom,pm8110@0 {
++		qcom,leds@a100 {
++			status = "okay";
++			qcom,led_mpp_2 {
++				label = "mpp";
++				linux,name = "wled-homerow";
++				linux-default-trigger = "hr-trigger";
++				qcom,default-state = "off";
++				qcom,max-current = <40>;
++				qcom,id = <6>;
++				qcom,source-sel = <1>;
++				qcom,mode-ctrl = <0x61>;
++				qcom,mode = "manual";
++			};
++		};
++
++		qcom,leds@a200 {
++			status = "okay";
++			qcom,led_mpp_3 {
++				label = "mpp";
++				linux,name = "wled-backlight";
++				linux,default-trigger = "bkl-trigger";
++				qcom,default-state = "on";
++				qcom,max-current = <40>;
++				qcom,id = <6>;
++				qcom,source-sel = <1>;
++				qcom,mode-ctrl = <0x10>;
++				qcom,mode = "manual";
++			};
++		};
++	};
++};
++
++&spmi_bus {
++	qcom,pm8110@1 {
++		qcom,vibrator@c000 {
++			status = "okay";
++			qcom,vib-timeout-ms = <15000>;
++			qcom,vib-vtg-level-mV = <3100>;
++		};
++	};
++};
++
++&sdhc_1 {
++	vdd-supply = <&pm8110_l17>;
++	qcom,vdd-always-on;
++	qcom,vdd-lpm-sup;
++	qcom,vdd-voltage-level = <2900000 2900000>;
++	qcom,vdd-current-level = <200 400000>;
++
++	vdd-io-supply = <&pm8110_l6>;
++	qcom,vdd-io-always-on;
++	qcom,vdd-io-voltage-level = <1800000 1800000>;
++	qcom,vdd-io-current-level = <200 60000>;
++
++	qcom,pad-pull-on = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
++	qcom,pad-pull-off = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
++	qcom,pad-drv-on = <0x4 0x4 0x4>; /* 10mA, 10mA, 10mA */
++	qcom,pad-drv-off = <0x0 0x0 0x0>; /* 2mA, 2mA, 2mA */
++
++	qcom,clk-rates = <400000 25000000 50000000 100000000 200000000>;
++	qcom,bus-speed-mode = "HS200_1p8v", "DDR_1p8v";
++	qcom,nonremovable;
++
++	status = "ok";
++};
++
++&sdhc_2 {
++	vdd-supply = <&pm8110_l18>;
++	qcom,vdd-voltage-level = <2950000 2950000>;
++	qcom,vdd-current-level = <15000 400000>;
++
++	vdd-io-supply = <&pm8110_l21>;
++	qcom,vdd-io-always-on;
++	qcom,vdd-io-lpm-sup;
++	qcom,vdd-io-voltage-level = <1800000 2950000>;
++	qcom,vdd-io-current-level = <200 50000>;
++
++	qcom,pad-pull-on = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
++	qcom,pad-pull-off = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
++	qcom,pad-drv-on = <0x4 0x4 0x4>; /* 10mA, 10mA, 10mA */
++	qcom,pad-drv-off = <0x0 0x0 0x0>; /* 2mA, 2mA, 2mA */
++
++	qcom,clk-rates = <400000 25000000 50000000 100000000 200000000>;
++
++	#address-cells = <0>;
++	interrupt-parent = <&sdhc_2>;
++	interrupts = <0 1 2>;
++	#interrupt-cells = <1>;
++	interrupt-map-mask = <0xffffffff>;
++	interrupt-map = <0 &intc 0 125 0
++			1 &intc 0 221 0
++			2 &msmgpio 42 0x3>;
++	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
++	cd-gpios = <&msmgpio 42 0x1>;
++
++	status = "ok";
++};
++
++&pm8110_chg {
++	status = "ok";
++
++	qcom,chgr@1000 {
++		status = "ok";
++	};
++
++	qcom,buck@1100 {
++		status = "ok";
++	};
++
++	qcom,bat-if@1200 {
++		status = "ok";
++	};
++
++	qcom,usb-chgpth@1300 {
++		status = "ok";
++	};
++
++	qcom,chg-misc@1600 {
++		status = "ok";
++	};
++};
+diff --git a/arch/arm/mach-msm/Makefile.boot b/arch/arm/mach-msm/Makefile.boot
+index a01287a..e947399 100644
+--- a/arch/arm/mach-msm/Makefile.boot
++++ b/arch/arm/mach-msm/Makefile.boot
+@@ -115,6 +115,7 @@ initrd_phys-$(CONFIG_ARCH_FSM9XXX)	:= 0x12000000
+    zreladdr-$(CONFIG_ARCH_MSM8610)	:= 0x00008000
+         dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-rumi.dtb
+         dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-sim.dtb
++	dtb-$(CONFIG_ARCH_MSM8610)      += msm8610-qrd-skuac.dtb
+ 
+ # MSMSAMARIUM
+    zreladdr-$(CONFIG_ARCH_MSMSAMARIUM)	:= 0x00008000
+diff --git a/arch/arm/mach-msm/socinfo.c b/arch/arm/mach-msm/socinfo.c
+index 575cb49..75e36d9 100644
+--- a/arch/arm/mach-msm/socinfo.c
++++ b/arch/arm/mach-msm/socinfo.c
+@@ -71,6 +71,23 @@ enum {
+ };
+ 
+ enum {
++	PLATFORM_SUBTYPE_QRD = 0x0,
++	PLATFORM_SUBTYPE_SKUAA = 0x1,
++	PLATFORM_SUBTYPE_SKUF = 0x2,
++	PLATFORM_SUBTYPE_SKUAB = 0x3,
++	PLATFORM_SUBTYPE_SKUAC = 0x4,
++	PLATFORM_SUBTYPE_QRD_INVALID,
++};
++
++const char *qrd_hw_platform_subtype[] = {
++	[PLATFORM_SUBTYPE_QRD] = "QRD",
++	[PLATFORM_SUBTYPE_SKUAA] = "SKUAA",
++	[PLATFORM_SUBTYPE_SKUF] = "SKUF",
++	[PLATFORM_SUBTYPE_SKUAB] = "SKUAB",
++	[PLATFORM_SUBTYPE_SKUAC] = "SKUAC",
++};
++
++enum {
+ 	PLATFORM_SUBTYPE_UNKNOWN = 0x0,
+ 	PLATFORM_SUBTYPE_CHARM = 0x1,
+ 	PLATFORM_SUBTYPE_STRANGE = 0x2,
+@@ -629,9 +646,18 @@ socinfo_show_platform_subtype(struct sys_device *dev,
+ 	}
+ 
+ 	hw_subtype = socinfo_get_platform_subtype();
++	if (HW_PLATFORM_QRD == socinfo_get_platform_type()) {
++		if (hw_subtype >= PLATFORM_SUBTYPE_QRD_INVALID) {
++			pr_err("%s: Invalid hardware platform sub type for qrd found\n",
++				__func__);
++			hw_subtype = PLATFORM_SUBTYPE_QRD;
++		}
++		return snprintf(buf, PAGE_SIZE, "%-.32s\n",
++					qrd_hw_platform_subtype[hw_subtype]);
++	}
+ 	if (hw_subtype >= PLATFORM_SUBTYPE_INVALID) {
+ 		pr_err("%s: Invalid hardware platform sub type found\n",
+-								   __func__);
++			   __func__);
+ 		hw_subtype = PLATFORM_SUBTYPE_UNKNOWN;
+ 	}
+ 	return snprintf(buf, PAGE_SIZE, "%-.32s\n",
+-- 
+1.7.8.3
+

@@ -1,0 +1,597 @@
+From 797e79d32e6ada03cd6d14ac80d77824da41e22b Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 8 Jul 2013 16:03:44 +0800
+Subject: [PATCH 3/3] notify tri-color leds driverx
+
+Change-Id: I657672a74642a9cb4320b32ebbcc795b3f51588f
+---
+ arch/arm/configs/msm8610-perf_defconfig |    1 +
+ arch/arm/configs/msm8610_defconfig      |    1 +
+ arch/arm/mach-msm/board-8610-gpiomux.c  |   31 +++-
+ arch/arm/mach-msm/board-8610.c          |    6 +
+ drivers/leds/Kconfig                    |   11 +-
+ drivers/leds/Makefile                   |    1 +
+ drivers/leds/leds-tricolor.c            |  416 +++++++++++++++++++++++++++++++
+ 7 files changed, 465 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/leds/leds-tricolor.c
+
+diff --git a/arch/arm/configs/msm8610-perf_defconfig b/arch/arm/configs/msm8610-perf_defconfig
+index 2cfad74..ec7bad2 100644
+--- a/arch/arm/configs/msm8610-perf_defconfig
++++ b/arch/arm/configs/msm8610-perf_defconfig
+@@ -334,6 +334,7 @@ CONFIG_MMC_MSM=y
+ CONFIG_MMC_SDHCI_MSM=y
+ CONFIG_MMC_MSM_SPS_SUPPORT=y
+ CONFIG_LEDS_QPNP=y
++CONFIG_LEDS_TRICOLOR=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_SWITCH=y
+ CONFIG_RTC_CLASS=y
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 4e1849a..710037c 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -360,6 +360,7 @@ CONFIG_MMC_MSM=y
+ CONFIG_MMC_SDHCI_MSM=y
+ CONFIG_MMC_MSM_SPS_SUPPORT=y
+ CONFIG_LEDS_QPNP=y
++CONFIG_LEDS_TRICOLOR=y
+ CONFIG_LEDS_MSM_GPIO_FLASH=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_SWITCH=y
+diff --git a/arch/arm/mach-msm/board-8610-gpiomux.c b/arch/arm/mach-msm/board-8610-gpiomux.c
+index b261ce4..e0b719a 100644
+--- a/arch/arm/mach-msm/board-8610-gpiomux.c
++++ b/arch/arm/mach-msm/board-8610-gpiomux.c
+@@ -35,6 +35,12 @@ static struct gpiomux_setting gpio_cam_i2c_config = {
+ 	.pull = GPIOMUX_PULL_NONE,
+ };
+ 
++static struct gpiomux_setting led_gpio_cfg = {
++	.func = GPIOMUX_FUNC_GPIO,
++	.drv = GPIOMUX_DRV_8MA,
++	.pull = GPIOMUX_PULL_UP,
++};
++
+ static struct gpiomux_setting atmel_int_act_cfg = {
+ 	.func = GPIOMUX_FUNC_GPIO,
+ 	.drv = GPIOMUX_DRV_8MA,
+@@ -173,10 +179,11 @@ static struct msm_gpiomux_config msm_blsp_configs[] __initdata = {
+ 	},
+ };
+ 
++
+ static struct msm_gpiomux_config msm_atmel_configs[] __initdata = {
+ 	{
+ 		.gpio      = 0,		/* TOUCH RESET */
+-		.settings = {
++                .settings = {
+ 			[GPIOMUX_ACTIVE] = &atmel_reset_act_cfg,
+ 			[GPIOMUX_SUSPENDED] = &atmel_reset_sus_cfg,
+ 		},
+@@ -298,6 +305,27 @@ static struct gpiomux_setting cam_settings[] = {
+ 	},
+ };
+ 
++static struct msm_gpiomux_config msm_led_gpio_configs[] __initdata ={
++	{
++		.gpio	=94,
++		.settings ={
++			[GPIOMUX_ACTIVE] = &led_gpio_cfg,
++			[GPIOMUX_SUSPENDED] = &gpio_suspend_config[1],
++			   },
++	},
++	{	.gpio=95,
++		.settings={
++			[GPIOMUX_ACTIVE] = &led_gpio_cfg,
++			[GPIOMUX_SUSPENDED] = &gpio_suspend_config[1],
++				},
++	},
++	{	.gpio=96,
++		.settings={
++			[GPIOMUX_ACTIVE] = &led_gpio_cfg,
++			[GPIOMUX_SUSPENDED] = &gpio_suspend_config[1],
++			},
++	},
++};
+ static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
+ 	{
+ 		.gpio = 13, /* CAM_MCLK0 */
+@@ -430,6 +458,7 @@ void __init msm8610_init_gpiomux(void)
+ 	}
+ 
+ 	msm_gpiomux_install(msm_blsp_configs, ARRAY_SIZE(msm_blsp_configs));
++	msm_gpiomux_install(msm_led_gpio_configs, ARRAY_SIZE(msm_led_gpio_configs));
+ 	msm_gpiomux_install(msm_atmel_configs,
+ 			ARRAY_SIZE(msm_atmel_configs));
+ 	msm_gpiomux_install(wcnss_5wire_interface,
+diff --git a/arch/arm/mach-msm/board-8610.c b/arch/arm/mach-msm/board-8610.c
+index b4d77f1..a52d0ec 100644
+--- a/arch/arm/mach-msm/board-8610.c
++++ b/arch/arm/mach-msm/board-8610.c
+@@ -87,6 +87,11 @@ static struct reserve_info msm8610_reserve_info __initdata = {
+ 	.paddr_to_memtype = msm8610_paddr_to_memtype,
+ };
+ 
++static struct platform_device msm_device_tricolor_leds = {
++	.name   = "tricolor leds and flashlight",
++	.id = -1,
++};
++
+ static void __init msm8610_early_memory(void)
+ {
+ 	reserve_info = &msm8610_reserve_info;
+@@ -117,6 +122,7 @@ void __init msm8610_add_drivers(void)
+ 		msm_clock_init(&msm8610_rumi_clock_init_data);
+ 	else
+ 		msm_clock_init(&msm8610_clock_init_data);
++	platform_device_register(&msm_device_tricolor_leds);
+ }
+ 
+ void __init msm8610_init(void)
+diff --git a/drivers/leds/Kconfig b/drivers/leds/Kconfig
+index f13e55a..a43a8da 100644
+--- a/drivers/leds/Kconfig
++++ b/drivers/leds/Kconfig
+@@ -181,7 +181,7 @@ config LEDS_PMIC_MPP
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called leds-pmic-mpp.
+ 
+-config LEDS_MSM_TRICOLOR
++config LEDS_TRICOLOR
+         tristate "LED Support for Qualcomm tricolor LEDs"
+         depends on LEDS_CLASS && MSM_SMD
+         help
+@@ -354,6 +354,15 @@ config LEDS_BD2802
+ 	  This option enables support for BD2802GU RGB LED driver chips
+ 	  accessed via the I2C bus.
+ 
++config LEDS_TRICOLOR_
++        tristate "LED Support for Qualcomm PMIC connected LEDs"
++        default y 
++        depends on ARCH_MSM
++        help
++          This option enables support for LEDs connected over PMIC
++          (Power Management IC) chip on Qualcomm reference boards,
++          for example SURF and FFAs.
++
+ config LEDS_MSM_PMIC
+         tristate "LED Support for Qualcomm PMIC connected LEDs"
+         default n
+diff --git a/drivers/leds/Makefile b/drivers/leds/Makefile
+index c688898..2c6fc26 100644
+--- a/drivers/leds/Makefile
++++ b/drivers/leds/Makefile
+@@ -33,6 +33,7 @@ obj-$(CONFIG_LEDS_OT200)		+= leds-ot200.o
+ obj-$(CONFIG_LEDS_FSG)			+= leds-fsg.o
+ obj-$(CONFIG_LEDS_PCA955X)		+= leds-pca955x.o
+ obj-$(CONFIG_LEDS_MSM_PMIC)		+= leds-msm-pmic.o
++obj-$(CONFIG_LEDS_TRICOLOR)		+= leds-tricolor.o
+ obj-$(CONFIG_LEDS_PCA9633)		+= leds-pca9633.o
+ obj-$(CONFIG_LEDS_DA903X)		+= leds-da903x.o
+ obj-$(CONFIG_LEDS_WM831X_STATUS)	+= leds-wm831x-status.o
+diff --git a/drivers/leds/leds-tricolor.c b/drivers/leds/leds-tricolor.c
+new file mode 100644
+index 0000000..3b4fe3e
+--- /dev/null
++++ b/drivers/leds/leds-tricolor.c
+@@ -0,0 +1,416 @@
++/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/device.h>
++#include <linux/leds.h>
++#include <linux/spinlock.h>
++#include <linux/ctype.h>
++#include <linux/platform_device.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include <asm/mach-types.h>
++#include <mach/pmic.h>
++#include <mach/gpio-v1.h>
++#include <mach/socinfo.h>
++#include <linux/timer.h>
++#include <linux/delay.h>
++
++
++#define DEBUG_TRICOLOR_LED 0
++#define RED_LED_GPIO 94
++#define BLUE_LED_GPIO 95
++#define GREEN_LED_GPIO 96
++#define LED_ON 1
++#define LED_OFF 0
++
++#define LED_RED_ON() 	gpio_set_value(RED_LED_GPIO, LED_ON)
++#define LED_BLUE_ON() 	gpio_set_value(BLUE_LED_GPIO, LED_ON)
++#define LED_GREEN_ON() 	gpio_set_value(GREEN_LED_GPIO, LED_ON)
++
++#define LED_RED_OFF() 	gpio_set_value(RED_LED_GPIO, LED_OFF)
++#define LED_BLUE_OFF() 	gpio_set_value(BLUE_LED_GPIO, LED_OFF)
++#define LED_GREEN_OFF() gpio_set_value(GREEN_LED_GPIO, LED_OFF)
++
++static bool red_led_status=LED_OFF;
++static bool blue_led_status=LED_OFF;
++static bool green_led_status=LED_OFF;
++static int qrd7_led_flash_en = 96;
++static int blink_time=300; //300ms
++
++enum tri_color_led_color {
++	LED_COLOR_RED,
++	LED_COLOR_GREEN,
++	LED_COLOR_BLUE,
++	LED_COLOR_MAX
++};
++
++enum tri_led_status{
++	ALL_OFF,
++	ALL_ON,
++	BLUE_ON,
++	BLUE_OFF,
++	RED_ON,
++	RED_OFF,
++	GREEN_ON,
++	GREEN_OFF,
++	BLUE_BLINK,
++	RED_BLINK,
++	GREEN_BLINK,
++	BLUE_BLINK_OFF,
++	RED_BLINK_OFF,
++	GREEN_BLINK_OFF,
++	LED_MAX
++};
++
++struct tricolor_led_data {
++	spinlock_t led_lock;
++	int led_data[4];
++	struct led_classdev leds[4];	
++};
++
++static struct timer_list red_led_blink_timer;
++static struct timer_list blue_led_blink_timer;
++static struct timer_list green_led_blink_timer;
++
++static void led_red_blink_cb(unsigned long data)
++{
++  if(red_led_status == LED_ON )
++  {
++   LED_RED_ON();
++   red_led_status = LED_OFF;
++  }
++  else
++  {
++    LED_RED_OFF();
++	red_led_status = LED_ON;
++  }
++  red_led_blink_timer.expires=jiffies + msecs_to_jiffies(blink_time);
++  add_timer(&red_led_blink_timer);
++}
++static void led_blue_blink_cb(unsigned long data) 
++{
++  if(blue_led_status == LED_ON )
++	{
++	  LED_BLUE_ON();
++	  blue_led_status = LED_OFF;
++	}
++	else
++	{
++	  LED_BLUE_OFF();
++	  blue_led_status = LED_ON;
++	}
++  mod_timer(&blue_led_blink_timer,jiffies + msecs_to_jiffies(blink_time));
++}
++static void led_green_blink_cb(unsigned long data)
++{
++  if(green_led_status == LED_ON )
++  	{
++  	  LED_GREEN_ON();
++	  green_led_status = LED_OFF;
++	}
++  else
++	{
++	LED_GREEN_OFF();
++	green_led_status = LED_ON;
++	}
++  green_led_blink_timer.expires=jiffies + msecs_to_jiffies(blink_time);
++  add_timer(&green_led_blink_timer);
++}
++static void led_red_blink_off(void)
++{
++  del_timer(&red_led_blink_timer);
++  LED_RED_OFF();
++}
++static void led_green_blink_off(void)
++{
++  del_timer(&green_led_blink_timer);
++  LED_GREEN_OFF();
++}
++static void led_blue_blink_off(void)
++{
++  del_timer(&blue_led_blink_timer);
++  LED_BLUE_OFF();
++}
++static void led_red_blink_on(unsigned long delay)
++{	
++  init_timer(&red_led_blink_timer);
++  red_led_blink_timer.function=led_red_blink_cb;
++  red_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&red_led_blink_timer);
++}
++
++static void led_blue_blink_on(unsigned long delay)
++{
++  init_timer(&blue_led_blink_timer);
++  blue_led_blink_timer.function=led_blue_blink_cb;
++  blue_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&blue_led_blink_timer);
++}
++
++static void led_green_blink_on(unsigned long delay)
++{
++  init_timer(&green_led_blink_timer);
++  green_led_blink_timer.function=led_green_blink_cb;
++  green_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&green_led_blink_timer);
++}
++
++static ssize_t led_blink_solid_show(struct device *dev,
++				    struct device_attribute *attr, char *buf)
++{
++  ssize_t ret = 0;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  struct led_classdev *led_cdev = dev_get_drvdata(dev);
++  struct tricolor_led_data *tricolor_led = NULL;
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  ret = sprintf(buf, "%u\n", tricolor_led->led_data[color]);
++  return ret;
++}
++
++static ssize_t led_blink_solid_store(struct device *dev,
++				     struct device_attribute *attr,
++				     const char *buf, size_t size)
++{
++  int blink = 0;
++  unsigned long flags = 0;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  struct led_classdev *led_cdev = dev_get_drvdata(dev);
++  struct tricolor_led_data *tricolor_led = NULL;
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  sscanf(buf, "%d", &blink);
++  #if DEBUG_TRICOLOR_LED
++  	printk("tricolor %s is %d\n",led_cdev->name, blink);
++  #endif
++  spin_lock_irqsave(&tricolor_led->led_lock, flags);
++  if(blink){
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			led_red_blink_on(blink_time);
++  			break;
++  		case LED_COLOR_GREEN:
++  			led_green_blink_on(blink_time);
++  			break;
++  		case LED_COLOR_BLUE:
++  			led_blue_blink_on(blink_time);
++  			break;
++  		default:
++  			break;
++  	}
++  } else {
++  switch(color) {
++  	case LED_COLOR_RED:
++		led_red_blink_off();
++  	    break;
++	case LED_COLOR_GREEN:
++  		led_green_blink_off();
++  		break;
++  	case LED_COLOR_BLUE:
++  		led_blue_blink_off();
++  		break;
++  	default:
++  		break;
++  	}
++  }
++  tricolor_led->led_data[color] = blink;
++  spin_unlock_irqrestore(&tricolor_led->led_lock, flags);
++  return size;
++}
++
++static DEVICE_ATTR(blink, 0644, led_blink_solid_show, led_blink_solid_store);
++
++static void led_brightness_set_tricolor(struct led_classdev *led_cdev,
++			       enum led_brightness brightness)
++{
++  struct tricolor_led_data *tricolor_led = NULL;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  unsigned long flags = 0;
++  
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  
++  spin_lock_irqsave(&tricolor_led->led_lock, flags);
++  if(brightness){
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			LED_RED_ON();
++  			break;
++  		case LED_COLOR_GREEN:
++  			LED_GREEN_ON();
++  			break;
++  		case LED_COLOR_BLUE:
++  			LED_BLUE_ON();
++  			break;
++  		default:
++  			break;
++  	}
++  } else {
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			LED_RED_OFF();
++  			break;
++  		case LED_COLOR_GREEN:
++  			LED_GREEN_OFF();
++  			break;
++  		case LED_COLOR_BLUE:
++  			LED_BLUE_OFF();
++  			break;
++  		default:
++  			break;
++  	}
++}
++spin_unlock_irqrestore(&tricolor_led->led_lock, flags);
++}
++
++static void led_brightness_set_flash(struct led_classdev *led_cdev,
++				     enum led_brightness brightness)
++{
++  if(brightness){
++  		gpio_set_value(qrd7_led_flash_en, 1);
++  } else {
++  		gpio_set_value(qrd7_led_flash_en, 0);
++  }
++}
++static int tricolor_led_probe(struct platform_device *pdev)
++{
++  int ret = 0;
++  int i, j;
++  struct tricolor_led_data *tricolor_led;
++  printk(KERN_ERR "tricolor leds and flashlight: probe init \n");
++  
++  tricolor_led = kzalloc(sizeof(struct tricolor_led_data), GFP_KERNEL);
++  if (tricolor_led == NULL) {
++  	printk(KERN_ERR "tricolor_led_probe: no memory for device\n");
++  	ret = -ENOMEM;
++  	goto err;
++  }
++  memset(tricolor_led, 0, sizeof(struct tricolor_led_data));
++  
++  spin_lock_init(&tricolor_led->led_lock);
++  
++  tricolor_led->leds[0].name = "red";
++  tricolor_led->leds[0].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[1].name = "green";
++  tricolor_led->leds[1].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[2].name = "blue";
++  tricolor_led->leds[2].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[3].name = "flashlight";
++  tricolor_led->leds[3].brightness_set = led_brightness_set_flash;
++  
++  for (i = 0; i < 4; i++) {	/* red, green, blue, flashlight */
++  	ret = led_classdev_register(&pdev->dev, &tricolor_led->leds[i]);
++  	printk(KERN_ERR "led_classdev_register tricolor_leds init\n");
++  	if (ret) {
++  		printk(KERN_ERR
++  		       "tricolor_led: led_classdev_register failed\n");
++  		goto err_led_classdev_register_failed;
++  	}
++  }
++  
++  for (i = 0; i < 4; i++) {
++  	ret = device_create_file(tricolor_led->leds[i].dev, &dev_attr_blink);
++  	if (ret) {
++  		printk(KERN_ERR
++  		       "tricolor_led: device_create_file failed\n");
++  		goto err_out_attr_blink;
++  	}
++  }
++  dev_set_drvdata(&pdev->dev, tricolor_led);
++  return 0;
++
++err_out_attr_blink:
++  for (j = 0; j < i; j++)
++  	device_remove_file(tricolor_led->leds[j].dev, &dev_attr_blink);
++  i = 4;
++
++err_led_classdev_register_failed:
++  for (j = 0; j < i; j++)
++	led_classdev_unregister(&tricolor_led->leds[j]);
++err:
++  return ret;
++}
++
++static int __devexit tricolor_led_remove(struct platform_device *pdev)
++{
++	struct tricolor_led_data *tricolor_led;
++	int i;
++	printk(KERN_ERR "tricolor_led_remove: remove\n");
++
++	tricolor_led = platform_get_drvdata(pdev);
++
++	for (i = 0; i < 4; i++) {
++		device_remove_file(tricolor_led->leds[i].dev, &dev_attr_blink);
++		led_classdev_unregister(&tricolor_led->leds[i]);
++	}
++	
++	kfree(tricolor_led);
++	return 0;
++}
++
++static struct platform_driver tricolor_led_driver = {
++	.probe = tricolor_led_probe,
++	.remove = __devexit_p(tricolor_led_remove),
++	.suspend = NULL,
++	.resume = NULL,
++	.driver = {
++		   .name = "tricolor leds and flashlight",
++		   .owner = THIS_MODULE,
++		   },
++};
++static int __init tricolor_led_init(void)
++{
++	printk(KERN_ERR "tricolor_leds_backlight_init: module init\n");
++	return platform_driver_register(&tricolor_led_driver);
++}
++static void __exit tricolor_led_exit(void)
++{
++	printk(KERN_ERR "tricolor_leds_backlight_exit: module exit\n");
++	platform_driver_unregister(&tricolor_led_driver);
++}
++
++MODULE_AUTHOR("Glory Liao");
++MODULE_DESCRIPTION("tricolor leds and flashlight driver");
++MODULE_LICENSE("GPL");
++
++module_init(tricolor_led_init);
++module_exit(tricolor_led_exit);
+-- 
+1.7.8.3
+

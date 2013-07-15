@@ -1,0 +1,27 @@
+From dcf7377928640d5b4be9d00815acdd9b663c99c2 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 5 Jul 2013 17:19:12 +0800
+Subject: [PATCH] add tmd2771-3 support for SKUAC
+
+Change-Id: I5fde8e826a9230ca6c52ebbffaa2ed243040729b
+---
+ rootdir/init.rc |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 760838d..dc9b41f 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -356,6 +356,9 @@ on boot
+     class_start core
+     class_start main
+ 
++# TMD2771-3
++    chmod 0666 /dev/tmd27713
++
+ on nonencrypted
+     class_start late_start
+ 
+-- 
+1.7.8.3
+

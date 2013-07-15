@@ -1,0 +1,59 @@
+From 21e2736bc61a4682586328e8a8878fa39daba734 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 28 Jun 2013 17:58:37 +0800
+Subject: [PATCH] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype support
+
+	Component Name: LK/BOOT
+	Feature Name: None
+	Fixed CRs: none
+	Targets: msm8x10_skuAA
+	Required VUs:
+	Dependency Notes:
+	Limitations:
+	Suggested Testing: none
+	Peer Review:
+	Reference Build or VU:
+	Comments:
+	(*commit tool - 1.2.8)
+
+Change-Id: I8aebb3907140558de09004fed1093d81046186ab
+---
+ target/msm8610/init.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/target/msm8610/init.c b/target/msm8610/init.c
+index 6537a4d..72443ff 100644
+--- a/target/msm8610/init.c
++++ b/target/msm8610/init.c
+@@ -48,6 +48,13 @@
+ 
+ #define TLMM_VOL_UP_BTN_GPIO    72
+ 
++enum target_subtype {
++	HW_PLATFORM_SUBTYPE_SKUAA = 1,
++	HW_PLATFORM_SUBTYPE_SKUF = 2,
++	HW_PLATFORM_SUBTYPE_SKUAB = 3,
++	HW_PLATFORM_SUBTYPE_SKUAC = 4,
++};
++
+ static uint32_t mmc_sdc_base[] =
+ 	{ MSM_SDC1_BASE, MSM_SDC2_BASE };
+ 
+@@ -152,6 +159,14 @@ void target_baseband_detect(struct board_data *board)
+ 	{
+ 	case HW_PLATFORM_SUBTYPE_UNKNOWN:
+ 		break;
++	case HW_PLATFORM_SUBTYPE_SKUAA:
++		break;
++	case HW_PLATFORM_SUBTYPE_SKUF:
++		break;
++	case HW_PLATFORM_SUBTYPE_SKUAB:
++		break;
++	case HW_PLATFORM_SUBTYPE_SKUAC:
++		break;
+ 	default:
+ 		dprintf(CRITICAL, "Platform Subtype : %u is not supported\n", platform_subtype);
+ 		ASSERT(0);
+-- 
+1.7.8.3
+
