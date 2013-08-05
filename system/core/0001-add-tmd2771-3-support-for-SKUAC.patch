@@ -1,4 +1,4 @@
-From dcf7377928640d5b4be9d00815acdd9b663c99c2 Mon Sep 17 00:00:00 2001
+From 08914681ca037f8ecfde16eda309fd864f2946be Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 5 Jul 2013 17:19:12 +0800
 Subject: [PATCH] add tmd2771-3 support for SKUAC

@@ -1,0 +1,78 @@
+From 3dc4d452254258151b2e119e3e1d2248e7565759 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:20:47 +0800
+Subject: [PATCH 05/15] support O-Film TP
+
+Change-Id: I743a270b3d338b9c0b374ecbe3f8082a1a02d5d8
+---
+ arch/arm/boot/dts/msm8610-qrd-skuac.dts            |   11 ++++++-----
+ drivers/input/touchscreen/cypress/Kconfig          |    2 +-
+ .../input/touchscreen/cypress/cyttsp4_mt_common.c  |    5 +++++
+ 3 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+index dedbd2b..fd6a2af 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-skuac.dts
++++ b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+@@ -88,16 +88,17 @@
+ 				cy,vkeys_y = <960>;
+ 				 cy,virtual_keys = /* KeyCode CenterX CenterY Width Height */
+ 				         /* KEY_BACK */
+-				         <158 130 1330 160 180
+-				         /* KEY_MENU */
+-				         102 360 1330 160 180
++				         <158 100 1000 80 70
+ 				         /* KEY_HOME */
+-				         139 590 1330 160 180>;
++				         172 280 1000 80 70
++				         /* KEY_MENU */
++				         139 450 1000 80 70>;
+ 			};
++			/*
+ 				cy,btn {
+ 					cy,name = "cyttsp4_btn";
+ 					cy,inp_dev_name = "cyttsp4_btn";
+-					};
++					};*/
+ 
+ 		};
+ 		};
+diff --git a/drivers/input/touchscreen/cypress/Kconfig b/drivers/input/touchscreen/cypress/Kconfig
+index cfce55c..0145807 100644
+--- a/drivers/input/touchscreen/cypress/Kconfig
++++ b/drivers/input/touchscreen/cypress/Kconfig
+@@ -168,7 +168,7 @@ config TOUCHSCREEN_CYPRESS_CYTTSP4_PLATFORM_FW_UPGRADE
+ config TOUCHSCREEN_CYPRESS_CYTTSP4_BINARY_FW_UPGRADE
+ 	bool "FW upgrade from binary file"
+ 	depends on TOUCHSCREEN_CYPRESS_CYTTSP4_LOADER
+-	default y 
++	default n
+ 	help
+ 	  Include Cypress TrueTouch(tm) Standard Product
+ 	  Generation4 device Firmware into kernel itself.
+diff --git a/drivers/input/touchscreen/cypress/cyttsp4_mt_common.c b/drivers/input/touchscreen/cypress/cyttsp4_mt_common.c
+index 5b519ef..b5f4291 100644
+--- a/drivers/input/touchscreen/cypress/cyttsp4_mt_common.c
++++ b/drivers/input/touchscreen/cypress/cyttsp4_mt_common.c
+@@ -607,6 +607,7 @@ static int cyttsp4_mt_probe(struct cyttsp4_device *ttsp)
+ 	struct device *dev = &ttsp->dev;
+ 	struct cyttsp4_mt_data *md;
+ 	struct cyttsp4_mt_platform_data *pdata = dev_get_platdata(dev);
++	u8 pannel_id;
+ 	int rc = 0;
+ 
+ 	dev_info(dev, "%s\n", __func__);
+@@ -667,6 +668,10 @@ static int cyttsp4_mt_probe(struct cyttsp4_device *ttsp)
+ 			cyttsp4_setup_input_attention, 0);
+ 	}
+ 
++	pannel_id = md->si->si_ptrs.pcfg->panel_info0;
++	printk("pannel_id is %0x\n",pannel_id);
++
++
+ #ifdef CONFIG_HAS_EARLYSUSPEND
+ 	cyttsp4_setup_early_suspend(md);
+ #endif
+-- 
+1.7.8.3
+

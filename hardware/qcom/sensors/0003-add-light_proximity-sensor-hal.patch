@@ -1,0 +1,508 @@
+From 0ef8f53ea0551a60e9f00e1e54d36ff9bf7bb6ab Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 15:58:36 +0800
+Subject: [PATCH 3/3] add light_proximity sensor hal
+
+Change-Id: Iab868f30dcd17758a768f366e986532621f33f5c
+---
+ Android.mk             |    8 ++-
+ ISLLightSensor.cpp     |  137 ++++++++++++++++++++++++++++++++++++++++++++++++
+ ISLLightSensor.h       |   52 ++++++++++++++++++
+ ISLProximitySensor.cpp |  135 +++++++++++++++++++++++++++++++++++++++++++++++
+ ISLProximitySensor.h   |   52 ++++++++++++++++++
+ sensors.cpp            |   38 +++++++++++++
+ 6 files changed, 419 insertions(+), 3 deletions(-)
+ create mode 100644 ISLLightSensor.cpp
+ create mode 100644 ISLLightSensor.h
+ create mode 100644 ISLProximitySensor.cpp
+ create mode 100644 ISLProximitySensor.h
+
+diff --git a/Android.mk b/Android.mk
+index a3c7e34..95469dc 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -19,13 +19,15 @@ ifeq ($(call is-board-platform,msm8960),true)
+   LOCAL_CFLAGS += -DTARGET_8930
+ endif
+ 
+-LOCAL_CFLAGS += -DTMD27713_SENSOR
+ LOCAL_CFLAGS += -DKX023_SENSOR
++LOCAL_CFLAGS += -DSENSORS_ISL
++
+ LOCAL_SRC_FILES :=	\
+ 		sensors.cpp 			\
+ 		SensorBase.cpp			\
+-		TmdSensor.cpp			\
+-		AkmSensor.cpp			\
++		AkmSensor.cpp 			\
++		ISLLightSensor.cpp		\
++		ISLProximitySensor.cpp          \
+ 		KionixSensor.cpp 		\
+ 		Mpu3050.cpp				\
+ 		Bmp180.cpp				\
+diff --git a/ISLLightSensor.cpp b/ISLLightSensor.cpp
+new file mode 100644
+index 0000000..87a9fc6
+--- /dev/null
++++ b/ISLLightSensor.cpp
+@@ -0,0 +1,137 @@
++/*
++ * Copyright (C) 2008 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <fcntl.h>
++#include <errno.h>
++#include <math.h>
++#include <poll.h>
++#include <unistd.h>
++#include <dirent.h>
++#include <sys/select.h>
++#include <cutils/log.h>
++
++#include "ISLLightSensor.h"
++
++/*****************************************************************************/
++ISLLightSensor::ISLLightSensor()
++    : SensorBase(NULL, "light_sensor"),
++      mEnabled(0),
++      mInputReader(4),
++      mHasPendingEvent(false) {
++    mPendingEvent.version = sizeof(sensors_event_t);
++    mPendingEvent.sensor = SENSORS_LIGHT_HANDLE;
++    mPendingEvent.type = SENSOR_TYPE_LIGHT;
++    memset(mPendingEvent.data, 0, sizeof(mPendingEvent.data));
++
++    if (data_fd) {
++        strcpy(input_sysfs_path, "/sys/class/input/");
++        strcat(input_sysfs_path, input_name);
++        strcat(input_sysfs_path, "/device/");
++        input_sysfs_path_len = strlen(input_sysfs_path);
++    }
++
++}
++
++ISLLightSensor::~ISLLightSensor() {
++	if (mEnabled)
++	enable(SENSORS_LIGHT_HANDLE,0);
++}
++
++int ISLLightSensor::enable(int32_t, int en) {
++   int flags = en ? 1 : 0;
++    if (flags != mEnabled) {
++        int fd;
++        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_als_sensor");
++ALOGE("GGG path is %s\n",input_sysfs_path);
++        fd = open(input_sysfs_path, O_RDWR);
++        if (fd >= 0) {
++            char buf[2];
++            buf[1] = 0;
++            if (flags) {
++                buf[0] = '1';
++            } else {
++                buf[0] = '0';
++            }
++            write(fd, buf, sizeof(buf));
++            close(fd);
++            mEnabled = flags;
++            return 0;
++        }
++        return -1;
++    }
++    return 0;
++}
++
++int ISLLightSensor::setDelay(int32_t handle, int64_t ns) {
++    int fd;
++    strcpy(&input_sysfs_path[input_sysfs_path_len], "als_delay");
++    fd = open(input_sysfs_path, O_RDWR);
++    if (fd >= 0) {
++        char buf[80];
++        sprintf(buf, "%lld", ns/1000/1000);
++        write(fd, buf, strlen(buf)+1);
++        close(fd);
++        return 0;
++    }
++    return -1;
++}
++
++
++bool ISLLightSensor::hasPendingEvents() const {
++    return mHasPendingEvent;
++}
++
++int ISLLightSensor::readEvents(sensors_event_t* data, int count) {
++    if (count < 1)
++        return -EINVAL;
++
++    if (mHasPendingEvent) {
++        mHasPendingEvent = false;
++        mPendingEvent.timestamp = getTimestamp();
++        *data = mPendingEvent;
++        return mEnabled ? 1 : 0;
++    }
++
++    ssize_t n = mInputReader.fill(data_fd);
++    if (n < 0)
++        return n;
++
++    int numEventReceived = 0;
++    input_event const* event;
++
++    while (count && mInputReader.readEvent(&event)) {
++        int type = event->type;
++        if (type == EV_ABS) {
++            if (event->code == ABS_MISC) {
++                mPendingEvent.light = event->value;
++            }
++        } else if (type == EV_SYN) {
++            mPendingEvent.timestamp = timevalToNano(event->time);
++            if (mEnabled) {
++                *data++ = mPendingEvent;
++                count--;
++                numEventReceived++;
++            }
++        } else {
++            ALOGE("ISLLightSensor: unknown event (type=%d, code=%d)",
++                    type, event->code);
++        }
++        mInputReader.next();
++    }
++
++    return numEventReceived;
++}
++
+diff --git a/ISLLightSensor.h b/ISLLightSensor.h
+new file mode 100644
+index 0000000..1c492a2
+--- /dev/null
++++ b/ISLLightSensor.h
+@@ -0,0 +1,52 @@
++/*
++ * Copyright (C) 2008 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_STKLIGHT_SENSOR_H
++#define ANDROID_STKLIGHT_SENSOR_H
++
++#include <stdint.h>
++#include <errno.h>
++#include <sys/cdefs.h>
++#include <sys/types.h>
++
++#include "sensors.h"
++#include "SensorBase.h"
++#include "InputEventReader.h"
++
++/*****************************************************************************/
++
++struct input_event;
++
++class ISLLightSensor : public SensorBase {
++    int mEnabled;
++    InputEventCircularReader mInputReader;
++    sensors_event_t mPendingEvent;
++    bool mHasPendingEvent;
++    char input_sysfs_path[PATH_MAX];
++    int input_sysfs_path_len;
++
++public:
++            ISLLightSensor();
++    virtual ~ISLLightSensor();
++    virtual int readEvents(sensors_event_t* data, int count);
++    virtual bool hasPendingEvents() const;
++    virtual int enable(int32_t handle, int enabled);
++	virtual int setDelay(int32_t handle, int64_t ns);
++};
++
++/*****************************************************************************/
++
++#endif  // ANDROID_STKLIGHT_SENSOR_H
+diff --git a/ISLProximitySensor.cpp b/ISLProximitySensor.cpp
+new file mode 100644
+index 0000000..9bb7685
+--- /dev/null
++++ b/ISLProximitySensor.cpp
+@@ -0,0 +1,135 @@
++/*
++ * Copyright (C) 2008 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <fcntl.h>
++#include <errno.h>
++#include <math.h>
++#include <poll.h>
++#include <unistd.h>
++#include <dirent.h>
++#include <sys/select.h>
++
++#include <cutils/log.h>
++#include "ISLProximitySensor.h"
++
++/*****************************************************************************/
++ISLProximitySensor::ISLProximitySensor()
++    : SensorBase(NULL, "proximity_sensor"),
++      mEnabled(0),
++      mInputReader(4),
++      mHasPendingEvent(false)
++{
++    mPendingEvent.version = sizeof(sensors_event_t);
++    mPendingEvent.sensor = SENSORS_PROXIMITY_HANDLE;
++    mPendingEvent.type = SENSOR_TYPE_PROXIMITY;
++    memset(mPendingEvent.data, 0, sizeof(mPendingEvent.data));
++
++    if (data_fd)
++	{
++        strcpy(input_sysfs_path, "/sys/class/input/");
++        strcat(input_sysfs_path, input_name);
++        strcat(input_sysfs_path, "/device/");
++        input_sysfs_path_len = strlen(input_sysfs_path);
++    }
++}
++
++ISLProximitySensor::~ISLProximitySensor()
++{
++	if (mEnabled)
++	enable(SENSORS_PROXIMITY_HANDLE,0);
++}
++
++int ISLProximitySensor::setInitialState() {
++
++        mPendingEvent.distance = 5;
++        mHasPendingEvent = true;
++	return 0;
++    }
++
++int ISLProximitySensor::enable(int32_t, int en) {
++    int flags = en ? 1 : 0;
++    if (flags != mEnabled)
++	{
++        int fd;
++        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_ps_sensor");
++ALOGE("GGG path is %s\n",input_sysfs_path);
++        fd = open(input_sysfs_path, O_RDWR);
++
++        if (fd >= 0) {
++            char buf[2];
++            buf[1] = 0;
++            if (flags) {
++                buf[0] = '1';
++            } else {
++                buf[0] = '0';
++            }
++            write(fd, buf, sizeof(buf));
++            close(fd);
++            mEnabled = flags;
++			if(flags)
++				setInitialState();
++            return 0;
++        }
++        return -1;
++    }
++    return 0;
++}
++
++bool ISLProximitySensor::hasPendingEvents() const {
++    return mHasPendingEvent;
++}
++
++int ISLProximitySensor::readEvents(sensors_event_t* data, int count)
++{
++    if (count < 1)
++        return -EINVAL;
++
++    if (mHasPendingEvent) {
++        mHasPendingEvent = false;
++        mPendingEvent.timestamp = getTimestamp();
++        *data = mPendingEvent;
++        return mEnabled ? 1 : 0;
++    }
++
++    ssize_t n = mInputReader.fill(data_fd);
++    if (n < 0)
++        return n;
++
++    int numEventReceived = 0;
++    input_event const* event;
++
++    while (count && mInputReader.readEvent(&event)) {
++        int type = event->type;
++        if (type == EV_ABS) {
++            if (event->code == ABS_DISTANCE) {
++                mPendingEvent.distance = event->value ? 5 : 0;
++            }
++        } else if (type == EV_SYN) {
++            mPendingEvent.timestamp = timevalToNano(event->time);
++            if (mEnabled) {
++                *data++ = mPendingEvent;
++                count--;
++                numEventReceived++;
++            }
++        } else {
++            ALOGE("ISLProximitySensor: unknown event (type=%d, code=%d)",
++                    type, event->code);
++        }
++        mInputReader.next();
++    }
++
++    return numEventReceived;
++}
+diff --git a/ISLProximitySensor.h b/ISLProximitySensor.h
+new file mode 100644
+index 0000000..4f693bb
+--- /dev/null
++++ b/ISLProximitySensor.h
+@@ -0,0 +1,52 @@
++/*
++ * Copyright (C) 2008 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_STKPROXIMITY_SENSOR_H
++#define ANDROID_STKPROXIMITY_SENSOR_H
++
++#include <stdint.h>
++#include <errno.h>
++#include <sys/cdefs.h>
++#include <sys/types.h>
++
++#include "sensors.h"
++#include "SensorBase.h"
++#include "InputEventReader.h"
++
++/*****************************************************************************/
++
++struct input_event;
++
++class ISLProximitySensor : public SensorBase {
++    int mEnabled;
++    InputEventCircularReader mInputReader;
++    sensors_event_t mPendingEvent;
++    bool mHasPendingEvent;
++    char input_sysfs_path[PATH_MAX];
++    int input_sysfs_path_len;
++    int setInitialState();
++
++public:
++            ISLProximitySensor();
++    virtual ~ISLProximitySensor();
++    virtual int readEvents(sensors_event_t* data, int count);
++    virtual bool hasPendingEvents() const;
++    virtual int enable(int32_t handle, int enabled);
++};
++
++/*****************************************************************************/
++
++#endif  // ANDROID_STKPROXIMITY_SENSOR_H
+diff --git a/sensors.cpp b/sensors.cpp
+index 471004b..c939b8d 100644
+--- a/sensors.cpp
++++ b/sensors.cpp
+@@ -36,6 +36,9 @@
+ #endif
+ #if defined TMD27713_SENSOR
+ #include "TmdSensor.h"
++#elif defined SENSORS_ISL
++#include "ISLLightSensor.h"
++#include "ISLProximitySensor.h"
+ #else
+ #include "LightSensor.h"
+ #include "ProximitySensor.h"
+@@ -130,6 +133,31 @@ static const struct sensor_t sSensorList[] = {
+ 		0,
+ 		{ }
+ 	},
++#elif defined SENSORS_ISL
++        {
++		"isl29044 Light sensor",
++		"INTERSIL",
++		1,
++		SENSORS_LIGHT_HANDLE,
++		SENSOR_TYPE_LIGHT,
++		3000.0f,
++		1.0f,
++		0.75f,
++		0,
++		{ }
++	},
++        {
++		"isl29044 Proximity sensor",
++		"INTERSIL",
++		1,
++		SENSORS_PROXIMITY_HANDLE,
++		SENSOR_TYPE_PROXIMITY,
++		5.0f,
++		5.0f,
++		0.75f,
++		0,
++		{ }
++	},
+ #else
+ 	/* light sensor name */
+ 	{
+@@ -290,6 +318,16 @@ sensors_poll_context_t::sensors_poll_context_t()
+     mPollFds[tmd].fd = mSensors[tmd]->getFd();
+     mPollFds[tmd].events = POLLIN;
+     mPollFds[tmd].revents = 0;
++#elif defined SENSORS_ISL
++	mSensors[light] = new ISLLightSensor();
++	mPollFds[light].fd = mSensors[light]->getFd();
++	mPollFds[light].events = POLLIN;
++	mPollFds[light].revents = 0;
++
++	mSensors[proximity] = new ISLProximitySensor();
++	mPollFds[proximity].fd = mSensors[proximity]->getFd();
++	mPollFds[proximity].events = POLLIN;
++	mPollFds[proximity].revents = 0;
+ #else
+ 	mSensors[light] = new LightSensor();
+ 	mPollFds[light].fd = mSensors[light]->getFd();
+-- 
+1.7.8.3
+

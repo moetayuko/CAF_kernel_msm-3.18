@@ -1,0 +1,44 @@
+From 7055f37903f916d0cd87714d0ae4514716f8b946 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 2 Aug 2013 13:43:31 +0800
+Subject: [PATCH 15/15] change camera direction
+
+Change-Id: Ie60aee911026cf8e38b79c2dd4f3fc3f9e3736fd
+---
+ arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+index 0844a41..4a53f5b 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
++++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+@@ -94,7 +94,7 @@
+ 				qcom,csid-sd-index = <0>;
+ 				qcom,actuator-src = <&actuator0>;
+ 				qcom,led-flash-src = <&led_flash0>;
+-				qcom,mount-angle = <270>;
++				qcom,mount-angle = <90>;
+ 				qcom,sensor-name = "ov5648";
+ 				cam_vdig-supply = <&pm8110_l2>;
+ 				cam_vio-supply = <&pm8110_l7>;
+@@ -276,7 +276,7 @@
+ 		qcom,slave-id = <0xdc 0xfc 0x3905>;
+ 		qcom,csiphy-sd-index = <1>;
+ 		qcom,csid-sd-index = <1>;
+-		qcom,mount-angle = <0>;
++		qcom,mount-angle = <270>;
+ 		qcom,sensor-name = "bf3905";
+ 		cam_vdig-supply = <&pm8110_l2>;
+ 		cam_vio-supply = <&pm8110_l7>;
+@@ -310,7 +310,7 @@
+ 		qcom,slave-id = <0x7a 0x0000 0x2280>;
+ 		qcom,csiphy-sd-index = <1>;
+ 		qcom,csid-sd-index = <1>;
+-		qcom,mount-angle = <0>;
++		qcom,mount-angle = <90>;
+ 		qcom,sensor-name = "mt9v113";
+ 		cam_vdig-supply = <&pm8110_l2>;
+ 		cam_vio-supply = <&pm8110_l7>;
+-- 
+1.7.8.3
+

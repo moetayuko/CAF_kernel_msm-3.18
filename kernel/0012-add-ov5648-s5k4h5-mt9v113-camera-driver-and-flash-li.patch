@@ -1,0 +1,3062 @@
+From 40f298d28fed631ebd4f6756bbceb914b5f76aee Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:43:37 +0800
+Subject: [PATCH 12/15] add ov5648 s5k4h5 mt9v113 camera driver and flash
+ light
+
+Change-Id: I712ccf28e1eefcfeb6c1f93c5005a68815d022db
+---
+ arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi   |  158 +++-
+ arch/arm/boot/dts/msm8610.dtsi                     |    2 +-
+ arch/arm/configs/msm8610-perf_defconfig            |    4 +
+ arch/arm/configs/msm8610_defconfig                 |    3 +
+ arch/arm/mach-msm/clock-8610.c                     |    5 +
+ drivers/leds/Kconfig                               |    4 +
+ drivers/leds/Makefile                              |    1 +
+ drivers/leds/leds-msm-i2c-flash.c                  |  727 ++++++++++++++++
+ drivers/leds/leds-msm-i2c-flash.h                  |   74 ++
+ drivers/leds/leds-tricolor.c                       |    2 +-
+ drivers/media/platform/msm/camera_v2/Kconfig       |   24 +
+ .../media/platform/msm/camera_v2/sensor/Makefile   |    3 +
+ .../media/platform/msm/camera_v2/sensor/mt9v113.c  |  905 ++++++++++++++++++++
+ .../media/platform/msm/camera_v2/sensor/ov5648.c   |  465 ++++++++++
+ .../media/platform/msm/camera_v2/sensor/s5k4h5.c   |  459 ++++++++++
+ 15 files changed, 2812 insertions(+), 24 deletions(-)
+ create mode 100644 drivers/leds/leds-msm-i2c-flash.c
+ create mode 100644 drivers/leds/leds-msm-i2c-flash.h
+ create mode 100644 drivers/media/platform/msm/camera_v2/sensor/mt9v113.c
+ create mode 100644 drivers/media/platform/msm/camera_v2/sensor/ov5648.c
+ create mode 100644 drivers/media/platform/msm/camera_v2/sensor/s5k4h5.c
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+index 789d469..ffb8f56 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
++++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+@@ -11,25 +11,28 @@
+  * GNU General Public License for more details.
+  */
+ 
+-&i2c {
++ &i2c3 {
++	flashlight: qcom,led-flash@63 {
++		cell-index = <0>;
++		reg = <0x63>;
++		qcom,slave-id = <0x63 0x00 0x0011>;
++		compatible = "qcom,led-flash";
++		linux,name = "flashlight";
++		qcom,current = <200>;
++		qcom,gpio-flash = <&msmgpio 18 0>;
++		linux,default-trigger = "flashlight-trigger";
++	};
++};
+ 
+-		led_flash0: qcom,led-flash@60 {
+-			cell-index = <0>;
+-			reg = <0x60>;
+-			qcom,slave-id = <0x60 0x00 0x0011>;
+-			compatible = "qcom,led-flash";
+-			qcom,flash-name = "adp1600";
+-			qcom,flash-type = <1>;
+-			qcom,gpio-no-mux = <0>;
+-			gpios = <&msmgpio 18 0>,
+-				<&msmgpio 19 0>;
+-			qcom,gpio-flash-en = <0>;
+-			qcom,gpio-flash-now = <1>;
+-			qcom,gpio-req-tbl-num = <0 1>;
+-			qcom,gpio-req-tbl-flags = <0 0>;
+-			qcom,gpio-req-tbl-label = "FLASH_EN",
+-				"FLASH_NOW";
+-		};
++/{
++	led_flash0: qcom,camera-led-flash {
++		cell-index = <0>;
++		compatible = "qcom,camera-led-flash";
++		qcom,flash-type = <1>;
++		qcom,flash-source = <&flashlight>;
++	};
++};
++&i2c {
+ 
+ 		actuator0: qcom,actuator@18 {
+ 			cell-index = <1>;
+@@ -60,15 +63,17 @@
+ 				gpios = <&msmgpio 13 0>,
+ 					<&msmgpio 21 0>,//reset
+ 					<&msmgpio 20 0>,//stanby
+-					<&msmgpio 101 0>; //dvdd_en
++					<&msmgpio 101 0>, //dvdd_en
++					<&msmgpio 79 0>; //vcm_pwdn
+ 				qcom,gpio-reset = <1>;
+ 				qcom,gpio-standby = <2>;
+-				qcom,gpio-req-tbl-num = <0 1 2 3>;
+-				qcom,gpio-req-tbl-flags = <1 0 0 0>;
++				qcom,gpio-req-tbl-num = <0 1 2 3 4>;
++				qcom,gpio-req-tbl-flags = <1 0 0 0 0>;
+ 				qcom,gpio-req-tbl-label = "CAMIF_MCLK",
+ 					"CAM_RESET1",
+ 					"CAM_STANDBY",
+-					"CAM_DVDDEN";
++					"CAM_DVDDEN",
++					"CAM_VCMPWDN";
+ 				qcom,csi-lane-assign = <0xe4>;
+ 				qcom,csi-lane-mask = <0x7>;
+ 				qcom,sensor-position = <0>;
+@@ -81,6 +86,80 @@
+ 				*/
+ 			};
+ 
++	        qcom,camera@6f {
++				compatible = "qcom,ov5648";
++				reg = <0x6f>;
++				qcom,slave-id = <0x6c 0x300a 0x5648>;
++				qcom,csiphy-sd-index = <0>;
++				qcom,csid-sd-index = <0>;
++				qcom,actuator-src = <&actuator0>;
++				qcom,led-flash-src = <&led_flash0>;
++				qcom,mount-angle = <270>;
++				qcom,sensor-name = "ov5648";
++				cam_vdig-supply = <&pm8110_l2>;
++				cam_vio-supply = <&pm8110_l7>;
++				cam_vana-supply = <&pm8110_l22>;
++				qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
++				qcom,cam-vreg-type = <0 0 0>;
++				qcom,cam-vreg-min-voltage = <1200000 1800000 2850000>;
++				qcom,cam-vreg-max-voltage = <1200000 1800000 2850000>;
++				qcom,cam-vreg-op-mode = <200000 200000 100000>;
++				qcom,gpio-no-mux = <0>;
++				gpios = <&msmgpio 13 0>,
++					<&msmgpio 21 0>,//reset
++					<&msmgpio 20 0>,//stanby
++					<&msmgpio 79 0>; //vcm_pwdn
++				qcom,gpio-reset = <1>;
++				qcom,gpio-standby = <2>;
++				qcom,gpio-req-tbl-num = <0 1 2 3>;
++				qcom,gpio-req-tbl-flags = <1 0 0 0>;
++				qcom,gpio-req-tbl-label = "CAMIF_MCLK",
++					"CAM_RESET1",
++					"CAM_STANDBY",
++					"CAM_VCMPWDN";
++				qcom,csi-lane-assign = <0xe4>;
++				qcom,csi-lane-mask = <0x7>;
++				qcom,sensor-position = <0>;
++				qcom,sensor-mode = <0>;
++				qcom,cci-master = <0>;
++			};
++
++		qcom,camera@20 {
++				compatible = "qcom,s5k4h5";
++				reg = <0x20>;
++				qcom,slave-id = <0x20 0x0000 0x485B>;
++				qcom,csiphy-sd-index = <0>;
++				qcom,csid-sd-index = <0>;
++				qcom,actuator-src = <&actuator0>;
++				qcom,led-flash-src = <&led_flash0>;
++				qcom,mount-angle = <90>;
++				qcom,sensor-name = "s5k4h5";
++				cam_vdig-supply = <&pm8110_l2>;
++				cam_vio-supply = <&pm8110_l7>;
++				cam_vana-supply = <&pm8110_l22>;
++				qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
++				qcom,cam-vreg-type = <0 0 0>;
++				qcom,cam-vreg-min-voltage = <0 1800000 2850000>;
++				qcom,cam-vreg-max-voltage = <0 1800000 2850000>;
++				qcom,cam-vreg-op-mode = <0 200000 100000>;
++				qcom,gpio-no-mux = <0>;
++				gpios = <&msmgpio 13 0>,
++					<&msmgpio 21 0>,//reset
++					<&msmgpio 101 0>, //dvdd_en
++					<&msmgpio 79 0>; //vcm_pwdn
++				qcom,gpio-reset = <1>;
++				qcom,gpio-req-tbl-num = <0 1 2 3>;
++				qcom,gpio-req-tbl-flags = <1 0 0 0>;
++				qcom,gpio-req-tbl-label = "CAMIF_MCLK",
++					"CAM_RESET1",
++					"CAM_DVDDEN",
++					"CAM_VCMPWDN";
++				qcom,csi-lane-assign = <0xe4>;
++				qcom,csi-lane-mask = <0x7>;
++				qcom,sensor-position = <0>;
++				qcom,sensor-mode = <1>;
++				qcom,cci-master = <0>;
++			};
+ 
+         qcom,camera@7d {
+                 compatible = "qcom,hi256";
+@@ -90,6 +169,7 @@
+                 qcom,csid-sd-index = <0>;
+                 qcom,mount-angle = <270>;
+                 qcom,sensor-name = "hi256";
++                qcom,led-flash-src = <&led_flash0>;
+                 cam_vdig-supply = <&pm8110_l2>;
+                 cam_vana-supply = <&pm8110_l19>;
+                 cam_vio-supply = <&pm8110_l14>;
+@@ -185,5 +265,39 @@
+ 		qcom,sensor-mode = <1>;
+ 		qcom,cci-master = <0>;
+ 	};
++	
++		qcom,camera@7a {
++		compatible = "qcom,mt9v113";
++		reg = <0x7a>;
++		qcom,slave-id = <0x7a 0x0000 0x2280>;
++		qcom,csiphy-sd-index = <1>;
++		qcom,csid-sd-index = <1>;
++		qcom,mount-angle = <0>;
++		qcom,sensor-name = "mt9v113";
++		cam_vdig-supply = <&pm8110_l2>;
++		cam_vio-supply = <&pm8110_l7>;
++		cam_vana-supply = <&pm8110_l22>;
++		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
++		qcom,cam-vreg-type = <0 0 0>;
++		qcom,cam-vreg-min-voltage = <1200000 1800000 2850000>;
++		qcom,cam-vreg-max-voltage = <1200000 1800000 2850000>;
++		qcom,cam-vreg-op-mode = <200000 200000 100000>;
++		qcom,gpio-no-mux = <0>;
++		gpios = <&msmgpio 13 0>,
++			<&msmgpio 15 0>,
++			<&msmgpio 85 0>;
++		qcom,gpio-reset = <1>;
++		qcom,gpio-standby = <2>;
++		qcom,gpio-req-tbl-num = <0 1 2>;
++		qcom,gpio-req-tbl-flags = <1 0 0>;
++		qcom,gpio-req-tbl-label = "CAMIF_MCLK",
++					  "CAM_RESET",
++					  "CAM_STANDBY";
++		qcom,csi-lane-assign = <0xe4>;
++		qcom,csi-lane-mask = <0x3>;
++		qcom,sensor-position = <1>;
++		qcom,sensor-mode = <1>;
++		qcom,cci-master = <0>;
++	};
+ };
+ 
+diff --git a/arch/arm/boot/dts/msm8610.dtsi b/arch/arm/boot/dts/msm8610.dtsi
+index 72d9317..23f2d39 100644
+--- a/arch/arm/boot/dts/msm8610.dtsi
++++ b/arch/arm/boot/dts/msm8610.dtsi
+@@ -494,7 +494,7 @@
+ 		qcom,scl-gpio = <&msmgpio 17 0>;
+ 	};
+ 
+-	i2c@f9925000 { /* BLSP-1 QUP-3 */
++	i2c3: i2c@f9925000 { /* BLSP-1 QUP-3 */
+ 		cell-index = <0>;
+ 		compatible = "qcom,i2c-qup";
+ 		#address-cells = <1>;
+diff --git a/arch/arm/configs/msm8610-perf_defconfig b/arch/arm/configs/msm8610-perf_defconfig
+index 8b1081a..5cbe858 100644
+--- a/arch/arm/configs/msm8610-perf_defconfig
++++ b/arch/arm/configs/msm8610-perf_defconfig
+@@ -273,6 +273,10 @@ CONFIG_VIDEO_V4L2_SUBDEV_API=y
+ # CONFIG_MSM_CAMERA is not set
+ CONFIG_BF3905=y
+ CONFIG_OV8825=y
++CONFIG_OV8850=y
++CONFIG_OV5648=y
++CONFIG_S5K4H5=y
++CONFIG_MT9V113=y
+ CONFIG_HI256=y
+ CONFIG_MSM_CAMERA_SENSOR=y
+ # CONFIG_MSM_CPP is not set
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 7dd298e..98ad4f3 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -280,6 +280,9 @@ CONFIG_VIDEO_V4L2_SUBDEV_API=y
+ CONFIG_BF3905=y
+ CONFIG_OV8825=y
+ CONFIG_OV8850=y
++CONFIG_OV5648=y
++CONFIG_S5K4H5=y
++CONFIG_MT9V113=y
+ CONFIG_HI256=y
+ CONFIG_MSM_CAMERA_SENSOR=y
+ CONFIG_MSM_CCI=y
+diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
+index df4ab11..6c04721 100644
+--- a/arch/arm/mach-msm/clock-8610.c
++++ b/arch/arm/mach-msm/clock-8610.c
+@@ -3006,11 +3006,15 @@ static struct clk_lookup msm_clocks_8610[] = {
+ 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006d"),
+ 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006c"),
+ 	CLK_LOOKUP("cam_src_clk", mclk1_clk_src.c, "6-0078"),
++	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-007a"),
++	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0020"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006d"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006c"),
+ 	CLK_LOOKUP("cam_clk", mclk1_clk.c, "6-0078"),
++	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007a"),
++	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0020"),
+ 
+ 
+ 	/* CSIPHY clocks */
+@@ -3323,3 +3327,4 @@ struct clock_init_data msm8610_clock_init_data __initdata = {
+ 	.pre_init = msm8610_clock_pre_init,
+ 	.post_init = msm8610_clock_post_init,
+ };
++
+diff --git a/drivers/leds/Kconfig b/drivers/leds/Kconfig
+index a43a8da..cd5db339 100644
+--- a/drivers/leds/Kconfig
++++ b/drivers/leds/Kconfig
+@@ -300,6 +300,10 @@ config LEDS_QPNP
+ 	  To compile this driver as a module, choose M here: the module will
+ 	  be called leds-qpnp.
+ 
++config LEDS_MSM_FLASH
++	bool "Support for GPIO Flash LEDs"
++        default y
++
+ config LEDS_WM831X_STATUS
+ 	tristate "LED support for status LEDs on WM831x PMICs"
+ 	depends on LEDS_CLASS
+diff --git a/drivers/leds/Makefile b/drivers/leds/Makefile
+index 2c6fc26..7c3e393 100644
+--- a/drivers/leds/Makefile
++++ b/drivers/leds/Makefile
+@@ -55,6 +55,7 @@ obj-$(CONFIG_LEDS_PMIC_MPP)		+= leds-pmic-mpp.o
+ obj-$(CONFIG_LEDS_QCIBL)		+= leds-qci-backlight.o
+ obj-$(CONFIG_LEDS_MSM_PDM)		+= leds-msm-pdm.o
+ obj-$(CONFIG_LEDS_MSM_TRICOLOR)		+= leds-msm-tricolor.o
++obj-$(CONFIG_LEDS_MSM_FLASH)		+= leds-msm-i2c-flash.o
+ 
+ # LED SPI Drivers
+ obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o
+diff --git a/drivers/leds/leds-msm-i2c-flash.c b/drivers/leds/leds-msm-i2c-flash.c
+new file mode 100644
+index 0000000..665d1f9
+--- /dev/null
++++ b/drivers/leds/leds-msm-i2c-flash.c
+@@ -0,0 +1,727 @@
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++#include <linux/of_gpio.h>
++#include <linux/delay.h>
++#include <linux/leds.h>
++
++#include "leds-msm-i2c-flash.h"
++
++#define ENABLE_REGISTER 0x0A
++#define MODE_BIT_MASK 0x03
++#define MODE_BIT_STANDBY 0x00
++#define MODE_BIT_INDICATOR 0x01
++#define MODE_BIT_TORCH 0x02
++#define MODE_BIT_FLASH 0x03
++#define ENABLE_BIT_FLASH 0x20
++#define ENABLE_BIT_TORCH 0x10
++
++#define CURRENT_REGISTER 0x09
++#define CURRENT_TORCH_MASK 0x70
++#define CURRENT_TORCH_SHIFT 4
++#define CURRENT_FLASH_MASK 0x0F
++#define CURRENT_FLASH_SHIFT 0
++
++#define FLASH_FEATURE_REGISTER 0x08
++#define FLASH_TIMEOUT_MASK 0x07
++#define FLASH_TIMEOUT_SHIFT 0
++
++#define FLASH_CHIP_ID_MASK 0x07
++#define FLASH_CHIP_ID 0x0
++
++#define LED_TRIGGER_DEFAULT		"none"
++
++int turn_on_torch(struct lm3642_data* data);
++int turn_off_torch(struct lm3642_data* data);
++
++static struct lm3642_data* lm3642;
++
++static void lm3642_clear_error_flag(struct lm3642_data* data)
++{
++	int err = 0;
++    struct i2c_client* client = data->client;
++
++	err = i2c_smbus_read_byte_data(client, 0x0B);
++    if(err < 0) {
++        printk("read current register fail!\n");
++    } else {
++        printk("lm3642. [%02X] = %02X\n", 0x0B, err);
++    }
++}
++
++static int atoi(const char *psz_buf)
++{
++	const char *pch = psz_buf;
++	int ret = 0;
++
++	while (' ' == *pch)
++		pch++;
++
++	while(pch != NULL && *pch >= '0' && *pch <= '9') {
++        ret = ret * 10 + (*pch - '0');
++        pch++;
++    }
++
++	return ret;
++}
++
++int convert_flash_timeout(enum flash_timeout to) {
++    int timeout = 300;
++    if(to <= FLASH_TIMEOUT_MAX) {
++        timeout = 100 * (1 + (int)to);
++    }
++    return timeout;
++}
++
++int turn_on_torch(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    if(pdata->status == TORCH_ON) {
++        return 0;
++    }
++	
++	lm3642_clear_error_flag(data);
++    // Set torch mode. 
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_TORCH/* | ENABLE_BIT_TORCH*/);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++
++    pdata->status = TORCH_ON;
++
++    return err;
++}
++
++int turn_off_torch(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    if(pdata->status == TORCH_OFF) {
++        return 0;
++    }
++
++	lm3642_clear_error_flag(data);
++    // Set torch mode. 
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_STANDBY);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++	
++    // pull down flash pins
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    pdata->status = TORCH_OFF;
++
++    return err;
++}
++
++static int turn_on_flash(struct lm3642_data* data)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_FLASH | ENABLE_BIT_FLASH);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 1);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++static int turn_off_flash(struct lm3642_data* data)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_STANDBY);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++
++
++int trigger_flash(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_FLASH | ENABLE_BIT_FLASH);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 1);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    msleep(convert_flash_timeout(pdata->timeout));
++
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++int set_flash_current(struct lm3642_data* data, enum flash_current_level i)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->flash_current = i;
++	
++	lm3642_clear_error_flag(data);
++	
++    err = i2c_smbus_write_byte_data(client, CURRENT_REGISTER,
++        (pdata->flash_current << CURRENT_FLASH_SHIFT) | (pdata->torch_current << CURRENT_TORCH_SHIFT));
++    if(err < 0) {
++        printk("lm3642 write i2c faile\n");
++    }
++
++    return err;
++}
++
++int set_torch_current(struct lm3642_data* data, enum torch_current_level i)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->torch_current = i;
++	
++	lm3642_clear_error_flag(data);
++	
++    err = i2c_smbus_write_byte_data(client, CURRENT_REGISTER,
++        (pdata->flash_current << CURRENT_FLASH_SHIFT) | (pdata->torch_current << CURRENT_TORCH_SHIFT));
++    if(err < 0) {
++        printk("lm3642 write i2c faile\n");
++    }
++
++    return err;
++}
++
++int set_flash_timeout(struct lm3642_data* data, enum flash_timeout to)
++{
++    int err = 0, tmp = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->timeout = to;
++
++    tmp = i2c_smbus_read_byte_data(client, FLASH_FEATURE_REGISTER);
++    if(tmp < 0) {
++        printk("%s read i2c fail\n", __func__);
++        return tmp;
++    }
++	
++	err = i2c_smbus_read_byte_data(client, 0x0B);
++    if(err < 0) {
++        printk("read current register fail!\n");
++    } else {
++        printk("lm3642. [%02X] = %02X\n", 0x0B, err);
++    }
++
++    err = i2c_smbus_write_byte_data(client, FLASH_FEATURE_REGISTER,
++        (((int)pdata->timeout << FLASH_TIMEOUT_SHIFT) & FLASH_TIMEOUT_MASK)
++        | (tmp & ~FLASH_TIMEOUT_MASK));
++    if(err < 0) {
++        printk("%s write i2c faile\n", __func__);
++    }
++
++    return err;
++}
++
++
++static ssize_t lm3642_flash_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = ret & CURRENT_FLASH_MASK;
++        count = sprintf(buf, "%d\n", ret);
++    }
++
++    return count;
++}
++
++static ssize_t lm3642_flash_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++
++    trigger_flash(data);
++
++	return size;
++}
++
++static ssize_t lm3642_torch_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int count = 0;
++
++	lm3642_clear_error_flag(data);
++
++    switch(data->pdata->status) {
++    case TORCH_ON:
++        count = 3; 
++        strncpy(buf, "ON\n", count);
++        break;
++    case TORCH_OFF:
++        count = 4;
++        strncpy(buf, "OFF\n", count);
++        break;
++    }
++
++    return count;
++}
++static ssize_t lm3642_torch_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++
++    if(0 == strncmp("0\n", buf, 2) ) {
++        // input "0", turn off torch
++        turn_off_torch(data);
++    } else {
++        // input non-"0", 
++        turn_on_torch(data);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_torch_current_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char TORCH_CURRENTS[8][10] = {"48.4mA", "93.74mA", "140.63mA", "187.5mA", "234.38mA", "281.25mA", "328.13mA", "375mA"};
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & CURRENT_TORCH_MASK) >> CURRENT_TORCH_SHIFT ;
++        count = sprintf(buf, "%s\n", TORCH_CURRENTS[ret]);
++    }
++
++    return count;
++}
++
++// the input should be 1-8. 0 is NOT used since atoi would return 0 if non-numeric
++static ssize_t lm3642_torch_current_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL\n");
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)TORCH_I_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_torch_current(data, (enum torch_current_level) ret - 1);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_flash_current_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char FLASH_CURRENTS[16][16] = {"93.75mA", "187.5mA", "281.25mA", "375mA",
++        "468.75mA", "562.5mA", "656.25mA", "750mA",
++        "843.75mA", "937.5mA", "1031.25mA", "1125mA",
++        "1218.75mA", "1312.5mA", "1406.25mA", "1500mA"
++        };
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & CURRENT_FLASH_MASK) >> CURRENT_FLASH_SHIFT ;
++        count = sprintf(buf, "%s\n", FLASH_CURRENTS[ret]);
++    }
++
++    return count;
++}
++static ssize_t lm3642_flash_current_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL. %s\n", __func__);
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)FLASH_I_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_flash_current(data, (enum flash_current_level) ret - 1);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_flash_timeout_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char FLASH_TIMEOUTS[8][8] = {
++        "100ms", "200ms", "300ms", "400ms", "500ms", "600ms", "700ms", "800ms"
++        };
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, FLASH_FEATURE_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & FLASH_TIMEOUT_MASK) >> FLASH_TIMEOUT_SHIFT ;
++        count = sprintf(buf, "%s\n", FLASH_TIMEOUTS[ret]);
++    }
++
++    return count;
++}
++
++static ssize_t lm3642_flash_timeout_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL. %s\n", __func__);
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)FLASH_TIMEOUT_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_flash_timeout(data, (enum flash_timeout) ret - 1);
++    }
++
++    return size;
++}
++
++static void led_i2c_brightness_set(struct led_classdev *led_cdev,
++				    enum led_brightness value)
++{
++
++    if(value > LED_HALF) {
++        turn_off_torch(lm3642);
++        turn_on_flash(lm3642);
++    } else if(value > LED_OFF) {
++        turn_off_flash(lm3642);
++        turn_on_torch(lm3642);
++    } else {
++        turn_off_flash(lm3642);
++        turn_off_torch(lm3642);
++    }
++
++    lm3642->pdata->brightness = value;
++}
++
++static enum led_brightness led_i2c_brightness_get(struct led_classdev *led_cdev)
++{
++    struct lm3642_platform_data *flash_led =
++	    container_of(led_cdev, struct lm3642_platform_data, cdev);
++	return flash_led->brightness;
++}
++
++static DEVICE_ATTR(flashlight, 0664, lm3642_flash_show, lm3642_flash_store); // for test only
++static DEVICE_ATTR(torch, 0664, lm3642_torch_show, lm3642_torch_store);
++static DEVICE_ATTR(torch_current, 0664, lm3642_torch_current_show, lm3642_torch_current_store);
++static DEVICE_ATTR(flash_current, 0664, lm3642_flash_current_show, lm3642_flash_current_store);
++static DEVICE_ATTR(flash_timeout, 0664, lm3642_flash_timeout_show, lm3642_flash_timeout_store);
++
++static int __devexit lm3642_remove(struct i2c_client *client)
++{
++    struct lm3642_data* data = i2c_get_clientdata(client);
++
++    device_remove_file(&client->dev, &dev_attr_flashlight);
++	device_remove_file(&client->dev, &dev_attr_torch);
++	device_remove_file(&client->dev, &dev_attr_flash_current);
++	device_remove_file(&client->dev, &dev_attr_torch_current);
++	device_remove_file(&client->dev, &dev_attr_flash_timeout);
++
++    if (gpio_is_valid(data->pdata->flash))
++		gpio_free(data->pdata->flash);
++
++    kfree(data);
++    return 0;
++}
++
++static int lm3642_probe(struct i2c_client *client,
++			   const struct i2c_device_id *id)
++{
++    int err = 0;
++    const char *temp_str;
++    struct lm3642_platform_data *pdata;
++    struct lm3642_data* data;
++    struct device_node *node = client->dev.of_node;
++
++    if (node) {
++		pdata = devm_kzalloc(&client->dev,
++			sizeof(struct lm3642_platform_data), GFP_KERNEL);
++		if (!pdata) {
++			dev_err(&client->dev, "Failed to allocate memory\n");
++			return -ENOMEM;
++		}
++	} else {
++		pdata = client->dev.platform_data;
++    }
++
++	if (!pdata) {
++		dev_err(&client->dev, "Invalid pdata\n");
++		return -EINVAL;
++	}
++
++    pdata->flash_current = FLASH_I_DEFAULT;
++    pdata->torch_current = TORCH_I_DEFAULT;
++    pdata->timeout = FLASH_TIMEOUT_DEFAULT;
++    pdata->status = TORCH_OFF;
++    pdata->cdev.default_trigger = LED_TRIGGER_DEFAULT;
++
++    err = of_property_read_string(node, "linux,default-trigger", &temp_str);
++	if (!err) {
++		pdata->cdev.default_trigger = temp_str;
++    }
++
++    err = of_property_read_string(node, "linux,name", &pdata->cdev.name);
++	if (err) {
++		dev_err(&client->dev, "%s: Failed to read linux name. rc = %d\n",
++			__func__, err);
++		goto free_platform_data;
++	}
++
++    pdata->cdev.max_brightness = LED_FULL;
++	pdata->cdev.brightness_set = led_i2c_brightness_set;
++	pdata->cdev.brightness_get = led_i2c_brightness_get;
++
++    err = led_classdev_register(&client->dev, &pdata->cdev);
++	if (err) {
++		dev_err(&client->dev, "%s: Failed to register led dev. rc = %d\n",
++			__func__, err);
++		goto free_platform_data;
++	}
++
++    // Get gpio number of flash from dts(i)
++    pdata->flash = of_get_named_gpio(node, "qcom,gpio-flash", 0);
++    if (pdata->flash < 0) {
++        printk("of_get_named_gpio failed. Line: %d. %s\n", __LINE__, __func__);
++		goto free_platform_data;
++	} else {
++		err = gpio_request(pdata->flash, "FLASH_NOW");
++        printk("flash = %d\n", pdata->flash);
++		if (err) {
++            printk("gpio_request failed. Line: %d. %s\n", __LINE__, __func__);
++			goto free_platform_data;
++		}
++	}
++
++    // set gpio of flash as output. 
++	gpio_tlmm_config(GPIO_CFG(pdata->flash, 0,
++				  GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL,
++				  GPIO_CFG_2MA), GPIO_CFG_ENABLE);
++
++    err = gpio_direction_output(pdata->flash, 0);
++	if (err) {
++		printk("%s: Failed to set gpio %d\n", __func__,
++		       pdata->flash);
++		goto free_platform_data;
++	}
++
++    // Check and setup i2c client
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
++		dev_err(&client->dev, "I2C not supported\n");
++		goto free_platform_data;
++	}
++
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_I2C_BLOCK))
++	{
++	    dev_err(&client->dev, "%s: I2C error2!\n", __func__);
++		goto free_platform_data;
++	}
++
++	data = kzalloc(sizeof(struct lm3642_data), GFP_KERNEL);
++    if (!data) {
++		//dev_err(&client->dev, "Not enough memory\n");
++		printk("%s: Not enough memory\n", __func__);
++		goto free_platform_data;
++	}
++
++	data->client = client;
++	data->pdata = pdata;
++
++	i2c_set_clientdata(client, data);
++    lm3642 = data;
++
++    // create file sysfs
++    err = device_create_file(&client->dev, &dev_attr_flashlight);
++    if(err) {
++        goto free_data;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_torch);
++    if(err) {
++        goto free_lm3642_sys_flashlight;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_torch_current);
++    if(err) {
++        goto free_lm3642_sys_torch;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_flash_current);
++    if(err) {
++        goto free_lm3642_sys_torch_current;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_flash_timeout);
++    if(err) {
++        goto free_lm3642_sys_flash_current;
++    }
++
++    return 0;
++free_lm3642_sys_flash_current:
++    device_remove_file(&client->dev, &dev_attr_flash_current);
++free_lm3642_sys_torch_current:
++    device_remove_file(&client->dev, &dev_attr_torch_current);
++free_lm3642_sys_torch:
++    device_remove_file(&client->dev, &dev_attr_torch);
++free_lm3642_sys_flashlight:
++	device_remove_file(&client->dev, &dev_attr_flashlight);
++    printk("device_create_file failed\n");
++free_data: 
++    kfree(data);
++free_platform_data:
++    if(node) {
++        kfree(pdata);
++    }
++    return err;
++
++
++}
++
++
++static const struct i2c_device_id lm3642_id[] = {
++	{"lm3642", 0},
++	{},
++};
++
++MODULE_DEVICE_TABLE(i2c, lm3642_id);
++
++#ifdef CONFIG_OF
++static struct of_device_id lm3642_match_table[] = {
++	{ .compatible = "qcom,led-flash",},
++	{ },
++};
++#else
++#define lm3642_match_table NULL
++#endif
++
++
++static struct i2c_driver lm3642_driver = {
++	.probe = lm3642_probe,
++	.remove = __devexit_p(lm3642_remove),
++	.driver = {
++		   .name = "lm3642",
++		   .owner = THIS_MODULE,
++		   .of_match_table = lm3642_match_table,
++/* Do NOT implements PM at first. We just verify the funciton.
++#ifdef CONFIG_PM
++		   .pm = &lm3642_pm_ops,
++#endif
++*/
++	   },
++	.id_table = lm3642_id,
++};
++
++static int __init lm3642_init(void)
++{
++	return i2c_add_driver(&lm3642_driver);
++}
++
++module_init(lm3642_init);
++
++static void __exit lm3642_exit(void)
++{
++	i2c_del_driver(&lm3642_driver);
++}
++module_exit(lm3642_exit);
++
++MODULE_DESCRIPTION("For lm3642 camera flash light driver");
++MODULE_LICENSE("GPL v2");
++
+diff --git a/drivers/leds/leds-msm-i2c-flash.h b/drivers/leds/leds-msm-i2c-flash.h
+new file mode 100644
+index 0000000..aabf1e0
+--- /dev/null
++++ b/drivers/leds/leds-msm-i2c-flash.h
+@@ -0,0 +1,74 @@
++#ifndef __LEDS_MSM_I2C_FLASH__
++#define __LEDS_MSM_I2C_FLASH__
++
++enum torch_current_level {
++    // in the unit of mA
++    TORCH_I_48P4, //0
++    TORCH_I_93P74, // 1
++    TORCH_I_140P63, // 2
++    TORCH_I_187P5, // 3
++    TORCH_I_234P38, // 4
++    TORCH_I_281P25, // 5
++    TORCH_I_328P13, // 6
++    TORCH_I_375, //7
++    TORCH_I_MAX = TORCH_I_375,
++    TORCH_I_DEFAULT = TORCH_I_48P4,
++};
++
++enum flash_current_level {
++    // in the unit of mA
++    FLASH_I_93P75, // 0
++    FLASH_I_187P5, // 1
++    FLASH_I_281P25, // 2
++    FLASH_I_375, // 3
++    FLASH_I_468P75, // 4
++    FLASH_I_562P5, // 5
++    FLASH_I_656P25, // 6
++    FLASH_I_750, // 7
++    FLASH_I_843P75, // 8
++    FLASH_I_937P5, // 9
++    FLASH_I_1031P25, // 10
++    FLASH_I_1125, // 11
++    FLASH_I_1218P75, // 12
++    FLASH_I_1312P5, // 13
++    FLASH_I_1406P25, // 14
++    FLASH_I_1500, // 
++    FLASH_I_MAX = FLASH_I_1500,
++    FLASH_I_DEFAULT = FLASH_I_1500,
++};
++
++enum flash_timeout {
++    // in the unit of milli-second
++    FLASH_TIMEOUT_100,
++    FLASH_TIMEOUT_200,
++    FLASH_TIMEOUT_300,
++    FLASH_TIMEOUT_400,
++    FLASH_TIMEOUT_500,
++    FLASH_TIMEOUT_600,
++    FLASH_TIMEOUT_700,
++    FLASH_TIMEOUT_800,
++    FLASH_TIMEOUT_MAX = FLASH_TIMEOUT_800,
++    FLASH_TIMEOUT_DEFAULT = FLASH_TIMEOUT_300,
++};
++
++enum torch_status {
++    TORCH_ON,
++    TORCH_OFF,
++};
++
++struct lm3642_platform_data {
++    enum torch_current_level torch_current;
++    enum torch_status status;
++    int flash; // pin number
++    enum flash_current_level flash_current;
++    enum flash_timeout timeout;    
++    int brightness;
++    struct led_classdev cdev;
++};
++
++struct lm3642_data {
++    struct i2c_client *client;
++    struct lm3642_platform_data *pdata;
++};
++
++#endif // end of __LEDS_MSM_I2C_FLASH__
+diff --git a/drivers/leds/leds-tricolor.c b/drivers/leds/leds-tricolor.c
+index 3b4fe3e..9893f61 100644
+--- a/drivers/leds/leds-tricolor.c
++++ b/drivers/leds/leds-tricolor.c
+@@ -334,7 +334,7 @@ static int tricolor_led_probe(struct platform_device *pdev)
+   tricolor_led->leds[2].name = "blue";
+   tricolor_led->leds[2].brightness_set = led_brightness_set_tricolor;
+   
+-  tricolor_led->leds[3].name = "flashlight";
++  tricolor_led->leds[3].name = "flashlight_";
+   tricolor_led->leds[3].brightness_set = led_brightness_set_flash;
+   
+   for (i = 0; i < 4; i++) {	/* red, green, blue, flashlight */
+diff --git a/drivers/media/platform/msm/camera_v2/Kconfig b/drivers/media/platform/msm/camera_v2/Kconfig
+index 49de0b0..e55e04e 100644
+--- a/drivers/media/platform/msm/camera_v2/Kconfig
++++ b/drivers/media/platform/msm/camera_v2/Kconfig
+@@ -146,6 +146,14 @@ config HI256
+                 snapshot config = 3264 * 2448 at 18 fps.
+                 2 lanes max fps is 18, 4 lanes max fps is 24.
+ 
++config MT9V113
++	bool "Sensor MT9V113 (YUV .3M)"
++	depends on MSMB_CAMERA
++	---help---
++		MT9V113 is a BYD .3 MP YUV Sensor.
++		It supports 1 mipi lane.
++		It does not support auto focus.		
++		
+ config MT9M114
+ 	bool "Sensor MT9M114 (YUV 1.26MP)"
+ 	depends on MSMB_CAMERA
+@@ -198,6 +206,22 @@ config OV8850
+ 		2 mipi lanes, preview config = 1632*1224 30 fps,
+ 		snapshot config = 3264 * 2448 at 20 fps.
+ 
++config OV5648
++	bool "OmniVision OV5648 (BAYER 5MP)"
++	depends on MSMB_CAMERA
++	---help---
++		OmniVision 5 MP Bayer Sensor with auto focus.uses
++		2 mipi lanes, preview config = 1296*972 30 fps,
++		snapshot config = 2592 * 1944 at 15 fps.
++
++config S5K4H5
++	bool "SAMSUNG S5K4H5 (BAYER 8MP)"
++	depends on MSMB_CAMERA
++	---help---
++		SAMSUNG 8 MP Bayer Sensor with auto focus.uses
++		2 mipi lanes, preview config = 1632*1224 30 fps,
++		snapshot config = 3264 * 2448 at 30 fps.
++
+ config MSM_V4L2_VIDEO_OVERLAY_DEVICE
+ 	tristate "Qualcomm MSM V4l2 video overlay device"
+ 	---help---
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/Makefile b/drivers/media/platform/msm/camera_v2/sensor/Makefile
+index 8832962..c377dfc 100644
+--- a/drivers/media/platform/msm/camera_v2/sensor/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/Makefile
+@@ -9,6 +9,8 @@ obj-$(CONFIG_S5K3L1YX) += s5k3l1yx.o
+ obj-$(CONFIG_IMX135) += imx135.o
+ obj-$(CONFIG_OV8825) += ov8825.o
+ obj-$(CONFIG_OV8850) += ov8850.o
++obj-$(CONFIG_OV5648) += ov5648.o
++obj-$(CONFIG_S5K4H5) += s5k4h5.o
+ obj-$(CONFIG_OV2720) += ov2720.o
+ obj-$(CONFIG_OV9724) += ov9724.o
+ obj-$(CONFIG_HI256) += hi256.o
+@@ -16,3 +18,4 @@ obj-$(CONFIG_MT9M114) += mt9m114.o
+ obj-$(CONFIG_SP1628) += sp1628.o
+ obj-$(CONFIG_GC0339) += gc0339.o
+ obj-$(CONFIG_BF3905) += bf3905.o
++obj-$(CONFIG_MT9V113) += mt9v113.o
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/mt9v113.c b/drivers/media/platform/msm/camera_v2/sensor/mt9v113.c
+new file mode 100644
+index 0000000..ecda4e4
+--- /dev/null
++++ b/drivers/media/platform/msm/camera_v2/sensor/mt9v113.c
+@@ -0,0 +1,905 @@
++/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <mach/gpiomux.h>
++
++#include "msm_sensor.h"
++#include "msm_cci.h"
++#include "msm_camera_io_util.h"
++#include "msm_camera_i2c_mux.h"
++
++
++#define CONFIG_MSMB_CAMERA_DEBUG
++
++#undef CDBG
++#ifdef CONFIG_MSMB_CAMERA_DEBUG
++#define CDBG(fmt, args...) pr_err(fmt, ##args)
++#else
++#define CDBG(fmt, args...) do { } while (0)
++#endif
++
++#define MT9V113_SENSOR_NAME "mt9v113"
++DEFINE_MSM_MUTEX(mt9v113_mut);
++
++static struct msm_sensor_ctrl_t mt9v113_s_ctrl;
++
++static struct msm_sensor_power_setting mt9v113_power_setting[] = {
++/*
++	{  
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VDIG,
++		.config_val = 0,
++		.delay = 0,
++	},
++*/
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VIO,
++		.config_val = 0,
++		.delay = 0,
++	},
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VANA,
++		.config_val = 0,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_STANDBY,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 10,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 50,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_STANDBY,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 20,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 50,
++	},
++	{
++		.seq_type = SENSOR_CLK,
++		.seq_val = SENSOR_CAM_MCLK,
++		.config_val = 24000000,
++		.delay = 5,
++	},
++
++	{
++		.seq_type = SENSOR_I2C_MUX,
++		.seq_val = 0,
++		.config_val = 0,
++		.delay = 5,
++	},
++};
++
++static struct msm_camera_i2c_reg_conf mt9v113_start_settings[] = {
++	{0x3400, 0x7a2C},
++};
++
++static struct msm_camera_i2c_reg_conf mt9v113_stop_settings[] = {
++	{0x3400, 0x7a26},
++};
++
++static struct msm_camera_i2c_reg_conf mt9v113_recommend_setting1[] = {
++    {0x098C, 0x02F0}, // MCU_ADDRESS
++    {0x0990, 0x0000}, // MCU_DATA_0
++    {0x098C, 0x02F2}, // MCU_ADDRESS
++    {0x0990, 0x0210}, // MCU_DATA_0
++    {0x098C, 0x02F4}, // MCU_ADDRESS
++    {0x0990, 0x001A}, // MCU_DATA_0
++    {0x098C, 0x2145}, // MCU_ADDRESS
++    {0x0990, 0x02F4}, // MCU_DATA_0
++    {0x098C, 0xA134}, // MCU_ADDRESS
++    {0x0990, 0x0001}, // MCU_DATA_0
++    {0x31E0, 0x0001}, // PIX_DEF_ID
++    {0x001A, 0x0010}, // RESET_AND_MISC_CONTROL
++    {0x3400, 0x7A2C}, // MIPI_CONTROL
++    {0x321C, 0x8003}, // OFIFO_CONTROL_STATUS
++    {0x001E, 0x0777}, // PAD_SLEW
++    {0x0016, 0x42DF}, // CLOCKS_CONTROL
++    // 24MHz / 26MHz
++    {0x0014, 0xB04B}, // PLL_CONTROL
++    {0x0014, 0xB049}, // PLL_CONTROL
++    {0x0010, 0x021C}, //PLL Dividers=540
++    {0x0012, 0x0000}, //PLL P Dividers=0
++};
++static struct msm_camera_i2c_reg_conf mt9v113_recommend_setting2[] = {
++    {0x098C, 0x2703}, //Output Width (A)
++    {0x0990, 0x0280}, //=640
++    {0x098C, 0x2705}, //Output Height (A)
++    {0x0990, 0x01E0}, //=480
++    {0x098C, 0x2707}, //Output Width (B)
++    {0x0990, 0x0280}, //=640
++    {0x098C, 0x2709}, //Output Height (B)
++    {0x0990, 0x01E0}, //=480
++    {0x098C, 0x270D}, //Row Start (A)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x270F}, //Column Start (A)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x2711}, //Row End (A)
++    {0x0990, 0x01E7}, //=487
++    {0x098C, 0x2713}, //Column End (A)
++    {0x0990, 0x0287}, //=647
++    {0x098C, 0x2715}, //Row Speed (A)
++    {0x0990, 0x0001}, //=1
++    {0x098C, 0x2717}, //Read Mode (A)
++    {0x0990, 0x0026}, //=38
++    {0x098C, 0x2719}, //sensor_fine_correction (A)
++    {0x0990, 0x001A}, //=26
++    {0x098C, 0x271B}, //sensor_fine_IT_min (A)
++    {0x0990, 0x006B}, //=107
++    {0x098C, 0x271D}, //sensor_fine_IT_max_margin (A)
++    {0x0990, 0x006B}, //=107
++    {0x098C, 0x271F}, //Frame Lines (A)
++    {0x0990, 0x022A}, //=554
++    {0x098C, 0x2721}, //Line Length (A)
++    {0x0990, 0x034A}, //=842
++    {0x098C, 0x2723}, //Row Start (B)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x2725}, //Column Start (B)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x2727}, //Row End (B)
++    {0x0990, 0x01E7}, //=487
++    {0x098C, 0x2729}, //Column End (B)
++    {0x0990, 0x287 }, //=647
++    {0x098C, 0x272B}, //Row Speed (B)
++    {0x0990, 0x0001}, //=1
++    {0x098C, 0x272D}, //Read Mode (B)
++    {0x0990, 0x0026}, //=38
++    {0x098C, 0x272F}, //sensor_fine_correction (B)
++    {0x0990, 0x001A}, //=26
++    {0x098C, 0x2731}, //sensor_fine_IT_min (B)
++    {0x0990, 0x006B}, //=107
++    {0x098C, 0x2733}, //sensor_fine_IT_max_margin (B)
++    {0x0990, 0x006B}, //=107
++    {0x098C, 0x2735}, //Frame Lines (B)
++    {0x0990, 0x046F}, //=1135
++    {0x098C, 0x2737}, //Line Length (B)
++    {0x0990, 0x034A}, //=842
++    {0x098C, 0x2739}, //Crop_X0 (A)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x273B}, //Crop_X1 (A)
++    {0x0990, 0x027F}, //=639
++    {0x098C, 0x273D}, //Crop_Y0 (A)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x273F}, //Crop_Y1 (A)
++    {0x0990, 0x01DF}, //=479
++    {0x098C, 0x2747}, //Crop_X0 (B)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x2749}, //Crop_X1 (B)
++    {0x0990, 0x027F}, //=639
++    {0x098C, 0x274B}, //Crop_Y0 (B)
++    {0x0990, 0x0000}, //=0
++    {0x098C, 0x274D}, //Crop_Y1 (B)
++    {0x0990, 0x01DF}, //=479
++    {0x098C, 0x222D}, //R9 Step
++    {0x0990, 0x008B}, //=139
++    {0x098C, 0xA408}, //search_f1_50
++    {0x0990, 0x0021}, //=33
++    {0x098C, 0xA409}, //search_f2_50
++    {0x0990, 0x0023}, //=35
++    {0x098C, 0xA40A}, //search_f1_60
++    {0x0990, 0x0028}, //=40
++    {0x098C, 0xA40B}, //search_f2_60
++    {0x0990, 0x002A}, //=42
++    {0x098C, 0x2411}, //R9_Step_60 (A)
++    {0x0990, 0x008B}, //=139
++    {0x098C, 0x2413}, //R9_Step_50 (A)
++    {0x0990, 0x00A6}, //=166
++    {0x098C, 0x2415}, //R9_Step_60 (B)
++    {0x0990, 0x008B}, //=139
++    {0x098C, 0x2417}, //R9_Step_50 (B)
++    {0x0990, 0x00A6}, //=166
++    {0x098C, 0xA404}, //FD Mode
++    {0x0990, 0x0010}, //=16
++    {0x098C, 0xA40D}, //Stat_min
++    {0x0990, 0x0002}, //=2
++    {0x098C, 0xA40E}, //Stat_max
++    {0x0990, 0x0003}, //=3
++    {0x098C, 0xA410}, //Min_amplitude
++    {0x0990, 0x000A}, //=10
++    //85% LSC
++    {0x3210, 0x09B0}, // COLOR_PIPELINE_CONTROL
++    {0x364E, 0x0210}, // P_GR_P0Q0
++    {0x3650, 0x0CCA}, // P_GR_P0Q1
++    {0x3652, 0x2D12}, // P_GR_P0Q2
++    {0x3654, 0xCD0C}, // P_GR_P0Q3
++    {0x3656, 0xC632}, // P_GR_P0Q4
++    {0x3658, 0x00D0}, // P_RD_P0Q0
++    {0x365A, 0x60AA}, // P_RD_P0Q1
++    {0x365C, 0x7272}, // P_RD_P0Q2
++    {0x365E, 0xFE09}, // P_RD_P0Q3
++    {0x3660, 0xAD72}, // P_RD_P0Q4
++    {0x3662, 0x0170}, // P_BL_P0Q0
++    {0x3664, 0x5DCB}, // P_BL_P0Q1
++    {0x3666, 0x27D2}, // P_BL_P0Q2
++    {0x3668, 0xCE4D}, // P_BL_P0Q3
++    {0x366A, 0x9DB3}, // P_BL_P0Q4
++    {0x366C, 0x0150}, // P_GB_P0Q0
++    {0x366E, 0xB809}, // P_GB_P0Q1
++    {0x3670, 0x30B2}, // P_GB_P0Q2
++    {0x3672, 0x82AD}, // P_GB_P0Q3
++    {0x3674, 0xC1D2}, // P_GB_P0Q4
++    {0x3676, 0xC4CD}, // P_GR_P1Q0
++    {0x3678, 0xBE47}, // P_GR_P1Q1
++    {0x367A, 0x5E4F}, // P_GR_P1Q2
++    {0x367C, 0x9F10}, // P_GR_P1Q3
++    {0x367E, 0xEC30}, // P_GR_P1Q4
++    {0x3680, 0x914D}, // P_RD_P1Q0
++    {0x3682, 0x846A}, // P_RD_P1Q1
++    {0x3684, 0x66AB}, // P_RD_P1Q2
++    {0x3686, 0x20D0}, // P_RD_P1Q3
++    {0x3688, 0x1714}, // P_RD_P1Q4
++    {0x368A, 0x99AC}, // P_BL_P1Q0
++    {0x368C, 0x5CED}, // P_BL_P1Q1
++    {0x368E, 0x00B1}, // P_BL_P1Q2
++    {0x3690, 0x716C}, // P_BL_P1Q3
++    {0x3692, 0x9594}, // P_BL_P1Q4
++    {0x3694, 0xA22D}, // P_GB_P1Q0
++    {0x3696, 0xB88A}, // P_GB_P1Q1
++    {0x3698, 0x02B0}, // P_GB_P1Q2
++    {0x369A, 0xC38F}, // P_GB_P1Q3
++    {0x369C, 0x2B30}, // P_GB_P1Q4
++    {0x369E, 0x6B32}, // P_GR_P2Q0
++    {0x36A0, 0x128C}, // P_GR_P2Q1
++    {0x36A2, 0x2574}, // P_GR_P2Q2
++    {0x36A4, 0xD1B3}, // P_GR_P2Q3
++    {0x36A6, 0xC2B8}, // P_GR_P2Q4
++    {0x36A8, 0x1893}, // P_RD_P2Q0
++    {0x36AA, 0x8DB0}, // P_RD_P2Q1
++    {0x36AC, 0x2134}, // P_RD_P2Q2
++    {0x36AE, 0x9014}, // P_RD_P2Q3
++    {0x36B0, 0xFC57}, // P_RD_P2Q4
++    {0x36B2, 0x2DB2}, // P_BL_P2Q0
++    {0x36B4, 0x8FB1}, // P_BL_P2Q1
++    {0x36B6, 0x9832}, // P_BL_P2Q2
++    {0x36B8, 0x1CD4}, // P_BL_P2Q3
++    {0x36BA, 0xE437}, // P_BL_P2Q4
++    {0x36BC, 0x5992}, // P_GB_P2Q0
++    {0x36BE, 0x99AF}, // P_GB_P2Q1
++    {0x36C0, 0x0F54}, // P_GB_P2Q2
++    {0x36C2, 0x9A52}, // P_GB_P2Q3
++    {0x36C4, 0xB358}, // P_GB_P2Q4
++    {0x36C6, 0xC3EE}, // P_GR_P3Q0
++    {0x36C8, 0xC3F1}, // P_GR_P3Q1
++    {0x36CA, 0x94D2}, // P_GR_P3Q2
++    {0x36CC, 0x4175}, // P_GR_P3Q3
++    {0x36CE, 0x4EB7}, // P_GR_P3Q4
++    {0x36D0, 0xF310}, // P_RD_P3Q0
++    {0x36D2, 0x0C51}, // P_RD_P3Q1
++    {0x36D4, 0x6C75}, // P_RD_P3Q2
++    {0x36D6, 0xDA96}, // P_RD_P3Q3
++    {0x36D8, 0x8FF9}, // P_RD_P3Q4
++    {0x36DA, 0x9C10}, // P_BL_P3Q0
++    {0x36DC, 0x99B2}, // P_BL_P3Q1
++    {0x36DE, 0xFCD4}, // P_BL_P3Q2
++    {0x36E0, 0x6CD5}, // P_BL_P3Q3
++    {0x36E2, 0x7E98}, // P_BL_P3Q4
++    {0x36E4, 0xE64E}, // P_GB_P3Q0
++    {0x36E6, 0x8E72}, // P_GB_P3Q1
++    {0x36E8, 0x38D2}, // P_GB_P3Q2
++    {0x36EA, 0x4935}, // P_GB_P3Q3
++    {0x36EC, 0xBCB6}, // P_GB_P3Q4
++    {0x36EE, 0xB5F3}, // P_GR_P4Q0
++    {0x36F0, 0xBAD4}, // P_GR_P4Q1
++    {0x36F2, 0x8E39}, // P_GR_P4Q2
++    {0x36F4, 0x1FF8}, // P_GR_P4Q3
++    {0x36F6, 0x1D3C}, // P_GR_P4Q4
++    {0x36F8, 0x8CB3}, // P_RD_P4Q0
++    {0x36FA, 0x8834}, // P_RD_P4Q1
++    {0x36FC, 0xBF58}, // P_RD_P4Q2
++    {0x36FE, 0x4239}, // P_RD_P4Q3
++    {0x3700, 0x19F9}, // P_RD_P4Q4
++    {0x3702, 0x770D}, // P_BL_P4Q0
++    {0x3704, 0x7234}, // P_BL_P4Q1
++    {0x3706, 0xCB98}, // P_BL_P4Q2
++    {0x3708, 0x84B9}, // P_BL_P4Q3
++    {0x370A, 0x33FC}, // P_BL_P4Q4
++    {0x370C, 0xA1D2}, // P_GB_P4Q0
++    {0x370E, 0xAE33}, // P_GB_P4Q1
++    {0x3710, 0x8E79}, // P_GB_P4Q2
++    {0x3712, 0x4AB8}, // P_GB_P4Q3
++    {0x3714, 0x2D1C}, // P_GB_P4Q4
++    {0x3644, 0x013C}, // POLY_ORIGIN_C
++    {0x3642, 0x00E8}, // POLY_ORIGIN_R
++    {0x3210, 0x09B8}, // COLOR_PIPELINE_CONTROL
++    // Char Setting and fine-tuning
++    {0x098C, 0xAB1F}, // MCU_ADDRESS [HG_LLMODE]
++    {0x0990, 0x00C7}, // MCU_DATA_0
++    {0x098C, 0xAB31}, // MCU_ADDRESS [HG_NR_STOP_G]
++    {0x0990, 0x001E}, // MCU_DATA_0
++    {0x098C, 0x274F}, // MCU_ADDRESS [RESERVED_MODE_4F]
++    {0x0990, 0x0004}, // MCU_DATA_0
++    {0x098C, 0x2741}, // MCU_ADDRESS [RESERVED_MODE_41]
++    {0x0990, 0x0004}, // MCU_DATA_0
++    {0x098C, 0xAB20}, // MCU_ADDRESS [HG_LL_SAT1]
++    {0x0990, 0x0054}, // MCU_DATA_0
++    {0x098C, 0xAB21}, // MCU_ADDRESS [HG_LL_INTERPTHRESH1]
++    {0x0990, 0x0046}, // MCU_DATA_0
++    {0x098C, 0xAB22}, // MCU_ADDRESS [HG_LL_APCORR1]
++    {0x0990, 0x0002}, // MCU_DATA_0
++    {0x098C, 0xAB24}, // MCU_ADDRESS [HG_LL_SAT2]
++    {0x0990, 0x0005}, // MCU_DATA_0
++    {0x098C, 0x2B28}, // MCU_ADDRESS [HG_LL_BRIGHTNESSSTART]
++    {0x0990, 0x170C}, // MCU_DATA_0
++    {0x098C, 0x2B2A}, // MCU_ADDRESS [HG_LL_BRIGHTNESSSTOP]
++    {0x0990, 0x3E80}, // MCU_DATA_0
++    {0x3210, 0x09B8}, // COLOR_PIPELINE_CONTROL
++    {0x098C, 0x2306}, // MCU_ADDRESS [AWB_CCM_L_0]
++    {0x0990, 0x0315}, // MCU_DATA_0
++    {0x098C, 0x2308}, // MCU_ADDRESS [AWB_CCM_L_1]
++    {0x0990, 0xFDDC}, // MCU_DATA_0
++    {0x098C, 0x230A}, // MCU_ADDRESS [AWB_CCM_L_2]
++    {0x0990, 0x003A}, // MCU_DATA_0
++    {0x098C, 0x230C}, // MCU_ADDRESS [AWB_CCM_L_3]
++    {0x0990, 0xFF58}, // MCU_DATA_0
++    {0x098C, 0x230E}, // MCU_ADDRESS [AWB_CCM_L_4]
++    {0x0990, 0x02B7}, // MCU_DATA_0
++    {0x098C, 0x2310}, // MCU_ADDRESS [AWB_CCM_L_5]
++    {0x0990, 0xFF31}, // MCU_DATA_0
++    {0x098C, 0x2312}, // MCU_ADDRESS [AWB_CCM_L_6]
++    {0x0990, 0xFF4C}, // MCU_DATA_0
++    {0x098C, 0x2314}, // MCU_ADDRESS [AWB_CCM_L_7]
++    {0x0990, 0xFE4C}, // MCU_DATA_0
++    {0x098C, 0x2316}, // MCU_ADDRESS [AWB_CCM_L_8]
++    {0x0990, 0x039E}, // MCU_DATA_0
++    {0x098C, 0x2318}, // MCU_ADDRESS [AWB_CCM_L_9]
++    {0x0990, 0x001C}, // MCU_DATA_0
++    {0x098C, 0x231A}, // MCU_ADDRESS [AWB_CCM_L_10]
++    {0x0990, 0x0039}, // MCU_DATA_0
++    {0x098C, 0x231C}, // MCU_ADDRESS [AWB_CCM_RL_0]
++    {0x0990, 0x007F}, // MCU_DATA_0
++    {0x098C, 0x231E}, // MCU_ADDRESS [AWB_CCM_RL_1]
++    {0x0990, 0xFF77}, // MCU_DATA_0
++    {0x098C, 0x2320}, // MCU_ADDRESS [AWB_CCM_RL_2]
++    {0x0990, 0x000A}, // MCU_DATA_0
++    {0x098C, 0x2322}, // MCU_ADDRESS [AWB_CCM_RL_3]
++    {0x0990, 0x0020}, // MCU_DATA_0
++    {0x098C, 0x2324}, // MCU_ADDRESS [AWB_CCM_RL_4]
++    {0x0990, 0x001B}, // MCU_DATA_0
++    {0x098C, 0x2326}, // MCU_ADDRESS [AWB_CCM_RL_5]
++    {0x0990, 0xFFC6}, // MCU_DATA_0
++    {0x098C, 0x2328}, // MCU_ADDRESS [AWB_CCM_RL_6]
++    {0x0990, 0x0086}, // MCU_DATA_0
++    {0x098C, 0x232A}, // MCU_ADDRESS [AWB_CCM_RL_7]
++    {0x0990, 0x00B5}, // MCU_DATA_0
++    {0x098C, 0x232C}, // MCU_ADDRESS [AWB_CCM_RL_8]
++    {0x0990, 0xFEC3}, // MCU_DATA_0
++    {0x098C, 0x232E}, // MCU_ADDRESS [AWB_CCM_RL_9]
++    {0x0990, 0x0001}, // MCU_DATA_0
++    {0x098C, 0x2330}, // MCU_ADDRESS [AWB_CCM_RL_10]
++    {0x0990, 0xFFEF}, // MCU_DATA_0
++    {0x098C, 0xA348}, // MCU_ADDRESS [AWB_GAIN_BUFFER_SPEED]
++    {0x0990, 0x0008}, // MCU_DATA_0
++    {0x098C, 0xA349}, // MCU_ADDRESS [AWB_JUMP_DIVISOR]
++    {0x0990, 0x0002}, // MCU_DATA_0
++    {0x098C, 0xA34A}, // MCU_ADDRESS [AWB_GAIN_MIN]
++    {0x0990, 0x0090}, // MCU_DATA_0
++    {0x098C, 0xA34B}, // MCU_ADDRESS [AWB_GAIN_MAX]
++    {0x0990, 0x00FF}, // MCU_DATA_0
++    {0x098C, 0xA34C}, // MCU_ADDRESS [AWB_GAINMIN_B]
++    {0x0990, 0x0075}, // MCU_DATA_0
++    {0x098C, 0xA34D}, // MCU_ADDRESS [AWB_GAINMAX_B]
++    {0x0990, 0x00EF}, // MCU_DATA_0
++    {0x098C, 0xA351}, // MCU_ADDRESS [AWB_CCM_POSITION_MIN]
++    {0x0990, 0x0000}, // MCU_DATA_0
++    {0x098C, 0xA352}, // MCU_ADDRESS [AWB_CCM_POSITION_MAX]
++    {0x0990, 0x007F}, // MCU_DATA_0
++    {0x098C, 0xA354}, // MCU_ADDRESS [AWB_SATURATION]
++    {0x0990, 0x0043}, // MCU_DATA_0
++    {0x098C, 0xA355}, // MCU_ADDRESS [AWB_MODE]
++    {0x0990, 0x0001}, // MCU_DATA_0
++    {0x098C, 0xA35D}, // MCU_ADDRESS [AWB_STEADY_BGAIN_OUT_MIN]
++    {0x0990, 0x0078}, // MCU_DATA_0
++    {0x098C, 0xA35E}, // MCU_ADDRESS [AWB_STEADY_BGAIN_OUT_MAX]
++    {0x0990, 0x0086}, // MCU_DATA_0
++    {0x098C, 0xA35F}, // MCU_ADDRESS [AWB_STEADY_BGAIN_IN_MIN]
++    {0x0990, 0x007E}, // MCU_DATA_0
++    {0x098C, 0xA360}, // MCU_ADDRESS [AWB_STEADY_BGAIN_IN_MAX]
++    {0x0990, 0x0082}, // MCU_DATA_0
++    {0x098C, 0x2361}, // MCU_ADDRESS [AWB_CNT_PXL_TH]
++    {0x0990, 0x0040}, // MCU_DATA_0
++    {0x098C, 0xA363}, // MCU_ADDRESS [AWB_TG_MIN0]
++    {0x0990, 0x00D2}, // MCU_DATA_0
++    {0x098C, 0xA364}, // MCU_ADDRESS [AWB_TG_MAX0]
++    {0x0990, 0x00F6}, // MCU_DATA_0
++    {0x098C, 0xA302}, // MCU_ADDRESS [AWB_WINDOW_POS]
++    {0x0990, 0x0000}, // MCU_DATA_0
++    {0x098C, 0xA303}, // MCU_ADDRESS [AWB_WINDOW_SIZE]
++    {0x0990, 0x00EF}, // MCU_DATA_0
++    {0x098C, 0xAB20}, // MCU_ADDRESS [HG_LL_SAT1]
++    {0x0990, 0x0024}, // MCU_DATA_0
++    // AE Setting Frame rate 7.5fps ~ 30fps
++    {0x098C, 0xA20C}, // MCU_ADDRESS
++    {0x0990, 0x0004}, // AE_MAX_INDEX
++    {0x098C, 0xA215}, // MCU_ADDRESS
++    {0x0990, 0x0004}, // AE_INDEX_TH23
++    {0x098C, 0xA20D}, // MCU_ADDRESS [AE_MIN_VIRTGAIN]
++    {0x0990, 0x0030}, // MCU_DATA_0
++    {0x098C, 0xA20E}, // MCU_ADDRESS [AE_MAX_VIRTGAIN]
++    {0x0990, 0x0080}, // MCU_DATA_0
++    // Sharpness
++    {0x098C, 0xAB22}, // MCU_ADDRESS [HG_LL_APCORR1]
++    {0x0990, 0x0001}, // MCU_DATA_0
++    // AE Gate
++    {0x098C, 0xA207}, // MCU_ADDRESS [AE_GATE]
++    {0x0990, 0x0006}, // MCU_DATA_0
++    // AE Target
++    {0x098C, 0xA24F}, // MCU_ADDRESS [AE_BASETARGET]
++    {0x0990, 0x0044}, // MCU_DATA_0
++    {0x098C, 0xAB3C}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_0]
++    {0x0990, 0x0000}, // MCU_DATA_0
++    {0x098C, 0xAB3D}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_1]
++    {0x0990, 0x0007}, // MCU_DATA_0
++    {0x098C, 0xAB3E}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_2]
++    {0x0990, 0x0016}, // MCU_DATA_0
++    {0x098C, 0xAB3F}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_3]
++    {0x0990, 0x0039}, // MCU_DATA_0
++    {0x098C, 0xAB40}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_4]
++    {0x0990, 0x005F}, // MCU_DATA_0
++    {0x098C, 0xAB41}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_5]
++    {0x0990, 0x007A}, // MCU_DATA_0
++    {0x098C, 0xAB42}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_6]
++    {0x0990, 0x008F}, // MCU_DATA_0
++    {0x098C, 0xAB43}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_7]
++    {0x0990, 0x00A1}, // MCU_DATA_0
++    {0x098C, 0xAB44}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_8]
++    {0x0990, 0x00AF}, // MCU_DATA_0
++    {0x098C, 0xAB45}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_9]
++    {0x0990, 0x00BB}, // MCU_DATA_0
++    {0x098C, 0xAB46}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_10]
++    {0x0990, 0x00C6}, // MCU_DATA_0
++    {0x098C, 0xAB47}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_11]
++    {0x0990, 0x00CF}, // MCU_DATA_0
++    {0x098C, 0xAB48}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_12]
++    {0x0990, 0x00D8}, // MCU_DATA_0
++    {0x098C, 0xAB49}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_13]
++    {0x0990, 0x00E0}, // MCU_DATA_0
++    {0x098C, 0xAB4A}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_14]
++    {0x0990, 0x00E7}, // MCU_DATA_0
++    {0x098C, 0xAB4B}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_15]
++    {0x0990, 0x00EE}, // MCU_DATA_0
++    {0x098C, 0xAB4C}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_16]
++    {0x0990, 0x00F4}, // MCU_DATA_0
++    {0x098C, 0xAB4D}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_17]
++    {0x0990, 0x00FA}, // MCU_DATA_0
++    {0x098C, 0xAB4E}, // MCU_ADDRESS [HG_GAMMA_TABLE_A_18]
++    {0x0990, 0x00FF}, // MCU_DATA_0
++    // saturation
++    {0x098C, 0xAB20}, // MCU_ADDRESS [HG_LL_SAT1]
++    {0x0990, 0x0045}, // MCU_DATA_0
++    {0x098C, 0xAB24}, // MCU_ADDRESS [HG_LL_SAT2]
++    {0x0990, 0x0034}, // MCU_DATA_0
++    {0x098C, 0xA20C}, // MCU_ADDRESS
++    {0x0990, 0x0018}, // AE_MAX_INDEX
++    {0x098C, 0xA215}, // MCU_ADDRESS
++    {0x0990, 0x0008}, // AE_INDEX_TH23
++    {0x098C, 0xA20C}, // MCU_ADDRESS
++    {0x0990, 0x0018}, // AE_MAX_INDEX
++    {0x098C, 0xA215}, // MCU_ADDRESS
++    {0x0990, 0x0018}, // AE_INDEX_TH23
++    {0x098C, 0xA34A}, // MCU_ADDRESS
++    {0x0990, 0x007A}, // MCU_DATA_0
++    {0x098C, 0xA103}, // MCU_ADDRESS
++};
++static struct msm_camera_i2c_reg_conf mt9v113_recommend_setting3[] = {
++    {0x098C, 0xA244},
++    {0x0990, 0x00BB},
++    {0x3400, 0x7a26},
++};
++
++static struct v4l2_subdev_info mt9v113_subdev_info[] = {
++	{
++		.code   = V4L2_MBUS_FMT_YUYV8_2X8,
++		.colorspace = V4L2_COLORSPACE_JPEG,
++		.fmt    = 1,
++		.order  = 0,
++	},
++};
++
++static const struct i2c_device_id mt9v113_i2c_id[] = {
++	{MT9V113_SENSOR_NAME, (kernel_ulong_t)&mt9v113_s_ctrl},
++	{ }
++};
++
++static int32_t msm_mt9v113_i2c_probe(struct i2c_client *client,
++	const struct i2c_device_id *id)
++{
++	CDBG("%s, E.", __func__);
++
++	return msm_sensor_i2c_probe(client, id, &mt9v113_s_ctrl);
++}
++
++static struct i2c_driver mt9v113_i2c_driver = {
++	.id_table = mt9v113_i2c_id,
++	.probe  = msm_mt9v113_i2c_probe,
++	.driver = {
++		.name = MT9V113_SENSOR_NAME,
++	},
++};
++
++static struct msm_camera_i2c_client mt9v113_sensor_i2c_client = {
++	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
++};
++
++static const struct of_device_id mt9v113_dt_match[] = {
++	{.compatible = "qcom,mt9v113", .data = &mt9v113_s_ctrl},
++	{}
++};
++
++MODULE_DEVICE_TABLE(of, mt9v113_dt_match);
++
++static struct platform_driver mt9v113_platform_driver = {
++	.driver = {
++		.name = "qcom,mt9v113",
++		.owner = THIS_MODULE,
++		.of_match_table = mt9v113_dt_match,
++	},
++};
++
++static int32_t mt9v113_platform_probe(struct platform_device *pdev)
++{
++	int32_t rc;
++	const struct of_device_id *match;
++	CDBG("%s, E.", __func__);
++	match = of_match_device(mt9v113_dt_match, &pdev->dev);
++	rc = msm_sensor_platform_probe(pdev, match->data);
++	return rc;
++}
++
++static int __init mt9v113_init_module(void)
++{
++	int32_t rc;
++	pr_info("%s:%d\n", __func__, __LINE__);
++	rc = platform_driver_probe(&mt9v113_platform_driver,
++		mt9v113_platform_probe);
++	if (!rc)
++		return rc;
++	pr_err("%s:%d rc %d\n", __func__, __LINE__, rc);
++	return i2c_add_driver(&mt9v113_i2c_driver);
++}
++
++static void __exit mt9v113_exit_module(void)
++{
++	pr_info("%s:%d\n", __func__, __LINE__);
++	if (mt9v113_s_ctrl.pdev) {
++		msm_sensor_free_sensor_data(&mt9v113_s_ctrl);
++		platform_driver_unregister(&mt9v113_platform_driver);
++	} else
++		i2c_del_driver(&mt9v113_i2c_driver);
++	return;
++}
++
++int32_t mt9v113_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
++	void __user *argp)
++{
++	struct sensorb_cfg_data *cdata = (struct sensorb_cfg_data *)argp;
++	long rc = 0;
++	int32_t i = 0;
++	mutex_lock(s_ctrl->msm_sensor_mutex);
++	CDBG("%s:%d %s cfgtype = %d\n", __func__, __LINE__,
++		s_ctrl->sensordata->sensor_name, cdata->cfgtype);
++	switch (cdata->cfgtype) {
++	case CFG_GET_SENSOR_INFO:
++		memcpy(cdata->cfg.sensor_info.sensor_name,
++			s_ctrl->sensordata->sensor_name,
++			sizeof(cdata->cfg.sensor_info.sensor_name));
++		cdata->cfg.sensor_info.session_id =
++			s_ctrl->sensordata->sensor_info->session_id;
++		for (i = 0; i < SUB_MODULE_MAX; i++)
++			cdata->cfg.sensor_info.subdev_id[i] =
++				s_ctrl->sensordata->sensor_info->subdev_id[i];
++		CDBG("%s:%d sensor name %s\n", __func__, __LINE__,
++			cdata->cfg.sensor_info.sensor_name);
++		CDBG("%s:%d session id %d\n", __func__, __LINE__,
++			cdata->cfg.sensor_info.session_id);
++		for (i = 0; i < SUB_MODULE_MAX; i++)
++			CDBG("%s:%d subdev_id[%d] %d\n", __func__, __LINE__, i,
++				cdata->cfg.sensor_info.subdev_id[i]);
++
++		break;
++	case CFG_SET_INIT_SETTING:
++		/* Write Recommend settings */
++		pr_err("%s, sensor write init setting!!", __func__);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0018,0x4028, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(20);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x001A,0x0011, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(10);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x001A,0x0010, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(10);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0018,0x4028, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(50);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_conf_tbl(s_ctrl->sensor_i2c_client,mt9v113_recommend_setting1,
++			ARRAY_SIZE(mt9v113_recommend_setting1),
++			MSM_CAMERA_I2C_WORD_DATA);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0014,0x244B, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(1);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0014,0x304B, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(10);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0014,0xB04A, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(1);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_conf_tbl(s_ctrl->sensor_i2c_client,mt9v113_recommend_setting2,
++			ARRAY_SIZE(mt9v113_recommend_setting2),
++			MSM_CAMERA_I2C_WORD_DATA);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0990,0x0006, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(200);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x098C,0xA103, MSM_CAMERA_I2C_WORD_DATA);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
++			s_ctrl->sensor_i2c_client,0x0990,0x0005, MSM_CAMERA_I2C_WORD_DATA);
++		msleep(100);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_conf_tbl(s_ctrl->sensor_i2c_client,mt9v113_recommend_setting3,
++			ARRAY_SIZE(mt9v113_recommend_setting3),MSM_CAMERA_I2C_WORD_DATA);
++		break;
++	case CFG_SET_RESOLUTION:
++		break;
++	case CFG_SET_STOP_STREAM:
++		pr_err("%s, sensor stop stream!!", __func__);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_conf_tbl(s_ctrl->sensor_i2c_client,
++			mt9v113_stop_settings,
++			ARRAY_SIZE(mt9v113_stop_settings),
++			MSM_CAMERA_I2C_WORD_DATA);
++		break;
++	case CFG_SET_START_STREAM:
++		pr_err("%s, sensor start stream!!", __func__);
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_conf_tbl(s_ctrl->sensor_i2c_client,
++			mt9v113_start_settings,
++			ARRAY_SIZE(mt9v113_start_settings),
++			MSM_CAMERA_I2C_WORD_DATA);
++		break;
++	case CFG_GET_SENSOR_INIT_PARAMS:
++		cdata->cfg.sensor_init_params =
++			*s_ctrl->sensordata->sensor_init_params;
++		CDBG("%s:%d init params mode %d pos %d mount %d\n", __func__,
++			__LINE__,
++			cdata->cfg.sensor_init_params.modes_supported,
++			cdata->cfg.sensor_init_params.position,
++			cdata->cfg.sensor_init_params.sensor_mount_angle);
++		break;
++	case CFG_SET_SLAVE_INFO: {
++		struct msm_camera_sensor_slave_info sensor_slave_info;
++		struct msm_sensor_power_setting_array *power_setting_array;
++		int slave_index = 0;
++		if (copy_from_user(&sensor_slave_info,
++		    (void *)cdata->cfg.setting,
++		    sizeof(struct msm_camera_sensor_slave_info))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -EFAULT;
++			break;
++		}
++		/* Update sensor slave address */
++		if (sensor_slave_info.slave_addr) {
++			s_ctrl->sensor_i2c_client->cci_client->sid =
++				sensor_slave_info.slave_addr >> 1;
++		}
++
++		/* Update sensor address type */
++		s_ctrl->sensor_i2c_client->addr_type =
++			sensor_slave_info.addr_type;
++
++		/* Update power up / down sequence */
++		s_ctrl->power_setting_array =
++			sensor_slave_info.power_setting_array;
++		power_setting_array = &s_ctrl->power_setting_array;
++		power_setting_array->power_setting = kzalloc(
++			power_setting_array->size *
++			sizeof(struct msm_sensor_power_setting), GFP_KERNEL);
++		if (!power_setting_array->power_setting) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -ENOMEM;
++			break;
++		}
++		if (copy_from_user(power_setting_array->power_setting,
++		    (void *)sensor_slave_info.power_setting_array.power_setting,
++		    power_setting_array->size *
++		    sizeof(struct msm_sensor_power_setting))) {
++			kfree(power_setting_array->power_setting);
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -EFAULT;
++			break;
++		}
++		s_ctrl->free_power_setting = true;
++		CDBG("%s sensor id %x\n", __func__,
++			sensor_slave_info.slave_addr);
++		CDBG("%s sensor addr type %d\n", __func__,
++			sensor_slave_info.addr_type);
++		CDBG("%s sensor reg %x\n", __func__,
++			sensor_slave_info.sensor_id_info.sensor_id_reg_addr);
++		CDBG("%s sensor id %x\n", __func__,
++			sensor_slave_info.sensor_id_info.sensor_id);
++		for (slave_index = 0; slave_index <
++			power_setting_array->size; slave_index++) {
++			CDBG("%s i %d power setting %d %d %ld %d\n", __func__,
++				slave_index,
++				power_setting_array->power_setting[slave_index].
++				seq_type,
++				power_setting_array->power_setting[slave_index].
++				seq_val,
++				power_setting_array->power_setting[slave_index].
++				config_val,
++				power_setting_array->power_setting[slave_index].
++				delay);
++		}
++		kfree(power_setting_array->power_setting);
++		break;
++	}
++	case CFG_WRITE_I2C_ARRAY: {
++		struct msm_camera_i2c_reg_setting conf_array;
++		struct msm_camera_i2c_reg_array *reg_setting = NULL;
++
++		if (copy_from_user(&conf_array,
++			(void *)cdata->cfg.setting,
++			sizeof(struct msm_camera_i2c_reg_setting))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -EFAULT;
++			break;
++		}
++
++		reg_setting = kzalloc(conf_array.size *
++			(sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
++		if (!reg_setting) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -ENOMEM;
++			break;
++		}
++		if (copy_from_user(reg_setting, (void *)conf_array.reg_setting,
++			conf_array.size *
++			sizeof(struct msm_camera_i2c_reg_array))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			kfree(reg_setting);
++			rc = -EFAULT;
++			break;
++		}
++
++		conf_array.reg_setting = reg_setting;
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_table(
++			s_ctrl->sensor_i2c_client, &conf_array);
++		kfree(reg_setting);
++		break;
++	}
++	case CFG_WRITE_I2C_SEQ_ARRAY: {
++		struct msm_camera_i2c_seq_reg_setting conf_array;
++		struct msm_camera_i2c_seq_reg_array *reg_setting = NULL;
++
++		if (copy_from_user(&conf_array,
++			(void *)cdata->cfg.setting,
++			sizeof(struct msm_camera_i2c_seq_reg_setting))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -EFAULT;
++			break;
++		}
++
++		reg_setting = kzalloc(conf_array.size *
++			(sizeof(struct msm_camera_i2c_seq_reg_array)),
++			GFP_KERNEL);
++		if (!reg_setting) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -ENOMEM;
++			break;
++		}
++		if (copy_from_user(reg_setting, (void *)conf_array.reg_setting,
++			conf_array.size *
++			sizeof(struct msm_camera_i2c_seq_reg_array))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			kfree(reg_setting);
++			rc = -EFAULT;
++			break;
++		}
++
++		conf_array.reg_setting = reg_setting;
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
++			i2c_write_seq_table(s_ctrl->sensor_i2c_client,
++			&conf_array);
++		kfree(reg_setting);
++		break;
++	}
++
++	case CFG_POWER_UP:
++		if (s_ctrl->func_tbl->sensor_power_up)
++			rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
++		else
++			rc = -EFAULT;
++		break;
++
++	case CFG_POWER_DOWN:
++		if (s_ctrl->func_tbl->sensor_power_down)
++			rc = s_ctrl->func_tbl->sensor_power_down(
++				s_ctrl);
++		else
++			rc = -EFAULT;
++		break;
++
++	case CFG_SET_STOP_STREAM_SETTING: {
++		struct msm_camera_i2c_reg_setting *stop_setting =
++			&s_ctrl->stop_setting;
++		struct msm_camera_i2c_reg_array *reg_setting = NULL;
++		if (copy_from_user(stop_setting, (void *)cdata->cfg.setting,
++		    sizeof(struct msm_camera_i2c_reg_setting))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -EFAULT;
++			break;
++		}
++
++		reg_setting = stop_setting->reg_setting;
++		stop_setting->reg_setting = kzalloc(stop_setting->size *
++			(sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
++		if (!stop_setting->reg_setting) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			rc = -ENOMEM;
++			break;
++		}
++		if (copy_from_user(stop_setting->reg_setting,
++		    (void *)reg_setting, stop_setting->size *
++		    sizeof(struct msm_camera_i2c_reg_array))) {
++			pr_err("%s:%d failed\n", __func__, __LINE__);
++			kfree(stop_setting->reg_setting);
++			stop_setting->reg_setting = NULL;
++			stop_setting->size = 0;
++			rc = -EFAULT;
++			break;
++		}
++		break;
++	}
++	default:
++		rc = -EFAULT;
++		break;
++	}
++
++	mutex_unlock(s_ctrl->msm_sensor_mutex);
++
++	return rc;
++}
++
++static struct msm_sensor_fn_t mt9v113_sensor_func_tbl = {
++	.sensor_config = mt9v113_sensor_config,
++	.sensor_power_up = msm_sensor_power_up,
++	.sensor_power_down = msm_sensor_power_down,
++};
++
++static struct msm_sensor_ctrl_t mt9v113_s_ctrl = {
++	.sensor_i2c_client = &mt9v113_sensor_i2c_client,
++	.power_setting_array.power_setting = mt9v113_power_setting,
++	.power_setting_array.size = ARRAY_SIZE(mt9v113_power_setting),
++	.msm_sensor_mutex = &mt9v113_mut,
++	.sensor_v4l2_subdev_info = mt9v113_subdev_info,
++	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(mt9v113_subdev_info),
++	.func_tbl = &mt9v113_sensor_func_tbl,
++};
++
++module_init(mt9v113_init_module);
++module_exit(mt9v113_exit_module);
++MODULE_DESCRIPTION("Aptina 0.3MP YUV sensor driver");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/ov5648.c b/drivers/media/platform/msm/camera_v2/sensor/ov5648.c
+new file mode 100644
+index 0000000..0e4a7ba
+--- /dev/null
++++ b/drivers/media/platform/msm/camera_v2/sensor/ov5648.c
+@@ -0,0 +1,465 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <mach/gpiomux.h>
++#include "msm_sensor.h"
++#include "msm_sd.h"
++#include "camera.h"
++#include "msm_cci.h"
++#include "msm_camera_io_util.h"
++#include "msm_camera_i2c_mux.h"
++#include <mach/rpm-regulator.h>
++#include <mach/rpm-regulator-smd.h>
++#include <linux/regulator/consumer.h>
++
++#define OV5648_SENSOR_NAME "ov5648"
++DEFINE_MSM_MUTEX(ov5648_mut);
++
++#define GPIO_CAM_VCM_PWDN 79
++
++#undef CDBG
++#define OV5648_DEBUG
++#ifdef OV5648_DEBUG
++#define CDBG(fmt, args...) pr_err(fmt, ##args)
++#else
++#define CDBG(fmt, args...) do { } while (0)
++#endif
++
++
++static struct msm_sensor_ctrl_t ov5648_s_ctrl;
++
++
++static struct msm_sensor_power_setting ov5648_power_setting[] = {
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VANA,
++		.config_val = 0,
++		.delay = 5,
++	},	
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VIO,
++		.config_val = 0,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_STANDBY,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 15,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_STANDBY,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_CLK,
++		.seq_val = SENSOR_CAM_MCLK,
++		.config_val = 24000000,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_I2C_MUX,
++		.seq_val = 0,
++		.config_val = 0,
++		.delay = 0,
++	},
++};
++
++static struct v4l2_subdev_info ov5648_subdev_info[] = {
++	{
++		.code   = V4L2_MBUS_FMT_SBGGR10_1X10,
++		.colorspace = V4L2_COLORSPACE_JPEG,
++		.fmt    = 1,
++		.order    = 0,
++	},
++};
++
++static const struct i2c_device_id ov5648_i2c_id[] = {
++	{OV5648_SENSOR_NAME, (kernel_ulong_t)&ov5648_s_ctrl},
++	{ }
++};
++
++static int32_t msm_ov5648_i2c_probe(struct i2c_client *client,
++	const struct i2c_device_id *id)
++{
++	return msm_sensor_i2c_probe(client, id, &ov5648_s_ctrl);
++}
++
++static struct i2c_driver ov5648_i2c_driver = {
++	.id_table = ov5648_i2c_id,
++	.probe  = msm_ov5648_i2c_probe,
++	.driver = {
++		.name = OV5648_SENSOR_NAME,
++	},
++};
++
++static struct msm_camera_i2c_client ov5648_sensor_i2c_client = {
++	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
++};
++
++static const struct of_device_id ov5648_dt_match[] = {
++	{.compatible = "qcom,ov5648", .data = &ov5648_s_ctrl},
++	{}
++};
++
++MODULE_DEVICE_TABLE(of, ov5648_dt_match);
++
++static struct platform_driver ov5648_platform_driver = {
++	.driver = {
++		.name = "qcom,ov5648",
++		.owner = THIS_MODULE,
++		.of_match_table = ov5648_dt_match,
++	},
++};
++
++static int32_t ov5648_platform_probe(struct platform_device *pdev)
++{
++	int32_t rc = 0;
++	const struct of_device_id *match;
++	match = of_match_device(ov5648_dt_match, &pdev->dev);
++	rc = msm_sensor_platform_probe(pdev, match->data);
++	return rc;
++}
++
++static int __init ov5648_init_module(void)
++{
++	int32_t rc = 0;
++	pr_info("%s:%d\n", __func__, __LINE__);
++	rc = platform_driver_probe(&ov5648_platform_driver,
++		ov5648_platform_probe);
++	if (!rc)
++		return rc;
++	pr_err("%s:%d rc %d\n", __func__, __LINE__, rc);
++	return i2c_add_driver(&ov5648_i2c_driver);
++}
++
++static void __exit ov5648_exit_module(void)
++{
++	pr_info("%s:%d\n", __func__, __LINE__);
++	if (ov5648_s_ctrl.pdev) {
++		msm_sensor_free_sensor_data(&ov5648_s_ctrl);
++		platform_driver_unregister(&ov5648_platform_driver);
++	} else
++		i2c_del_driver(&ov5648_i2c_driver);
++	return;
++}
++
++static int32_t ov5648_sensor_enable_i2c_mux(struct msm_camera_i2c_conf *i2c_conf)
++{
++	struct v4l2_subdev *i2c_mux_sd =
++		dev_get_drvdata(&i2c_conf->mux_dev->dev);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++		VIDIOC_MSM_I2C_MUX_INIT, NULL);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++		VIDIOC_MSM_I2C_MUX_CFG, (void *)&i2c_conf->i2c_mux_mode);
++	return 0;
++}
++
++static int32_t ov5648_sensor_disable_i2c_mux(struct msm_camera_i2c_conf *i2c_conf)
++{
++	struct v4l2_subdev *i2c_mux_sd =
++		dev_get_drvdata(&i2c_conf->mux_dev->dev);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++				VIDIOC_MSM_I2C_MUX_RELEASE, NULL);
++	return 0;
++}
++
++
++int32_t ov5648_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
++{
++	int32_t rc = 0, index = 0;
++	struct msm_sensor_power_setting_array *power_setting_array = NULL;
++	struct msm_sensor_power_setting *power_setting = NULL;
++	struct msm_camera_sensor_board_info *data = s_ctrl->sensordata;
++
++	CDBG("%s:%d\n", __func__, __LINE__);
++	power_setting_array = &s_ctrl->power_setting_array;
++
++	if (data->gpio_conf->cam_gpiomux_conf_tbl != NULL) {
++		pr_err("%s:%d mux install\n", __func__, __LINE__);
++		msm_gpiomux_install(
++			(struct msm_gpiomux_config *)
++			data->gpio_conf->cam_gpiomux_conf_tbl,
++			data->gpio_conf->cam_gpiomux_conf_tbl_size);
++	}
++
++	rc = msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 1);
++	if (rc < 0) {
++		pr_err("%s: request gpio failed\n", __func__);
++		return rc;
++	}
++	for (index = 0; index < power_setting_array->size; index++) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			if (power_setting->seq_val >= s_ctrl->clk_info_size) {
++				pr_err("%s clk index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					s_ctrl->clk_info_size);
++				goto power_up_failed;
++			}
++			if (power_setting->config_val)
++				s_ctrl->clk_info[power_setting->seq_val].
++					clk_rate = power_setting->config_val;
++
++			rc = msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				1);
++			if (rc < 0) {
++				pr_err("%s: clk enable failed\n",
++					__func__);
++				goto power_up_failed;
++			}
++			break;
++		case SENSOR_GPIO:
++			if (power_setting->seq_val >= SENSOR_GPIO_MAX ||
++				!data->gpio_conf->gpio_num_info) {
++				pr_err("%s gpio index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				goto power_up_failed;
++			}
++			pr_debug("%s:%d gpio set val %d\n", __func__, __LINE__,
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val]);
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val],
++				power_setting->config_val);		
++			break;
++		case SENSOR_VREG:
++			if (power_setting->seq_val >= CAM_VREG_MAX) {
++				pr_err("%s vreg index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				goto power_up_failed;
++			}
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				1);
++
++			gpio_set_value_cansleep(GPIO_CAM_VCM_PWDN,1); //disable vcm_pwdn
++			
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				ov5648_sensor_enable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_INIT);
++		if (rc < 0) {
++			pr_err("%s cci_init failed\n", __func__);
++			goto power_up_failed;
++		}
++	}
++
++	if (s_ctrl->func_tbl->sensor_match_id)
++		rc = s_ctrl->func_tbl->sensor_match_id(s_ctrl);
++	else
++		rc = msm_sensor_match_id(s_ctrl);
++	if (rc < 0) {
++		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
++		goto power_up_failed;
++	}
++
++	CDBG("%s exit\n", __func__);
++	return 0;
++power_up_failed:
++	pr_err("%s:%d failed\n", __func__, __LINE__);
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_RELEASE);
++	}
++
++	for (index--; index >= 0; index--) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				0);
++			break;
++		case SENSOR_GPIO:
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
++			break;
++		case SENSOR_VREG:
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				0);
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				ov5648_sensor_disable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++	msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 0);
++	return rc;
++}
++
++int32_t ov5648_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
++{
++	int32_t index = 0;
++	struct msm_sensor_power_setting_array *power_setting_array = NULL;
++	struct msm_sensor_power_setting *power_setting = NULL;
++	struct msm_camera_sensor_board_info *data = s_ctrl->sensordata;
++	s_ctrl->stop_setting_valid = 0;
++
++	CDBG("%s:%d\n", __func__, __LINE__);
++	power_setting_array = &s_ctrl->power_setting_array;
++
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_RELEASE);
++	}
++
++	for (index = (power_setting_array->size - 1); index >= 0; index--) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				0);
++			break;
++		case SENSOR_GPIO:
++			if (power_setting->seq_val >= SENSOR_GPIO_MAX ||
++				!data->gpio_conf->gpio_num_info) {
++				pr_err("%s gpio index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				continue;
++			}
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
++			break;
++		case SENSOR_VREG:
++			if (power_setting->seq_val >= CAM_VREG_MAX) {
++				pr_err("%s vreg index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				continue;
++			}
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				0);
++
++			gpio_set_value_cansleep(GPIO_CAM_VCM_PWDN,0); //enable vcm_pwdn
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				ov5648_sensor_disable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++	msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 0);
++	CDBG("%s exit\n", __func__);
++
++	return 0;
++}
++
++
++
++static struct msm_sensor_fn_t ov5648_sensor_func_tbl = {
++	.sensor_config = msm_sensor_config,
++	.sensor_power_up = ov5648_sensor_power_up,
++	.sensor_power_down = ov5648_sensor_power_down,
++	.sensor_match_id = msm_sensor_match_id,
++};
++
++
++static struct msm_sensor_ctrl_t ov5648_s_ctrl = {
++	.sensor_i2c_client = &ov5648_sensor_i2c_client,
++	.power_setting_array.power_setting = ov5648_power_setting,
++	.power_setting_array.size = ARRAY_SIZE(ov5648_power_setting),
++	.msm_sensor_mutex = &ov5648_mut,
++	.sensor_v4l2_subdev_info = ov5648_subdev_info,
++	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(ov5648_subdev_info),
++	.func_tbl = &ov5648_sensor_func_tbl,
++};
++
++module_init(ov5648_init_module);
++module_exit(ov5648_exit_module);
++MODULE_DESCRIPTION("ov5648");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/s5k4h5.c b/drivers/media/platform/msm/camera_v2/sensor/s5k4h5.c
+new file mode 100644
+index 0000000..64870fd
+--- /dev/null
++++ b/drivers/media/platform/msm/camera_v2/sensor/s5k4h5.c
+@@ -0,0 +1,459 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <mach/gpiomux.h>
++#include "msm_sensor.h"
++#include "msm_sd.h"
++#include "camera.h"
++#include "msm_cci.h"
++#include "msm_camera_io_util.h"
++#include "msm_camera_i2c_mux.h"
++#include <mach/rpm-regulator.h>
++#include <mach/rpm-regulator-smd.h>
++#include <linux/regulator/consumer.h>
++
++#define S5K4H5_SENSOR_NAME "s5k4h5"
++DEFINE_MSM_MUTEX(s5k4h5_mut);
++
++#define GPIO_CAM_DVDD_EN 101
++
++#undef CDBG
++#define S5K4H5_DEBUG
++#ifdef S5K4H5_DEBUG
++#define CDBG(fmt, args...) pr_err(fmt, ##args)
++#else
++#define CDBG(fmt, args...) do { } while (0)
++#endif
++
++static struct msm_sensor_ctrl_t s5k4h5_s_ctrl;
++
++static struct msm_sensor_power_setting s5k4h5_power_setting[] = {
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VANA,
++		.config_val = 0,
++		.delay = 5,
++	},	
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VIO,
++		.config_val = 0,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 40,
++	},
++	{
++		.seq_type = SENSOR_CLK,
++		.seq_val = SENSOR_CAM_MCLK,
++		.config_val = 24000000,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_I2C_MUX,
++		.seq_val = 0,
++		.config_val = 0,
++		.delay = 0,
++	},
++};
++
++static struct v4l2_subdev_info s5k4h5_subdev_info[] = {
++	{
++		.code   = V4L2_MBUS_FMT_SGRBG10_1X10,
++		.colorspace = V4L2_COLORSPACE_JPEG,
++		.fmt    = 1,
++		.order    = 0,
++	},
++};
++
++static const struct i2c_device_id s5k4h5_i2c_id[] = {
++	{S5K4H5_SENSOR_NAME, (kernel_ulong_t)&s5k4h5_s_ctrl},
++	{ }
++};
++
++static int32_t msm_s5k4h5_i2c_probe(struct i2c_client *client,
++	const struct i2c_device_id *id)
++{
++	return msm_sensor_i2c_probe(client, id, &s5k4h5_s_ctrl);
++}
++
++static struct i2c_driver s5k4h5_i2c_driver = {
++	.id_table = s5k4h5_i2c_id,
++	.probe  = msm_s5k4h5_i2c_probe,
++	.driver = {
++		.name = S5K4H5_SENSOR_NAME,
++	},
++};
++
++static struct msm_camera_i2c_client s5k4h5_sensor_i2c_client = {
++	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
++};
++
++static const struct of_device_id s5k4h5_dt_match[] = {
++	{.compatible = "qcom,s5k4h5", .data = &s5k4h5_s_ctrl},
++	{}
++};
++
++MODULE_DEVICE_TABLE(of, s5k4h5_dt_match);
++
++static struct platform_driver s5k4h5_platform_driver = {
++	.driver = {
++		.name = "qcom,s5k4h5",
++		.owner = THIS_MODULE,
++		.of_match_table = s5k4h5_dt_match,
++	},
++};
++
++static int32_t s5k4h5_platform_probe(struct platform_device *pdev)
++{
++	int32_t rc = 0;
++	const struct of_device_id *match;
++	match = of_match_device(s5k4h5_dt_match, &pdev->dev);
++	rc = msm_sensor_platform_probe(pdev, match->data);
++	return rc;
++}
++
++static int __init s5k4h5_init_module(void)
++{
++	int32_t rc = 0;
++	pr_info("%s:%d\n", __func__, __LINE__);
++	rc = platform_driver_probe(&s5k4h5_platform_driver,
++		s5k4h5_platform_probe);
++	if (!rc)
++		return rc;
++	pr_err("%s:%d rc %d\n", __func__, __LINE__, rc);
++	return i2c_add_driver(&s5k4h5_i2c_driver);
++}
++
++static void __exit s5k4h5_exit_module(void)
++{
++	pr_info("%s:%d\n", __func__, __LINE__);
++	if (s5k4h5_s_ctrl.pdev) {
++		msm_sensor_free_sensor_data(&s5k4h5_s_ctrl);
++		platform_driver_unregister(&s5k4h5_platform_driver);
++	} else
++		i2c_del_driver(&s5k4h5_i2c_driver);
++	return;
++}
++
++static int32_t s5k4h5_sensor_enable_i2c_mux(struct msm_camera_i2c_conf *i2c_conf)
++{
++	struct v4l2_subdev *i2c_mux_sd =
++		dev_get_drvdata(&i2c_conf->mux_dev->dev);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++		VIDIOC_MSM_I2C_MUX_INIT, NULL);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++		VIDIOC_MSM_I2C_MUX_CFG, (void *)&i2c_conf->i2c_mux_mode);
++	return 0;
++}
++
++static int32_t s5k4h5_sensor_disable_i2c_mux(struct msm_camera_i2c_conf *i2c_conf)
++{
++	struct v4l2_subdev *i2c_mux_sd =
++		dev_get_drvdata(&i2c_conf->mux_dev->dev);
++	v4l2_subdev_call(i2c_mux_sd, core, ioctl,
++				VIDIOC_MSM_I2C_MUX_RELEASE, NULL);
++	return 0;
++}
++
++int32_t s5k4h5_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
++{
++	int32_t rc = 0, index = 0;
++	struct msm_sensor_power_setting_array *power_setting_array = NULL;
++	struct msm_sensor_power_setting *power_setting = NULL;
++	struct msm_camera_sensor_board_info *data = s_ctrl->sensordata;
++
++	CDBG("%s:%d\n", __func__, __LINE__);
++	power_setting_array = &s_ctrl->power_setting_array;
++
++	if (data->gpio_conf->cam_gpiomux_conf_tbl != NULL) {
++		pr_err("%s:%d mux install\n", __func__, __LINE__);
++		msm_gpiomux_install(
++			(struct msm_gpiomux_config *)
++			data->gpio_conf->cam_gpiomux_conf_tbl,
++			data->gpio_conf->cam_gpiomux_conf_tbl_size);
++	}
++
++	rc = msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 1);
++	if (rc < 0) {
++		pr_err("%s: request gpio failed\n", __func__);
++		return rc;
++	}
++	for (index = 0; index < power_setting_array->size; index++) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			if (power_setting->seq_val >= s_ctrl->clk_info_size) {
++				pr_err("%s clk index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					s_ctrl->clk_info_size);
++				goto power_up_failed;
++			}
++			if (power_setting->config_val)
++				s_ctrl->clk_info[power_setting->seq_val].
++					clk_rate = power_setting->config_val;
++
++			rc = msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				1);
++			if (rc < 0) {
++				pr_err("%s: clk enable failed\n",
++					__func__);
++				goto power_up_failed;
++			}
++			break;
++		case SENSOR_GPIO:
++			if (power_setting->seq_val >= SENSOR_GPIO_MAX ||
++				!data->gpio_conf->gpio_num_info) {
++				pr_err("%s gpio index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				goto power_up_failed;
++			}
++			pr_debug("%s:%d gpio set val %d\n", __func__, __LINE__,
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val]);
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val],
++				power_setting->config_val);		
++			break;
++		case SENSOR_VREG:
++			if (power_setting->seq_val >= CAM_VREG_MAX) {
++				pr_err("%s vreg index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				goto power_up_failed;
++			}
++
++			gpio_set_value_cansleep(GPIO_CAM_DVDD_EN,1); //enable dvdd_en	
++			
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				1);
++
++			gpio_set_value_cansleep(79,1); //enable vcm
++			
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				s5k4h5_sensor_enable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_INIT);
++		if (rc < 0) {
++			pr_err("%s cci_init failed\n", __func__);
++			goto power_up_failed;
++		}
++	}
++
++	if (s_ctrl->func_tbl->sensor_match_id)
++		rc = s_ctrl->func_tbl->sensor_match_id(s_ctrl);
++	else
++		rc = msm_sensor_match_id(s_ctrl);
++	if (rc < 0) {
++		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
++		goto power_up_failed;
++	}
++
++	CDBG("%s exit\n", __func__);
++	return 0;
++power_up_failed:
++	pr_err("%s:%d failed\n", __func__, __LINE__);
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_RELEASE);
++	}
++
++	for (index--; index >= 0; index--) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				0);
++			break;
++		case SENSOR_GPIO:
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
++			break;
++		case SENSOR_VREG:
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				0);
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				s5k4h5_sensor_disable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++	msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 0);
++	return rc;
++}
++
++int32_t s5k4h5_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
++{
++#if 1
++	int32_t index = 0;
++	struct msm_sensor_power_setting_array *power_setting_array = NULL;
++	struct msm_sensor_power_setting *power_setting = NULL;
++	struct msm_camera_sensor_board_info *data = s_ctrl->sensordata;
++	s_ctrl->stop_setting_valid = 0;
++
++	CDBG("%s:%d\n", __func__, __LINE__);
++	power_setting_array = &s_ctrl->power_setting_array;
++
++	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
++		s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_util(
++			s_ctrl->sensor_i2c_client, MSM_CCI_RELEASE);
++	}
++
++	for (index = (power_setting_array->size - 1); index >= 0; index--) {
++		CDBG("%s index %d\n", __func__, index);
++		power_setting = &power_setting_array->power_setting[index];
++		CDBG("%s type %d\n", __func__, power_setting->seq_type);
++		switch (power_setting->seq_type) {
++		case SENSOR_CLK:
++			msm_cam_clk_enable(s_ctrl->dev,
++				&s_ctrl->clk_info[0],
++				(struct clk **)&power_setting->data[0],
++				s_ctrl->clk_info_size,
++				0);
++			break;
++		case SENSOR_GPIO:
++			if (power_setting->seq_val >= SENSOR_GPIO_MAX ||
++				!data->gpio_conf->gpio_num_info) {
++				pr_err("%s gpio index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				continue;
++			}
++			gpio_set_value_cansleep(
++				data->gpio_conf->gpio_num_info->gpio_num
++				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
++			break;
++		case SENSOR_VREG:
++			if (power_setting->seq_val >= CAM_VREG_MAX) {
++				pr_err("%s vreg index %d >= max %d\n", __func__,
++					power_setting->seq_val,
++					SENSOR_GPIO_MAX);
++				continue;
++			}
++			msm_camera_config_single_vreg(s_ctrl->dev,
++				&data->cam_vreg[power_setting->seq_val],
++				(struct regulator **)&power_setting->data[0],
++				0);
++
++			gpio_set_value_cansleep(GPIO_CAM_DVDD_EN,0); //disable dvdd_en
++			gpio_set_value_cansleep(79,0); //disable vcm
++
++			break;
++		case SENSOR_I2C_MUX:
++			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
++				s5k4h5_sensor_disable_i2c_mux(data->i2c_conf);
++			break;
++		default:
++			pr_err("%s error power seq type %d\n", __func__,
++				power_setting->seq_type);
++			break;
++		}
++		if (power_setting->delay > 20) {
++			msleep(power_setting->delay);
++		} else if (power_setting->delay) {
++			usleep_range(power_setting->delay * 1000,
++				(power_setting->delay * 1000) + 1000);
++		}
++	}
++	msm_camera_request_gpio_table(
++		data->gpio_conf->cam_gpio_req_tbl,
++		data->gpio_conf->cam_gpio_req_tbl_size, 0);
++	CDBG("%s exit\n", __func__);
++#endif
++	return 0;
++}
++
++static struct msm_sensor_fn_t s5k4h5_sensor_func_tbl = {
++	.sensor_config = msm_sensor_config,
++	.sensor_power_up = s5k4h5_sensor_power_up,
++	.sensor_power_down = s5k4h5_sensor_power_down,
++	.sensor_match_id = msm_sensor_match_id,
++};
++
++static struct msm_sensor_ctrl_t s5k4h5_s_ctrl = {
++	.sensor_i2c_client = &s5k4h5_sensor_i2c_client,
++	.power_setting_array.power_setting = s5k4h5_power_setting,
++	.power_setting_array.size = ARRAY_SIZE(s5k4h5_power_setting),
++	.msm_sensor_mutex = &s5k4h5_mut,
++	.sensor_v4l2_subdev_info = s5k4h5_subdev_info,
++	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(s5k4h5_subdev_info),
++	.func_tbl = &s5k4h5_sensor_func_tbl,
++};
++
++module_init(s5k4h5_init_module);
++module_exit(s5k4h5_exit_module);
++MODULE_DESCRIPTION("s5k4h5");
++MODULE_LICENSE("GPL v2");
+-- 
+1.7.8.3
+

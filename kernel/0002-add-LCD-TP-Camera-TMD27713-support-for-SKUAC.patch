@@ -1,7 +1,7 @@
-From 40a5b6394b8d06543ea494c63238a788d04d8ff1 Mon Sep 17 00:00:00 2001
+From b03f3bc8e1bc9d3d2e08d7f77c39e9592082d6c1 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 5 Jul 2013 17:30:58 +0800
-Subject: [PATCH 2/3] add LCD/TP/Camera/TMD27713 support for SKUAC
+Subject: [PATCH 02/15] add LCD/TP/Camera/TMD27713 support for SKUAC
 
 Change-Id: I5940b72636327a06e741c8acff0d823533c49127
 ---
@@ -19097,7 +19097,7 @@ index 0000000..aee4124
 +MODULE_AUTHOR("Cypress Semiconductor");
 diff --git a/drivers/input/touchscreen/cypress/cyttsp4_mtb.c b/drivers/input/touchscreen/cypress/cyttsp4_mtb.c
 new file mode 100644
-index 0000000..19c96c4
+index 0000000..19c96c4c
 --- /dev/null
 +++ b/drivers/input/touchscreen/cypress/cyttsp4_mtb.c
 @@ -0,0 +1,115 @@

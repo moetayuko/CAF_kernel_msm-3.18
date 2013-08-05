@@ -1,4 +1,4 @@
-From 21e2736bc61a4682586328e8a8878fa39daba734 Mon Sep 17 00:00:00 2001
+From cdec1b44b71c3314250bfd0b700b3e00c59e791a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 17:58:37 +0800
 Subject: [PATCH] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype support

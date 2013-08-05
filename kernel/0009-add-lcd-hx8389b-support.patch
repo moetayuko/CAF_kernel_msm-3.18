@@ -1,0 +1,147 @@
+From e5cb5f3662e6f947df4efa8bfcc0cca7c32ce676 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:24:44 +0800
+Subject: [PATCH 09/15] add lcd hx8389b support
+
+Change-Id: Ia080c576a32f444eb69bd0d14be8334b5185da7b
+---
+ .../boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi   |  112 ++++++++++++++++++++
+ arch/arm/boot/dts/msm8610-qrd-skuac.dts            |    3 +-
+ 2 files changed, 114 insertions(+), 1 deletions(-)
+ create mode 100644 arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+new file mode 100644
+index 0000000..cf942be
+--- /dev/null
++++ b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+@@ -0,0 +1,112 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/ {
++	qcom,dsi_v2_hx8389b_qhd_video {
++		compatible = "qcom,dsi-panel-v2";
++		label = "HX8389B QHD video mode dsi panel";
++		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
++		qcom,rst-gpio = <&msmgpio 41 0>;
++		vdda-supply = <&pm8110_l19>;
++		vddio-supply=<&pm8110_l6>;
++		qcom,mdss-pan-res = <540 960>;
++		qcom,mdss-pan-bpp = <24>;
++		qcom,mdss-pan-dest = "display_1";
++		qcom,mdss-pan-porch-values = <96 96 96 15 5 10>;
++		qcom,mdss-pan-underflow-clr = <0xff>;
++		qcom,mdss-pan-bl-levels = <1 255>;
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-dsi-mode = <0>;
++		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
++		qcom,mdss-pan-dsi-h-power-stop = <1 1 1>;
++		qcom,mdss-pan-dsi-bllp-power-stop = <1 1>;
++		qcom,mdss-pan-dsi-traffic-mode = <2>;
++		qcom,mdss-pan-dsi-dst-format = <3>;
++		qcom,mdss-pan-dsi-vc = <0>;
++		qcom,mdss-pan-dsi-rgb-swap = <0>;
++		qcom,mdss-pan-dsi-data-lanes = <1 1 0 0>;
++		qcom,mdss-pan-dsi-dlane-swap = <1>;
++		qcom,mdss-pan-dsi-t-clk = <0x1b 0x04>;
++		qcom,mdss-pan-dsi-stream = <0>;
++		qcom,mdss-pan-dsi-mdp-tr = <0x0>;/*todo*/
++		qcom,mdss-pan-dsi-dma-tr = <0x04>;
++		qcom,mdss-pan-dsi-frame-rate = <60>;
++		qcom,panel-phy-regulatorSettings =[09 08 05 00 20 03];
++		qcom,panel-phy-timingSettings = [8b 12 14  00 45 4a
++						 19 23 23  03 04 00];
++		qcom,panel-phy-strengthCtrl = [ff 06];
++		qcom,panel-phy-bistCtrl = [03 03 00 00 0f 00];
++		qcom,panel-phy-laneConfig =
++					[80 45 00 00 01 66 /*lane0**/
++					80 45 00 00 01 66 /*lane1*/
++					80 45 00 00 01 66 /*lane2*/
++					80 45 00 00 01 66 /*lane3*/
++					40 67 00 00 01 88]; /*Clk*/
++
++		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
++		qcom,panel-on-cmds = [39 01 00 00 00 04
++						B9 FF 83 89
++					39 01 00 00 01 08
++						BA 41 93 00 16 A4 10 18
++					39 01 00 00 01 02
++						C6 08
++					39 01 00 00 01 14
++						B1 00 00 07 EF 97 10 11
++						94 F1 26 2E 3F 3F 42 01
++						32 F7 20 80
++					39 01 00 00 0a 04
++						DE 05 58 10
++					39 01 00 00 00 08
++						B2 00 00 78 0E 03 3F 80
++					39 01 00 00 01 18
++						B4 80 08 00 32 10 07 32
++						10 07 32 10 07 27 01 5A
++						0B 37 05 4C 14 50 5B 0a
++					39 01 00 00 0a 31
++						D5 00 00 00 00 01 00 00
++						00 60 00 99 88 88 88 88
++						23 88 01 88 67 88 45 01
++						23 23 88 88 88 88 88 99
++						88 88 88 54 88 76 88 10
++						88 32 32 10 88 88 88 88
++						88
++					39 01 00 00 0a 23
++						E0 01 1B 21 34 32 3F 32
++						4B 07 0D 10 13 16 13 14
++						0F 19 01 1B 21 34 32 3F
++						32 4B 07 0D 10 13 16 13
++						14 0F 19
++					39 01 00 00 05 05
++						B6 00 89 00 89
++					39 01 00 00 01 02
++						CC 02
++					39 01 00 00 00 04
++						B7 00 00 50
++					39 01 00 00 00 02
++						E6 01
++					39 01 00 00 00 02
++						E4 00
++					39 01 00 00 0a 02
++						51 64
++					39 01 00 00 00 02
++						53 24
++					39 01 00 00 00 02
++						55 01
++					05 01 00 00 0a 02
++						11 00
++					05 01 00 00 78 02
++						29 00];
++		qcom,panel-off-cmds = [05 01 00 00 32 02 28 00
++					05 01 00 00 78 02 10 00];
++		qcom,off-cmds-dsi-state = "DSI_LP_MODE";
++	};
++};
+diff --git a/arch/arm/boot/dts/msm8610-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+index 21920df..c40b7e2 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-skuac.dts
++++ b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+@@ -13,7 +13,8 @@
+ /dts-v1/;
+ 
+ /include/ "msm8610.dtsi"
+-/include/ "dsi-v2-panel-otm9605a-qhd-video.dtsi"
++///include/ "dsi-v2-panel-otm9605a-qhd-video.dtsi"
++/include/ "dsi-v2-panel-hx8389b-qhd-video.dtsi"
+ /include/ "msm8610-qrd-camera-sensor.dtsi"
+ 
+ / {
+-- 
+1.7.8.3
+

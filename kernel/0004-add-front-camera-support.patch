@@ -1,7 +1,7 @@
-From c3af82637af99ae129b7e24c027fc361f4ef32a3 Mon Sep 17 00:00:00 2001
+From 99f89220571f47c29eaa69c9a04c3b30872b153a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 8 Jul 2013 20:46:19 +0800
-Subject: [PATCH] add front camera support
+Subject: [PATCH 04/15] add front camera support
 
 Change-Id: I9482afe81a5c8754b97bf5acd0b70171110cb08a
 ---

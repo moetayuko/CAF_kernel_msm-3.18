@@ -1,0 +1,47 @@
+From f11bdf693489fd460649060526da72a302351c65 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:21:54 +0800
+Subject: [PATCH 06/15] add panel id debug node
+
+Change-Id: I8b63f30722eb08a154570991be4cb15c44d1954c
+---
+ drivers/input/touchscreen/cypress/cyttsp4_core.c |   16 ++++++++++++++++
+ 1 files changed, 16 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/input/touchscreen/cypress/cyttsp4_core.c b/drivers/input/touchscreen/cypress/cyttsp4_core.c
+index 74fbe0e..d48c87d 100644
+--- a/drivers/input/touchscreen/cypress/cyttsp4_core.c
++++ b/drivers/input/touchscreen/cypress/cyttsp4_core.c
+@@ -3388,6 +3388,21 @@ static const struct dev_pm_ops cyttsp4_core_pm_ops = {
+ };
+ 
+ /*
++ * Show Panel ID via sysfs
++ */
++static ssize_t cyttsp4_panel_id_show(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct cyttsp4_core_data *cd = dev_get_drvdata(dev);
++
++	if (!cd->sysinfo.ready)
++		return sprintf(buf, "SysInfo not ready!\n");
++
++	return sprintf(buf, "%d\n",
++			GET_PANELID(cd->sysinfo.si_ptrs.pcfg->panel_info0));
++}
++
++/*
+  * Show Firmware version via sysfs
+  */
+ static ssize_t cyttsp4_ic_ver_show(struct device *dev,
+@@ -3692,6 +3707,7 @@ static ssize_t cyttsp4_easy_wakeup_gesture_store(struct device *dev,
+ }
+ 
+ static struct device_attribute attributes[] = {
++	__ATTR(panel_id, S_IRUGO, cyttsp4_panel_id_show, NULL),
+ 	__ATTR(ic_ver, S_IRUGO, cyttsp4_ic_ver_show, NULL),
+ 	__ATTR(ttconfig_ver, S_IRUGO, cyttsp4_ttconfig_ver_show, NULL),
+ 	__ATTR(drv_ver, S_IRUGO, cyttsp4_drv_ver_show, NULL),
+-- 
+1.7.8.3
+

@@ -1,0 +1,100 @@
+From a561328de5322fe2824008045ed3cca776577a2a Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:44:16 +0800
+Subject: [PATCH 13/15] enable ov8850 vcm pwdn and fix flash led crash issue
+
+Change-Id: I03c938c4c637a50adb85b02b3b0383e110d34a8c
+---
+ drivers/leds/leds-msm-i2c-flash.c                  |   18 ++++++++++++------
+ drivers/leds/leds-msm-i2c-flash.h                  |    1 +
+ .../media/platform/msm/camera_v2/sensor/ov8850.c   |    3 +++
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+ mode change 100644 => 100755 drivers/leds/leds-msm-i2c-flash.c
+ mode change 100644 => 100755 drivers/leds/leds-msm-i2c-flash.h
+
+diff --git a/drivers/leds/leds-msm-i2c-flash.c b/drivers/leds/leds-msm-i2c-flash.c
+old mode 100644
+new mode 100755
+index 665d1f9..ef00b68
+--- a/drivers/leds/leds-msm-i2c-flash.c
++++ b/drivers/leds/leds-msm-i2c-flash.c
+@@ -475,22 +475,25 @@ static ssize_t lm3642_flash_timeout_store(struct device *dev,
+     return size;
+ }
+ 
+-static void led_i2c_brightness_set(struct led_classdev *led_cdev,
+-				    enum led_brightness value)
++static void led_i2c_brightness_set_led_work(struct work_struct *work)
+ {
+-
+-    if(value > LED_HALF) {
++    if(lm3642->pdata->brightness > LED_HALF) {
+         turn_off_torch(lm3642);
+         turn_on_flash(lm3642);
+-    } else if(value > LED_OFF) {
++    } else if(lm3642->pdata->brightness > LED_OFF) {
+         turn_off_flash(lm3642);
+         turn_on_torch(lm3642);
+     } else {
+         turn_off_flash(lm3642);
+         turn_off_torch(lm3642);
+     }
++}
+ 
+-    lm3642->pdata->brightness = value;
++static void led_i2c_brightness_set(struct led_classdev *led_cdev,
++				    enum led_brightness value)
++{
++	lm3642->pdata->brightness = value;
++	schedule_work(&lm3642->pdata->work);
+ }
+ 
+ static enum led_brightness led_i2c_brightness_get(struct led_classdev *led_cdev)
+@@ -548,6 +551,9 @@ static int lm3642_probe(struct i2c_client *client,
+ 		return -EINVAL;
+ 	}
+ 
++	INIT_WORK(&pdata->work, led_i2c_brightness_set_led_work);
++
++	pdata->brightness = 0;
+     pdata->flash_current = FLASH_I_DEFAULT;
+     pdata->torch_current = TORCH_I_DEFAULT;
+     pdata->timeout = FLASH_TIMEOUT_DEFAULT;
+diff --git a/drivers/leds/leds-msm-i2c-flash.h b/drivers/leds/leds-msm-i2c-flash.h
+old mode 100644
+new mode 100755
+index aabf1e0..0a5a3d3
+--- a/drivers/leds/leds-msm-i2c-flash.h
++++ b/drivers/leds/leds-msm-i2c-flash.h
+@@ -63,6 +63,7 @@ struct lm3642_platform_data {
+     enum flash_current_level flash_current;
+     enum flash_timeout timeout;    
+     int brightness;
++	struct work_struct work;
+     struct led_classdev cdev;
+ };
+ 
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/ov8850.c b/drivers/media/platform/msm/camera_v2/sensor/ov8850.c
+index 9ab2e4d..f347b64 100644
+--- a/drivers/media/platform/msm/camera_v2/sensor/ov8850.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/ov8850.c
+@@ -267,6 +267,7 @@ int32_t ov8850_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
+ 				1);
+ 
+ 			gpio_set_value_cansleep(GPIO_CAM_DVDD_EN,1); //enable dvdd_en
++                        gpio_set_value_cansleep(79,1); //enable vcm
+ 			
+ 			break;
+ 		case SENSOR_I2C_MUX:
+@@ -411,6 +412,8 @@ int32_t ov8850_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
+ 				0);
+ 
+ 			gpio_set_value_cansleep(GPIO_CAM_DVDD_EN,0); //disable dvdd_en
++                        gpio_set_value_cansleep(79,0); //disable vcm
++
+ 			break;
+ 		case SENSOR_I2C_MUX:
+ 			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
+-- 
+1.7.8.3
+

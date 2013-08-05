@@ -1,0 +1,30 @@
+From 23a9cbc163197ebd3e28a6b4dc8d935f4d94d207 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Thu, 1 Aug 2013 16:26:41 +0800
+Subject: [PATCH 10/15] add HX8389-B PWM ON sequence
+
+Change-Id: I9e186a0a66ab064b80c9f0f7fb5091a81c779a50
+---
+ .../boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi   |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+index cf942be..ef75480 100644
+--- a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+@@ -55,6 +55,12 @@
+ 		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
+ 		qcom,panel-on-cmds = [39 01 00 00 00 04
+ 						B9 FF 83 89
++					39 01 00 00 00 02
++						51 ff
++					39 01 00 00 00 02
++						53 24
++					39 01 00 00 05 02
++						55 00
+ 					39 01 00 00 01 08
+ 						BA 41 93 00 16 A4 10 18
+ 					39 01 00 00 01 02
+-- 
+1.7.8.3
+

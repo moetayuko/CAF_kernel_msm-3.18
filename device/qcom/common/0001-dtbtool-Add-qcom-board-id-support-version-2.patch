@@ -1,4 +1,4 @@
-From 0227f618ca5ef905acca5ae84d9879f314c34bde Mon Sep 17 00:00:00 2001
+From e12f6d421dddeb1ec5e1f337d04d58f684062d05 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Wed, 29 May 2013 20:04:43 -0700
 Subject: [PATCH] dtbtool: Add qcom,board-id support (version 2)
