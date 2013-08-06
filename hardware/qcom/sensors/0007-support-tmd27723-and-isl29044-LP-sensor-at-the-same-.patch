@@ -1,0 +1,112 @@
+From 96c53e2c49dedf4233c171ab04e2b43666ee59b0 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 6 Aug 2013 10:10:25 +0800
+Subject: [PATCH 7/7] support tmd27723 and isl29044 LP sensor at the same time
+
+Change-Id: I2ad48a63c4eed09be8eec882563e1117f565c6aa
+---
+ Android.mk          |    5 +++--
+ LightSensor.cpp     |    5 +++--
+ ProximitySensor.cpp |    2 +-
+ sensors.cpp         |   16 ++++++++--------
+ 4 files changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index ef03643..05ae48c 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -19,11 +19,12 @@ ifeq ($(call is-board-platform,msm8960),true)
+   LOCAL_CFLAGS += -DTARGET_8930
+ endif
+ 
+-LOCAL_CFLAGS += -DTMD27713_SENSOR
++#LOCAL_CFLAGS += -DTMD27713_SENSOR
+ LOCAL_SRC_FILES :=	\
+ 		sensors.cpp 			\
+ 		SensorBase.cpp			\
+-		TmdSensor.cpp			\
++		ProximitySensor.cpp		\
++		LightSensor.cpp			\
+ 		AkmSensor.cpp			\
+ 		Accelerometer.cpp				\
+ 		Mpu3050.cpp				\
+diff --git a/LightSensor.cpp b/LightSensor.cpp
+index a97e3fd..f6f2166 100644
+--- a/LightSensor.cpp
++++ b/LightSensor.cpp
+@@ -75,7 +75,7 @@ int LightSensor::enable(int32_t handle, int en)
+ 	int flags = en ? 1 : 0;
+ 	if (flags != mEnabled) {
+ 		int fd;
+-		strcpy(&input_sysfs_path[input_sysfs_path_len], "enable");
++		strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_als_sensor");
+ 		fd = open(input_sysfs_path, O_RDWR);
+ 		if (fd >= 0) {
+ 			char buf[2];
+@@ -128,7 +128,8 @@ int LightSensor::readEvents(sensors_event_t* data, int count)
+ 				// R = 47kOhm
+ 				// Max adc value 4095 = 3.3V
+ 				// 1/4 of light reaches sensor
+-				mPendingEvent.light = powf(10, event->value * (330.0f / 4095.0f / 47.0f)) * 4;
++				//mPendingEvent.light = powf(10, event->value * (330.0f / 4095.0f / 47.0f)) * 4;
++				mPendingEvent.light = event->value;
+ 			}
+ 		} else if (type == EV_SYN) {
+ 			mPendingEvent.timestamp = timevalToNano(event->time);
+diff --git a/ProximitySensor.cpp b/ProximitySensor.cpp
+index fbd4bb4..4e59d02 100644
+--- a/ProximitySensor.cpp
++++ b/ProximitySensor.cpp
+@@ -72,7 +72,7 @@ int ProximitySensor::enable(int32_t, int en) {
+     int flags = en ? 1 : 0;
+     if (flags != mEnabled) {
+         int fd;
+-        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable");
++        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_ps_sensor");
+         fd = open(input_sysfs_path, O_RDWR);
+         if (fd >= 0) {
+             char buf[2];
+diff --git a/sensors.cpp b/sensors.cpp
+index 969d794..2f9b899 100644
+--- a/sensors.cpp
++++ b/sensors.cpp
+@@ -114,28 +114,28 @@ static const struct sensor_t sSensorList[] = {
+ #else
+ 	/* light sensor name */
+ 	{
+-		"TSL27713FN",
+-		"Taos",
++		"light sensor",
++		"vender",
+ 		1,
+ 		SENSORS_LIGHT_HANDLE,
+ 		SENSOR_TYPE_LIGHT,
+-		(powf(10, (280.0f / 47.0f)) * 4),
++		10000.0f,
+ 		1.0f,
+-		0.75f,
++		0.5f,
+ 		0,
+ 		{ }
+ 	},
+ 
+ 	/* proximity sensor */
+ 	{
+-		"TSL27713FN",
+-		"Taos",
++		"proximity sensor",
++		"vender",
+ 		1,
+ 		SENSORS_PROXIMITY_HANDLE,
+ 		SENSOR_TYPE_PROXIMITY,
+ 		5.0f,
+-		5.0f,
+-		0.75f,
++		1.0f,
++		0.5f,
+ 		0,
+ 		{ }
+ 	},
+-- 
+1.7.8.3
+

@@ -1,7 +1,7 @@
 From 2e62a95d8578e7583466e534787c97a7bd7bc9e5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 15:46:25 +0800
-Subject: [PATCH 2/3] add Gsensor HAL support
+Subject: [PATCH 2/7] add Gsensor HAL support
 
 Change-Id: I16f4a570f3a117cd9a28ff27707994f79ff8b139
 ---

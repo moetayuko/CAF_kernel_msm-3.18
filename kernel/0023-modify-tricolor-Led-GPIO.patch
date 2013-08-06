@@ -1,0 +1,30 @@
+From e4675899d365052af258d88d2c631cd91d42d62c Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 5 Aug 2013 19:30:31 +0800
+Subject: [PATCH 23/24] modify tricolor Led GPIO
+
+Change-Id: I9e323dc16069c29265523311cdb45e56718e596c
+---
+ drivers/leds/leds-tricolor.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/leds/leds-tricolor.c b/drivers/leds/leds-tricolor.c
+index 9893f61..a602bdc 100644
+--- a/drivers/leds/leds-tricolor.c
++++ b/drivers/leds/leds-tricolor.c
+@@ -29,9 +29,9 @@
+ 
+ 
+ #define DEBUG_TRICOLOR_LED 0
+-#define RED_LED_GPIO 94
+-#define BLUE_LED_GPIO 95
+-#define GREEN_LED_GPIO 96
++#define RED_LED_GPIO 96
++#define BLUE_LED_GPIO 94
++#define GREEN_LED_GPIO 95
+ #define LED_ON 1
+ #define LED_OFF 0
+ 
+-- 
+1.7.8.3
+

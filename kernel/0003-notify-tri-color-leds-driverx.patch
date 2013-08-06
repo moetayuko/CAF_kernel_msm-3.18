@@ -1,7 +1,7 @@
 From 2be14e150950093eaaaa7c689daeb16c4e973b3f Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 8 Jul 2013 16:03:44 +0800
-Subject: [PATCH 03/15] notify tri-color leds driverx
+Subject: [PATCH 03/24] notify tri-color leds driverx
 
 Change-Id: I657672a74642a9cb4320b32ebbcc795b3f51588f
 ---

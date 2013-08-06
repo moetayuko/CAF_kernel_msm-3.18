@@ -1,7 +1,7 @@
 From 23a9cbc163197ebd3e28a6b4dc8d935f4d94d207 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:26:41 +0800
-Subject: [PATCH 10/15] add HX8389-B PWM ON sequence
+Subject: [PATCH 10/24] add HX8389-B PWM ON sequence
 
 Change-Id: I9e186a0a66ab064b80c9f0f7fb5091a81c779a50
 ---

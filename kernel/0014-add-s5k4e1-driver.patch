@@ -1,7 +1,7 @@
 From e646d5f76adb6afc29dd4331f047ea53e2c97d7a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 2 Aug 2013 13:42:03 +0800
-Subject: [PATCH 14/15] add s5k4e1 driver
+Subject: [PATCH 14/24] add s5k4e1 driver
 
 Change-Id: I5480175ee67085f61add9bafd26187f7b22df618
 ---

@@ -1,7 +1,7 @@
 From 40f298d28fed631ebd4f6756bbceb914b5f76aee Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:43:37 +0800
-Subject: [PATCH 12/15] add ov5648 s5k4h5 mt9v113 camera driver and flash
+Subject: [PATCH 12/24] add ov5648 s5k4h5 mt9v113 camera driver and flash
  light
 
 Change-Id: I712ccf28e1eefcfeb6c1f93c5005a68815d022db

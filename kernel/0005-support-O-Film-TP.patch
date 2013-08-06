@@ -1,7 +1,7 @@
 From 3dc4d452254258151b2e119e3e1d2248e7565759 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:20:47 +0800
-Subject: [PATCH 05/15] support O-Film TP
+Subject: [PATCH 05/24] support O-Film TP
 
 Change-Id: I743a270b3d338b9c0b374ecbe3f8082a1a02d5d8
 ---

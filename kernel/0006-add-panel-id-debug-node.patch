@@ -1,7 +1,7 @@
 From f11bdf693489fd460649060526da72a302351c65 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:21:54 +0800
-Subject: [PATCH 06/15] add panel id debug node
+Subject: [PATCH 06/24] add panel id debug node
 
 Change-Id: I8b63f30722eb08a154570991be4cb15c44d1954c
 ---

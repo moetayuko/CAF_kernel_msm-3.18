@@ -1,7 +1,7 @@
 From 0ef8f53ea0551a60e9f00e1e54d36ff9bf7bb6ab Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 15:58:36 +0800
-Subject: [PATCH 3/3] add light_proximity sensor hal
+Subject: [PATCH 3/7] add light_proximity sensor hal
 
 Change-Id: Iab868f30dcd17758a768f366e986532621f33f5c
 ---

@@ -1,7 +1,7 @@
 From f0227f1e34d86ebac8eaf397971ddd707da125bd Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:22:43 +0800
-Subject: [PATCH 07/15] fix the bug that the tp is not work after resume
+Subject: [PATCH 07/24] fix the bug that the tp is not work after resume
 
 Change-Id: Ibab2c615ad84f7cbed7da063a35d2cd119721ce6
 ---

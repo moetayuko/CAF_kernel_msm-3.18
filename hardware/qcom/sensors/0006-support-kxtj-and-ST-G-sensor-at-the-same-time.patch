@@ -1,0 +1,26 @@
+From 051fc16bc218c601d98b64fa74f83726c74a222b Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 6 Aug 2013 10:03:19 +0800
+Subject: [PATCH 6/7] support kxtj and ST G sensor at the same time
+
+Change-Id: Ie6593385bb0d430d8aee30f6a18a13a9aab39b83
+---
+ sensors.cpp |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sensors.cpp b/sensors.cpp
+index c5d331b..969d794 100644
+--- a/sensors.cpp
++++ b/sensors.cpp
+@@ -47,7 +47,7 @@ static const struct sensor_t sSensorList[] = {
+ 	/* Accelerometer */
+ 	{
+ 		"accelerometer",
+-		"ST Micro",
++		"vendor",
+ 		1,	/* hw/sw version */
+ 		SENSORS_ACCELERATION_HANDLE,
+ 		SENSOR_TYPE_ACCELEROMETER,
+-- 
+1.7.8.3
+

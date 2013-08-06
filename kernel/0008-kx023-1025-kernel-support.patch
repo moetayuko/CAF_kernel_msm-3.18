@@ -1,7 +1,7 @@
 From 9b8a5058f42b061fb956ca70a65e5c9392cbe74d Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:23:37 +0800
-Subject: [PATCH 08/15] kx023-1025 kernel support
+Subject: [PATCH 08/24] kx023-1025 kernel support
 
 Change-Id: Id5eaa34383bed22a035af338d63bcb057cd9e01c
 ---

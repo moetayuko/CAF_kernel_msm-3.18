@@ -1,0 +1,64 @@
+From 324163c32a2b5986f4dd0072477fd2acd02cbdac Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 5 Aug 2013 19:25:24 +0800
+Subject: [PATCH 22/24] support kionix and ST G sensor
+
+Change-Id: I53870dfde3b75f0d798367015079120ededd1bcb
+---
+ arch/arm/configs/msm8610_defconfig |    2 +-
+ drivers/input/misc/kionix_accel.c  |    4 ++--
+ include/linux/input/kionix_accel.h |    4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 4f0ae4d..9430d99 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -234,7 +234,7 @@ CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_I2C=y
+ #CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_MT_A=y
+ CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_DEVICETREE_SUPPORT=y
+ CONFIG_INPUT_MISC=y
+-# CONFIG_STM_LIS3DH is not set
++CONFIG_STM_LIS3DH=y
+ # CONFIG_TMD27713_PLSENSOR is not set
+ CONFIG_SENSORS_TMD27723=y
+ CONFIG_INTERSIL_ISL29044=y
+diff --git a/drivers/input/misc/kionix_accel.c b/drivers/input/misc/kionix_accel.c
+index 33b2f7c..82db4e8 100644
+--- a/drivers/input/misc/kionix_accel.c
++++ b/drivers/input/misc/kionix_accel.c
+@@ -1773,14 +1773,14 @@ exit:
+ }
+ 
+ static DEVICE_ATTR(enable, S_IRUGO|S_IWUSR, kionix_accel_get_enable, kionix_accel_set_enable);
+-static DEVICE_ATTR(delay, S_IRUGO|S_IWUSR, kionix_accel_get_delay, kionix_accel_set_delay);
++static DEVICE_ATTR(poll_delay, S_IRUGO|S_IWUSR, kionix_accel_get_delay, kionix_accel_set_delay);
+ static DEVICE_ATTR(direct, S_IRUGO|S_IWUSR, kionix_accel_get_direct, kionix_accel_set_direct);
+ static DEVICE_ATTR(data, S_IRUGO, kionix_accel_get_data, NULL);
+ static DEVICE_ATTR(cali, S_IRUGO|S_IWUSR, kionix_accel_get_cali, kionix_accel_set_cali);
+ 
+ static struct attribute *kionix_accel_attributes[] = {
+ 	&dev_attr_enable.attr,
+-	&dev_attr_delay.attr,
++	&dev_attr_poll_delay.attr,
+ 	&dev_attr_direct.attr,
+ 	&dev_attr_data.attr,
+ 	&dev_attr_cali.attr,
+diff --git a/include/linux/input/kionix_accel.h b/include/linux/input/kionix_accel.h
+index 83a1986..abeea2a 100644
+--- a/include/linux/input/kionix_accel.h
++++ b/include/linux/input/kionix_accel.h
+@@ -21,8 +21,8 @@
+ #ifndef __KIONIX_ACCEL_H__
+ #define __KIONIX_ACCEL_H__
+ 
+-#define KIONIX_ACCEL_I2C_ADDR		0x0F
+-#define KIONIX_ACCEL_NAME			"kionix_accel"
++//#define KIONIX_ACCEL_I2C_ADDR		0x1E
++#define KIONIX_ACCEL_NAME			"accelerometer"
+ #define KIONIX_ACCEL_IRQ			"kionix-irq"
+ 
+ struct kionix_accel_platform_data {
+-- 
+1.7.8.3
+

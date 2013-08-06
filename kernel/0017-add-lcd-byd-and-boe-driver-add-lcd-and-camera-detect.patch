@@ -1,0 +1,879 @@
+From 8b093a69622414c1ed7aa07f327eaf1b1b55f5c7 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 5 Aug 2013 12:03:32 +0800
+Subject: [PATCH 17/24] add lcd byd and boe driver, add lcd and camera detect
+ module
+
+Change-Id: I443ceca8eb54431d8aeb4612ce330f3f955d5263
+---
+ .../dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi    |  166 ++++++++++++
+ .../dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi    |  164 ++++++++++++
+ .../boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi   |    2 +-
+ arch/arm/boot/dts/msm8610-qrd-skuac.dts            |    2 +
+ .../platform/msm/camera_v2/sensor/msm_sensor.c     |   10 +
+ .../platform/msm/camera_v2/sensor/msm_sensor.h     |    2 +
+ drivers/video/msm/mdss/Makefile                    |    1 +
+ drivers/video/msm/mdss/dsi_panel_v2.c              |   16 +-
+ drivers/video/msm/mdss/hw_lcd_common.c             |  278 ++++++++++++++++++++
+ include/linux/hw_lcd_common.h                      |   95 +++++++
+ 10 files changed, 726 insertions(+), 10 deletions(-)
+ create mode 100644 arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
+ create mode 100644 arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
+ create mode 100644 drivers/video/msm/mdss/hw_lcd_common.c
+ create mode 100644 include/linux/hw_lcd_common.h
+
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
+new file mode 100644
+index 0000000..192084f
+--- /dev/null
++++ b/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
+@@ -0,0 +1,166 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/ {
++	qcom,dsi_v2_boe_nt35517_qhd_video {
++		compatible = "huawei,lcd_panel_id5";
++		label = "BOE NT35517 QHD video mode dsi panel";
++		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
++		qcom,rst-gpio = <&msmgpio 41 0>;
++		vdda-supply = <&pm8110_l19>;
++		vddio-supply=<&pm8110_l6>;
++		qcom,mdss-pan-res = <540 960>;
++		qcom,mdss-pan-bpp = <24>;
++		qcom,mdss-pan-dest = "display_1";
++		qcom,mdss-pan-porch-values = <60 8 60 15 5 7>;
++		qcom,mdss-pan-underflow-clr = <0xff>;
++		qcom,mdss-pan-bl-levels = <1 255>;
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-dsi-mode = <0>;
++		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
++		qcom,mdss-pan-dsi-h-power-stop = <0 0 0>;
++		qcom,mdss-pan-dsi-bllp-power-stop = <1 1>;
++		qcom,mdss-pan-dsi-traffic-mode = <2>;
++		qcom,mdss-pan-dsi-dst-format = <3>;
++		qcom,mdss-pan-dsi-vc = <0>;
++		qcom,mdss-pan-dsi-rgb-swap = <0>;
++		qcom,mdss-pan-dsi-data-lanes = <1 1 0 0>;
++		qcom,mdss-pan-dsi-dlane-swap = <1>;
++		qcom,mdss-pan-dsi-t-clk = <0x1b 0x04>;
++		qcom,mdss-pan-dsi-stream = <0>;
++		qcom,mdss-pan-dsi-mdp-tr = <0x0>;/*todo*/
++		qcom,mdss-pan-dsi-dma-tr = <0x04>;
++		qcom,mdss-pan-dsi-frame-rate = <60>;
++		qcom,panel-phy-regulatorSettings =[09 08 05 00 20 03];
++		qcom,panel-phy-timingSettings = [8b 1f 14  00 45 4a
++						 19 23 23  03 04 00];
++		qcom,panel-phy-strengthCtrl = [ff 06];
++		qcom,panel-phy-bistCtrl = [03 03 00 00 0f 00];
++		qcom,panel-phy-laneConfig =
++					[80 45 00 00 01 66 /*lane0**/
++					80 45 00 00 01 66 /*lane1*/
++					80 45 00 00 01 66 /*lane2*/
++					80 45 00 00 01 66 /*lane3*/
++					40 67 00 00 01 88]; /*Clk*/
++
++		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
++		qcom,panel-on-cmds = [39 01 00 00 00 06
++							F0 55 AA 52 08 00
++						30 01 00 00 00 02
++							BC 00
++						39 01 00 00 00 04
++							CC 03 00 00
++						39 01 00 00 00 06
++							B0 00 0C 40 3C 3C
++						39 01 00 00 00 03
++							B1 FC 00
++						39 01 00 00 00 02
++							B6 08
++						39 01 00 00 00 03
++							B7 00 00
++						39 01 00 00 00 02
++							BA 01
++						39 01 00 00 00 06
++							BD 01 41 10 37 01
++						39 01 00 00 00 03
++							E0 01 01
++						39 01 00 00 00 06
++							F0 55 AA 52 08 01
++						39 01 00 00 00 04
++							B0 0A 0A 0A
++						39 01 00 00 00 04
++							B6 44 44 44
++						39 01 00 00 00 04
++							B1 0A 0A 0A
++						39 01 00 00 00 04
++							B7 24 24 24
++						39 01 00 00 00 04
++							B2 03 03 03
++						39 01 00 00 00 04
++							B8 33 33 33
++						39 01 00 00 00 04
++							B3 0D 0D 0D
++						39 01 00 00 00 04
++							B9 24 24 24
++						39 01 00 00 00 04
++							B4 0A 0A 0A
++						39 01 00 00 00 04
++							BA 24 24 24
++						39 01 00 00 00 04
++							B5 07 07 07
++						39 01 00 00 00 04
++							BC 00 78 00
++						39 01 00 00 00 04
++							BD 00 78 00
++						39 01 00 00 00 11
++							D1 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							D2 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							D3 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							D4 03 B4 03 FF
++						39 01 00 00 00 11
++							D5 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							D6 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							D7 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							D8 03 B4 03 FF
++						39 01 00 00 00 11
++							D9 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							DD 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							DE 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							DF 03 B4 03 FF
++						39 01 00 00 00 11
++							E0 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							E1 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							E2 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							E3 03 B4 03 FF
++						39 01 00 00 00 11
++							E4 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							E5 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							E6 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							E7 03 B4 03 FF
++						39 01 00 00 00 11
++							E8 00 43 00 5A 00 7E 00 96 00 A1 00 C3 00 E9 01 14
++						39 01 00 00 00 11
++							E9 01 35 01 6D 01 9A 01 E1 02 19 02 1B 02 4D 02 85
++						39 01 00 00 00 11
++							EA 02 A6 02 D4 02 F2 03 23 03 41 03 6A 03 7F 03 9E
++						39 01 00 00 00 05
++							EB 03 B4 03 FF
++						39 01 00 00 00 02
++							51 ff
++						39 01 00 00 00 02
++							53 2c
++						39 01 00 00 00 02
++							55 02
++						05 01 00 00 78 02
++							11 00
++						05 01 00 00 28 02
++							29 00];
++		qcom,panel-off-cmds = [05 01 00 00 32 02 28 00
++					05 01 00 00 78 02 10 00];
++		qcom,off-cmds-dsi-state = "DSI_LP_MODE";
++	};
++};
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
+new file mode 100644
+index 0000000..f741529
+--- /dev/null
++++ b/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
+@@ -0,0 +1,164 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/ {
++	qcom,dsi_v2_byd_nt35517_qhd_video {
++		compatible = "huawei,lcd_panel_id1";
++		label = "BYD NT35517 QHD video mode dsi panel";
++		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
++		qcom,rst-gpio = <&msmgpio 41 0>;
++		vdda-supply = <&pm8110_l19>;
++		vddio-supply=<&pm8110_l6>;
++		qcom,mdss-pan-res = <540 960>;
++		qcom,mdss-pan-bpp = <24>;
++		qcom,mdss-pan-dest = "display_1";
++		qcom,mdss-pan-porch-values = <3 11 15 3 11 15>;
++		qcom,mdss-pan-underflow-clr = <0xff>;
++		qcom,mdss-pan-bl-levels = <1 255>;
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-dsi-mode = <0>;
++		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
++		qcom,mdss-pan-dsi-h-power-stop = <0 0 0>;
++		qcom,mdss-pan-dsi-bllp-power-stop = <1 1>;
++		qcom,mdss-pan-dsi-traffic-mode = <2>;
++		qcom,mdss-pan-dsi-dst-format = <3>;
++		qcom,mdss-pan-dsi-vc = <0>;
++		qcom,mdss-pan-dsi-rgb-swap = <0>;
++		qcom,mdss-pan-dsi-data-lanes = <1 1 0 0>;
++		qcom,mdss-pan-dsi-dlane-swap = <1>;
++		qcom,mdss-pan-dsi-t-clk = <0x1b 0x04>;
++		qcom,mdss-pan-dsi-stream = <0>;
++		qcom,mdss-pan-dsi-mdp-tr = <0x0>;/*todo*/
++		qcom,mdss-pan-dsi-dma-tr = <0x04>;
++		qcom,mdss-pan-dsi-frame-rate = <60>;
++		qcom,panel-phy-regulatorSettings =[09 08 05 00 20 03];
++		qcom,panel-phy-timingSettings = [8b 1f 14  00 45 4a
++						 19 23 23  03 04 00];
++		qcom,panel-phy-strengthCtrl = [ff 06];
++		qcom,panel-phy-bistCtrl = [03 03 00 00 0f 00];
++		qcom,panel-phy-laneConfig =
++					[80 45 00 00 01 66 /*lane0**/
++					80 45 00 00 01 66 /*lane1*/
++					80 45 00 00 01 66 /*lane2*/
++					80 45 00 00 01 66 /*lane3*/
++					40 67 00 00 01 88]; /*Clk*/
++
++		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
++		qcom,panel-on-cmds = [39 01 00 00 00 06
++						F0 55 AA 52 08 00
++					39 01 00 00 00 02
++						B3 82
++					39 01 00 00 00 02
++						BC 00
++					39 01 00 00 00 06
++						F0 55 AA 52 08 01
++					39 01 00 00 00 02
++						C0 C0
++					39 01 00 00 00 02
++						C2 20
++					39 01 00 00 00 02
++						B0 05
++					39 01 00 00 00 02
++						B6 44
++					39 01 00 00 00 02
++						B1 05
++					39 01 00 00 00 02
++						B7 34
++					39 01 00 00 00 02
++						B2 02
++					39 01 00 00 00 02
++						B8 13
++					39 01 00 00 00 02
++						B3 0E
++					39 01 00 00 00 02
++						B9 23
++					39 01 00 00 00 02
++						B4 08
++					39 01 00 00 00 02
++						BA 23
++					39 01 00 00 00 04
++						BC 00 78 00
++					39 01 00 00 00 04
++						BD 00 78 00
++					39 01 00 00 00 02
++						BE 34
++					39 01 00 00 00 11
++						D1 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						D2 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						D3 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						D4 03 5D 03 5D
++					39 01 00 00 00 11
++						D5 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						D6 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						D7 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						D8 03 5D 03 5D
++					39 01 00 00 00 11
++						D9 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						DD 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						DE 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						DF 03 5D 03 5D
++					39 01 00 00 00 11
++						E0 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						E1 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						E2 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						E3 03 5D 03 5D
++					39 01 00 00 00 11
++						E4 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						E5 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						E6 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						E7 03 5D 03 5D
++					39 01 00 00 00 11
++						E8 00 1C 00 38 00 5C 00 7A 00 91 00 B6 00 D5 01 07
++					39 01 00 00 00 11
++						E9 01 2F 01 6E 01 9F 01 EC 02 28 02 29 02 61 02 9C
++					39 01 00 00 00 11
++						EA 02 C0 02 ED 03 0A 03 2D 03 40 03 50 03 56 03 5B
++					39 01 00 00 00 05
++						EB 03 5D 03 5D
++					39 01 00 00 00 05
++						FF AA 55 25 01
++					39 01 00 00 00 02
++						6F 0B
++					39 01 00 00 00 05
++						F4 12 12 56 13
++					39 01 00 00 00 02
++						51 ff
++					39 01 00 00 00 02
++						53 2c
++					39 01 00 00 00 02
++						55 02
++					39 01 00 00 00 02
++						35 00
++					05 01 00 00 78 02
++						11 00
++					05 01 00 00 28 02
++						29 00];
++		qcom,panel-off-cmds = [05 01 00 00 32 02 28 00
++					05 01 00 00 78 02 10 00];
++		qcom,off-cmds-dsi-state = "DSI_LP_MODE";
++	};
++};
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+index ef75480..52e73fa 100644
+--- a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+@@ -12,7 +12,7 @@
+ 
+ / {
+ 	qcom,dsi_v2_hx8389b_qhd_video {
+-		compatible = "qcom,dsi-panel-v2";
++		compatible = "huawei,lcd_panel_id0";
+ 		label = "HX8389B QHD video mode dsi panel";
+ 		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
+ 		qcom,rst-gpio = <&msmgpio 41 0>;
+diff --git a/arch/arm/boot/dts/msm8610-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+index c40b7e2..dad91bd 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-skuac.dts
++++ b/arch/arm/boot/dts/msm8610-qrd-skuac.dts
+@@ -15,6 +15,8 @@
+ /include/ "msm8610.dtsi"
+ ///include/ "dsi-v2-panel-otm9605a-qhd-video.dtsi"
+ /include/ "dsi-v2-panel-hx8389b-qhd-video.dtsi"
++/include/ "dsi-v2-panel-byd-nt35517-qhd-video.dtsi"
++/include/ "dsi-v2-panel-boe-nt35517-qhd-video.dtsi"
+ /include/ "msm8610-qrd-camera-sensor.dtsi"
+ 
+ / {
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
+index 34f4428..5476807 100644
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
+@@ -991,6 +991,16 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
+ 		goto power_up_failed;
+ 	}
+ 
++	/*if the sensor need identify module info, the sensor driver can implement this interface.
++	  sensor driver can dynamic modify the "s_ctrl->sensordata->sensor_name" var. 
++	  like: ov5648_sunny or ov5648_foxconn
++	*/
++	if (s_ctrl->func_tbl->sensor_match_module)
++		rc = s_ctrl->func_tbl->sensor_match_module(s_ctrl);
++	if (rc < 0) {
++		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
++	}
++
+ 	CDBG("%s exit\n", __func__);
+ 	return 0;
+ power_up_failed:
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
+index 80a2bd4..d6de0ae 100644
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
+@@ -48,6 +48,8 @@ struct msm_sensor_fn_t {
+ 		(struct msm_sensor_ctrl_t *);
+ 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
+ 	int32_t (*sensor_match_id)(struct msm_sensor_ctrl_t *s_ctrl);
++	/*add detect camera module interface*/
++	int (*sensor_match_module) (struct msm_sensor_ctrl_t *);
+ };
+ 
+ struct msm_sensor_ctrl_t {
+diff --git a/drivers/video/msm/mdss/Makefile b/drivers/video/msm/mdss/Makefile
+index 43eda51..1bd46c3 100644
+--- a/drivers/video/msm/mdss/Makefile
++++ b/drivers/video/msm/mdss/Makefile
+@@ -17,6 +17,7 @@ obj-$(CONFIG_DEBUG_FS) += mdss_debug.o
+ endif
+ 
+ dsi-v2-objs = dsi_v2.o dsi_host_v2.o dsi_io_v2.o dsi_panel_v2.o
++dsi-v2-objs += hw_lcd_common.o
+ obj-$(CONFIG_FB_MSM_MDSS) += dsi-v2.o
+ 
+ mdss-dsi-objs := mdss_dsi.o mdss_dsi_host.o
+diff --git a/drivers/video/msm/mdss/dsi_panel_v2.c b/drivers/video/msm/mdss/dsi_panel_v2.c
+index 5c164e4..270d407 100644
+--- a/drivers/video/msm/mdss/dsi_panel_v2.c
++++ b/drivers/video/msm/mdss/dsi_panel_v2.c
+@@ -25,6 +25,8 @@
+ 
+ #include "dsi_v2.h"
+ 
++#include <linux/hw_lcd_common.h>
++
+ #define DT_CMD_HDR 6
+ 
+ struct dsi_panel_private {
+@@ -796,10 +798,10 @@ static int __devinit dsi_panel_probe(struct platform_device *pdev)
+ 
+ 	panel_name = of_get_property(pdev->dev.of_node, "label", NULL);
+ 	if (!panel_name)
+-		pr_debug("%s:%d, panel name not specified\n",
++		pr_info("%s:%d, panel name not specified\n",
+ 						__func__, __LINE__);
+ 	else
+-		pr_debug("%s: Panel Name = %s\n", __func__, panel_name);
++		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
+ 
+ 	rc = dsi_panel_init();
+ 	if (rc) {
+@@ -838,23 +840,19 @@ static int __devexit dsi_panel_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
+-
+-static const struct of_device_id dsi_panel_match[] = {
+-	{.compatible = "qcom,dsi-panel-v2"},
+-	{}
+-};
+-
+ static struct platform_driver this_driver = {
+ 	.probe  = dsi_panel_probe,
+ 	.remove = __devexit_p(dsi_panel_remove),
+ 	.driver = {
+ 		.name = "dsi_v2_panel",
+-		.of_match_table = dsi_panel_match,
++		.of_match_table = huawei_mdss_dsi_panel_match,
+ 	},
+ };
+ 
+ static int __init dsi_panel_module_init(void)
+ {
++	//get the real lcd panel type from lcd_id0 and lcd_id1 gpios
++	hw_get_lcd_panel();
+ 	return platform_driver_register(&this_driver);
+ }
+ module_init(dsi_panel_module_init);
+diff --git a/drivers/video/msm/mdss/hw_lcd_common.c b/drivers/video/msm/mdss/hw_lcd_common.c
+new file mode 100644
+index 0000000..ac06a7b
+--- /dev/null
++++ b/drivers/video/msm/mdss/hw_lcd_common.c
+@@ -0,0 +1,278 @@
++/* Copyright (c) 2009, Code HUAWEI. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above copyright
++ *       notice, this list of conditions and the following disclaimer in the
++ *       documentation and/or other materials provided with the distribution.
++ *     * Neither the name of Code Aurora Forum nor
++ *       the names of its contributors may be used to endorse or promote
++ *       products derived from this software without specific prior written
++ *       permission.
++ *
++ * Alternatively, provided that this notice is retained in full, this software
++ * may be relicensed by the recipient under the terms of the GNU General Public
++ * License version 2 ("GPL") and only version 2, in which case the provisions of
++ * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
++ * software under the GPL, then the identification text in the MODULE_LICENSE
++ * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
++ * recipient changes the license terms to the GPL, subsequent recipients shall
++ * not relicense under alternate licensing terms, including the BSD or dual
++ * BSD/GPL terms.  In addition, the following license statement immediately
++ * below and between the words START and END shall also then apply when this
++ * software is relicensed under the GPL:
++ *
++ * START
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 and only version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++ * details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ * END
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
++ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
++ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
++ * POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++#include <linux/kernel.h>
++#include <linux/gpio.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/delay.h>
++#include <linux/slab.h>
++#include <linux/regulator/consumer.h>
++#include <linux/err.h>
++
++	 
++#include<linux/init.h>
++#include<linux/module.h>
++	 
++#include <linux/hw_lcd_common.h>
++#include <linux/of.h>
++
++
++
++//two gpios use to identify lcd module for 8x12 platform
++#define LCD_ID_0_GPIO    76
++#define LCD_ID_1_GPIO    93
++
++
++#define GET_GPIO_FAIL  -1
++#define GET_LCD_ID_FAIL  -1 
++#define LCD_ID_PULL_UP  1
++#define LCD_ID_PULL_DOWN  0
++
++
++struct of_device_id huawei_mdss_dsi_panel_match[] = {
++	{.compatible = "huawei,lcd_panel_id"},
++	{}
++};
++
++
++/****************************************************************
++function: get lcd id by gpio
++
++*data structure*
++*	   ID1	  ID0   * 
++ *	----------------- * 
++ *	|   |   |   |   | * 
++ *	|   |   |   |   | * 
++ *	----------------- *
++ For each Gpio :
++		00 means low  ,
++		01 means high ,
++		10 means float,
++		11 is not defined,
++
++ lcd id(hex):
++ 0	:ID0 low,	ID1 low
++ 1	:ID0 high,	ID1 low
++ 2	:ID0 float,	ID1 low
++
++ 4	:ID0 low,	ID1 high
++ 5	:ID0 high,	ID1 high
++ 6	:ID0 float,	ID1 high
++
++ 8	:ID0 low,	ID1 float
++ 9	:ID0 high,	ID1 float
++ A	:ID0 float,	ID1 float, used for emulator
++ ***************************************************************/
++/*
++G730:
++BOE:     ID[1:0]   {1:1} --->is is 5
++tianma:  ID[1:0]   {0:0} --->id is 0
++youda:   ID[1:0]   {1:0} --->id is 4
++BYD:     ID[1:0]   {0:1} --->id is 1
++
++
++BOE    IC     NT35517 
++tianma IC     HX8389-B 
++youda  IC     RM68190 
++BYD    IC     NT35517 
++*/
++int hw_get_lcd_id(void)
++{
++	int ret = 0;
++	int id0,id1;
++	int gpio_id0,gpio_id1;
++	int pullup_read,pulldown_read;
++	static int lcd_id = GET_LCD_ID_FAIL;
++	
++	id0=0;
++	id1=0;
++	pullup_read = 0;
++	pulldown_read = 0;
++	gpio_id0 = LCD_ID_0_GPIO;
++	gpio_id1 = LCD_ID_1_GPIO;
++
++	
++	if( (lcd_id >= 0x0) && (lcd_id <= 0xA) )//if lcd_id had read successfully,just return lcd_id.
++		return lcd_id;
++	
++	if(gpio_id0 <= GET_GPIO_FAIL ||gpio_id1 <= GET_GPIO_FAIL)
++		return GET_LCD_ID_FAIL;
++	
++    LCD_DEBUG("gpio_lcd_id0:%d gpio_lcd_id1:%d\n",gpio_id0,gpio_id1);
++	
++    ret = gpio_request(gpio_id0, "lcd_id0");
++      if (ret) {
++         printk(KERN_ERR"lcd_id0 gpio[%d] request failed\n", gpio_id0);
++         goto lcd_id0_req_fail;
++          }
++	  
++    ret = gpio_request(gpio_id1, "lcd_id1");
++	if (ret) {
++	     printk(KERN_ERR"lcd_id1 gpio[%d] request failed\n", gpio_id1);
++         goto lcd_id1_req_fail;
++	}
++	
++	/*config id0 to pull down and read*/
++	ret = gpio_tlmm_config(GPIO_CFG(gpio_id0,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_DOWN,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	  if (ret) {
++	     printk(KERN_ERR"config id0 to pull down failed\n");
++	     goto get_lcd_id_fail;	
++	    }
++	udelay(10);
++	pulldown_read = gpio_get_value(gpio_id0);
++	
++	/*config id0 to pull up and read*/
++	ret = gpio_tlmm_config(GPIO_CFG(gpio_id0,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_UP,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	  if (ret) {
++	       printk(KERN_ERR"config id0 to pull up failed\n");
++	       goto get_lcd_id_fail;	
++	     }
++	udelay(10);
++	pullup_read = gpio_get_value(gpio_id0);
++	if(pulldown_read != pullup_read)//float
++	{
++		id0 = BIT(1);
++		gpio_tlmm_config(GPIO_CFG(gpio_id0,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_DOWN,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	}
++	else//connect 
++	{
++		id0 = pullup_read;//pullup_read==pulldown_read
++		switch(id0)
++		{
++			case LCD_ID_PULL_DOWN:
++			case LCD_ID_PULL_UP:
++			default:
++				gpio_tlmm_config(GPIO_CFG(gpio_id0,0,GPIO_CFG_INPUT,GPIO_CFG_NO_PULL,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++				break;
++		}
++			
++	}
++	
++	/*config id1 to pull down and read*/
++	ret = gpio_tlmm_config(GPIO_CFG(gpio_id1,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_DOWN,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	  if (ret) {
++	     printk(KERN_ERR"config id1 to pull down failed\n");
++	     goto get_lcd_id_fail;	
++	    }
++	udelay(10);
++	pulldown_read = gpio_get_value(gpio_id1);
++	
++	/*config id1 to pull up and read*/
++	ret = gpio_tlmm_config(GPIO_CFG(gpio_id1,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_UP,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	if (ret) {
++	     printk(KERN_ERR"config id1 to pull up failed\n");
++	     goto get_lcd_id_fail;	
++	    }
++	udelay(10);
++	pullup_read = gpio_get_value(gpio_id1);
++	if(pulldown_read != pullup_read)//float
++	{
++		id1 = BIT(1);
++		gpio_tlmm_config(GPIO_CFG(gpio_id1,0,GPIO_CFG_INPUT,GPIO_CFG_PULL_DOWN,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++	}
++	else//connect
++	{
++		id1 = pullup_read;//pullup_read==pulldown_read
++		switch(id1)
++		{
++			case LCD_ID_PULL_DOWN:
++			case LCD_ID_PULL_UP:
++			default:
++				gpio_tlmm_config(GPIO_CFG(gpio_id1,0,GPIO_CFG_INPUT,GPIO_CFG_NO_PULL,GPIO_CFG_2MA),GPIO_CFG_ENABLE);
++				break;
++		}
++	}
++	
++	gpio_free(gpio_id0);
++    gpio_free(gpio_id1);
++
++	lcd_id = (id1<<2) | id0;
++
++    LCD_DEBUG("%s: lcd id = %d \n", __func__,lcd_id);
++	return lcd_id;
++get_lcd_id_fail:
++	gpio_free(gpio_id1);
++lcd_id1_req_fail:
++    gpio_free(gpio_id0);
++lcd_id0_req_fail:
++    return GET_LCD_ID_FAIL;
++}
++
++void hw_get_lcd_panel(void)
++{
++	char *psKey = NULL;
++	int id = 0;
++	int ret = 0;
++	psKey = kmalloc(30, GFP_KERNEL);
++    if (NULL == psKey)  
++    {
++		ret = false;
++		return ;
++    }
++    memset(psKey, 0, 30);
++	
++	id = hw_get_lcd_id();
++    //if the psKey is equal the compatible from dts, the panel will be used.
++	sprintf(psKey, "huawei,lcd_panel_id%X", id);
++	strcpy(huawei_mdss_dsi_panel_match->compatible,psKey);
++
++    printk(KERN_INFO "%s: %s\n",__func__,huawei_mdss_dsi_panel_match->compatible);
++	
++    kfree(psKey);
++	return;
++	
++};
+diff --git a/include/linux/hw_lcd_common.h b/include/linux/hw_lcd_common.h
+new file mode 100644
+index 0000000..774188c
+--- /dev/null
++++ b/include/linux/hw_lcd_common.h
+@@ -0,0 +1,95 @@
++/* Copyright (c), Code HUAWEI. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above copyright
++ *       notice, this list of conditions and the following disclaimer in the
++ *       documentation and/or other materials provided with the distribution.
++ *     * Neither the name of Code Aurora nor
++ *       the names of its contributors may be used to endorse or promote
++ *       products derived from this software without specific prior written
++ *       permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NON-INFRINGEMENT ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
++ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#ifndef HW_LCD_COMMON_H
++#define HW_LCD_COMMON_H
++
++#include "dsi_v2.h"
++
++
++/* Move from the every LCD file ,those are common */
++#define TRACE_LCD_DEBUG 1
++#if TRACE_LCD_DEBUG
++#define LCD_DEBUG(x...) printk(KERN_ERR "[LCD_DEBUG] " x)
++#else
++#define LCD_DEBUG(x...) do {} while (0)
++#endif
++/* LCD_MDELAY will select mdelay or msleep according value */
++#define LCD_MDELAY(time_ms)   	\
++	do							\
++	{ 							\
++		if (time_ms>10)			\
++			msleep(time_ms);	\
++		else					\
++			mdelay(time_ms);	\
++	}while(0)	
++
++
++typedef unsigned int boolean;
++		
++#ifndef TRUE
++#define TRUE 1
++#endif
++		
++#ifndef FALSE
++#define FALSE 0
++#endif
++
++#define LCD_HW_ID_STATUS_LOW     0
++#define LCD_HW_ID_STATUS_HIGH    1
++#define LCD_HW_ID_STATUS_FLOAT   2
++
++#define MIPI_DCS_COMMAND (1<<0)
++#define MIPI_GEN_COMMAND 4
++#define MIPI_TYPE_END 0XFF
++#define TYPE_PARAMETER   (1<<1)
++
++
++enum {
++	HUAWEI_LCD_ID0,
++	HUAWEI_LCD_ID1,
++	HUAWEI_LCD_ID2,
++	HUAWEI_LCD_ID4,
++	HUAWEI_LCD_ID5,
++	HUAWEI_LCD_ID6,
++	HUAWEI_LCD_ID8,
++	HUAWEI_LCD_ID9,
++	HUAWEI_LCD_IDA,
++};
++
++struct sequence{
++    uint32_t reg;
++    uint32_t value;
++    uint32_t time; //unit is ms
++};
++
++
++extern struct of_device_id huawei_mdss_dsi_panel_match[2];
++
++void hw_get_lcd_panel(void);
++#endif		
+-- 
+1.7.8.3
+

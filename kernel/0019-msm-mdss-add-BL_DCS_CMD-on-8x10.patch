@@ -1,0 +1,87 @@
+From a6b5bd7b99a0e1cc8372171518bae029470de5ba Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 5 Aug 2013 16:22:17 +0800
+Subject: [PATCH 19/24] msm: mdss: add BL_DCS_CMD on 8x10
+
+Support BL_DCS_CMD function to adjust brigtness in 8x10/12.
+
+Change-Id: If7cf7eff9509c043af4be6e6ec5f0039346f8e0a
+Signed-off-by: Shuo Yan <shuoy@codeaurora.org>
+---
+ drivers/video/msm/mdss/dsi_panel_v2.c |   34 ++++++++++++++++++++++++++++++++-
+ drivers/video/msm/mdss/dsi_v2.h       |    2 +
+ 2 files changed, 35 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/msm/mdss/dsi_panel_v2.c b/drivers/video/msm/mdss/dsi_panel_v2.c
+index 270d407..5694d88 100644
+--- a/drivers/video/msm/mdss/dsi_panel_v2.c
++++ b/drivers/video/msm/mdss/dsi_panel_v2.c
+@@ -145,6 +145,32 @@ int dsi_panel_power(int enable)
+ 	return 0;
+ }
+ 
++static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
++static struct dsi_cmd_desc backlight_cmd = {
++	DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1), led_pwm1};
++
++static void dsi_panel_bklt_dcs(struct mdss_panel_data *pdata, int level)
++{
++	struct mipi_panel_info *mipi;
++	int ret = 0;
++
++	mipi  = &pdata->panel_info.mipi;
++
++	pr_debug("%s: dcs level=%d\n", __func__, level);
++
++	led_pwm1[1] = (unsigned char)level;
++
++	msm_dsi_set_tx_power_mode(0);
++	ret = dsi_cmds_tx_v2(pdata, &panel_private->dsi_panel_tx_buf,
++					&backlight_cmd,
++					1);
++	if (ret) {
++		pr_err("%s: set brightness failed , rc=%d\n",
++			__func__, ret);
++	}
++	msm_dsi_set_tx_power_mode(1);
++}
++
+ void dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
+ {
+ 	if (pdata == NULL) {
+@@ -222,6 +248,10 @@ static void dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
+ 			led_trigger_event(bl_led_trigger, bl_level);
+ 			break;
+ 
++		case BL_DCS_CMD:
++			dsi_panel_bklt_dcs(pdata, bl_level);
++			break;
++
+ 		default:
+ 			pr_err("%s: Unknown bl_ctrl configuration\n",
+ 				__func__);
+@@ -595,7 +625,9 @@ static int dsi_panel_parse_backlight(struct platform_device *pdev,
+ 		pr_debug("%s: SUCCESS-> WLED TRIGGER register\n", __func__);
+ 		*bl_ctrl = BL_WLED;
+ 	}
+-
++	else if (!strncmp(bl_ctrl_type, "bl_ctrl_dcs", 11)) {
++		*bl_ctrl = BL_DCS_CMD;
++	}
+ 	rc = of_property_read_u32_array(pdev->dev.of_node,
+ 		"qcom,mdss-pan-bl-levels", res, 2);
+ 	panel_data->panel_info.bl_min = (!rc ? res[0] : 0);
+diff --git a/drivers/video/msm/mdss/dsi_v2.h b/drivers/video/msm/mdss/dsi_v2.h
+index 54b772b..09937c9 100644
+--- a/drivers/video/msm/mdss/dsi_v2.h
++++ b/drivers/video/msm/mdss/dsi_v2.h
+@@ -234,4 +234,6 @@ int dsi_short_read2_resp(struct dsi_buf *rp);
+ 
+ int dsi_long_read_resp(struct dsi_buf *rp);
+ 
++void msm_dsi_set_tx_power_mode(int mode);
++
+ #endif /* MDSS_DSI_H */
+-- 
+1.7.8.3
+

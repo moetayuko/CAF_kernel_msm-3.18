@@ -1,7 +1,7 @@
 From 7055f37903f916d0cd87714d0ae4514716f8b946 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 2 Aug 2013 13:43:31 +0800
-Subject: [PATCH 15/15] change camera direction
+Subject: [PATCH 15/24] change camera direction
 
 Change-Id: Ie60aee911026cf8e38b79c2dd4f3fc3f9e3736fd
 ---

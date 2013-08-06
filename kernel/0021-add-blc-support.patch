@@ -1,0 +1,54 @@
+From 447ee6acc8389108df6a2b14a9b34095114485d5 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 5 Aug 2013 19:12:37 +0800
+Subject: [PATCH 21/24] add blc support
+
+Change-Id: I351f73dd2243d4ba2f8db82cbfb23d28e01c1d32
+---
+ .../dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi    |    2 +-
+ .../dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi    |    2 +-
+ .../boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi   |    2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
+index 192084f..7b50bce 100644
+--- a/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi
+@@ -24,7 +24,7 @@
+ 		qcom,mdss-pan-porch-values = <60 8 60 15 5 7>;
+ 		qcom,mdss-pan-underflow-clr = <0xff>;
+ 		qcom,mdss-pan-bl-levels = <1 255>;
+-		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_dcs";
+ 		qcom,mdss-pan-dsi-mode = <0>;
+ 		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
+ 		qcom,mdss-pan-dsi-h-power-stop = <0 0 0>;
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
+index f741529..fa2f11d 100644
+--- a/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-byd-nt35517-qhd-video.dtsi
+@@ -24,7 +24,7 @@
+ 		qcom,mdss-pan-porch-values = <3 11 15 3 11 15>;
+ 		qcom,mdss-pan-underflow-clr = <0xff>;
+ 		qcom,mdss-pan-bl-levels = <1 255>;
+-		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_dcs";
+ 		qcom,mdss-pan-dsi-mode = <0>;
+ 		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
+ 		qcom,mdss-pan-dsi-h-power-stop = <0 0 0>;
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+index 52e73fa..55b1b8a 100644
+--- a/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-hx8389b-qhd-video.dtsi
+@@ -24,7 +24,7 @@
+ 		qcom,mdss-pan-porch-values = <96 96 96 15 5 10>;
+ 		qcom,mdss-pan-underflow-clr = <0xff>;
+ 		qcom,mdss-pan-bl-levels = <1 255>;
+-		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_dcs";
+ 		qcom,mdss-pan-dsi-mode = <0>;
+ 		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
+ 		qcom,mdss-pan-dsi-h-power-stop = <1 1 1>;
+-- 
+1.7.8.3
+

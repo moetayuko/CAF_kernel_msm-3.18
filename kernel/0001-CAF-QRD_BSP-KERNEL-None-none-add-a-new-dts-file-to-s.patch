@@ -1,7 +1,7 @@
 From aa9b8188b807ae08c4586da10882975d35c35793 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 18:08:17 +0800
-Subject: [PATCH 01/15] CAF:QRD_BSP:KERNEL:None:none:add a new dts file to
+Subject: [PATCH 01/24] CAF:QRD_BSP:KERNEL:None:none:add a new dts file to
  support 8x12 bringup
 
 	Component Name: KERNEL

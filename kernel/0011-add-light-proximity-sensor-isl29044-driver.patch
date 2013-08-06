@@ -1,7 +1,7 @@
 From 64b4f0839e567ece8f2e29e2052113b5955aaec6 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 1 Aug 2013 16:42:05 +0800
-Subject: [PATCH 11/15] add light proximity sensor isl29044 driver
+Subject: [PATCH 11/24] add light proximity sensor isl29044 driver
 
 Change-Id: Ia0db31bba67c1fa4f01f896bd7d611ccc91bef0c
 ---

@@ -1,0 +1,49 @@
+From 46fb75248b0b009d809ebc3d3f291e1af159c47d Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 6 Aug 2013 14:18:38 +0800
+Subject: [PATCH 24/24] fix kxtj1025_wrong orientation issue
+
+Change-Id: Idb46179d207d4ee687f619789f203ec5e9667f21
+---
+ drivers/input/misc/kionix_accel.c |    4 ++--
+ drivers/input/misc/lis3dh_acc.c   |    8 +++++---
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/input/misc/kionix_accel.c b/drivers/input/misc/kionix_accel.c
+index 82db4e8..0e48c7d 100644
+--- a/drivers/input/misc/kionix_accel.c
++++ b/drivers/input/misc/kionix_accel.c
+@@ -1135,8 +1135,8 @@ static void kionix_accel_grp7_report_accel_data(struct kionix_accel_driver *acce
+ 				z = ((s16) le16_to_cpu(accel_data.accel_data_s16[acceld->axis_map_z])) >> acceld->shift;
+ 
+ 				acceld->accel_data[acceld->axis_map_x] = (acceld->negate_x ? -x : x) + acceld->accel_cali[acceld->axis_map_x];
+-				acceld->accel_data[acceld->axis_map_y] = (acceld->negate_y ? -y : y) + acceld->accel_cali[acceld->axis_map_y];
+-				acceld->accel_data[acceld->axis_map_z] = (acceld->negate_z ? -z : z) + acceld->accel_cali[acceld->axis_map_z];
++				acceld->accel_data[acceld->axis_map_y] = -((acceld->negate_y ? -y : y) + acceld->accel_cali[acceld->axis_map_y]);
++				acceld->accel_data[acceld->axis_map_z] = -((acceld->negate_z ? -z : z) + acceld->accel_cali[acceld->axis_map_z]);
+ 
+ 				if(atomic_read(&acceld->accel_input_event) > 0) {
+ 					input_report_abs(acceld->input_dev, ABS_X, acceld->accel_data[acceld->axis_map_x]);
+diff --git a/drivers/input/misc/lis3dh_acc.c b/drivers/input/misc/lis3dh_acc.c
+index 64f89d7..23e50d7 100644
+--- a/drivers/input/misc/lis3dh_acc.c
++++ b/drivers/input/misc/lis3dh_acc.c
+@@ -742,10 +742,12 @@ static int lis3dh_acc_get_acceleration_data(struct lis3dh_acc_data *acc,
+ 	hw_d[2] = hw_d[2] * acc->sensitivity;
+ 
+ 
+-	xyz[0] = ((acc->pdata->negate_x) ? (-hw_d[acc->pdata->axis_map_x])
+-		   : (hw_d[acc->pdata->axis_map_x]));
+-	xyz[1] = ((acc->pdata->negate_y) ? (-hw_d[acc->pdata->axis_map_y])
++//	xyz[0] = ((acc->pdata->negate_x) ? (-hw_d[acc->pdata->axis_map_x])
++//		   : (hw_d[acc->pdata->axis_map_x]));
++	xyz[0] = ((acc->pdata->negate_y) ? (-hw_d[acc->pdata->axis_map_y])
+ 		   : (hw_d[acc->pdata->axis_map_y]));
++	xyz[1] = -((acc->pdata->negate_x) ? (-hw_d[acc->pdata->axis_map_x])
++		   : (hw_d[acc->pdata->axis_map_x]));
+ 	xyz[2] = ((acc->pdata->negate_z) ? (-hw_d[acc->pdata->axis_map_z])
+ 		   : (hw_d[acc->pdata->axis_map_z]));
+ 
+-- 
+1.7.8.3
+
