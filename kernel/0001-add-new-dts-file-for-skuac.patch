@@ -1,0 +1,79 @@
+From 5b4743b818c4f16b917b502c821a29df6ce9e37c Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 28 Jun 2013 18:08:17 +0800
+Subject: [PATCH] add new dts file for skuac
+
+Change-Id: I82539b27c30a48ce607a0421b3222f0993b2eb13
+---
+ arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts | 25 +++++++++++++++++++++++++
+ arch/arm/mach-msm/Makefile.boot            |  1 +
+ arch/arm/mach-msm/socinfo.c                |  2 ++
+ 3 files changed, 28 insertions(+)
+ create mode 100644 arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts
+
+diff --git a/arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts
+new file mode 100644
+index 0000000..f03e19e
+--- /dev/null
++++ b/arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts
+@@ -0,0 +1,25 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/dts-v1/;
++
++/include/ "msm8610-v1.dtsi"
++/include/ "msm8610-qrd.dtsi"
++
++/ {
++        model = "Qualcomm MSM 8610 QRD";
++        compatible = "qcom,msm8610-qrd", "qcom,msm8610", "qcom,qrd";
++        qcom,board-id = <11 4>;
++        qcom,msm-id = <147 0>, <165 0>, <161 0>, <162 0>,
++                                  <163 0>, <164 0>, <166 0>;
++};
++
+diff --git a/arch/arm/mach-msm/Makefile.boot b/arch/arm/mach-msm/Makefile.boot
+index 8ee28c2..63dbb5c 100644
+--- a/arch/arm/mach-msm/Makefile.boot
++++ b/arch/arm/mach-msm/Makefile.boot
+@@ -126,6 +126,7 @@ initrd_phys-$(CONFIG_ARCH_FSM9XXX)	:= 0x12000000
+         dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v1-qrd-skuab.dtb
+         dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v2-qrd-skuaa.dtb
+         dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v2-qrd-skuab.dtb
++	dtb-$(CONFIG_ARCH_MSM8610)      += msm8610-v1-qrd-skuac.dtb
+ 
+ # MSMSAMARIUM
+    zreladdr-$(CONFIG_ARCH_MSMSAMARIUM)	:= 0x00008000
+diff --git a/arch/arm/mach-msm/socinfo.c b/arch/arm/mach-msm/socinfo.c
+index 6cb04c7..3db9258 100644
+--- a/arch/arm/mach-msm/socinfo.c
++++ b/arch/arm/mach-msm/socinfo.c
+@@ -75,6 +75,7 @@ enum {
+ 	PLATFORM_SUBTYPE_SKUAA = 0x1,
+ 	PLATFORM_SUBTYPE_SKUF = 0x2,
+ 	PLATFORM_SUBTYPE_SKUAB = 0x3,
++	PLATFORM_SUBTYPE_SKUAC = 0x4,
+ 	PLATFORM_SUBTYPE_QRD_INVALID,
+ };
+ 
+@@ -83,6 +84,7 @@ const char *qrd_hw_platform_subtype[] = {
+ 	[PLATFORM_SUBTYPE_SKUAA] = "SKUAA",
+ 	[PLATFORM_SUBTYPE_SKUF] = "SKUF",
+ 	[PLATFORM_SUBTYPE_SKUAB] = "SKUAB",
++	[PLATFORM_SUBTYPE_SKUAC] = "SKUAC",
+ };
+ 
+ enum {
+-- 
+1.8.2.1
+

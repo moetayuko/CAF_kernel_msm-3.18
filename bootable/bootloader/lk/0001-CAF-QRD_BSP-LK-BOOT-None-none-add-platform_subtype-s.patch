@@ -1,0 +1,47 @@
+From 62047030d3c4e0ff3dc82a3f6cc604069ac6ddcd Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 28 Jun 2013 17:58:37 +0800
+Subject: [PATCH] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype support
+
+	Component Name: LK/BOOT
+	Feature Name: None
+	Fixed CRs: none
+	Targets: msm8x10_skuAA
+	Required VUs:
+	Dependency Notes:
+	Limitations:
+	Suggested Testing: none
+	Peer Review:
+	Reference Build or VU:
+	Comments:
+	(*commit tool - 1.2.8)
+
+Change-Id: I8aebb3907140558de09004fed1093d81046186ab
+---
+ target/msm8610/init.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/target/msm8610/init.c b/target/msm8610/init.c
+index 3ad6a30..a208ca3 100644
+--- a/target/msm8610/init.c
++++ b/target/msm8610/init.c
+@@ -53,6 +53,7 @@ enum target_subtype {
+ 	HW_PLATFORM_SUBTYPE_SKUAA = 1,
+ 	HW_PLATFORM_SUBTYPE_SKUF = 2,
+ 	HW_PLATFORM_SUBTYPE_SKUAB = 3,
++        HW_PLATFORM_SUBTYPE_SKUAC = 4,
+ };
+ 
+ static void set_sdc_power_ctrl(void);
+@@ -209,6 +210,8 @@ void target_baseband_detect(struct board_data *board)
+ 		break;
+ 	case HW_PLATFORM_SUBTYPE_SKUAB:
+ 		break;
++	case HW_PLATFORM_SUBTYPE_SKUAC:
++		break;
+ 	default:
+ 		dprintf(CRITICAL, "Platform Subtype : %u is not supported\n", platform_subtype);
+ 		ASSERT(0);
+-- 
+1.8.2.1
+
