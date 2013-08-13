@@ -1,4 +1,4 @@
-From fb7e03f28ece16bae490b89880fce58642d9d85d Mon Sep 17 00:00:00 2001
+From fca2d3d899565de39098b498d5f19f79ac9fc265 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 4 Jul 2013 14:26:01 +0800
 Subject: [PATCH] modify partition size to match skuac partition change
@@ -30,5 +30,5 @@ index 5ba9f0f..c902f1b 100644
  BOARD_TOMBSTONESIMAGE_PARTITION_SIZE := 73400320
  BOARD_FLASH_BLOCK_SIZE := 131072 # (BOARD_KERNEL_PAGESIZE * 64)
 -- 
-1.8.2.1
+1.8.3.rc3.5.g9134a46.dirty
 

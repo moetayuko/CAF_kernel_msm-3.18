@@ -1,4 +1,4 @@
-From 62047030d3c4e0ff3dc82a3f6cc604069ac6ddcd Mon Sep 17 00:00:00 2001
+From fb76f5d38a71a9049c16b0bd0349f596db683e73 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 17:58:37 +0800
 Subject: [PATCH] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype support
@@ -43,5 +43,5 @@ index 3ad6a30..a208ca3 100644
  		dprintf(CRITICAL, "Platform Subtype : %u is not supported\n", platform_subtype);
  		ASSERT(0);
 -- 
-1.8.2.1
+1.8.3.rc3.5.g9134a46.dirty
 
