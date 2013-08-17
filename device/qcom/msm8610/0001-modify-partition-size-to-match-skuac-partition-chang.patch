@@ -5,8 +5,8 @@ Subject: [PATCH] modify partition size to match skuac partition change
 
 Change-Id: I7ea5b6568394c2e113387df968452e5e79b3ad06
 ---
- BoardConfig.mk | 10 +++++-----
- 1 file changed, 5 insertions(+), 5 deletions(-)
+ BoardConfig.mk |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
 index 5ba9f0f..c902f1b 100644
@@ -30,5 +30,5 @@ index 5ba9f0f..c902f1b 100644
  BOARD_TOMBSTONESIMAGE_PARTITION_SIZE := 73400320
  BOARD_FLASH_BLOCK_SIZE := 131072 # (BOARD_KERNEL_PAGESIZE * 64)
 -- 
-1.8.3.rc3.5.g9134a46.dirty
+1.7.8.3
 

@@ -1,0 +1,91 @@
+From 28aca4befe3e99ccab76035f69fc0e3e47240b9c Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 16 Aug 2013 12:46:20 +0800
+Subject: [PATCH 1/2] add LP-sensor isl29044 hal support
+
+Change-Id: I0a94be8498194eb73ab9c473ac68bd313e9e524c
+---
+ LightSensor.cpp     |    5 +++--
+ ProximitySensor.cpp |    2 +-
+ sensors.cpp         |   16 ++++++++--------
+ 3 files changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/LightSensor.cpp b/LightSensor.cpp
+index a97e3fd..f6f2166 100644
+--- a/LightSensor.cpp
++++ b/LightSensor.cpp
+@@ -75,7 +75,7 @@ int LightSensor::enable(int32_t handle, int en)
+ 	int flags = en ? 1 : 0;
+ 	if (flags != mEnabled) {
+ 		int fd;
+-		strcpy(&input_sysfs_path[input_sysfs_path_len], "enable");
++		strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_als_sensor");
+ 		fd = open(input_sysfs_path, O_RDWR);
+ 		if (fd >= 0) {
+ 			char buf[2];
+@@ -128,7 +128,8 @@ int LightSensor::readEvents(sensors_event_t* data, int count)
+ 				// R = 47kOhm
+ 				// Max adc value 4095 = 3.3V
+ 				// 1/4 of light reaches sensor
+-				mPendingEvent.light = powf(10, event->value * (330.0f / 4095.0f / 47.0f)) * 4;
++				//mPendingEvent.light = powf(10, event->value * (330.0f / 4095.0f / 47.0f)) * 4;
++				mPendingEvent.light = event->value;
+ 			}
+ 		} else if (type == EV_SYN) {
+ 			mPendingEvent.timestamp = timevalToNano(event->time);
+diff --git a/ProximitySensor.cpp b/ProximitySensor.cpp
+index fbd4bb4..4e59d02 100644
+--- a/ProximitySensor.cpp
++++ b/ProximitySensor.cpp
+@@ -72,7 +72,7 @@ int ProximitySensor::enable(int32_t, int en) {
+     int flags = en ? 1 : 0;
+     if (flags != mEnabled) {
+         int fd;
+-        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable");
++        strcpy(&input_sysfs_path[input_sysfs_path_len], "enable_ps_sensor");
+         fd = open(input_sysfs_path, O_RDWR);
+         if (fd >= 0) {
+             char buf[2];
+diff --git a/sensors.cpp b/sensors.cpp
+index 9becc12..fcc3f68 100644
+--- a/sensors.cpp
++++ b/sensors.cpp
+@@ -84,27 +84,27 @@ static const struct sensor_t sSensorList[] = {
+ 
+ 	/* light sensor name */
+ 	{
+-		"TSL27713FN",
+-		"Taos",
++		"light sensor",
++		"vender",
+ 		1,
+ 		SENSORS_LIGHT_HANDLE,
+ 		SENSOR_TYPE_LIGHT,
+-		(powf(10, (280.0f / 47.0f)) * 4),
++		10000.0f,
+ 		1.0f,
+-		0.75f,
++		0.5f,
+ 		0,
+ 		{ }
+ 	},
+ 
+ 	/* proximity sensor */
+ 	{
+-		"TSL27713FN",
+-		"Taos",
++		"proximity sensor",
++		"vender",
+ 		1,
+ 		SENSORS_PROXIMITY_HANDLE,
+ 		SENSOR_TYPE_PROXIMITY,
+-		5.0f,
+-		5.0f,
++		1.0f,
++		0.5f,
+ 		0.75f,
+ 		0,
+ 		{ }
+-- 
+1.7.8.3
+

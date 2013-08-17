@@ -18,8 +18,8 @@ Subject: [PATCH] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype support
 
 Change-Id: I8aebb3907140558de09004fed1093d81046186ab
 ---
- target/msm8610/init.c | 3 +++
- 1 file changed, 3 insertions(+)
+ target/msm8610/init.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
 
 diff --git a/target/msm8610/init.c b/target/msm8610/init.c
 index 3ad6a30..a208ca3 100644
@@ -43,5 +43,5 @@ index 3ad6a30..a208ca3 100644
  		dprintf(CRITICAL, "Platform Subtype : %u is not supported\n", platform_subtype);
  		ASSERT(0);
 -- 
-1.8.3.rc3.5.g9134a46.dirty
+1.7.8.3
 

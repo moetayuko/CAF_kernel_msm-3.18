@@ -1,13 +1,13 @@
 From 011dfa73f778ba34923c2609f872aa949e638df4 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 12 Aug 2013 21:14:19 +0800
-Subject: [PATCH 2/2] add lcd dtsi to enable display in order to fix zygote
+Subject: [PATCH 2/7] add lcd dtsi to enable display in order to fix zygote
  restart issue
 
 Change-Id: I0b914e3c8eefd912e31287c9756d9a46f0077f12
 ---
- .../boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi  | 150 +++++++++++++++++++++
- arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts         |  11 +-
+ .../boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi  |  150 ++++++++++++++++++++
+ arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts         |   11 +-
  2 files changed, 156 insertions(+), 5 deletions(-)
  create mode 100755 arch/arm/boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi
 
@@ -191,5 +191,5 @@ index f03e19e..4de516c 100644
  };
  
 -- 
-1.8.3.rc3.5.g9134a46.dirty
+1.7.8.3
 

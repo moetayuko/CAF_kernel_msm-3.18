@@ -1,0 +1,60 @@
+From 629141a53b51802ae3dd8de42ba4fc007b9e49a5 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 16 Aug 2013 16:32:37 +0800
+Subject: [PATCH 6/7] fix G-sensor ST lis3dh and Kionix X-Y direction inverse
+ issue
+
+Change-Id: I80e820b50303ce0d17fdd1bd5818e22f2f1c5777
+---
+ arch/arm/boot/dts/msm8610-qrd.dtsi |    2 +-
+ drivers/input/misc/kionix_accel.c  |    4 ++--
+ drivers/input/misc/lis3dh_acc.c    |    4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
+index d79d5e6..e996495 100644
+--- a/arch/arm/boot/dts/msm8610-qrd.dtsi
++++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
+@@ -174,7 +174,7 @@
+ 			compatible = "ST Micro,lis3dh_acc";
+ 			reg = <0x18>;
+ 			vdd-supply = <&pm8110_l19>;
+-			vddio-supply = <&pm8110_l14>;
++			vddio-supply = <&pm8110_l6>;
+ 			lis3dh,min_interval = <10>;
+ 			lis3dh,poll_interval = <200>;
+ 			lis3dh,g_range = <2>;
+diff --git a/drivers/input/misc/kionix_accel.c b/drivers/input/misc/kionix_accel.c
+index 82db4e8..e351751 100644
+--- a/drivers/input/misc/kionix_accel.c
++++ b/drivers/input/misc/kionix_accel.c
+@@ -1135,8 +1135,8 @@ static void kionix_accel_grp7_report_accel_data(struct kionix_accel_driver *acce
+ 				z = ((s16) le16_to_cpu(accel_data.accel_data_s16[acceld->axis_map_z])) >> acceld->shift;
+ 
+ 				acceld->accel_data[acceld->axis_map_x] = (acceld->negate_x ? -x : x) + acceld->accel_cali[acceld->axis_map_x];
+-				acceld->accel_data[acceld->axis_map_y] = (acceld->negate_y ? -y : y) + acceld->accel_cali[acceld->axis_map_y];
+-				acceld->accel_data[acceld->axis_map_z] = (acceld->negate_z ? -z : z) + acceld->accel_cali[acceld->axis_map_z];
++				acceld->accel_data[acceld->axis_map_y] = -(acceld->negate_y ? -y : y) + acceld->accel_cali[acceld->axis_map_y];
++				acceld->accel_data[acceld->axis_map_z] = -(acceld->negate_z ? -z : z) + acceld->accel_cali[acceld->axis_map_z];
+ 
+ 				if(atomic_read(&acceld->accel_input_event) > 0) {
+ 					input_report_abs(acceld->input_dev, ABS_X, acceld->accel_data[acceld->axis_map_x]);
+diff --git a/drivers/input/misc/lis3dh_acc.c b/drivers/input/misc/lis3dh_acc.c
+index 00184ae..b6fd2c9 100644
+--- a/drivers/input/misc/lis3dh_acc.c
++++ b/drivers/input/misc/lis3dh_acc.c
+@@ -742,9 +742,9 @@ static int lis3dh_acc_get_acceleration_data(struct lis3dh_acc_data *acc,
+ 	hw_d[2] = hw_d[2] * acc->sensitivity;
+ 
+ 
+-	xyz[0] = ((acc->pdata->negate_x) ? (-hw_d[acc->pdata->axis_map_x])
++	xyz[0] = ((acc->pdata->negate_y) ? (-hw_d[acc->pdata->axis_map_x])
+ 		   : (hw_d[acc->pdata->axis_map_x]));
+-	xyz[1] = ((acc->pdata->negate_y) ? (-hw_d[acc->pdata->axis_map_y])
++	xyz[1] = -((acc->pdata->negate_x) ? (-hw_d[acc->pdata->axis_map_y])
+ 		   : (hw_d[acc->pdata->axis_map_y]));
+ 	xyz[2] = ((acc->pdata->negate_z) ? (-hw_d[acc->pdata->axis_map_z])
+ 		   : (hw_d[acc->pdata->axis_map_z]));
+-- 
+1.7.8.3
+
