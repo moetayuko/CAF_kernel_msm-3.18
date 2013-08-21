@@ -1,0 +1,3262 @@
+From a0edfd760da7af584c1425703bccf5bb8c6a6624 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Wed, 21 Aug 2013 08:55:38 +0800
+Subject: [PATCH 2/2] support lk logo in jb_mr2
+
+Change-Id: Ia47754ba3839f21014c380ae5d0a291679aebfc4
+---
+ dev/panel/msm/mipi_auo_video_qhd.c                 |  270 +++++++
+ dev/panel/msm/mipi_boe_video_qhd.c                 |  557 ++++++++++++++
+ dev/panel/msm/mipi_byd_video_qhd.c                 |  551 ++++++++++++++
+ dev/panel/msm/mipi_emulator_video_qhd.c            |  169 +++++
+ dev/panel/msm/mipi_otm9605a_video_qhd.c            |  786 ++++++++++++++++++++
+ dev/panel/msm/mipi_tianma_video_qhd.c              |  321 ++++++++
+ dev/panel/msm/rules.mk                             |    7 +-
+ include/hw_lcd_panel.h                             |   46 ++
+ platform/msm8610/platform.c                        |    5 +
+ platform/msm_shared/hw_boardid_self_adapt.c        |   44 ++
+ .../msm_shared/include/hw_boardid_self_adapt.h     |   24 +
+ platform/msm_shared/rules.mk                       |    5 +
+ platform/msm_shared/smem.h                         |    8 +-
+ target/msm8610/hw_lcd_panel.c                      |  132 ++++
+ target/msm8610/init.c                              |    3 +-
+ target/msm8610/rules.mk                            |    3 +-
+ target/msm8610/target_display.c                    |   90 ++-
+ 17 files changed, 2997 insertions(+), 24 deletions(-)
+ create mode 100644 dev/panel/msm/mipi_auo_video_qhd.c
+ create mode 100644 dev/panel/msm/mipi_boe_video_qhd.c
+ create mode 100644 dev/panel/msm/mipi_byd_video_qhd.c
+ create mode 100644 dev/panel/msm/mipi_emulator_video_qhd.c
+ create mode 100644 dev/panel/msm/mipi_otm9605a_video_qhd.c
+ create mode 100644 dev/panel/msm/mipi_tianma_video_qhd.c
+ create mode 100644 include/hw_lcd_panel.h
+ create mode 100644 platform/msm_shared/hw_boardid_self_adapt.c
+ create mode 100644 platform/msm_shared/include/hw_boardid_self_adapt.h
+ create mode 100644 target/msm8610/hw_lcd_panel.c
+
+diff --git a/dev/panel/msm/mipi_auo_video_qhd.c b/dev/panel/msm/mipi_auo_video_qhd.c
+new file mode 100644
+index 0000000..4814490
+--- /dev/null
++++ b/dev/panel/msm/mipi_auo_video_qhd.c
+@@ -0,0 +1,270 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define AUO_PANEL_T_CLK_PRE         0x1b
++#define AUO_PANEL_T_CLK_POST        0x04
++
++static char auo_on_cmd0[] = {	
++	0x06, 0x00, 0x39, 0xc0,
++	0xF0, 0x55, 0xAA, 0x52,
++	0x08, 0x00, 0xFF, 0xFF
++};
++
++static char auo_on_cmd1[] = {			
++	0x03, 0x00, 0x39, 0xc0,
++	0xB1, 0x68, 0x00, 0xFF
++};
++
++static char auo_on_cmd2[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xB3, 0x82, 0xFF, 0xFF
++};
++
++static char auo_on_cmd3[] = {				
++	0x13, 0x00, 0x39, 0xc0,
++	0xC8, 0x01, 0x02, 0x45,
++	0x45, 0x45, 0x45, 0x45,
++	0x45, 0x45, 0x45, 0x45,
++	0x45, 0x45, 0x45, 0x45,
++	0x45, 0x45, 0x45, 0xFF
++};
++
++static char auo_on_cmd4[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xBC, 0x05, 0xFF, 0xFF 
++};
++
++static char auo_on_cmd5[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xBA, 0x05, 0xFF, 0xFF
++};
++
++static char auo_on_cmd6[] = {					
++	0x05, 0x00, 0x39, 0xc0,
++	0xFF, 0xAA, 0x55, 0x25,
++	0x01, 0xFF, 0xFF, 0xFF
++};
++
++static char auo_on_cmd7[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xF3, 0x02, 0xFF, 0xFF
++};
++
++static char auo_on_cmd8[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x6F, 0x17, 0xFF, 0xFF
++};
++
++static char auo_on_cmd9[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xF2, 0x20, 0xFF, 0xFF
++};
++
++static char auo_on_cmd10[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x35, 0x00, 0xFF, 0xFF
++};
++
++static char auo_on_cmd11[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x51, 0xff, 0xFF, 0xFF
++};
++
++static char auo_on_cmd12[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x53, 0x2c, 0xFF, 0xFF
++};
++
++static char auo_on_cmd13[] = {					
++	0x11, 0x00, 0x05, 0x80
++};
++
++static char auo_on_cmd14[] = {
++	0x29, 0x00, 0x05, 0x80
++};		
++
++static struct mipi_dsi_cmd auo_qhd_panel_video_mode_cmds[] = {
++	{sizeof(auo_on_cmd0), (char *)auo_on_cmd0},
++	{sizeof(auo_on_cmd1), (char *)auo_on_cmd1},
++	{sizeof(auo_on_cmd2), (char *)auo_on_cmd2},
++	{sizeof(auo_on_cmd3), (char *)auo_on_cmd3},
++	{sizeof(auo_on_cmd4), (char *)auo_on_cmd4},
++	{sizeof(auo_on_cmd5), (char *)auo_on_cmd5},
++	{sizeof(auo_on_cmd6), (char *)auo_on_cmd6},
++	{sizeof(auo_on_cmd7), (char *)auo_on_cmd7},
++	{sizeof(auo_on_cmd8), (char *)auo_on_cmd8},
++	{sizeof(auo_on_cmd9), (char *)auo_on_cmd9},
++	{sizeof(auo_on_cmd10), (char *)auo_on_cmd10},
++	{sizeof(auo_on_cmd11), (char *)auo_on_cmd11},
++	{sizeof(auo_on_cmd12), (char *)auo_on_cmd12},
++	{sizeof(auo_on_cmd13), (char *)auo_on_cmd13},
++	{sizeof(auo_on_cmd14), (char *)auo_on_cmd14},
++};
++
++int mipi_auo_video_qhd_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 1;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++			(pinfo->yres),
++			(pinfo->xres),
++			(pinfo->yres),
++			(lcdc->h_front_porch),
++			(lcdc->h_back_porch),
++			(lcdc->v_front_porch),
++			(lcdc->v_back_porch),
++			(lcdc->h_pulse_width),
++			(lcdc->v_pulse_width),
++			pinfo->mipi.dst_format,
++			pinfo->mipi.traffic_mode,
++			lane_en,
++			low_pwr_stop_mode,
++			eof_bllp_pwr,
++			interleav,
++			MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_auo_video_qhd_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_auo_video_qhd_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x72, 0x19, 0x10, 0x00, 0x3c, 0x46,
++		0x14, 0x1c, 0x1c, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_auo_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_auo_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 4;
++	pinfo->lcdc.h_front_porch = 4;
++	pinfo->lcdc.h_pulse_width = 10;
++	pinfo->lcdc.v_back_porch = 4;
++	pinfo->lcdc.v_front_porch = 4;
++	pinfo->lcdc.v_pulse_width = 10;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 393000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 2;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	//slz add
++	pinfo->mipi.vc = 0;
++	pinfo->mipi.stream = 0;
++//	pinfo->mipi.rgb_swap = 0;
++	pinfo->mipi.mdp_trigger = 0x04;
++	pinfo->mipi.dma_trigger = 0x04;
++	pinfo->mipi.data_lane0 = TRUE;
++	pinfo->mipi.data_lane1 = TRUE;
++	
++	pinfo->mipi.pulse_mode_hsa_he = 1;
++	pinfo->mipi.hfp_power_stop = 0;
++	pinfo->mipi.hbp_power_stop = 0;
++	pinfo->mipi.hsa_power_stop = 0;
++	pinfo->mipi.eof_bllp_power_stop = 1;
++	pinfo->mipi.bllp_power_stop = 1;
++	//slz
++	
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = AUO_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = AUO_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = auo_qhd_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(auo_qhd_panel_video_mode_cmds);
++
++	pinfo->on = mipi_auo_video_qhd_on;
++	pinfo->off = mipi_auo_video_qhd_off;
++	pinfo->config = mipi_auo_video_qhd_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/mipi_boe_video_qhd.c b/dev/panel/msm/mipi_boe_video_qhd.c
+new file mode 100644
+index 0000000..015a46c
+--- /dev/null
++++ b/dev/panel/msm/mipi_boe_video_qhd.c
+@@ -0,0 +1,557 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define BOE_PANEL_T_CLK_PRE         0x1b
++#define BOE_PANEL_T_CLK_POST        0x04
++
++static char boe_on_cmd0[] = {	
++	0x06, 0x00, 0x39, 0xc0,
++	0xF0, 0x55, 0xAA, 0x52,
++	0x08, 0x00, 0xFF, 0xFF
++};
++
++static char boe_on_cmd1[] = {														
++	0x02, 0x00, 0x39, 0xc0,
++	0xBC, 0x00, 0xFF, 0xFF
++};
++
++static char boe_on_cmd2[] = {						
++	0x04, 0x00, 0x39, 0xc0,
++	0xCC, 0x03, 0x00, 0x00,
++};
++
++static char boe_on_cmd3[] = {
++	0x06, 0x00, 0x39, 0xc0,
++	0xB0, 0x00, 0x0C, 0x40,
++	0x3C, 0x3C, 0xFF, 0xFF
++};
++
++static char boe_on_cmd4[] = {							
++	0x03, 0x00, 0x39, 0xc0,
++	0xB1, 0xFC, 0x00, 0xFF
++};
++
++static char boe_on_cmd5[] = {							
++	0x02, 0x00, 0x39, 0xc0,
++	0xB6, 0x08, 0xFF, 0xFF
++};
++
++static char boe_on_cmd6[] = {							
++	0x03, 0x00, 0x39, 0xc0,
++	0xB7, 0x00, 0x00, 0xFF
++};
++
++static char boe_on_cmd7[] = {
++	0x02, 0x00, 0x39, 0xc0,
++	0xBA, 0x01, 0xFF, 0xFF
++};
++
++static char boe_on_cmd8[] = {							
++	0x06, 0x00, 0x39, 0xc0,
++	0xBD, 0x01, 0x41, 0x10,
++	0x37, 0x01, 0xFF, 0xFF
++};
++
++static char boe_on_cmd9[] = {							
++	0x03, 0x00, 0x39, 0xc0,
++	0xE0, 0x01, 0x01, 0xFF
++};
++
++static char boe_on_cmd10[] = {							
++	0x06, 0x00, 0x39, 0xc0,
++	0xF0, 0x55, 0xAA, 0x52,
++	0x08, 0x01, 0xFF, 0xFF
++};
++
++static char boe_on_cmd11[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB0, 0x0A, 0x0A, 0x0A
++};
++
++static char boe_on_cmd12[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB6, 0x44, 0x44, 0x44
++};
++
++static char boe_on_cmd13[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB1, 0x0A, 0x0A, 0x0A
++};
++
++static char boe_on_cmd14[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB7, 0x24, 0x24, 0x24
++};
++
++static char boe_on_cmd15[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB2, 0x03, 0x03, 0x03
++};
++
++static char boe_on_cmd16[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB8, 0x33, 0x33, 0x33
++};
++
++static char boe_on_cmd17[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB3, 0x0D, 0x0D, 0x0D
++};
++
++static char boe_on_cmd18[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB9, 0x24, 0x24, 0x24
++};
++
++static char boe_on_cmd19[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB4, 0x0A, 0x0A, 0x0A
++};
++
++static char boe_on_cmd20[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xBA, 0x24, 0x24, 0x24
++};
++
++static char boe_on_cmd21[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xB5, 0x07, 0x07, 0x07
++};
++
++static char boe_on_cmd22[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xBC, 0x00, 0x78, 0x00
++};
++
++static char boe_on_cmd23[] = {							
++	0x04, 0x00, 0x39, 0xc0,
++	0xBD, 0x00, 0x78, 0x00
++};
++
++static char boe_on_cmd24[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD1, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd25[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD2, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd26[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD3, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03,
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd27[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xD4, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd28[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD5, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd29[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD6, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd30[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD7, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03,
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd31[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xD8, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd32[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xD9, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd33[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xDD, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd34[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xDE, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03, 
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd35[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xDF, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd36[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE0, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd37[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE1, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd38[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE2, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03,
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd39[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xE3, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++	
++static char boe_on_cmd40[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE4, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd41[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE5, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd42[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE6, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03,
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd43[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xE7, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd44[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE8, 0x00, 0x43, 0x00,
++	0x5A, 0x00, 0x7E, 0x00,
++	0x96, 0x00, 0xA1, 0x00,
++	0xC3, 0x00, 0xE9, 0x01,
++	0x14, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd45[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xE9, 0x01, 0x35, 0x01,
++	0x6D, 0x01, 0x9A, 0x01,
++	0xE1, 0x02, 0x19, 0x02,
++	0x1B, 0x02, 0x4D, 0x02,
++	0x85, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd46[] = {							
++	0x11, 0x00, 0x39, 0xc0,
++	0xEA, 0x02, 0xA6, 0x02,
++	0xD4, 0x02, 0xF2, 0x03,
++	0x23, 0x03, 0x41, 0x03,
++	0x6A, 0x03, 0x7F, 0x03,
++	0x9E, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd47[] = {							
++	0x05, 0x00, 0x39, 0xc0,
++	0xEB, 0x03, 0xB4, 0x03,
++	0xFF, 0xFF, 0xFF, 0xFF
++};
++
++static char boe_on_cmd48[] = {							
++	0x02, 0x00, 0x39, 0xc0,
++	0x51, 0xff, 0xFF, 0xFF
++};
++
++static char boe_on_cmd49[] = {							
++	0x02, 0x00, 0x39, 0xc0,
++	0x53, 0x2c, 0xFF, 0xFF
++};
++
++static char boe_on_cmd50[] = {							
++	0x02, 0x00, 0x39, 0xc0,
++	0x55, 0x02, 0xFF, 0xFF
++};
++
++static char boe_on_cmd51[] = {							
++	0x11, 0x00, 0x05, 0x80
++};
++
++static char boe_on_cmd52[] = {
++	0x29, 0x00, 0x05, 0x80
++};
++
++static struct mipi_dsi_cmd boe_qhd_panel_video_mode_cmds[] = {
++	{sizeof(boe_on_cmd0), (char *)boe_on_cmd0},
++	{sizeof(boe_on_cmd1), (char *)boe_on_cmd1},
++	{sizeof(boe_on_cmd2), (char *)boe_on_cmd2},
++	{sizeof(boe_on_cmd3), (char *)boe_on_cmd3},
++	{sizeof(boe_on_cmd4), (char *)boe_on_cmd4},
++	{sizeof(boe_on_cmd5), (char *)boe_on_cmd5},
++	{sizeof(boe_on_cmd6), (char *)boe_on_cmd6},
++	{sizeof(boe_on_cmd7), (char *)boe_on_cmd7},
++	{sizeof(boe_on_cmd8), (char *)boe_on_cmd8},
++	{sizeof(boe_on_cmd9), (char *)boe_on_cmd9},
++	{sizeof(boe_on_cmd10), (char *)boe_on_cmd10},
++	{sizeof(boe_on_cmd11), (char *)boe_on_cmd11},
++	{sizeof(boe_on_cmd12), (char *)boe_on_cmd12},
++	{sizeof(boe_on_cmd13), (char *)boe_on_cmd13},
++	{sizeof(boe_on_cmd14), (char *)boe_on_cmd14},
++	{sizeof(boe_on_cmd15), (char *)boe_on_cmd15},
++	{sizeof(boe_on_cmd16), (char *)boe_on_cmd16},
++	{sizeof(boe_on_cmd17), (char *)boe_on_cmd17},
++	{sizeof(boe_on_cmd18), (char *)boe_on_cmd18},
++	{sizeof(boe_on_cmd19), (char *)boe_on_cmd19},
++	{sizeof(boe_on_cmd20), (char *)boe_on_cmd20},
++	{sizeof(boe_on_cmd21), (char *)boe_on_cmd21},
++	{sizeof(boe_on_cmd22), (char *)boe_on_cmd22},
++	{sizeof(boe_on_cmd23), (char *)boe_on_cmd23},
++	{sizeof(boe_on_cmd24), (char *)boe_on_cmd24},
++	{sizeof(boe_on_cmd25), (char *)boe_on_cmd25},
++	{sizeof(boe_on_cmd26), (char *)boe_on_cmd26},
++	{sizeof(boe_on_cmd27), (char *)boe_on_cmd27},
++	{sizeof(boe_on_cmd28), (char *)boe_on_cmd28},
++	{sizeof(boe_on_cmd29), (char *)boe_on_cmd29},
++	{sizeof(boe_on_cmd30), (char *)boe_on_cmd30},
++	{sizeof(boe_on_cmd31), (char *)boe_on_cmd31},
++	{sizeof(boe_on_cmd32), (char *)boe_on_cmd32},
++	{sizeof(boe_on_cmd33), (char *)boe_on_cmd33},
++	{sizeof(boe_on_cmd34), (char *)boe_on_cmd34},
++	{sizeof(boe_on_cmd35), (char *)boe_on_cmd35},
++	{sizeof(boe_on_cmd36), (char *)boe_on_cmd36},
++	{sizeof(boe_on_cmd37), (char *)boe_on_cmd37},
++	{sizeof(boe_on_cmd38), (char *)boe_on_cmd38},
++	{sizeof(boe_on_cmd39), (char *)boe_on_cmd39},
++	{sizeof(boe_on_cmd40), (char *)boe_on_cmd40},
++	{sizeof(boe_on_cmd41), (char *)boe_on_cmd41},
++	{sizeof(boe_on_cmd42), (char *)boe_on_cmd42},
++	{sizeof(boe_on_cmd43), (char *)boe_on_cmd43},
++	{sizeof(boe_on_cmd44), (char *)boe_on_cmd44},
++	{sizeof(boe_on_cmd45), (char *)boe_on_cmd45},
++	{sizeof(boe_on_cmd46), (char *)boe_on_cmd46},
++	{sizeof(boe_on_cmd47), (char *)boe_on_cmd47},
++	{sizeof(boe_on_cmd48), (char *)boe_on_cmd48},
++	{sizeof(boe_on_cmd49), (char *)boe_on_cmd49},
++	{sizeof(boe_on_cmd50), (char *)boe_on_cmd50},
++	{sizeof(boe_on_cmd51), (char *)boe_on_cmd51},
++	{sizeof(boe_on_cmd52), (char *)boe_on_cmd52},
++};
++
++int mipi_boe_video_qhd_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 1;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++			(pinfo->yres),
++			(pinfo->xres),
++			(pinfo->yres),
++			(lcdc->h_front_porch),
++			(lcdc->h_back_porch),
++			(lcdc->v_front_porch),
++			(lcdc->v_back_porch),
++			(lcdc->h_pulse_width),
++			(lcdc->v_pulse_width),
++			pinfo->mipi.dst_format,
++			pinfo->mipi.traffic_mode,
++			lane_en,
++			low_pwr_stop_mode,
++			eof_bllp_pwr,
++			interleav,
++			MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_boe_video_qhd_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_boe_video_qhd_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x85, 0x1e, 0x14, 0x00, 0x43, 0x4c,
++		0x18, 0x21, 0x22, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_boe_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_boe_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 60;
++	pinfo->lcdc.h_front_porch = 60;
++	pinfo->lcdc.h_pulse_width = 8;
++	pinfo->lcdc.v_back_porch = 15;
++	pinfo->lcdc.v_front_porch = 7;
++	pinfo->lcdc.v_pulse_width = 5;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 399000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 2;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = BOE_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = BOE_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = boe_qhd_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(boe_qhd_panel_video_mode_cmds);
++
++	pinfo->on = mipi_boe_video_qhd_on;
++	pinfo->off = mipi_boe_video_qhd_off;
++	pinfo->config = mipi_boe_video_qhd_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/mipi_byd_video_qhd.c b/dev/panel/msm/mipi_byd_video_qhd.c
+new file mode 100644
+index 0000000..b352dc1
+--- /dev/null
++++ b/dev/panel/msm/mipi_byd_video_qhd.c
+@@ -0,0 +1,551 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define BYD_PANEL_T_CLK_PRE         0x1b
++#define BYD_PANEL_T_CLK_POST        0x04
++
++static char byd_on_cmd0[] = {		
++	0x06, 0x00, 0x39, 0xc0,
++	0xF0, 0x55, 0xAA, 0x52,
++	0x08, 0x00, 0xFF, 0xFF
++};
++
++static char byd_on_cmd1[] = {
++	0x02, 0x00, 0x39, 0xc0,
++	0xB3, 0x82, 0xFF, 0xFF
++};
++
++static char byd_on_cmd2[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xBC, 0x00, 0xFF, 0xFF
++};
++
++static char byd_on_cmd3[] = {						
++	0x06, 0x00, 0x39, 0xc0,
++	0xF0, 0x55, 0xAA, 0x52,
++	0x08, 0x01, 0xFF, 0xFF
++};
++
++static char byd_on_cmd4[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xC0, 0xC0, 0xFF, 0xFF
++};
++
++static char byd_on_cmd5[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xC2, 0x20, 0xFF, 0xFF
++};
++
++static char byd_on_cmd6[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB0, 0x05, 0xFF, 0xFF
++};
++
++static char byd_on_cmd7[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB6, 0x44, 0xFF, 0xFF
++};
++
++static char byd_on_cmd8[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB1, 0x05, 0xFF, 0xFF
++};
++
++static char byd_on_cmd9[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB7, 0x34, 0xFF, 0xFF
++};
++
++static char byd_on_cmd10[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB2, 0x02, 0xFF, 0xFF
++};
++
++static char byd_on_cmd11[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB8, 0x13, 0xFF, 0xFF
++};
++
++static char byd_on_cmd12[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xB3, 0x0E, 0xFF, 0xFF
++};
++
++static char byd_on_cmd13[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB9, 0x23, 0xFF, 0xFF
++};
++
++static char byd_on_cmd14[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xB4, 0x08, 0xFF, 0xFF
++};
++
++static char byd_on_cmd15[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xBA, 0x23, 0xFF, 0xFF
++};
++
++static char byd_on_cmd16[] = {						
++	0x04, 0x00, 0x39, 0xc0,
++	0xBC, 0x00, 0x78, 0x00,
++};
++
++static char byd_on_cmd17[] = {						
++	0x04, 0x00, 0x39, 0xc0,
++	0xBD, 0x00, 0x78, 0x00,
++};
++
++static char byd_on_cmd18[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xBE, 0x34, 0xFF, 0xFF
++};
++
++static char byd_on_cmd19[] = {					
++	0x11, 0x00, 0x39, 0xc0,
++	0xD1, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01, 
++	0x07, 0xFF, 0xFF, 0xFF
++};
++	
++static char byd_on_cmd20[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD2, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd21[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD3, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd22[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xD4, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd23[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD5, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01,
++	0x07, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd24[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD6, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd25[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD7, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd26[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xD8, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd27[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xD9, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01,
++	0x07, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd28[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xDD, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd29[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xDE, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd30[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xDF, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd31[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE0, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01,
++	0x07, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd32[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE1, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++	
++static char byd_on_cmd33[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE2, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++	
++static char byd_on_cmd34[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xE3, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++	
++static char byd_on_cmd35[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE4, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01,
++	0x07, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd36[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE5, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd37[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE6, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd38[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xE7, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd39[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE8, 0x00, 0x1C, 0x00,
++	0x38, 0x00, 0x5C, 0x00,
++	0x7A, 0x00, 0x91, 0x00,
++	0xB6, 0x00, 0xD5, 0x01,
++	0x07, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd40[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xE9, 0x01, 0x2F, 0x01,
++	0x6E, 0x01, 0x9F, 0x01,
++	0xEC, 0x02, 0x28, 0x02,
++	0x29, 0x02, 0x61, 0x02,
++	0x9C, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd41[] = {						
++	0x11, 0x00, 0x39, 0xc0,
++	0xEA, 0x02, 0xC0, 0x02,
++	0xED, 0x03, 0x0A, 0x03,
++	0x2D, 0x03, 0x40, 0x03,
++	0x50, 0x03, 0x56, 0x03,
++	0x5B, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd42[] = {					
++	0x05, 0x00, 0x39, 0xc0,
++	0xEB, 0x03, 0x5D, 0x03,
++	0x5D, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd43[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xFF, 0xAA, 0x55, 0x25,
++	0x01, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd44[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x6F, 0x0B, 0xFF, 0xFF
++};
++
++static char byd_on_cmd45[] = {						
++	0x05, 0x00, 0x39, 0xc0,
++	0xF4, 0x12, 0x12, 0x56,
++	0x13, 0xFF, 0xFF, 0xFF
++};
++
++static char byd_on_cmd46[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x51, 0xff, 0xFF, 0xFF
++};
++
++static char byd_on_cmd47[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x53, 0x2c, 0xFF, 0xFF
++};
++
++static char byd_on_cmd48[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x55, 0x02, 0xFF, 0xFF
++};
++
++static char byd_on_cmd49[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x35, 0x00, 0xFF, 0xFF
++};
++
++static char byd_on_cmd50[] = {						
++	0x11, 0x00, 0x05, 0x80
++};
++
++static char byd_on_cmd51[] = {
++	0x29, 0x00, 0x05, 0x80
++};
++
++static struct mipi_dsi_cmd byd_qhd_panel_video_mode_cmds[] = {
++{sizeof(byd_on_cmd0), (char *)byd_on_cmd0},
++{sizeof(byd_on_cmd1), (char *)byd_on_cmd1},
++{sizeof(byd_on_cmd2), (char *)byd_on_cmd2},
++{sizeof(byd_on_cmd3), (char *)byd_on_cmd3},
++{sizeof(byd_on_cmd4), (char *)byd_on_cmd4},
++{sizeof(byd_on_cmd5), (char *)byd_on_cmd5},
++{sizeof(byd_on_cmd6), (char *)byd_on_cmd6},
++{sizeof(byd_on_cmd7), (char *)byd_on_cmd7},
++{sizeof(byd_on_cmd8), (char *)byd_on_cmd8},
++{sizeof(byd_on_cmd9), (char *)byd_on_cmd9},
++{sizeof(byd_on_cmd10), (char *)byd_on_cmd10},
++{sizeof(byd_on_cmd11), (char *)byd_on_cmd11},
++{sizeof(byd_on_cmd12), (char *)byd_on_cmd12},
++{sizeof(byd_on_cmd13), (char *)byd_on_cmd13},
++{sizeof(byd_on_cmd14), (char *)byd_on_cmd14},
++{sizeof(byd_on_cmd15), (char *)byd_on_cmd15},
++{sizeof(byd_on_cmd16), (char *)byd_on_cmd16},
++{sizeof(byd_on_cmd17), (char *)byd_on_cmd17},
++{sizeof(byd_on_cmd18), (char *)byd_on_cmd18},
++{sizeof(byd_on_cmd19), (char *)byd_on_cmd19},
++{sizeof(byd_on_cmd20), (char *)byd_on_cmd20},
++{sizeof(byd_on_cmd21), (char *)byd_on_cmd21},
++{sizeof(byd_on_cmd22), (char *)byd_on_cmd22},
++{sizeof(byd_on_cmd23), (char *)byd_on_cmd23},
++{sizeof(byd_on_cmd24), (char *)byd_on_cmd24},
++{sizeof(byd_on_cmd25), (char *)byd_on_cmd25},
++{sizeof(byd_on_cmd26), (char *)byd_on_cmd26},
++{sizeof(byd_on_cmd27), (char *)byd_on_cmd27},
++{sizeof(byd_on_cmd28), (char *)byd_on_cmd28},
++{sizeof(byd_on_cmd29), (char *)byd_on_cmd29},
++{sizeof(byd_on_cmd30), (char *)byd_on_cmd30},
++{sizeof(byd_on_cmd31), (char *)byd_on_cmd31},
++{sizeof(byd_on_cmd32), (char *)byd_on_cmd32},
++{sizeof(byd_on_cmd33), (char *)byd_on_cmd33},
++{sizeof(byd_on_cmd34), (char *)byd_on_cmd34},
++{sizeof(byd_on_cmd35), (char *)byd_on_cmd35},
++{sizeof(byd_on_cmd36), (char *)byd_on_cmd36},
++{sizeof(byd_on_cmd37), (char *)byd_on_cmd37},
++{sizeof(byd_on_cmd38), (char *)byd_on_cmd38},
++{sizeof(byd_on_cmd39), (char *)byd_on_cmd39},
++{sizeof(byd_on_cmd40), (char *)byd_on_cmd40},
++{sizeof(byd_on_cmd41), (char *)byd_on_cmd41},
++{sizeof(byd_on_cmd42), (char *)byd_on_cmd42},
++{sizeof(byd_on_cmd43), (char *)byd_on_cmd43},
++{sizeof(byd_on_cmd44), (char *)byd_on_cmd44},
++{sizeof(byd_on_cmd45), (char *)byd_on_cmd45},
++{sizeof(byd_on_cmd46), (char *)byd_on_cmd46},
++{sizeof(byd_on_cmd47), (char *)byd_on_cmd47},
++{sizeof(byd_on_cmd48), (char *)byd_on_cmd48},
++{sizeof(byd_on_cmd49), (char *)byd_on_cmd49},
++{sizeof(byd_on_cmd50), (char *)byd_on_cmd50},
++{sizeof(byd_on_cmd51), (char *)byd_on_cmd51},
++};
++
++int mipi_byd_video_qhd_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 0;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++		(pinfo->yres),
++		(pinfo->xres),
++		(pinfo->yres),
++		(lcdc->h_front_porch),
++		(lcdc->h_back_porch),
++		(lcdc->v_front_porch),
++		(lcdc->v_back_porch),
++		(lcdc->h_pulse_width),
++		(lcdc->v_pulse_width),
++		pinfo->mipi.dst_format,
++		pinfo->mipi.traffic_mode,
++		lane_en,
++		low_pwr_stop_mode,
++		eof_bllp_pwr,
++		interleav,
++		MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_byd_video_qhd_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_byd_video_qhd_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x75, 0x1a, 0x11, 0x00, 0x3d, 0x45,
++		0x15, 0x1d, 0x1c, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_byd_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_byd_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 3;
++	pinfo->lcdc.h_front_porch = 15;
++	pinfo->lcdc.h_pulse_width = 11;
++	pinfo->lcdc.v_back_porch = 3;
++	pinfo->lcdc.v_front_porch = 15;
++	pinfo->lcdc.v_pulse_width = 11;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 396000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 2;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = BYD_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = BYD_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = byd_qhd_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(byd_qhd_panel_video_mode_cmds);
++
++	pinfo->on = mipi_byd_video_qhd_on;
++	pinfo->off = mipi_byd_video_qhd_off;
++	pinfo->config = mipi_byd_video_qhd_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/mipi_emulator_video_qhd.c b/dev/panel/msm/mipi_emulator_video_qhd.c
+new file mode 100644
+index 0000000..44475be
+--- /dev/null
++++ b/dev/panel/msm/mipi_emulator_video_qhd.c
+@@ -0,0 +1,169 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define EMULATOR_PANEL_T_CLK_PRE         0x1b
++#define EMULATOR_PANEL_T_CLK_POST        0x04
++
++static char emulator_cmd0[] = {					
++    0x11, 0x00, 0x05, 0x80
++};
++
++static char emulator_cmd1[] = {
++    0x29, 0x00, 0x05, 0x80
++};
++
++static struct mipi_dsi_cmd emulator_wvga_panel_video_mode_cmds[] = {
++	{sizeof(emulator_cmd0), (char *)emulator_cmd0},
++	{sizeof(emulator_cmd1), (char *)emulator_cmd1},
++};
++
++int mipi_emulator_video_wvga_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 1;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++			(pinfo->yres),
++			(pinfo->xres),
++			(pinfo->yres),
++			(lcdc->h_front_porch),
++			(lcdc->h_back_porch),
++			(lcdc->v_front_porch),
++			(lcdc->v_back_porch),
++			(lcdc->h_pulse_width),
++			(lcdc->v_pulse_width),
++			pinfo->mipi.dst_format,
++			pinfo->mipi.traffic_mode,
++			lane_en,
++			low_pwr_stop_mode,
++			eof_bllp_pwr,
++			interleav,
++			MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_emulator_video_wvga_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_emulator_video_wvga_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x8b, 0x1f, 0x14, 0x00, 0x45, 0x4a,
++		0x19, 0x23, 0x23, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_emulator_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_emulator_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 100;
++	pinfo->lcdc.h_front_porch = 100;
++	pinfo->lcdc.h_pulse_width = 4;
++	pinfo->lcdc.v_back_porch = 32;
++	pinfo->lcdc.v_front_porch = 32;
++	pinfo->lcdc.v_pulse_width = 2;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 399000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 1;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = EMULATOR_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = EMULATOR_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = emulator_wvga_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(emulator_wvga_panel_video_mode_cmds);
++
++	pinfo->on = mipi_emulator_video_wvga_on;
++	pinfo->off = mipi_emulator_video_wvga_off;
++	pinfo->config = mipi_emulator_video_wvga_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/mipi_otm9605a_video_qhd.c b/dev/panel/msm/mipi_otm9605a_video_qhd.c
+new file mode 100644
+index 0000000..69d1e34
+--- /dev/null
++++ b/dev/panel/msm/mipi_otm9605a_video_qhd.c
+@@ -0,0 +1,786 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define OTM9605A_PANEL_T_CLK_PRE         0x1b
++#define OTM9605A_PANEL_T_CLK_POST        0x04
++
++static char otm9605a_cmd0[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xFF, 0xFF 
++};
++
++static char otm9605a_cmd1[] = {
++    0x04, 0x00, 0x39, 0xc0,
++    0xFF, 0x96, 0x05, 0x01
++};
++					
++static char otm9605a_cmd2[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xFF, 0xFF
++};
++                
++static char otm9605a_cmd3[] = {
++    0x03, 0x00, 0x39, 0xc0,
++    0xFF, 0x96, 0x05, 0xFF
++};
++
++static char otm9605a_cmd4[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd5[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd6[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0xA0, 0x00, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd7[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB4, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd8[] = {
++    0x02, 0x00, 0x39, 0xc0, 
++    0xC0, 0x50, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd9[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd10[] = {
++    0x03, 0x00, 0x39, 0xc0,
++    0xC1, 0x36, 0x66, 0xff
++};
++
++static char otm9605a_cmd11[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x89, 0xff, 0xff
++};
++
++static char otm9605a_cmd12[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0xC0, 0x01, 0xff, 0xff
++};
++
++static char otm9605a_cmd13[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd14[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0xC4, 0x9C, 0xff, 0xff
++};
++
++static char otm9605a_cmd15[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd16[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0xC1, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd17[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC0, 0xff, 0xff
++};
++
++static char otm9605a_cmd18[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0xC5, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd19[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC5, 0xff, 0xff
++};
++
++static char otm9605a_cmd20[] = {	
++    0x02, 0x00, 0x39, 0xc0,
++    0xB0, 0x03, 0xff, 0xff
++};
++
++static char otm9605a_cmd21[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xff, 0xff
++};
++
++static char otm9605a_cmd22[] = {				     
++    0x08, 0x00, 0x39, 0xc0,
++    0xc5, 0x96, 0x19, 0x01,
++    0x79, 0x33, 0x33, 0x34
++};
++
++static char otm9605a_cmd23[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd24[] = {				
++    0x08, 0x00, 0x39, 0xc0,
++    0xC5, 0x96, 0x16, 0x00,
++    0x79, 0x33, 0x33, 0x34
++};
++
++static char otm9605a_cmd25[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd26[] = {					
++    0x03, 0x00, 0x39, 0xc0,
++    0xD8, 0x5F, 0x5F, 0xff
++};
++
++static char otm9605a_cmd27[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd28[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0xD9, 0x3b, 0xff, 0xff
++};
++
++static char otm9605a_cmd29[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB0, 0xff, 0xff
++};
++
++static char otm9605a_cmd30[] = {					
++    0x03, 0x00, 0x39, 0xc0,
++    0xC5, 0x04, 0x28, 0xff
++};
++
++static char otm9605a_cmd31[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd32[] = {					
++    0x11, 0x00, 0x39, 0xc0,
++    0xE1, 0x01, 0x0D, 0x14,
++    0x0E, 0x07, 0x13, 0x0B,
++    0x0A, 0x02, 0x06, 0x08,
++    0x08, 0x0e, 0x12, 0x0d,
++    0x01, 0xff, 0xff, 0xff
++};
++    
++static char otm9605a_cmd33[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xff, 0xff
++};
++
++static char otm9605a_cmd34[] = {				
++    0x11, 0x00, 0x39, 0xc0,
++    0xE2, 0x01, 0x0D, 0x14,
++    0x0E, 0x07, 0x13, 0x0B,
++    0x0A, 0x02, 0x06, 0x08,
++    0x08, 0x0e, 0x12, 0x0d,
++    0x01, 0xff, 0xff, 0xff
++};
++
++static char otm9605a_cmd35[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd36[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCB, 0x05, 0x00, 0x00,
++    0x00, 0x00, 0x05, 0x00,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd37[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xff, 0xff
++};
++
++static char otm9605a_cmd38[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCB, 0x55, 0x55, 0x00,
++    0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00
++};
++
++static char otm9605a_cmd39[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd40[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCB, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x55, 0x55,
++    0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00
++};
++
++static char otm9605a_cmd41[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB0, 0xff, 0xff
++};
++
++static char otm9605a_cmd42[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCB, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd43[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC0, 0xff, 0xff
++};
++
++static char otm9605a_cmd44[] = {				
++    0x10, 0x00, 0x39, 0xc0,
++    0xCB, 0x55, 0x55, 0x00,
++    0x00, 0x00, 0x04, 0x00,
++    0x04, 0x00, 0x04, 0x00,
++    0x04, 0x04, 0x04, 0x00
++};
++
++static char otm9605a_cmd45[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xD0, 0xff, 0xff
++};
++
++static char otm9605a_cmd46[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCB, 0x04, 0x00, 0x00,
++    0x00, 0x00, 0x55, 0x55,
++    0x00, 0x00, 0x00, 0x04,
++    0x00, 0x04, 0x00, 0x04
++};
++
++static char otm9605a_cmd47[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xE0, 0xff, 0xff
++};
++
++static char otm9605a_cmd48[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCB, 0x00, 0x04, 0x04,
++    0x04, 0x00, 0x04, 0x00,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd49[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xF0, 0xff, 0xff
++};
++
++static char otm9605a_cmd50[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCB, 0x0F, 0x00, 0xCC,
++    0x00, 0x00, 0x0F, 0x00,
++    0xCC, 0xC3, 0x00, 0xff
++};
++
++static char otm9605a_cmd51[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd52[] = {				
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCC, 0x25, 0x26, 0x00,
++    0x00, 0x00, 0x0C, 0x00,
++    0x0A, 0x00, 0x10, 0xff
++};
++
++static char otm9605a_cmd53[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xff, 0xff
++};
++
++static char otm9605a_cmd54[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCC, 0x00, 0x0E, 0x02,
++    0x04, 0x00, 0x06, 0x00,
++    0x00, 0x00, 0x00, 0x25,
++    0x26, 0x00, 0x00, 0x00
++};
++
++static char otm9605a_cmd55[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd56[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCC, 0x0B, 0x00, 0x09,
++    0x00, 0x0F, 0x00, 0x0D,
++    0x01, 0x03, 0x00, 0x05,
++    0x00, 0x00, 0x00, 0x00
++};
++
++static char otm9605a_cmd57[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB0, 0xff, 0xff
++};
++
++static char otm9605a_cmd58[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCC, 0x26, 0x25, 0x00,
++    0x00, 0x00, 0x0D, 0x00,
++    0x0F, 0x00, 0x09, 0xff
++};
++
++static char otm9605a_cmd59[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC0, 0xff, 0xff
++};
++
++static char otm9605a_cmd60[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCC, 0x00, 0x0B, 0x03,
++    0x01, 0x00, 0x05, 0x00,
++    0x00, 0x00, 0x00, 0x26,
++    0x25, 0x00, 0x00, 0x00
++};
++
++static char otm9605a_cmd61[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xD0, 0xff, 0xff
++};
++
++static char otm9605a_cmd62[] = {					
++    0x10, 0x00, 0x39, 0xc0,
++    0xCC, 0x0E, 0x00, 0x10,
++    0x00, 0x0A, 0x00, 0x0C,
++    0x04, 0x02, 0x00, 0x06,
++    0x00, 0x00, 0x00, 0x00
++};
++    
++static char otm9605a_cmd63[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd64[] = {					
++    0x0D, 0x00, 0x39, 0xc0,
++    0xCE, 0x8B, 0x03, 0x27,
++    0x8A, 0x03, 0x28, 0x89,
++    0x03, 0x27, 0x88, 0x03,
++    0x28, 0xff, 0xff, 0xff
++};
++    
++static char otm9605a_cmd65[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xff, 0xff
++};
++
++static char otm9605a_cmd66[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCE, 0x39, 0x0F, 0x27,
++    0x39, 0x0E, 0x28, 0x00,
++    0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd67[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd68[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCE, 0x38, 0x07, 0x03,
++    0xC0, 0x00, 0x28, 0x00,
++    0x38, 0x06, 0x03, 0xC1,
++    0x00, 0x28, 0x00, 0xff
++};
++
++static char otm9605a_cmd69[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB0, 0xff, 0xff
++};
++
++static char otm9605a_cmd70[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCE, 0x38, 0x05, 0x03,
++    0xC2, 0x00, 0x28, 0x00,
++    0x38, 0x04, 0x03, 0xC3,
++    0x00, 0x28, 0x00, 0xff
++};
++
++static char otm9605a_cmd71[] = {				
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC0, 0xff, 0xff
++};
++
++static char otm9605a_cmd72[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCE, 0x38, 0x03, 0x03,
++    0xC4, 0x00, 0x28, 0x00,
++    0x38, 0x02, 0x03, 0xC5,
++    0x00, 0x28, 0x00, 0xff
++};
++
++static char otm9605a_cmd73[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xD0, 0xff, 0xff
++};
++
++static char otm9605a_cmd74[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCE, 0x38, 0x01, 0x03,
++    0xC6, 0x00, 0x28, 0x00,
++    0x38, 0x00, 0x03, 0xC7,
++    0x00, 0x28, 0x00, 0xff
++};
++
++static char otm9605a_cmd75[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x80, 0xff, 0xff
++};
++
++static char otm9605a_cmd76[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCF, 0xF0, 0x00, 0x00,
++    0x10, 0x00, 0x00, 0x00,
++    0xF0, 0x00, 0x00, 0x10,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd77[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x90, 0xff, 0xff
++};
++
++static char otm9605a_cmd78[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCF, 0xF0, 0x00, 0x00,
++    0x10, 0x00, 0x00, 0x00,
++    0xF0, 0x00, 0x00, 0x10,
++    0x00, 0x00, 0x00, 0xff
++};
++
++static char otm9605a_cmd79[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xA0, 0xff, 0xff
++};
++
++static char otm9605a_cmd80[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCF, 0xF0, 0x00, 0x00,
++    0x10, 0x00, 0x00, 0x00,
++    0xF0, 0x00, 0x00, 0x10,
++    0x00, 0x00, 0x00, 0xff
++};
++    
++static char otm9605a_cmd81[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xB0, 0xff, 0xff
++};
++
++static char otm9605a_cmd82[] = {					
++    0x0F, 0x00, 0x39, 0xc0,
++    0xCF, 0xF0, 0x00, 0x00,
++    0x10, 0x00, 0x00, 0x00,
++    0xF0, 0x00, 0x00, 0x10,
++    0x00, 0x00, 0x00, 0xff
++};
++    
++static char otm9605a_cmd83[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0xC0, 0xff, 0xff
++};
++
++static char otm9605a_cmd84[] = {					
++    0x0B, 0x00, 0x39, 0xc0,
++    0xCF, 0x01, 0x01, 0x20,
++    0x20, 0x00, 0x00, 0x02,
++    0x01, 0x00, 0x00, 0xff
++};
++    
++static char otm9605a_cmd85[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x00, 0x00, 0xFF, 0xFF
++};
++    
++static char otm9605a_cmd86[] = {					
++    0x04, 0x00, 0x39, 0xc0,
++    0xFF, 0xFF, 0xFF, 0xFF
++};
++
++static char otm9605a_cmd87[] = {					
++    0x02, 0x00, 0x39, 0xc0,
++    0x35, 0x01, 0xFF, 0xFF
++};
++
++static char otm9605a_bl0[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x51, 0xFF, 0xFF, 0xFF
++};
++
++static char otm9605a_bl1[] = {
++    0x02, 0x00, 0x39, 0xc0,
++    0x53, 0x2c, 0xFF, 0xFF
++};
++static char otm9605a_cmd88[] = {					
++    0x11, 0x00, 0x05, 0x80
++};
++
++static char otm9605a_cmd89[] = {
++    0x29, 0x00, 0x05, 0x80
++};
++
++static struct mipi_dsi_cmd otm9605a_wvga_panel_video_mode_cmds[] = {
++	{sizeof(otm9605a_cmd0), (char *)otm9605a_cmd0},
++	{sizeof(otm9605a_cmd1), (char *)otm9605a_cmd1},
++	{sizeof(otm9605a_cmd2), (char *)otm9605a_cmd2},
++	{sizeof(otm9605a_cmd3), (char *)otm9605a_cmd3},
++	{sizeof(otm9605a_cmd4), (char *)otm9605a_cmd4},
++	{sizeof(otm9605a_cmd5), (char *)otm9605a_cmd5},
++	{sizeof(otm9605a_cmd6), (char *)otm9605a_cmd6},
++	{sizeof(otm9605a_cmd7), (char *)otm9605a_cmd7},
++	{sizeof(otm9605a_cmd8), (char *)otm9605a_cmd8},
++	{sizeof(otm9605a_cmd9), (char *)otm9605a_cmd9},
++	{sizeof(otm9605a_cmd10), (char *)otm9605a_cmd10},
++	{sizeof(otm9605a_cmd11), (char *)otm9605a_cmd11},
++	{sizeof(otm9605a_cmd12), (char *)otm9605a_cmd12},
++	{sizeof(otm9605a_cmd13), (char *)otm9605a_cmd13},
++	{sizeof(otm9605a_cmd14), (char *)otm9605a_cmd14},
++	{sizeof(otm9605a_cmd15), (char *)otm9605a_cmd15},
++	{sizeof(otm9605a_cmd16), (char *)otm9605a_cmd16},
++	{sizeof(otm9605a_cmd17), (char *)otm9605a_cmd17},
++	{sizeof(otm9605a_cmd18), (char *)otm9605a_cmd18},
++	{sizeof(otm9605a_cmd19), (char *)otm9605a_cmd19},
++	{sizeof(otm9605a_cmd20), (char *)otm9605a_cmd20},
++	{sizeof(otm9605a_cmd21), (char *)otm9605a_cmd21},
++	{sizeof(otm9605a_cmd22), (char *)otm9605a_cmd22},
++	{sizeof(otm9605a_cmd23), (char *)otm9605a_cmd23},
++	{sizeof(otm9605a_cmd24), (char *)otm9605a_cmd24},
++	{sizeof(otm9605a_cmd25), (char *)otm9605a_cmd25},
++	{sizeof(otm9605a_cmd26), (char *)otm9605a_cmd26},
++	{sizeof(otm9605a_cmd27), (char *)otm9605a_cmd27},
++	{sizeof(otm9605a_cmd28), (char *)otm9605a_cmd28},
++	{sizeof(otm9605a_cmd29), (char *)otm9605a_cmd29},
++	{sizeof(otm9605a_cmd30), (char *)otm9605a_cmd30},
++	{sizeof(otm9605a_cmd31), (char *)otm9605a_cmd31},
++	{sizeof(otm9605a_cmd32), (char *)otm9605a_cmd32},
++	{sizeof(otm9605a_cmd33), (char *)otm9605a_cmd33},
++	{sizeof(otm9605a_cmd34), (char *)otm9605a_cmd34},
++	{sizeof(otm9605a_cmd35), (char *)otm9605a_cmd35},
++	{sizeof(otm9605a_cmd36), (char *)otm9605a_cmd36},
++	{sizeof(otm9605a_cmd37), (char *)otm9605a_cmd37},
++	{sizeof(otm9605a_cmd38), (char *)otm9605a_cmd38},
++	{sizeof(otm9605a_cmd39), (char *)otm9605a_cmd39},
++	{sizeof(otm9605a_cmd40), (char *)otm9605a_cmd40},
++	{sizeof(otm9605a_cmd41), (char *)otm9605a_cmd41},
++	{sizeof(otm9605a_cmd42), (char *)otm9605a_cmd42},
++	{sizeof(otm9605a_cmd43), (char *)otm9605a_cmd43},
++	{sizeof(otm9605a_cmd44), (char *)otm9605a_cmd44},
++	{sizeof(otm9605a_cmd45), (char *)otm9605a_cmd45},
++	{sizeof(otm9605a_cmd46), (char *)otm9605a_cmd46},
++	{sizeof(otm9605a_cmd47), (char *)otm9605a_cmd47},
++	{sizeof(otm9605a_cmd48), (char *)otm9605a_cmd48},
++	{sizeof(otm9605a_cmd49), (char *)otm9605a_cmd49},
++	{sizeof(otm9605a_cmd50), (char *)otm9605a_cmd50},
++	{sizeof(otm9605a_cmd51), (char *)otm9605a_cmd51},
++	{sizeof(otm9605a_cmd52), (char *)otm9605a_cmd52},
++	{sizeof(otm9605a_cmd53), (char *)otm9605a_cmd53},
++	{sizeof(otm9605a_cmd54), (char *)otm9605a_cmd54},
++	{sizeof(otm9605a_cmd55), (char *)otm9605a_cmd55},
++	{sizeof(otm9605a_cmd56), (char *)otm9605a_cmd56},
++	{sizeof(otm9605a_cmd57), (char *)otm9605a_cmd57},
++	{sizeof(otm9605a_cmd58), (char *)otm9605a_cmd58},
++	{sizeof(otm9605a_cmd59), (char *)otm9605a_cmd59},
++	{sizeof(otm9605a_cmd60), (char *)otm9605a_cmd60},
++	{sizeof(otm9605a_cmd61), (char *)otm9605a_cmd61},
++	{sizeof(otm9605a_cmd62), (char *)otm9605a_cmd62},
++	{sizeof(otm9605a_cmd63), (char *)otm9605a_cmd63},
++	{sizeof(otm9605a_cmd64), (char *)otm9605a_cmd64},
++	{sizeof(otm9605a_cmd65), (char *)otm9605a_cmd65},
++	{sizeof(otm9605a_cmd66), (char *)otm9605a_cmd66},
++	{sizeof(otm9605a_cmd67), (char *)otm9605a_cmd67},
++	{sizeof(otm9605a_cmd68), (char *)otm9605a_cmd68},
++	{sizeof(otm9605a_cmd69), (char *)otm9605a_cmd69},
++	{sizeof(otm9605a_cmd70), (char *)otm9605a_cmd70},
++	{sizeof(otm9605a_cmd71), (char *)otm9605a_cmd71},
++	{sizeof(otm9605a_cmd72), (char *)otm9605a_cmd72},
++	{sizeof(otm9605a_cmd73), (char *)otm9605a_cmd73},
++	{sizeof(otm9605a_cmd74), (char *)otm9605a_cmd74},
++	{sizeof(otm9605a_cmd75), (char *)otm9605a_cmd75},
++	{sizeof(otm9605a_cmd76), (char *)otm9605a_cmd76},
++	{sizeof(otm9605a_cmd77), (char *)otm9605a_cmd77},
++	{sizeof(otm9605a_cmd78), (char *)otm9605a_cmd78},
++	{sizeof(otm9605a_cmd79), (char *)otm9605a_cmd79},
++	{sizeof(otm9605a_cmd80), (char *)otm9605a_cmd80},
++	{sizeof(otm9605a_cmd81), (char *)otm9605a_cmd81},
++	{sizeof(otm9605a_cmd82), (char *)otm9605a_cmd82},
++	{sizeof(otm9605a_cmd83), (char *)otm9605a_cmd83},
++	{sizeof(otm9605a_cmd84), (char *)otm9605a_cmd84},
++	{sizeof(otm9605a_cmd85), (char *)otm9605a_cmd85},
++	{sizeof(otm9605a_cmd86), (char *)otm9605a_cmd86},
++	{sizeof(otm9605a_cmd87), (char *)otm9605a_cmd87},
++	{sizeof(otm9605a_bl0), (char *)otm9605a_bl0},
++	{sizeof(otm9605a_bl1), (char *)otm9605a_bl1},
++	{sizeof(otm9605a_cmd88), (char *)otm9605a_cmd88},
++	{sizeof(otm9605a_cmd89), (char *)otm9605a_cmd89},
++};
++
++int mipi_otm9605a_video_wvga_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 1;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++			(pinfo->yres),
++			(pinfo->xres),
++			(pinfo->yres),
++			(lcdc->h_front_porch),
++			(lcdc->h_back_porch),
++			(lcdc->v_front_porch),
++			(lcdc->v_back_porch),
++			(lcdc->h_pulse_width),
++			(lcdc->v_pulse_width),
++			pinfo->mipi.dst_format,
++			pinfo->mipi.traffic_mode,
++			lane_en,
++			low_pwr_stop_mode,
++			eof_bllp_pwr,
++			interleav,
++			MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_otm9605a_video_wvga_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_otm9605a_video_wvga_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x8b, 0x1f, 0x14, 0x00, 0x45, 0x4a,
++		0x19, 0x23, 0x23, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_otm9605a_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_otm9605_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 100;
++	pinfo->lcdc.h_front_porch = 100;
++	pinfo->lcdc.h_pulse_width = 4;
++	pinfo->lcdc.v_back_porch = 32;
++	pinfo->lcdc.v_front_porch = 32;
++	pinfo->lcdc.v_pulse_width = 2;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 399000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 1;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = OTM9605A_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = OTM9605A_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = otm9605a_wvga_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(otm9605a_wvga_panel_video_mode_cmds);
++
++	pinfo->on = mipi_otm9605a_video_wvga_on;
++	pinfo->off = mipi_otm9605a_video_wvga_off;
++	pinfo->config = mipi_otm9605a_video_wvga_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/mipi_tianma_video_qhd.c b/dev/panel/msm/mipi_tianma_video_qhd.c
+new file mode 100644
+index 0000000..4f3f1d9
+--- /dev/null
++++ b/dev/panel/msm/mipi_tianma_video_qhd.c
+@@ -0,0 +1,321 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include <stdint.h>
++#include <msm_panel.h>
++#include <mipi_dsi.h>
++#include <sys/types.h>
++#include <err.h>
++#include <reg.h>
++#include <debug.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++
++#define TIANMA_PANEL_T_CLK_PRE         0x1b
++#define TIANMA_PANEL_T_CLK_POST        0x04
++
++static char tianma_on_cmd0[] = {	
++	0x04, 0x00, 0x39, 0xc0,
++	0xB9, 0xFF, 0x83, 0x89,
++};
++
++static char tianma_on_cmd1[] = {
++	0x02, 0x00, 0x39, 0xc0,
++	0x51, 0xff, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd2[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0x53, 0x24, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd3[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x55, 0x00, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd4[] = {					
++	0x08, 0x00, 0x39, 0xc0,
++	0xBA, 0x41, 0x93, 0x00,
++	0x16, 0xA4, 0x10, 0x18,
++};
++
++static char tianma_on_cmd5[] = {
++	0x02, 0x00, 0x39, 0xc0,
++	0xC6, 0x08, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd6[] = {
++	0x14, 0x00, 0x39, 0xc0,
++	0xB1, 0x00, 0x00, 0x07,
++	0xEF, 0x97, 0x10, 0x11,
++	0x94, 0xF1, 0x26, 0x2E,
++	0x3F, 0x3F, 0x42, 0x01,
++	0x32, 0xF7, 0x20, 0x80,
++};
++
++static char tianma_on_cmd7[] = {						
++	0x04, 0x00, 0x39, 0xc0,
++	0xDE, 0x05, 0x58, 0x10,
++};
++
++static char tianma_on_cmd8[] = {
++	0x08, 0x00, 0x39, 0xc0,
++	0xB2, 0x00, 0x00, 0x78,
++	0x0E, 0x03, 0x3F, 0x80,
++};
++
++static char tianma_on_cmd9[] = {						
++	0x18, 0x00, 0x39, 0xc0,
++	0xB4, 0x80, 0x08, 0x00,
++	0x32, 0x10, 0x07, 0x32,
++	0x10, 0x07, 0x32, 0x10,
++	0x07, 0x27, 0x01, 0x5A,
++	0x0B, 0x37, 0x05, 0x4C,
++	0x14, 0x50, 0x5B, 0x0a,
++};
++
++static char tianma_on_cmd10[] = {						
++	0x31, 0x00, 0x39, 0xc0,
++	0xD5, 0x00, 0x00, 0x00,
++	0x00, 0x01, 0x00, 0x00,
++	0x00, 0x60, 0x00, 0x99,
++	0x88, 0x88, 0x88, 0x88,
++	0x23, 0x88, 0x01, 0x88,
++	0x67, 0x88, 0x45, 0x01,
++	0x23, 0x23, 0x88, 0x88,
++	0x88, 0x88, 0x88, 0x99,
++	0x88, 0x88, 0x88, 0x54,
++	0x88, 0x76, 0x88, 0x10,
++	0x88, 0x32, 0x32, 0x10,
++	0x88, 0x88, 0x88, 0x88,
++	0x88, 0xFF, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd11[] = {						
++	0x23, 0x00, 0x39, 0xc0,
++	0xE0, 0x01, 0x1B, 0x21,
++	0x34, 0x32, 0x3F, 0x32,
++	0x4B, 0x07, 0x0D, 0x10,
++	0x13, 0x16, 0x13, 0x14,
++	0x0F, 0x19, 0x01, 0x1B,
++	0x21, 0x34, 0x32, 0x3F,
++	0x32, 0x4B, 0x07, 0x0D,
++	0x10, 0x13, 0x16, 0x13,
++	0x14, 0x0F, 0x19, 0xFF
++};
++
++static char tianma_on_cmd12[] = {
++	0x05, 0x00, 0x39, 0xc0,
++	0xB6, 0x00, 0x89, 0x00,
++	0x89, 0xFF, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd13[] = {					
++	0x02, 0x00, 0x39, 0xc0,
++	0xCC, 0x02, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd14[] = {						
++	0x04, 0x00, 0x39, 0xc0,
++	0xB7, 0x00, 0x00, 0x50,
++};
++
++static char tianma_on_cmd15[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xE6, 0x01, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd16[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0xE4, 0x00, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd17[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x51, 0x64, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd18[] = {						
++	0x02, 0x00, 0x39, 0xc0,
++	0x53, 0x24, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd19[] = {
++	0x02, 0x00, 0x39, 0xc0,
++	0x55, 0x01, 0xFF, 0xFF
++};
++
++static char tianma_on_cmd20[] = {
++	0x11, 0x00, 0x05, 0x80
++};
++
++static char tianma_on_cmd21[] = {
++	0x29, 0x00, 0x05, 0x80
++};
++
++static struct mipi_dsi_cmd tianma_qhd_panel_video_mode_cmds[] = {
++	{sizeof(tianma_on_cmd0), (char *)tianma_on_cmd0},
++	{sizeof(tianma_on_cmd1), (char *)tianma_on_cmd1},
++	{sizeof(tianma_on_cmd2), (char *)tianma_on_cmd2},
++	{sizeof(tianma_on_cmd3), (char *)tianma_on_cmd3},
++	{sizeof(tianma_on_cmd4), (char *)tianma_on_cmd4},
++	{sizeof(tianma_on_cmd5), (char *)tianma_on_cmd5},
++	{sizeof(tianma_on_cmd6), (char *)tianma_on_cmd6},
++	{sizeof(tianma_on_cmd7), (char *)tianma_on_cmd7},
++	{sizeof(tianma_on_cmd8), (char *)tianma_on_cmd8},
++	{sizeof(tianma_on_cmd9), (char *)tianma_on_cmd9},
++	{sizeof(tianma_on_cmd10), (char *)tianma_on_cmd10},
++	{sizeof(tianma_on_cmd11), (char *)tianma_on_cmd11},
++	{sizeof(tianma_on_cmd12), (char *)tianma_on_cmd12},
++	{sizeof(tianma_on_cmd13), (char *)tianma_on_cmd13},
++	{sizeof(tianma_on_cmd14), (char *)tianma_on_cmd14},
++	{sizeof(tianma_on_cmd15), (char *)tianma_on_cmd15},
++	{sizeof(tianma_on_cmd16), (char *)tianma_on_cmd16},
++	{sizeof(tianma_on_cmd17), (char *)tianma_on_cmd17},
++	{sizeof(tianma_on_cmd18), (char *)tianma_on_cmd18},
++	{sizeof(tianma_on_cmd19), (char *)tianma_on_cmd19},
++	{sizeof(tianma_on_cmd20), (char *)tianma_on_cmd20},
++	{sizeof(tianma_on_cmd21), (char *)tianma_on_cmd21},
++};
++
++int mipi_tianma_video_qhd_config(void *pdata)
++{
++	int ret = NO_ERROR;
++	/* 2 Lanes -- Enables Data Lane0, 1 */
++	unsigned char lane_en = 3;
++	unsigned long low_pwr_stop_mode = 1;
++
++	/* Needed or else will have blank line at top of display */
++	unsigned char eof_bllp_pwr = 0x9;
++
++	unsigned char interleav = 0;
++	struct lcdc_panel_info *lcdc = NULL;
++	struct msm_panel_info *pinfo = (struct msm_panel_info *) pdata;
++
++	if (pinfo == NULL)
++		return ERR_INVALID_ARGS;
++
++	lcdc =  &(pinfo->lcdc);
++	if (lcdc == NULL)
++		return ERR_INVALID_ARGS;
++
++	ret = mdss_dsi_video_mode_config((pinfo->xres),
++			(pinfo->yres),
++			(pinfo->xres),
++			(pinfo->yres),
++			(lcdc->h_front_porch),
++			(lcdc->h_back_porch),
++			(lcdc->v_front_porch),
++			(lcdc->v_back_porch),
++			(lcdc->h_pulse_width),
++			(lcdc->v_pulse_width),
++			pinfo->mipi.dst_format,
++			pinfo->mipi.traffic_mode,
++			lane_en,
++			low_pwr_stop_mode,
++			eof_bllp_pwr,
++			interleav,
++			MIPI_DSI0_BASE);
++	return ret;
++}
++
++int mipi_tianma_video_qhd_on()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++int mipi_tianma_video_qhd_off()
++{
++	int ret = NO_ERROR;
++	return ret;
++}
++
++static struct mdss_dsi_phy_ctrl dsi_video_mode_phy_db = {
++	/* regulator */
++	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
++	/* timing   */
++	{0x9f, 0x25, 0x19, 0x00, 0x4d, 0x57,
++		0x1d, 0x29, 0x2a, 0x03, 0x04, 0x00},
++	/* phy ctrl */
++	{0x7f, 0x00, 0x00, 0x00},
++	/* strength */
++	{0xff, 0x06},
++	/* bist */
++	{0x03, 0x03, 0x00, 0x00, 0x0f, 0x00},
++	/* lane config */
++	{0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x80, 0x45, 0x00, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00,
++		0x40, 0x67, 0x00, 0x00, 0x00, 0x01, 0x88, 0x00, 0x00},
++};
++
++void mipi_tianma_video_qhd_init(struct msm_panel_info *pinfo)
++{
++	if (!pinfo)
++		return;
++
++	dprintf(INFO, "mipi_tianma_video_qhd_init\n");
++
++	pinfo->xres = 540;
++	pinfo->yres = 960;
++	pinfo->lcdc.h_back_porch = 96;
++	pinfo->lcdc.h_front_porch = 96;
++	pinfo->lcdc.h_pulse_width = 96;
++	pinfo->lcdc.v_back_porch = 15;
++	pinfo->lcdc.v_front_porch = 10;
++	pinfo->lcdc.v_pulse_width = 5;
++	pinfo->mipi.num_of_lanes = 2;
++	pinfo->mipi.frame_rate = 60;
++
++	pinfo->type = MIPI_VIDEO_PANEL;
++	pinfo->wait_cycle = 0;
++	pinfo->bpp = 24;
++	pinfo->clk_rate = 399000000;
++
++	pinfo->mipi.mode = DSI_VIDEO_MODE;
++	pinfo->mipi.traffic_mode = 1;
++	pinfo->mipi.dst_format = DSI_VIDEO_DST_FORMAT_RGB888;
++	pinfo->mipi.mdss_dsi_phy_db = &dsi_video_mode_phy_db;
++	pinfo->mipi.tx_eot_append = TRUE;
++
++	pinfo->mipi.lane_swap = 1;
++	pinfo->mipi.t_clk_post = TIANMA_PANEL_T_CLK_POST;
++	pinfo->mipi.t_clk_pre = TIANMA_PANEL_T_CLK_PRE;
++	pinfo->mipi.panel_cmds = tianma_qhd_panel_video_mode_cmds;
++	pinfo->mipi.num_of_panel_cmds = ARRAY_SIZE(tianma_qhd_panel_video_mode_cmds);
++
++	pinfo->on = mipi_tianma_video_qhd_on;
++	pinfo->off = mipi_tianma_video_qhd_off;
++	pinfo->config = mipi_tianma_video_qhd_config;
++
++	return;
++}
+diff --git a/dev/panel/msm/rules.mk b/dev/panel/msm/rules.mk
+index b3bdac3..186592a 100644
+--- a/dev/panel/msm/rules.mk
++++ b/dev/panel/msm/rules.mk
+@@ -35,5 +35,10 @@ endif
+ 
+ ifeq ($(PLATFORM),msm8610)
+ OBJS += \
+-	$(LOCAL_DIR)/mipi_truly_video_wvga.o
++	$(LOCAL_DIR)/mipi_otm9605a_video_qhd.o \
++	$(LOCAL_DIR)/mipi_auo_video_qhd.o \
++	$(LOCAL_DIR)/mipi_byd_video_qhd.o \
++	$(LOCAL_DIR)/mipi_boe_video_qhd.o \
++	$(LOCAL_DIR)/mipi_tianma_video_qhd.o \
++	$(LOCAL_DIR)/mipi_emulator_video_qhd.o
+ endif
+diff --git a/include/hw_lcd_panel.h b/include/hw_lcd_panel.h
+new file mode 100644
+index 0000000..ed2b8b3
+--- /dev/null
++++ b/include/hw_lcd_panel.h
+@@ -0,0 +1,46 @@
++/* < shilongzhen begin */
++/* Copyright (c) 2009-2011, HUAWEI Co. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#ifndef _HW_LCD_PANEL_H
++#define _HW_LCD_PANEL_H
++#define MAX_LCD_PANEL_NAME_LEN  40
++char lcd_panel_name[MAX_LCD_PANEL_NAME_LEN];
++
++typedef enum
++{
++	LCD_HW_ID0 = 0x00,//ID0 low   , ID1  low   
++	LCD_HW_ID1 = 0x01,//ID0 high  , ID1  low 
++	LCD_HW_ID2 = 0x02,//ID0 float , ID1  low
++	LCD_HW_ID4 = 0x04,//ID0 low   , ID1  high
++	LCD_HW_ID5 = 0x05,//ID0 high  , ID1  high
++	LCD_HW_ID6 = 0x06,//ID0 float , ID1  high
++	LCD_HW_ID8 = 0x08,//ID1 float , ID0  low
++	LCD_HW_ID9 = 0x09,//ID1 float , ID0  high
++	LCD_HW_IDA = 0x0A,//ID0 float , ID1  float
++	LCD_HW_ID_MAX = 0xFF,
++} hw_lcd_id_index;
++
++extern void hw_gpio_tlmm_config(unsigned int gpio, unsigned char func,
++			  unsigned char dir, unsigned char pull,
++			  unsigned char drvstr);
++extern void hw_gpio_output(unsigned int gpio, unsigned char val);
++extern unsigned char hw_gpio_input(unsigned int gpio);
++extern int hw_get_lcd_id(uint32_t hw_id);
++extern int hw_get_lcd_panel_name(void);
++extern void lcd_bias_en(int enable,int mdelay);
++extern void download_rsp61408_cmd_code();
++extern void init_wled(void);
++
++#endif
++/* shilongzhen end > */
+diff --git a/platform/msm8610/platform.c b/platform/msm8610/platform.c
+index e4dad94..aabb0a8 100644
+--- a/platform/msm8610/platform.c
++++ b/platform/msm8610/platform.c
+@@ -75,6 +75,11 @@ void platform_early_init(void)
+ void platform_init(void)
+ {
+ 	dprintf(INFO, "platform_init()\n");
++	/* < shilongzhen begin*/
++#ifdef CONFIG_HUAWEI_LK
++	boardid_init();
++#endif
++	/* shilongzhen end > */
+ }
+ 
+ uint32_t platform_get_sclk_count(void)
+diff --git a/platform/msm_shared/hw_boardid_self_adapt.c b/platform/msm_shared/hw_boardid_self_adapt.c
+new file mode 100644
+index 0000000..e3a9578
+--- /dev/null
++++ b/platform/msm_shared/hw_boardid_self_adapt.c
+@@ -0,0 +1,44 @@
++#include <debug.h>
++#include <hw_boardid_self_adapt.h>
++#include <smem.h>
++
++uint32 hw_boardid = 0;
++/*
++ * get_boardid_from_sharemem ---- get board id from share memery
++ * returns
++ *   board id
++ */
++int get_boardid_from_sharemem()
++{
++	unsigned smem_status;
++	int boardid = 0;
++	hw_boardid_info_type boardid_info;
++	memset((void*)&boardid_info, 0, sizeof(hw_boardid_info_type));
++
++	/* get allocated shared memory */
++	smem_status = smem_read_alloc_entry(SMEM_HW_SW_BUILID_ID, &boardid_info, sizeof(hw_boardid_info_type));
++	dprintf(INFO, "board_id0:%d,board_id1:%d\n",boardid_info.board_id0,boardid_info.board_id1);
++	if (smem_status)
++	{
++		dprintf(CRITICAL, "get shared memory failed\n");
++		return HW_BOARDID_FAIL;
++	}
++	/* set baord id */
++	boardid = boardid_info.board_id0;
++	boardid = boardid << 4;
++	boardid |= boardid_info.board_id1;
++	return boardid&HW_BOARDID_MASK;
++}
++
++/*
++ *set_boardid_config ---- set board id for selectting dts
++ */
++void boardid_init()
++{
++	hw_boardid = get_boardid_from_sharemem();
++	if(HW_BOARDID_FAIL == hw_boardid)
++	{
++		dprintf(CRITICAL, "set board id failed\n");
++	}
++	return;
++}
+diff --git a/platform/msm_shared/include/hw_boardid_self_adapt.h b/platform/msm_shared/include/hw_boardid_self_adapt.h
+new file mode 100644
+index 0000000..0f349d4
+--- /dev/null
++++ b/platform/msm_shared/include/hw_boardid_self_adapt.h
+@@ -0,0 +1,24 @@
++/* < DTS2013042403191 zhaorenjie add begin */
++#ifndef HW_BOARDID_SELF_ADAPT_H
++#define HW_BOARDID_SELF_ADAPT_H
++#include <smem.h>
++
++#include <libfdt.h>
++#include <dev_tree.h>
++#include "scm.h"
++
++
++#define HW_BOARDID_MASK 0x000000FF
++#define HW_BOARDID_FAIL 0
++
++typedef struct
++{
++   uint32           board_id0;
++   uint32           board_id1;
++   uint32           reserver[6];
++}hw_boardid_info_type;
++
++void boardid_init();
++#endif
++/* DTS2013042403191 zhaorenjie add end > */
++
+diff --git a/platform/msm_shared/rules.mk b/platform/msm_shared/rules.mk
+index f43f1f6..6f11856 100755
+--- a/platform/msm_shared/rules.mk
++++ b/platform/msm_shared/rules.mk
+@@ -168,6 +168,11 @@ DEFINES += DISPLAY_TYPE_MDSS=1
+             $(LOCAL_DIR)/dev_tree.o \
+             $(LOCAL_DIR)/gpio.o
+ endif
++# /* < shilongzhen*/
++ifeq ($(PLATFORM),msm8610)
++	OBJS += $(LOCAL_DIR)/hw_boardid_self_adapt.o
++endif
++# /* shilongzhen > */
+ 
+ ifeq ($(PLATFORM),msm7x27a)
+ 	OBJS += $(LOCAL_DIR)/uart.o \
+diff --git a/platform/msm_shared/smem.h b/platform/msm_shared/smem.h
+index 8ebbce8..92a622e 100755
+--- a/platform/msm_shared/smem.h
++++ b/platform/msm_shared/smem.h
+@@ -336,6 +336,8 @@ enum platform {
+ 	HW_PLATFORM_VIRTIO = 16,
+ 	HW_PLATFORM_BTS = 19,
+ 	HW_PLATFORM_DMA = 22,
++        HW_HUAWEI_G730C = 8000,
++	HW_HUAWEI_MAINBOARD = 8002,
+ 	HW_PLATFORM_32BITS = 0x7FFFFFFF,
+ };
+ 
+@@ -359,8 +361,10 @@ typedef enum {
+ 	SMEM_AARM_PARTITION_TABLE = 9,
+ 
+ 	SMEM_APPS_BOOT_MODE = 106,
+-
+-	SMEM_BOARD_INFO_LOCATION = 137,
++	/* < longzhen begin */	
++	SMEM_HW_SW_BUILID_ID = 137,
++	/* longzhen end> */
++ 	SMEM_BOARD_INFO_LOCATION = 137,
+ 
+ 	SMEM_USABLE_RAM_PARTITION_TABLE = 402,
+ 
+diff --git a/target/msm8610/hw_lcd_panel.c b/target/msm8610/hw_lcd_panel.c
+new file mode 100644
+index 0000000..3f0c9e2
+--- /dev/null
++++ b/target/msm8610/hw_lcd_panel.c
+@@ -0,0 +1,132 @@
++/* < DTS2013062001710 zhaoyuxia 20130620 begin */
++/* Copyright (c) 2009-2011, HUAWEI Co. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <debug.h>
++#include <reg.h>
++#include <stdlib.h>
++#include <string.h>
++#include <target/display.h>
++#include <platform/iomap.h>
++#include <hw_lcd_panel.h>
++#include <platform/gpio.h>
++#include <smem.h>
++
++#define LCD_ID_0_GPIO    76
++#define LCD_ID_1_GPIO    93
++
++#define BIT(bit) (1 << (bit))
++#define LCD_ID_PULL_DOWN	0
++#define LCD_ID_PULL_UP	1
++
++/****************************************************************
++function: get lcd id by gpio
++
++*data structure*
++*	   ID1	  ID0   *
++ *	----------------- *
++ *	|   |   |   |   | *
++ *	|   |   |   |   | *
++ *	----------------- *
++ For each Gpio :
++		00 means low  ,
++		01 means high ,
++		10 means float,
++		11 is not defined,
++
++ lcd id(hex):
++ 0	:ID0 low,	ID1 low
++ 1	:ID0 high,	ID1 low
++ 2	:ID0 float,	ID1 low
++
++ 4	:ID0 low,	ID1 high
++ 5	:ID0 high,	ID1 high
++ 6	:ID0 float,	ID1 high
++
++ 8	:ID0 low,	ID1 float
++ 9	:ID0 high,	ID1 float
++ A	:ID0 float,	ID1 float, used for emulator
++ ***************************************************************/
++
++int hw_get_lcd_id(uint32_t hw_id)
++{
++	int id0,id1;
++	int gpio_id0,gpio_id1;
++	int pullup_read,pulldown_read;
++	id0=0;
++	id1=0;
++	pullup_read = 0;
++	pulldown_read = 0;
++	gpio_id0 = LCD_ID_0_GPIO;
++	gpio_id1 = LCD_ID_1_GPIO;
++
++
++	/*config id0 to pull down and read*/
++	gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_DOWN,GPIO_2MA,GPIO_ENABLE);
++	udelay(10);//necessary for a delay, else following hw_gpio_input always get 0
++	pulldown_read = gpio_status(gpio_id0);
++	/*config id0 to pull up and read*/
++	gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_UP,GPIO_2MA,GPIO_ENABLE);
++	udelay(10);
++	pullup_read = gpio_status(gpio_id0);
++	if(pulldown_read != pullup_read)//float
++	{
++		id0 = BIT(1);
++	}
++	else//connect 
++	{
++		id0 = pullup_read;//pullup_read==pulldown_read
++		switch(id0)
++		{
++			case LCD_ID_PULL_DOWN:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_DOWN,GPIO_2MA,GPIO_ENABLE);
++				break;
++			case LCD_ID_PULL_UP:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_UP,GPIO_2MA,GPIO_ENABLE);
++				break;
++			default:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_NO_PULL,GPIO_2MA,GPIO_ENABLE);
++				break;
++		}
++
++	}
++	/*config id1 to pull down and read*/
++	gpio_tlmm_config(gpio_id1,0,GPIO_INPUT,GPIO_PULL_DOWN,GPIO_2MA,GPIO_ENABLE);
++	udelay(10);
++	pulldown_read = gpio_status(gpio_id1);
++	/*config id1 to pull up and read*/
++	gpio_tlmm_config(gpio_id1,0,GPIO_INPUT,GPIO_PULL_UP,GPIO_2MA,GPIO_ENABLE);
++	udelay(10);
++	pullup_read = gpio_status(gpio_id1);
++	if(pulldown_read != pullup_read)//float
++	{
++		id1 = BIT(1);
++	}
++	else//connect
++	{
++		id1 = pullup_read;//pullup_read==pulldown_read
++		switch(id1)
++		{
++			case LCD_ID_PULL_DOWN:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_DOWN,GPIO_2MA,GPIO_ENABLE);
++				break;
++			case LCD_ID_PULL_UP:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_PULL_UP,GPIO_2MA,GPIO_ENABLE);
++				break;
++			default:
++				gpio_tlmm_config(gpio_id0,0,GPIO_INPUT,GPIO_NO_PULL,GPIO_2MA,GPIO_ENABLE);
++				break;
++		}
++	}
++	return (id1<<2) | id0;
++}
++/* DTS2013062001710 zhaoyuxia 20130620 end > */
+diff --git a/target/msm8610/init.c b/target/msm8610/init.c
+index a208ca3..2915699 100644
+--- a/target/msm8610/init.c
++++ b/target/msm8610/init.c
+@@ -288,7 +288,8 @@ int target_cont_splash_screen()
+ 			dprintf(SPEW, "Target_cont_splash=0\n");
+ 			ret = 0;
+ 	}
+-	return ret;
++	//return ret;
++	return 1;
+ }
+ 
+ unsigned target_pause_for_battery_charge(void)
+diff --git a/target/msm8610/rules.mk b/target/msm8610/rules.mk
+index 92c669f..b3d57aa 100644
+--- a/target/msm8610/rules.mk
++++ b/target/msm8610/rules.mk
+@@ -38,4 +38,5 @@ DEFINES += \
+ OBJS += \
+     $(LOCAL_DIR)/init.o \
+     $(LOCAL_DIR)/meminfo.o \
+-    $(LOCAL_DIR)/target_display.o
++    $(LOCAL_DIR)/target_display.o\
++    $(LOCAL_DIR)/hw_lcd_panel.o
+diff --git a/target/msm8610/target_display.c b/target/msm8610/target_display.c
+index 6316fa8..c937789 100644
+--- a/target/msm8610/target_display.c
++++ b/target/msm8610/target_display.c
+@@ -37,6 +37,8 @@
+ #include <platform/iomap.h>
+ #include <target/display.h>
+ 
++#include <hw_lcd_panel.h>
++
+ static struct msm_fb_panel_data panel;
+ static uint8_t display_enable;
+ 
+@@ -44,6 +46,7 @@ extern int msm_display_init(struct msm_fb_panel_data *pdata);
+ extern int msm_display_off();
+ extern void dsi_phy_init(struct msm_panel_info *pinfo);
+ 
++#if 0
+ static int msm8610_backlight(uint8_t enable)
+ {
+ 	struct pm8x41_mpp mpp;
+@@ -61,6 +64,7 @@ static int msm8610_backlight(uint8_t enable)
+ 	mdelay(20);
+ 	return 0;
+ }
++#endif
+ 
+ void dsi_calc_clk_rate(uint32_t *dsiclk_rate, uint32_t *byteclk_rate)
+ {
+@@ -112,7 +116,6 @@ static void msm8610_mdss_mipi_panel_reset(int enable)
+ 	if (enable)
+ 	{
+ 		gpio_tlmm_config(41, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_8MA, GPIO_DISABLE);
+-		gpio_tlmm_config(7, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_8MA, GPIO_DISABLE);
+ 
+ 		/* reset */
+ 		gpio_set(41, 2);
+@@ -123,11 +126,8 @@ static void msm8610_mdss_mipi_panel_reset(int enable)
+ 		mdelay(20);
+ 
+ 		if (panel.panel_info.type == MIPI_VIDEO_PANEL)
+-			gpio_set(7, 2);
+-		else if (panel.panel_info.type == MIPI_CMD_PANEL)
+-			gpio_set(7, 0);
++			dprintf(SPEW, "MIPI_VIDEO_PANEL\n");
+ 	} else if(!target_cont_splash_screen()) {
+-		gpio_set(7, 0);
+ 		gpio_set(41, 0);
+ 	}
+ 	return;
+@@ -143,7 +143,7 @@ static int msm8610_mipi_panel_power(uint8_t enable)
+ 	if (enable)
+ 	{
+ 		/* backlight */
+-		msm8610_backlight(enable);
++		//msm8610_backlight(enable);
+ 
+ 		/* regulators */
+ 		pm8x41_ldo_set_voltage(&ldo14, 1800000);
+@@ -154,7 +154,7 @@ static int msm8610_mipi_panel_power(uint8_t enable)
+ 		/* reset */
+ 		msm8610_mdss_mipi_panel_reset(enable);
+ 	} else if(!target_cont_splash_screen()) {
+-		msm8610_backlight(0);
++		//msm8610_backlight(0);
+ 		msm8610_mdss_mipi_panel_reset(enable);
+ 
+ 		pm8x41_ldo_control(&ldo19, enable);
+@@ -163,31 +163,83 @@ static int msm8610_mipi_panel_power(uint8_t enable)
+ 	return 0;
+ }
+ 
++void lcd_panel_init(uint32_t hw_id)
++{
++
++        hw_lcd_id_index lcd_hw_id = LCD_HW_ID_MAX;
++
++	lcd_hw_id = (hw_lcd_id_index)hw_get_lcd_id(hw_id);
++	dprintf(INFO,"lcd_panel_init lcd id = %d\n", lcd_hw_id);
++
++	switch(hw_id)
++	{
++		case HW_HUAWEI_MAINBOARD:
++			switch (lcd_hw_id)
++			{
++				case LCD_HW_ID9:
++					mipi_otm9605a_video_qhd_init(&(panel.panel_info));
++					break;
++				default:
++					mipi_emulator_video_qhd_init(&(panel.panel_info));
++					break;
++			}
++			break;
++		case HW_HUAWEI_G730C:
++			switch (lcd_hw_id)
++			{
++				case LCD_HW_ID4:
++					mipi_auo_video_qhd_init(&(panel.panel_info));
++					break;
++				case LCD_HW_ID1:
++					mipi_byd_video_qhd_init(&(panel.panel_info));
++					break;
++				case LCD_HW_ID5:
++					mipi_boe_video_qhd_init(&(panel.panel_info));
++					break;
++				case LCD_HW_ID0:
++					mipi_tianma_video_qhd_init(&(panel.panel_info));
++					break;
++				default:
++					mipi_emulator_video_qhd_init(&(panel.panel_info));
++					break;
++			}
++			break;
++
++		default:
++			mipi_emulator_video_qhd_init(&(panel.panel_info));
++			break;
++	}
++
++	panel.clk_func = msm8610_mdss_dsi_panel_clock;
++	panel.power_func = msm8610_mipi_panel_power;
++	panel.fb.base = MIPI_FB_ADDR;
++	panel.fb.width =  panel.panel_info.xres;
++	panel.fb.height =  panel.panel_info.yres;
++	panel.fb.stride =  panel.panel_info.xres;
++	panel.fb.bpp =  panel.panel_info.bpp;
++	panel.fb.format = FB_FORMAT_RGB888;
++	panel.mdp_rev = MDP_REV_304;
++};
++
+ void display_init(void)
+ {
+ 	uint32_t hw_id = board_hardware_id();
+ 
+ 	dprintf(SPEW, "display_init(),target_id=%d.\n", hw_id);
+-
++#if 0
+ 	switch (hw_id) {
+ 	case HW_PLATFORM_QRD:
+ 	case HW_PLATFORM_MTP:
+ 	case HW_PLATFORM_SURF:
+-		mipi_truly_video_wvga_init(&(panel.panel_info));
+-		panel.clk_func = msm8610_mdss_dsi_panel_clock;
+-		panel.power_func = msm8610_mipi_panel_power;
+-		panel.fb.base = MIPI_FB_ADDR;
+-		panel.fb.width =  panel.panel_info.xres;
+-		panel.fb.height =  panel.panel_info.yres;
+-		panel.fb.stride =  panel.panel_info.xres;
+-		panel.fb.bpp =  panel.panel_info.bpp;
+-		panel.fb.format = FB_FORMAT_RGB888;
+-		panel.mdp_rev = MDP_REV_304;
++		mipi_otm9605a_video_qhd_init(&(panel.panel_info));
+ 		break;
+ 	default:
+ 		return;
+ 	};
+-
++#endif	
++	/*longzhen begin*/
++	lcd_panel_init(hw_id);
++	/*longzhen end*/
+ 	if (msm_display_init(&panel))
+ 	{
+ 		dprintf(CRITICAL, "Display init failed!\n");
+-- 
+1.7.8.3
+

@@ -1,7 +1,7 @@
 From 29f1b3b843155b3e54989c132c43a1d485083509 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 10:35:06 +0800
-Subject: [PATCH 4/7] add G-sensor lis3dh & kx023 driver
+Subject: [PATCH 04/11] add G-sensor lis3dh & kx023 driver
 
 Change-Id: Ia49123b459f64282bfaa8d3e00ab01c3aa5e1c8e
 ---

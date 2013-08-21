@@ -1,0 +1,119 @@
+From 39eb8cac10c0a2a89d9e632f43f6a6c4b06fbbe5 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 19 Aug 2013 13:51:37 +0800
+Subject: [PATCH 10/11] support mr2 big board lcd
+
+Change-Id: I3ea72187926d2c2f4189cdfe8dd34913cf5fb620
+---
+ .../boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi  |    6 ++-
+ drivers/video/msm/mdss/dsi_panel_v2.c              |   35 +++++++++++++++++++-
+ drivers/video/msm/mdss/dsi_v2.h                    |    2 +
+ 3 files changed, 40 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi b/arch/arm/boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi
+index 51190cc..85ad8e5 100755
+--- a/arch/arm/boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-v2-panel-otm9605a-qhd-video.dtsi
+@@ -17,14 +17,14 @@
+ 		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
+ 		qcom,rst-gpio = <&msmgpio 41 0>;
+ 		vdda-supply = <&pm8110_l19>;
+-		vddio-supply=<&pm8110_l14>;
++		vddio-supply=<&pm8110_l6>;
+ 		qcom,mdss-pan-res = <540 960>;
+ 		qcom,mdss-pan-bpp = <24>;
+ 		qcom,mdss-pan-dest = "display_1";
+ 		qcom,mdss-pan-porch-values = <100 4 100 32 2 32>;
+ 		qcom,mdss-pan-underflow-clr = <0xff>;
+ 		qcom,mdss-pan-bl-levels = <1 255>;
+-		qcom,mdss-pan-bl-ctrl = "bl_ctrl_wled";
++		qcom,mdss-pan-bl-ctrl = "bl_ctrl_dcs";
+ 		qcom,mdss-pan-dsi-mode = <0>;
+ 		qcom,mdss-pan-dsi-h-pulse-mode = <1>;
+ 		qcom,mdss-pan-dsi-h-power-stop = <1 1 1>;
+@@ -141,6 +141,8 @@
+ 					39 01 00 00 01 02 00 00
+ 					39 01 00 00 01 04 FF FF FF FF
+ 					39 01 00 00 01 02 35 01
++					39 01 00 00 01 02 51 FF
++					39 01 00 00 01 02 53 2C   
+ 					05 01 00 00 7D 02 11 00
+ 					05 01 00 00 32 02 29 00];
+ 		qcom,panel-off-cmds = [05 01 00 00 32 02 28 00
+diff --git a/drivers/video/msm/mdss/dsi_panel_v2.c b/drivers/video/msm/mdss/dsi_panel_v2.c
+index 4c601aa..738858f 100644
+--- a/drivers/video/msm/mdss/dsi_panel_v2.c
++++ b/drivers/video/msm/mdss/dsi_panel_v2.c
+@@ -145,6 +145,32 @@ int dsi_panel_power(int enable)
+ 	return 0;
+ }
+ 
++static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
++static struct dsi_cmd_desc backlight_cmd = {
++	DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1), led_pwm1};
++
++static void dsi_panel_bklt_dcs(struct mdss_panel_data *pdata, int level)
++{
++	struct mipi_panel_info *mipi;
++	int ret = 0;
++
++	mipi  = &pdata->panel_info.mipi;
++
++	pr_debug("%s: dcs level=%d\n", __func__, level);
++
++	led_pwm1[1] = (unsigned char)level;
++
++	msm_dsi_set_tx_power_mode(0);
++	ret = dsi_cmds_tx_v2(pdata, &panel_private->dsi_panel_tx_buf,
++					&backlight_cmd,
++					1);
++	if (ret) {
++		pr_err("%s: set brightness failed , rc=%d\n",
++			__func__, ret);
++	}
++	msm_dsi_set_tx_power_mode(1);
++}
++
+ void dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
+ {
+ 	if (pdata == NULL) {
+@@ -232,9 +258,14 @@ static void dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
+ 	if (panel_private->bl_ctrl) {
+ 		switch (panel_private->bl_ctrl) {
+ 		case BL_WLED:
++			printk("bl_level = %d\n", bl_level);
+ 			led_trigger_event(bl_led_trigger, bl_level);
+ 			break;
+ 
++		case BL_DCS_CMD:
++			dsi_panel_bklt_dcs(pdata, bl_level);
++			break;
++
+ 		default:
+ 			pr_err("%s: Unknown bl_ctrl configuration\n",
+ 				__func__);
+@@ -608,7 +639,9 @@ static int dsi_panel_parse_backlight(struct platform_device *pdev,
+ 		pr_debug("%s: SUCCESS-> WLED TRIGGER register\n", __func__);
+ 		*bl_ctrl = BL_WLED;
+ 	}
+-
++	else if (!strncmp(bl_ctrl_type, "bl_ctrl_dcs", 11)) {
++		*bl_ctrl = BL_DCS_CMD;
++	}
+ 	rc = of_property_read_u32_array(pdev->dev.of_node,
+ 		"qcom,mdss-pan-bl-levels", res, 2);
+ 	panel_data->panel_info.bl_min = (!rc ? res[0] : 0);
+diff --git a/drivers/video/msm/mdss/dsi_v2.h b/drivers/video/msm/mdss/dsi_v2.h
+index 96dd390..efcdff3 100644
+--- a/drivers/video/msm/mdss/dsi_v2.h
++++ b/drivers/video/msm/mdss/dsi_v2.h
+@@ -235,4 +235,6 @@ int dsi_short_read2_resp(struct dsi_buf *rp);
+ 
+ int dsi_long_read_resp(struct dsi_buf *rp);
+ 
++void msm_dsi_set_tx_power_mode(int mode);
++
+ #endif /* MDSS_DSI_H */
+-- 
+1.7.8.3
+

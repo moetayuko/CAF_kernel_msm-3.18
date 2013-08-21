@@ -1,4 +1,4 @@
-From fca2d3d899565de39098b498d5f19f79ac9fc265 Mon Sep 17 00:00:00 2001
+From 75d5b2ca1de39ddad4c681471dd16c8377b7253b Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 4 Jul 2013 14:26:01 +0800
 Subject: [PATCH] modify partition size to match skuac partition change

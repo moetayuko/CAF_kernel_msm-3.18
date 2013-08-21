@@ -1,7 +1,7 @@
 From 09b8983d594540cf9ad848b25804c88fea720dd5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 09:01:41 +0800
-Subject: [PATCH 3/7] add ctp and LCD support
+Subject: [PATCH 03/11] add ctp and LCD support
 
 Change-Id: Idd770e84c59920da7825d49b073450d12154684d
 ---

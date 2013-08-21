@@ -1,7 +1,7 @@
 From 011dfa73f778ba34923c2609f872aa949e638df4 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 12 Aug 2013 21:14:19 +0800
-Subject: [PATCH 2/7] add lcd dtsi to enable display in order to fix zygote
+Subject: [PATCH 02/11] add lcd dtsi to enable display in order to fix zygote
  restart issue
 
 Change-Id: I0b914e3c8eefd912e31287c9756d9a46f0077f12

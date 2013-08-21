@@ -1,7 +1,7 @@
 From db47979bd35324f6e1570db47985f88e4df9f880 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 12:45:30 +0800
-Subject: [PATCH 5/7] add LP-sensor intersil isl29044 driver support
+Subject: [PATCH 05/11] add LP-sensor intersil isl29044 driver support
 
 Change-Id: I975e89c70ed9265ebc4fcaca01d908cba156b64e
 ---

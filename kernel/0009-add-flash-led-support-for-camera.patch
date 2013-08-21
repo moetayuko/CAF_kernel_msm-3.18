@@ -1,0 +1,1416 @@
+From 12bc4ef9981504bd976cf014ea3704bce4ebb8de Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Sun, 18 Aug 2013 14:39:14 +0800
+Subject: [PATCH 09/11] add flash led support for camera
+
+Change-Id: I4eac600748992132fddea97a2995f3afc3d443c1
+---
+ arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi |   31 +-
+ arch/arm/boot/dts/msm8610.dtsi                   |    2 +-
+ arch/arm/configs/msm8610_defconfig               |    1 +
+ drivers/leds/Kconfig                             |   18 +
+ drivers/leds/Makefile                            |    2 +
+ drivers/leds/leds-msm-i2c-flash.c                |  733 ++++++++++++++++++++++
+ drivers/leds/leds-msm-i2c-flash.h                |   75 +++
+ drivers/leds/leds-tricolor.c                     |  416 ++++++++++++
+ 8 files changed, 1272 insertions(+), 6 deletions(-)
+ create mode 100644 drivers/leds/leds-msm-i2c-flash.c
+ create mode 100644 drivers/leds/leds-msm-i2c-flash.h
+ create mode 100644 drivers/leds/leds-tricolor.c
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+index bb55430..cc646ec 100644
+--- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
++++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
+@@ -10,7 +10,28 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  */
+- 
++&i2c3 {
++       flashlight: qcom,led-flash@63 {
++               cell-index = <0>;
++               reg = <0x63>;
++               qcom,slave-id = <0x63 0x00 0x0011>;
++               compatible = "qcom,led-flash";
++               linux,name = "flashlight";
++               qcom,current = <200>;
++               qcom,gpio-flash = <&msmgpio 18 0>;
++               linux,default-trigger = "flashlight-trigger";
++       };
++};
++
++/{
++       led_flash0: qcom,camera-led-flash {
++               cell-index = <0>;
++               compatible = "qcom,camera-led-flash";
++               qcom,flash-type = <1>;
++               qcom,flash-source = <&flashlight>;
++       };
++};
++
+ &i2c {
+         qcom,camera@7d {
+                 compatible = "qcom,hi256";
+@@ -98,7 +119,7 @@
+ 				qcom,csiphy-sd-index = <0>;
+ 				qcom,csid-sd-index = <0>;
+ 				qcom,actuator-src = <&actuator0>;
+-				//qcom,led-flash-src = <&led_flash0>;
++				qcom,led-flash-src = <&led_flash0>;
+ 				qcom,mount-angle = <270>;
+ 				qcom,sensor-name = "ov8850_foxconn";
+ 				cam_vdig-supply = <&pm8110_l2>;
+@@ -138,7 +159,7 @@
+ 				qcom,csiphy-sd-index = <0>;
+ 				qcom,csid-sd-index = <0>;
+ 				qcom,actuator-src = <&actuator0>;
+-				//qcom,led-flash-src = <&led_flash0>;
++				qcom,led-flash-src = <&led_flash0>;
+ 				qcom,mount-angle = <270>;
+ 				qcom,sensor-name = "s5k4h5_liteon";
+ 				cam_vdig-supply = <&pm8110_l2>;
+@@ -175,7 +196,7 @@
+ 			qcom,csiphy-sd-index = <0>;
+ 			qcom,csid-sd-index = <0>;
+ 			qcom,actuator-src = <&actuator0>;
+-			//qcom,led-flash-src = <&led_flash0>;
++			qcom,led-flash-src = <&led_flash0>;
+ 			qcom,mount-angle = <90>;
+ 			qcom,sensor-name = "ov5648_sunny_p5v18g";
+ 			cam_vdig-supply = <&pm8110_l2>;
+@@ -213,7 +234,7 @@
+ 				qcom,csiphy-sd-index = <0>;
+ 				qcom,csid-sd-index = <0>;
+ 				qcom,actuator-src = <&actuator0>;
+-				//qcom,led-flash-src = <&led_flash0>;
++				qcom,led-flash-src = <&led_flash0>;
+ 				qcom,mount-angle = <90>;
+ 				qcom,sensor-name = "s5k4e1_liteon";
+ 				cam_vdig-supply = <&pm8110_l2>;
+diff --git a/arch/arm/boot/dts/msm8610.dtsi b/arch/arm/boot/dts/msm8610.dtsi
+index a93043e..2058c4f 100644
+--- a/arch/arm/boot/dts/msm8610.dtsi
++++ b/arch/arm/boot/dts/msm8610.dtsi
+@@ -505,7 +505,7 @@
+ 		qcom,scl-gpio = <&msmgpio 17 0>;
+ 	};
+ 
+-	i2c@f9925000 { /* BLSP-1 QUP-3 */
++	i2c3: i2c@f9925000 { /* BLSP-1 QUP-3 */
+ 		cell-index = <0>;
+ 		compatible = "qcom,i2c-qup";
+ 		#address-cells = <1>;
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 32201b4..35b1d9f 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -392,6 +392,7 @@ CONFIG_MMC_MSM=y
+ CONFIG_MMC_SDHCI_MSM=y
+ CONFIG_MMC_MSM_SPS_SUPPORT=y
+ CONFIG_LEDS_QPNP=y
++CONFIG_LEDS_TRICOLOR=y
+ CONFIG_LEDS_MSM_GPIO_FLASH=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_SWITCH=y
+diff --git a/drivers/leds/Kconfig b/drivers/leds/Kconfig
+index 159c6f6..d561c6e 100644
+--- a/drivers/leds/Kconfig
++++ b/drivers/leds/Kconfig
+@@ -181,6 +181,20 @@ config LEDS_PMIC_MPP
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called leds-pmic-mpp.
+ 
++config LEDS_TRICOLOR
++        tristate "LED Support for Qualcomm tricolor LEDs"
++        depends on LEDS_CLASS && MSM_SMD
++        help
++          This option enables support for tricolor LEDs connected to
++	  to Qualcomm reference boards. Red, green and blue color leds
++	  are supported. These leds are turned on/off, blink on/off
++	  by Modem upon receiving command through rpc from this driver.
++
++	  If unsure, say N.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called leds-msm-tricolor.
++
+ config LEDS_MSM_TRICOLOR
+         tristate "LED Support for Qualcomm tricolor LEDs"
+         depends on LEDS_CLASS && MSM_SMD
+@@ -300,6 +314,10 @@ config LEDS_QPNP
+ 	  To compile this driver as a module, choose M here: the module will
+ 	  be called leds-qpnp.
+ 
++config LEDS_MSM_FLASH
++	bool "Support for GPIO Flash LEDs"
++        default y
++
+ config LEDS_MSM_GPIO_FLASH
+ 	tristate "Support for GPIO Flash LEDs"
+ 	depends on GPIO_MSM_V3
+diff --git a/drivers/leds/Makefile b/drivers/leds/Makefile
+index f20a0d0..9934cf3 100644
+--- a/drivers/leds/Makefile
++++ b/drivers/leds/Makefile
+@@ -33,6 +33,7 @@ obj-$(CONFIG_LEDS_OT200)		+= leds-ot200.o
+ obj-$(CONFIG_LEDS_FSG)			+= leds-fsg.o
+ obj-$(CONFIG_LEDS_PCA955X)		+= leds-pca955x.o
+ obj-$(CONFIG_LEDS_MSM_PMIC)		+= leds-msm-pmic.o
++obj-$(CONFIG_LEDS_TRICOLOR)		+= leds-tricolor.o
+ obj-$(CONFIG_LEDS_PCA9633)		+= leds-pca9633.o
+ obj-$(CONFIG_LEDS_DA903X)		+= leds-da903x.o
+ obj-$(CONFIG_LEDS_WM831X_STATUS)	+= leds-wm831x-status.o
+@@ -55,6 +56,7 @@ obj-$(CONFIG_LEDS_QCIBL)		+= leds-qci-backlight.o
+ obj-$(CONFIG_LEDS_MSM_PDM)		+= leds-msm-pdm.o
+ obj-$(CONFIG_LEDS_MSM_TRICOLOR)		+= leds-msm-tricolor.o
+ obj-$(CONFIG_LEDS_MSM_GPIO_FLASH)	+= leds-msm-gpio-flash.o
++obj-$(CONFIG_LEDS_MSM_FLASH)		+= leds-msm-i2c-flash.o
+ 
+ # LED SPI Drivers
+ obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o
+diff --git a/drivers/leds/leds-msm-i2c-flash.c b/drivers/leds/leds-msm-i2c-flash.c
+new file mode 100644
+index 0000000..ef00b68
+--- /dev/null
++++ b/drivers/leds/leds-msm-i2c-flash.c
+@@ -0,0 +1,733 @@
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++#include <linux/of_gpio.h>
++#include <linux/delay.h>
++#include <linux/leds.h>
++
++#include "leds-msm-i2c-flash.h"
++
++#define ENABLE_REGISTER 0x0A
++#define MODE_BIT_MASK 0x03
++#define MODE_BIT_STANDBY 0x00
++#define MODE_BIT_INDICATOR 0x01
++#define MODE_BIT_TORCH 0x02
++#define MODE_BIT_FLASH 0x03
++#define ENABLE_BIT_FLASH 0x20
++#define ENABLE_BIT_TORCH 0x10
++
++#define CURRENT_REGISTER 0x09
++#define CURRENT_TORCH_MASK 0x70
++#define CURRENT_TORCH_SHIFT 4
++#define CURRENT_FLASH_MASK 0x0F
++#define CURRENT_FLASH_SHIFT 0
++
++#define FLASH_FEATURE_REGISTER 0x08
++#define FLASH_TIMEOUT_MASK 0x07
++#define FLASH_TIMEOUT_SHIFT 0
++
++#define FLASH_CHIP_ID_MASK 0x07
++#define FLASH_CHIP_ID 0x0
++
++#define LED_TRIGGER_DEFAULT		"none"
++
++int turn_on_torch(struct lm3642_data* data);
++int turn_off_torch(struct lm3642_data* data);
++
++static struct lm3642_data* lm3642;
++
++static void lm3642_clear_error_flag(struct lm3642_data* data)
++{
++	int err = 0;
++    struct i2c_client* client = data->client;
++
++	err = i2c_smbus_read_byte_data(client, 0x0B);
++    if(err < 0) {
++        printk("read current register fail!\n");
++    } else {
++        printk("lm3642. [%02X] = %02X\n", 0x0B, err);
++    }
++}
++
++static int atoi(const char *psz_buf)
++{
++	const char *pch = psz_buf;
++	int ret = 0;
++
++	while (' ' == *pch)
++		pch++;
++
++	while(pch != NULL && *pch >= '0' && *pch <= '9') {
++        ret = ret * 10 + (*pch - '0');
++        pch++;
++    }
++
++	return ret;
++}
++
++int convert_flash_timeout(enum flash_timeout to) {
++    int timeout = 300;
++    if(to <= FLASH_TIMEOUT_MAX) {
++        timeout = 100 * (1 + (int)to);
++    }
++    return timeout;
++}
++
++int turn_on_torch(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    if(pdata->status == TORCH_ON) {
++        return 0;
++    }
++	
++	lm3642_clear_error_flag(data);
++    // Set torch mode. 
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_TORCH/* | ENABLE_BIT_TORCH*/);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++
++    pdata->status = TORCH_ON;
++
++    return err;
++}
++
++int turn_off_torch(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    if(pdata->status == TORCH_OFF) {
++        return 0;
++    }
++
++	lm3642_clear_error_flag(data);
++    // Set torch mode. 
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_STANDBY);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++	
++    // pull down flash pins
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    pdata->status = TORCH_OFF;
++
++    return err;
++}
++
++static int turn_on_flash(struct lm3642_data* data)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_FLASH | ENABLE_BIT_FLASH);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 1);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++static int turn_off_flash(struct lm3642_data* data)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_STANDBY);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++
++
++int trigger_flash(struct lm3642_data* data) {
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++	lm3642_clear_error_flag(data);
++    // Set flash mode and only enable strobe pin
++    err = i2c_smbus_write_byte_data(client, ENABLE_REGISTER, MODE_BIT_FLASH | ENABLE_BIT_FLASH);
++    if(err < 0) {
++        printk("write i2c register failed! line: %d\n", __LINE__);
++        return err;
++    }
++
++    err = gpio_direction_output(pdata->flash, 1);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    msleep(convert_flash_timeout(pdata->timeout));
++
++    err = gpio_direction_output(pdata->flash, 0);
++    if (err) {
++        printk("%s: Failed to set gpio %d\n", __func__,
++               pdata->flash);
++        return err;
++    }
++
++    return err;
++}
++
++int set_flash_current(struct lm3642_data* data, enum flash_current_level i)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->flash_current = i;
++	
++	lm3642_clear_error_flag(data);
++	
++    err = i2c_smbus_write_byte_data(client, CURRENT_REGISTER,
++        (pdata->flash_current << CURRENT_FLASH_SHIFT) | (pdata->torch_current << CURRENT_TORCH_SHIFT));
++    if(err < 0) {
++        printk("lm3642 write i2c faile\n");
++    }
++
++    return err;
++}
++
++int set_torch_current(struct lm3642_data* data, enum torch_current_level i)
++{
++    int err = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->torch_current = i;
++	
++	lm3642_clear_error_flag(data);
++	
++    err = i2c_smbus_write_byte_data(client, CURRENT_REGISTER,
++        (pdata->flash_current << CURRENT_FLASH_SHIFT) | (pdata->torch_current << CURRENT_TORCH_SHIFT));
++    if(err < 0) {
++        printk("lm3642 write i2c faile\n");
++    }
++
++    return err;
++}
++
++int set_flash_timeout(struct lm3642_data* data, enum flash_timeout to)
++{
++    int err = 0, tmp = 0;
++    struct i2c_client* client = data->client;
++    struct lm3642_platform_data* pdata = data->pdata;
++
++    pdata->timeout = to;
++
++    tmp = i2c_smbus_read_byte_data(client, FLASH_FEATURE_REGISTER);
++    if(tmp < 0) {
++        printk("%s read i2c fail\n", __func__);
++        return tmp;
++    }
++	
++	err = i2c_smbus_read_byte_data(client, 0x0B);
++    if(err < 0) {
++        printk("read current register fail!\n");
++    } else {
++        printk("lm3642. [%02X] = %02X\n", 0x0B, err);
++    }
++
++    err = i2c_smbus_write_byte_data(client, FLASH_FEATURE_REGISTER,
++        (((int)pdata->timeout << FLASH_TIMEOUT_SHIFT) & FLASH_TIMEOUT_MASK)
++        | (tmp & ~FLASH_TIMEOUT_MASK));
++    if(err < 0) {
++        printk("%s write i2c faile\n", __func__);
++    }
++
++    return err;
++}
++
++
++static ssize_t lm3642_flash_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = ret & CURRENT_FLASH_MASK;
++        count = sprintf(buf, "%d\n", ret);
++    }
++
++    return count;
++}
++
++static ssize_t lm3642_flash_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++
++    trigger_flash(data);
++
++	return size;
++}
++
++static ssize_t lm3642_torch_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int count = 0;
++
++	lm3642_clear_error_flag(data);
++
++    switch(data->pdata->status) {
++    case TORCH_ON:
++        count = 3; 
++        strncpy(buf, "ON\n", count);
++        break;
++    case TORCH_OFF:
++        count = 4;
++        strncpy(buf, "OFF\n", count);
++        break;
++    }
++
++    return count;
++}
++static ssize_t lm3642_torch_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++
++    if(0 == strncmp("0\n", buf, 2) ) {
++        // input "0", turn off torch
++        turn_off_torch(data);
++    } else {
++        // input non-"0", 
++        turn_on_torch(data);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_torch_current_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char TORCH_CURRENTS[8][10] = {"48.4mA", "93.74mA", "140.63mA", "187.5mA", "234.38mA", "281.25mA", "328.13mA", "375mA"};
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & CURRENT_TORCH_MASK) >> CURRENT_TORCH_SHIFT ;
++        count = sprintf(buf, "%s\n", TORCH_CURRENTS[ret]);
++    }
++
++    return count;
++}
++
++// the input should be 1-8. 0 is NOT used since atoi would return 0 if non-numeric
++static ssize_t lm3642_torch_current_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL\n");
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)TORCH_I_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_torch_current(data, (enum torch_current_level) ret - 1);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_flash_current_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char FLASH_CURRENTS[16][16] = {"93.75mA", "187.5mA", "281.25mA", "375mA",
++        "468.75mA", "562.5mA", "656.25mA", "750mA",
++        "843.75mA", "937.5mA", "1031.25mA", "1125mA",
++        "1218.75mA", "1312.5mA", "1406.25mA", "1500mA"
++        };
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, CURRENT_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & CURRENT_FLASH_MASK) >> CURRENT_FLASH_SHIFT ;
++        count = sprintf(buf, "%s\n", FLASH_CURRENTS[ret]);
++    }
++
++    return count;
++}
++static ssize_t lm3642_flash_current_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL. %s\n", __func__);
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)FLASH_I_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_flash_current(data, (enum flash_current_level) ret - 1);
++    }
++
++    return size;
++}
++
++static ssize_t lm3642_flash_timeout_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++    char FLASH_TIMEOUTS[8][8] = {
++        "100ms", "200ms", "300ms", "400ms", "500ms", "600ms", "700ms", "800ms"
++        };
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    struct i2c_client* client = data->client;
++    int ret = 0, count = 0;
++
++    ret = i2c_smbus_read_byte_data(client, FLASH_FEATURE_REGISTER);
++    if(ret < 0) {
++        printk("read current register fail!\n");
++    } else {
++        ret = (ret & FLASH_TIMEOUT_MASK) >> FLASH_TIMEOUT_SHIFT ;
++        count = sprintf(buf, "%s\n", FLASH_TIMEOUTS[ret]);
++    }
++
++    return count;
++}
++
++static ssize_t lm3642_flash_timeout_store(struct device *dev,
++				struct device_attribute *attr,
++				const char *buf, size_t size)
++{
++    struct lm3642_data* data = dev_get_drvdata(dev);
++    int ret = 0;
++
++    if(buf == NULL) {
++        printk("buf NULL. %s\n", __func__);
++        return size;
++    }
++
++    ret = atoi(buf);
++    if(ret > (1 + (int)FLASH_TIMEOUT_MAX) || ret < 1) {
++        printk("invalid input: %s\n", buf);
++    } else {
++        set_flash_timeout(data, (enum flash_timeout) ret - 1);
++    }
++
++    return size;
++}
++
++static void led_i2c_brightness_set_led_work(struct work_struct *work)
++{
++    if(lm3642->pdata->brightness > LED_HALF) {
++        turn_off_torch(lm3642);
++        turn_on_flash(lm3642);
++    } else if(lm3642->pdata->brightness > LED_OFF) {
++        turn_off_flash(lm3642);
++        turn_on_torch(lm3642);
++    } else {
++        turn_off_flash(lm3642);
++        turn_off_torch(lm3642);
++    }
++}
++
++static void led_i2c_brightness_set(struct led_classdev *led_cdev,
++				    enum led_brightness value)
++{
++	lm3642->pdata->brightness = value;
++	schedule_work(&lm3642->pdata->work);
++}
++
++static enum led_brightness led_i2c_brightness_get(struct led_classdev *led_cdev)
++{
++    struct lm3642_platform_data *flash_led =
++	    container_of(led_cdev, struct lm3642_platform_data, cdev);
++	return flash_led->brightness;
++}
++
++static DEVICE_ATTR(flashlight, 0664, lm3642_flash_show, lm3642_flash_store); // for test only
++static DEVICE_ATTR(torch, 0664, lm3642_torch_show, lm3642_torch_store);
++static DEVICE_ATTR(torch_current, 0664, lm3642_torch_current_show, lm3642_torch_current_store);
++static DEVICE_ATTR(flash_current, 0664, lm3642_flash_current_show, lm3642_flash_current_store);
++static DEVICE_ATTR(flash_timeout, 0664, lm3642_flash_timeout_show, lm3642_flash_timeout_store);
++
++static int __devexit lm3642_remove(struct i2c_client *client)
++{
++    struct lm3642_data* data = i2c_get_clientdata(client);
++
++    device_remove_file(&client->dev, &dev_attr_flashlight);
++	device_remove_file(&client->dev, &dev_attr_torch);
++	device_remove_file(&client->dev, &dev_attr_flash_current);
++	device_remove_file(&client->dev, &dev_attr_torch_current);
++	device_remove_file(&client->dev, &dev_attr_flash_timeout);
++
++    if (gpio_is_valid(data->pdata->flash))
++		gpio_free(data->pdata->flash);
++
++    kfree(data);
++    return 0;
++}
++
++static int lm3642_probe(struct i2c_client *client,
++			   const struct i2c_device_id *id)
++{
++    int err = 0;
++    const char *temp_str;
++    struct lm3642_platform_data *pdata;
++    struct lm3642_data* data;
++    struct device_node *node = client->dev.of_node;
++
++    if (node) {
++		pdata = devm_kzalloc(&client->dev,
++			sizeof(struct lm3642_platform_data), GFP_KERNEL);
++		if (!pdata) {
++			dev_err(&client->dev, "Failed to allocate memory\n");
++			return -ENOMEM;
++		}
++	} else {
++		pdata = client->dev.platform_data;
++    }
++
++	if (!pdata) {
++		dev_err(&client->dev, "Invalid pdata\n");
++		return -EINVAL;
++	}
++
++	INIT_WORK(&pdata->work, led_i2c_brightness_set_led_work);
++
++	pdata->brightness = 0;
++    pdata->flash_current = FLASH_I_DEFAULT;
++    pdata->torch_current = TORCH_I_DEFAULT;
++    pdata->timeout = FLASH_TIMEOUT_DEFAULT;
++    pdata->status = TORCH_OFF;
++    pdata->cdev.default_trigger = LED_TRIGGER_DEFAULT;
++
++    err = of_property_read_string(node, "linux,default-trigger", &temp_str);
++	if (!err) {
++		pdata->cdev.default_trigger = temp_str;
++    }
++
++    err = of_property_read_string(node, "linux,name", &pdata->cdev.name);
++	if (err) {
++		dev_err(&client->dev, "%s: Failed to read linux name. rc = %d\n",
++			__func__, err);
++		goto free_platform_data;
++	}
++
++    pdata->cdev.max_brightness = LED_FULL;
++	pdata->cdev.brightness_set = led_i2c_brightness_set;
++	pdata->cdev.brightness_get = led_i2c_brightness_get;
++
++    err = led_classdev_register(&client->dev, &pdata->cdev);
++	if (err) {
++		dev_err(&client->dev, "%s: Failed to register led dev. rc = %d\n",
++			__func__, err);
++		goto free_platform_data;
++	}
++
++    // Get gpio number of flash from dts(i)
++    pdata->flash = of_get_named_gpio(node, "qcom,gpio-flash", 0);
++    if (pdata->flash < 0) {
++        printk("of_get_named_gpio failed. Line: %d. %s\n", __LINE__, __func__);
++		goto free_platform_data;
++	} else {
++		err = gpio_request(pdata->flash, "FLASH_NOW");
++        printk("flash = %d\n", pdata->flash);
++		if (err) {
++            printk("gpio_request failed. Line: %d. %s\n", __LINE__, __func__);
++			goto free_platform_data;
++		}
++	}
++
++    // set gpio of flash as output. 
++	gpio_tlmm_config(GPIO_CFG(pdata->flash, 0,
++				  GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL,
++				  GPIO_CFG_2MA), GPIO_CFG_ENABLE);
++
++    err = gpio_direction_output(pdata->flash, 0);
++	if (err) {
++		printk("%s: Failed to set gpio %d\n", __func__,
++		       pdata->flash);
++		goto free_platform_data;
++	}
++
++    // Check and setup i2c client
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
++		dev_err(&client->dev, "I2C not supported\n");
++		goto free_platform_data;
++	}
++
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_I2C_BLOCK))
++	{
++	    dev_err(&client->dev, "%s: I2C error2!\n", __func__);
++		goto free_platform_data;
++	}
++
++	data = kzalloc(sizeof(struct lm3642_data), GFP_KERNEL);
++    if (!data) {
++		//dev_err(&client->dev, "Not enough memory\n");
++		printk("%s: Not enough memory\n", __func__);
++		goto free_platform_data;
++	}
++
++	data->client = client;
++	data->pdata = pdata;
++
++	i2c_set_clientdata(client, data);
++    lm3642 = data;
++
++    // create file sysfs
++    err = device_create_file(&client->dev, &dev_attr_flashlight);
++    if(err) {
++        goto free_data;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_torch);
++    if(err) {
++        goto free_lm3642_sys_flashlight;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_torch_current);
++    if(err) {
++        goto free_lm3642_sys_torch;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_flash_current);
++    if(err) {
++        goto free_lm3642_sys_torch_current;
++    }
++
++    err = device_create_file(&client->dev, &dev_attr_flash_timeout);
++    if(err) {
++        goto free_lm3642_sys_flash_current;
++    }
++
++    return 0;
++free_lm3642_sys_flash_current:
++    device_remove_file(&client->dev, &dev_attr_flash_current);
++free_lm3642_sys_torch_current:
++    device_remove_file(&client->dev, &dev_attr_torch_current);
++free_lm3642_sys_torch:
++    device_remove_file(&client->dev, &dev_attr_torch);
++free_lm3642_sys_flashlight:
++	device_remove_file(&client->dev, &dev_attr_flashlight);
++    printk("device_create_file failed\n");
++free_data: 
++    kfree(data);
++free_platform_data:
++    if(node) {
++        kfree(pdata);
++    }
++    return err;
++
++
++}
++
++
++static const struct i2c_device_id lm3642_id[] = {
++	{"lm3642", 0},
++	{},
++};
++
++MODULE_DEVICE_TABLE(i2c, lm3642_id);
++
++#ifdef CONFIG_OF
++static struct of_device_id lm3642_match_table[] = {
++	{ .compatible = "qcom,led-flash",},
++	{ },
++};
++#else
++#define lm3642_match_table NULL
++#endif
++
++
++static struct i2c_driver lm3642_driver = {
++	.probe = lm3642_probe,
++	.remove = __devexit_p(lm3642_remove),
++	.driver = {
++		   .name = "lm3642",
++		   .owner = THIS_MODULE,
++		   .of_match_table = lm3642_match_table,
++/* Do NOT implements PM at first. We just verify the funciton.
++#ifdef CONFIG_PM
++		   .pm = &lm3642_pm_ops,
++#endif
++*/
++	   },
++	.id_table = lm3642_id,
++};
++
++static int __init lm3642_init(void)
++{
++	return i2c_add_driver(&lm3642_driver);
++}
++
++module_init(lm3642_init);
++
++static void __exit lm3642_exit(void)
++{
++	i2c_del_driver(&lm3642_driver);
++}
++module_exit(lm3642_exit);
++
++MODULE_DESCRIPTION("For lm3642 camera flash light driver");
++MODULE_LICENSE("GPL v2");
++
+diff --git a/drivers/leds/leds-msm-i2c-flash.h b/drivers/leds/leds-msm-i2c-flash.h
+new file mode 100644
+index 0000000..0a5a3d3
+--- /dev/null
++++ b/drivers/leds/leds-msm-i2c-flash.h
+@@ -0,0 +1,75 @@
++#ifndef __LEDS_MSM_I2C_FLASH__
++#define __LEDS_MSM_I2C_FLASH__
++
++enum torch_current_level {
++    // in the unit of mA
++    TORCH_I_48P4, //0
++    TORCH_I_93P74, // 1
++    TORCH_I_140P63, // 2
++    TORCH_I_187P5, // 3
++    TORCH_I_234P38, // 4
++    TORCH_I_281P25, // 5
++    TORCH_I_328P13, // 6
++    TORCH_I_375, //7
++    TORCH_I_MAX = TORCH_I_375,
++    TORCH_I_DEFAULT = TORCH_I_48P4,
++};
++
++enum flash_current_level {
++    // in the unit of mA
++    FLASH_I_93P75, // 0
++    FLASH_I_187P5, // 1
++    FLASH_I_281P25, // 2
++    FLASH_I_375, // 3
++    FLASH_I_468P75, // 4
++    FLASH_I_562P5, // 5
++    FLASH_I_656P25, // 6
++    FLASH_I_750, // 7
++    FLASH_I_843P75, // 8
++    FLASH_I_937P5, // 9
++    FLASH_I_1031P25, // 10
++    FLASH_I_1125, // 11
++    FLASH_I_1218P75, // 12
++    FLASH_I_1312P5, // 13
++    FLASH_I_1406P25, // 14
++    FLASH_I_1500, // 
++    FLASH_I_MAX = FLASH_I_1500,
++    FLASH_I_DEFAULT = FLASH_I_1500,
++};
++
++enum flash_timeout {
++    // in the unit of milli-second
++    FLASH_TIMEOUT_100,
++    FLASH_TIMEOUT_200,
++    FLASH_TIMEOUT_300,
++    FLASH_TIMEOUT_400,
++    FLASH_TIMEOUT_500,
++    FLASH_TIMEOUT_600,
++    FLASH_TIMEOUT_700,
++    FLASH_TIMEOUT_800,
++    FLASH_TIMEOUT_MAX = FLASH_TIMEOUT_800,
++    FLASH_TIMEOUT_DEFAULT = FLASH_TIMEOUT_300,
++};
++
++enum torch_status {
++    TORCH_ON,
++    TORCH_OFF,
++};
++
++struct lm3642_platform_data {
++    enum torch_current_level torch_current;
++    enum torch_status status;
++    int flash; // pin number
++    enum flash_current_level flash_current;
++    enum flash_timeout timeout;    
++    int brightness;
++	struct work_struct work;
++    struct led_classdev cdev;
++};
++
++struct lm3642_data {
++    struct i2c_client *client;
++    struct lm3642_platform_data *pdata;
++};
++
++#endif // end of __LEDS_MSM_I2C_FLASH__
+diff --git a/drivers/leds/leds-tricolor.c b/drivers/leds/leds-tricolor.c
+new file mode 100644
+index 0000000..9893f61
+--- /dev/null
++++ b/drivers/leds/leds-tricolor.c
+@@ -0,0 +1,416 @@
++/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/device.h>
++#include <linux/leds.h>
++#include <linux/spinlock.h>
++#include <linux/ctype.h>
++#include <linux/platform_device.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include <asm/mach-types.h>
++#include <mach/pmic.h>
++#include <mach/gpio-v1.h>
++#include <mach/socinfo.h>
++#include <linux/timer.h>
++#include <linux/delay.h>
++
++
++#define DEBUG_TRICOLOR_LED 0
++#define RED_LED_GPIO 94
++#define BLUE_LED_GPIO 95
++#define GREEN_LED_GPIO 96
++#define LED_ON 1
++#define LED_OFF 0
++
++#define LED_RED_ON() 	gpio_set_value(RED_LED_GPIO, LED_ON)
++#define LED_BLUE_ON() 	gpio_set_value(BLUE_LED_GPIO, LED_ON)
++#define LED_GREEN_ON() 	gpio_set_value(GREEN_LED_GPIO, LED_ON)
++
++#define LED_RED_OFF() 	gpio_set_value(RED_LED_GPIO, LED_OFF)
++#define LED_BLUE_OFF() 	gpio_set_value(BLUE_LED_GPIO, LED_OFF)
++#define LED_GREEN_OFF() gpio_set_value(GREEN_LED_GPIO, LED_OFF)
++
++static bool red_led_status=LED_OFF;
++static bool blue_led_status=LED_OFF;
++static bool green_led_status=LED_OFF;
++static int qrd7_led_flash_en = 96;
++static int blink_time=300; //300ms
++
++enum tri_color_led_color {
++	LED_COLOR_RED,
++	LED_COLOR_GREEN,
++	LED_COLOR_BLUE,
++	LED_COLOR_MAX
++};
++
++enum tri_led_status{
++	ALL_OFF,
++	ALL_ON,
++	BLUE_ON,
++	BLUE_OFF,
++	RED_ON,
++	RED_OFF,
++	GREEN_ON,
++	GREEN_OFF,
++	BLUE_BLINK,
++	RED_BLINK,
++	GREEN_BLINK,
++	BLUE_BLINK_OFF,
++	RED_BLINK_OFF,
++	GREEN_BLINK_OFF,
++	LED_MAX
++};
++
++struct tricolor_led_data {
++	spinlock_t led_lock;
++	int led_data[4];
++	struct led_classdev leds[4];	
++};
++
++static struct timer_list red_led_blink_timer;
++static struct timer_list blue_led_blink_timer;
++static struct timer_list green_led_blink_timer;
++
++static void led_red_blink_cb(unsigned long data)
++{
++  if(red_led_status == LED_ON )
++  {
++   LED_RED_ON();
++   red_led_status = LED_OFF;
++  }
++  else
++  {
++    LED_RED_OFF();
++	red_led_status = LED_ON;
++  }
++  red_led_blink_timer.expires=jiffies + msecs_to_jiffies(blink_time);
++  add_timer(&red_led_blink_timer);
++}
++static void led_blue_blink_cb(unsigned long data) 
++{
++  if(blue_led_status == LED_ON )
++	{
++	  LED_BLUE_ON();
++	  blue_led_status = LED_OFF;
++	}
++	else
++	{
++	  LED_BLUE_OFF();
++	  blue_led_status = LED_ON;
++	}
++  mod_timer(&blue_led_blink_timer,jiffies + msecs_to_jiffies(blink_time));
++}
++static void led_green_blink_cb(unsigned long data)
++{
++  if(green_led_status == LED_ON )
++  	{
++  	  LED_GREEN_ON();
++	  green_led_status = LED_OFF;
++	}
++  else
++	{
++	LED_GREEN_OFF();
++	green_led_status = LED_ON;
++	}
++  green_led_blink_timer.expires=jiffies + msecs_to_jiffies(blink_time);
++  add_timer(&green_led_blink_timer);
++}
++static void led_red_blink_off(void)
++{
++  del_timer(&red_led_blink_timer);
++  LED_RED_OFF();
++}
++static void led_green_blink_off(void)
++{
++  del_timer(&green_led_blink_timer);
++  LED_GREEN_OFF();
++}
++static void led_blue_blink_off(void)
++{
++  del_timer(&blue_led_blink_timer);
++  LED_BLUE_OFF();
++}
++static void led_red_blink_on(unsigned long delay)
++{	
++  init_timer(&red_led_blink_timer);
++  red_led_blink_timer.function=led_red_blink_cb;
++  red_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&red_led_blink_timer);
++}
++
++static void led_blue_blink_on(unsigned long delay)
++{
++  init_timer(&blue_led_blink_timer);
++  blue_led_blink_timer.function=led_blue_blink_cb;
++  blue_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&blue_led_blink_timer);
++}
++
++static void led_green_blink_on(unsigned long delay)
++{
++  init_timer(&green_led_blink_timer);
++  green_led_blink_timer.function=led_green_blink_cb;
++  green_led_blink_timer.expires=jiffies + msecs_to_jiffies(delay);
++  add_timer(&green_led_blink_timer);
++}
++
++static ssize_t led_blink_solid_show(struct device *dev,
++				    struct device_attribute *attr, char *buf)
++{
++  ssize_t ret = 0;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  struct led_classdev *led_cdev = dev_get_drvdata(dev);
++  struct tricolor_led_data *tricolor_led = NULL;
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  ret = sprintf(buf, "%u\n", tricolor_led->led_data[color]);
++  return ret;
++}
++
++static ssize_t led_blink_solid_store(struct device *dev,
++				     struct device_attribute *attr,
++				     const char *buf, size_t size)
++{
++  int blink = 0;
++  unsigned long flags = 0;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  struct led_classdev *led_cdev = dev_get_drvdata(dev);
++  struct tricolor_led_data *tricolor_led = NULL;
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  sscanf(buf, "%d", &blink);
++  #if DEBUG_TRICOLOR_LED
++  	printk("tricolor %s is %d\n",led_cdev->name, blink);
++  #endif
++  spin_lock_irqsave(&tricolor_led->led_lock, flags);
++  if(blink){
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			led_red_blink_on(blink_time);
++  			break;
++  		case LED_COLOR_GREEN:
++  			led_green_blink_on(blink_time);
++  			break;
++  		case LED_COLOR_BLUE:
++  			led_blue_blink_on(blink_time);
++  			break;
++  		default:
++  			break;
++  	}
++  } else {
++  switch(color) {
++  	case LED_COLOR_RED:
++		led_red_blink_off();
++  	    break;
++	case LED_COLOR_GREEN:
++  		led_green_blink_off();
++  		break;
++  	case LED_COLOR_BLUE:
++  		led_blue_blink_off();
++  		break;
++  	default:
++  		break;
++  	}
++  }
++  tricolor_led->led_data[color] = blink;
++  spin_unlock_irqrestore(&tricolor_led->led_lock, flags);
++  return size;
++}
++
++static DEVICE_ATTR(blink, 0644, led_blink_solid_show, led_blink_solid_store);
++
++static void led_brightness_set_tricolor(struct led_classdev *led_cdev,
++			       enum led_brightness brightness)
++{
++  struct tricolor_led_data *tricolor_led = NULL;
++  enum tri_color_led_color color = LED_COLOR_MAX;
++  unsigned long flags = 0;
++  
++  if (!strcmp(led_cdev->name, "red")) {
++  	color = LED_COLOR_RED;
++  } else if (!strcmp(led_cdev->name, "green")) {
++  	color = LED_COLOR_GREEN;
++  } else {
++  	color = LED_COLOR_BLUE;
++  }
++  tricolor_led = container_of(led_cdev, struct tricolor_led_data, leds[color]);
++  if(!tricolor_led)
++  	printk(KERN_ERR "%s tricolor_led is NULL ",__func__);
++  
++  spin_lock_irqsave(&tricolor_led->led_lock, flags);
++  if(brightness){
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			LED_RED_ON();
++  			break;
++  		case LED_COLOR_GREEN:
++  			LED_GREEN_ON();
++  			break;
++  		case LED_COLOR_BLUE:
++  			LED_BLUE_ON();
++  			break;
++  		default:
++  			break;
++  	}
++  } else {
++  	switch(color) {
++  		case LED_COLOR_RED:
++  			LED_RED_OFF();
++  			break;
++  		case LED_COLOR_GREEN:
++  			LED_GREEN_OFF();
++  			break;
++  		case LED_COLOR_BLUE:
++  			LED_BLUE_OFF();
++  			break;
++  		default:
++  			break;
++  	}
++}
++spin_unlock_irqrestore(&tricolor_led->led_lock, flags);
++}
++
++static void led_brightness_set_flash(struct led_classdev *led_cdev,
++				     enum led_brightness brightness)
++{
++  if(brightness){
++  		gpio_set_value(qrd7_led_flash_en, 1);
++  } else {
++  		gpio_set_value(qrd7_led_flash_en, 0);
++  }
++}
++static int tricolor_led_probe(struct platform_device *pdev)
++{
++  int ret = 0;
++  int i, j;
++  struct tricolor_led_data *tricolor_led;
++  printk(KERN_ERR "tricolor leds and flashlight: probe init \n");
++  
++  tricolor_led = kzalloc(sizeof(struct tricolor_led_data), GFP_KERNEL);
++  if (tricolor_led == NULL) {
++  	printk(KERN_ERR "tricolor_led_probe: no memory for device\n");
++  	ret = -ENOMEM;
++  	goto err;
++  }
++  memset(tricolor_led, 0, sizeof(struct tricolor_led_data));
++  
++  spin_lock_init(&tricolor_led->led_lock);
++  
++  tricolor_led->leds[0].name = "red";
++  tricolor_led->leds[0].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[1].name = "green";
++  tricolor_led->leds[1].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[2].name = "blue";
++  tricolor_led->leds[2].brightness_set = led_brightness_set_tricolor;
++  
++  tricolor_led->leds[3].name = "flashlight_";
++  tricolor_led->leds[3].brightness_set = led_brightness_set_flash;
++  
++  for (i = 0; i < 4; i++) {	/* red, green, blue, flashlight */
++  	ret = led_classdev_register(&pdev->dev, &tricolor_led->leds[i]);
++  	printk(KERN_ERR "led_classdev_register tricolor_leds init\n");
++  	if (ret) {
++  		printk(KERN_ERR
++  		       "tricolor_led: led_classdev_register failed\n");
++  		goto err_led_classdev_register_failed;
++  	}
++  }
++  
++  for (i = 0; i < 4; i++) {
++  	ret = device_create_file(tricolor_led->leds[i].dev, &dev_attr_blink);
++  	if (ret) {
++  		printk(KERN_ERR
++  		       "tricolor_led: device_create_file failed\n");
++  		goto err_out_attr_blink;
++  	}
++  }
++  dev_set_drvdata(&pdev->dev, tricolor_led);
++  return 0;
++
++err_out_attr_blink:
++  for (j = 0; j < i; j++)
++  	device_remove_file(tricolor_led->leds[j].dev, &dev_attr_blink);
++  i = 4;
++
++err_led_classdev_register_failed:
++  for (j = 0; j < i; j++)
++	led_classdev_unregister(&tricolor_led->leds[j]);
++err:
++  return ret;
++}
++
++static int __devexit tricolor_led_remove(struct platform_device *pdev)
++{
++	struct tricolor_led_data *tricolor_led;
++	int i;
++	printk(KERN_ERR "tricolor_led_remove: remove\n");
++
++	tricolor_led = platform_get_drvdata(pdev);
++
++	for (i = 0; i < 4; i++) {
++		device_remove_file(tricolor_led->leds[i].dev, &dev_attr_blink);
++		led_classdev_unregister(&tricolor_led->leds[i]);
++	}
++	
++	kfree(tricolor_led);
++	return 0;
++}
++
++static struct platform_driver tricolor_led_driver = {
++	.probe = tricolor_led_probe,
++	.remove = __devexit_p(tricolor_led_remove),
++	.suspend = NULL,
++	.resume = NULL,
++	.driver = {
++		   .name = "tricolor leds and flashlight",
++		   .owner = THIS_MODULE,
++		   },
++};
++static int __init tricolor_led_init(void)
++{
++	printk(KERN_ERR "tricolor_leds_backlight_init: module init\n");
++	return platform_driver_register(&tricolor_led_driver);
++}
++static void __exit tricolor_led_exit(void)
++{
++	printk(KERN_ERR "tricolor_leds_backlight_exit: module exit\n");
++	platform_driver_unregister(&tricolor_led_driver);
++}
++
++MODULE_AUTHOR("Glory Liao");
++MODULE_DESCRIPTION("tricolor leds and flashlight driver");
++MODULE_LICENSE("GPL");
++
++module_init(tricolor_led_init);
++module_exit(tricolor_led_exit);
+-- 
+1.7.8.3
+

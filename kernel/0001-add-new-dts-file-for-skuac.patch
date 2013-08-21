@@ -1,7 +1,7 @@
 From 60c443e55ada1980d0be79678089b6557685fae3 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 18:08:17 +0800
-Subject: [PATCH 1/7] add new dts file for skuac
+Subject: [PATCH 01/11] add new dts file for skuac
 
 Change-Id: I82539b27c30a48ce607a0421b3222f0993b2eb13
 ---

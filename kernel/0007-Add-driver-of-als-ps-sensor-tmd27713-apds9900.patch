@@ -1,7 +1,7 @@
 From 6416345d640ae67028ce8a34b9175f2b95d4269f Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 17:00:22 +0800
-Subject: [PATCH 7/7] Add driver of als+ps sensor tmd27713&apds9900
+Subject: [PATCH 07/11] Add driver of als+ps sensor tmd27713&apds9900
 
 Change-Id: I603c2c2f975ad02048b2c174f7d3b34180ea022b
 ---

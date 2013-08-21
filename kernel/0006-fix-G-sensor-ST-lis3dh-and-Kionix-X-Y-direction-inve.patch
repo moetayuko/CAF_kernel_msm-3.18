@@ -1,8 +1,8 @@
 From 629141a53b51802ae3dd8de42ba4fc007b9e49a5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 16:32:37 +0800
-Subject: [PATCH 6/7] fix G-sensor ST lis3dh and Kionix X-Y direction inverse
- issue
+Subject: [PATCH 06/11] fix G-sensor ST lis3dh and Kionix X-Y direction
+ inverse issue
 
 Change-Id: I80e820b50303ce0d17fdd1bd5818e22f2f1c5777
 ---

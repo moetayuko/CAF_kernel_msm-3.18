@@ -1,0 +1,348 @@
+From 1562393f007c84d49557e4cd2c44f3290d2b38ba Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Wed, 21 Aug 2013 14:02:21 +0800
+Subject: [PATCH 11/11] support LP-sensor tmd27723 and tmd27713 coexist
+
+Change-Id: I35f4d783a76f041cd4e2a1ee2543f58895e4340f
+---
+ arch/arm/boot/dts/msm8610-qrd.dtsi |   58 +++++++++---------
+ arch/arm/configs/msm8610_defconfig |    2 +-
+ drivers/input/misc/tmd27713.c      |  115 ++++++++++++++++++++++++-----------
+ include/linux/taos_common.h        |    1 +
+ 4 files changed, 111 insertions(+), 65 deletions(-)
+
+diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
+index b337e49..0445e35 100644
+--- a/arch/arm/boot/dts/msm8610-qrd.dtsi
++++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
+@@ -185,38 +185,40 @@
+ 			lis3dh,negate_x = <0>;
+ 			lis3dh,negate_y = <0>;
+ 			lis3dh,negate_z = <1>;
+-        	};
++		};
++
+ 	intersil@44 {
+-                       compatible = "intersil,isl29044";
+-                       reg = <0x44>;
+-                       vdd-supply = <&pm8110_l19>;
+-                       vddio-supply = <&pm8110_l14>;
++			compatible = "intersil,isl29044";
++			reg = <0x44>;
++			vdd-supply = <&pm8110_l19>;
++			vddio-supply = <&pm8110_l6>;
+ 		};
+ 
+-        tmd2772@39 {
+-            compatible = "tmd2772,tmd2772";
+-            reg = <0x39>;
+-                       interrupt-parent = <&msmgpio>;
++	tmd2772@39 {
++			compatible = "tmd2772,tmd2772";
++			reg = <0x39>;
++            interrupt-parent = <&msmgpio>;
+             interrupts = <80 0x2>;
+-                       tmd2772,int_gpio = <80>;
+-                       tmd2772,proximity_can_wake;
+-                       tmd2772,prox_th_min = <255>;
+-                       tmd2772,prox_th_max = <480>;
+-                       tmd2772,als_gate = <10>;
+-        	};
+-/*
+-	taos@39 {
+-                        compatible = "taos,tmd27713";
+-                        reg = <0x39>;
+-                        interrupt-parent = <&msmgpio>;
+-                        interrupts = <80 0x2>;
+-                        vdd-supply = <&pm8110_l19>;
+-                        vddio-supply = <&pm8110_l6>;
+-                        taos,pdrive = <3>;
+-                        taos,ppcount = <8>;
+-                        taos,irq_gpio = <80>;
+-                };
+-*/
++            tmd2772,int_gpio = <80>;
++			tmd2772,proximity_can_wake;
++			tmd2772,prox_th_min = <255>;
++			tmd2772,prox_th_max = <480>;
++			tmd2772,als_gate = <10>;
++		};
++
++	taos@3A {
++			compatible = "taos,tmd27713";
++			reg = <0x3A>;
++            interrupt-parent = <&msmgpio>;
++            interrupts = <80 0x2>;
++			vdd-supply = <&pm8110_l19>;
++			vddio-supply = <&pm8110_l6>;
++			taos,real_i2c_addr = <0x39>;
++			taos,pdrive = <3>;
++			taos,ppcount = <8>;
++			taos,irq_gpio = <80>;
++		};
++
+ 	};
+ 
+ 	flashlight {
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 35b1d9f..ee5c4b3 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -468,7 +468,7 @@ CONFIG_CRYPTO_DEV_QCE=y
+ CONFIG_CRYPTO_DEV_QCEDEV=m
+ CONFIG_CRC_CCITT=y
+ # CONFIG_INPUT_KXTJ9 is not set
+-# CONFIG_TMD27713_PLSENSOR is not set
++CONFIG_TMD27713_PLSENSOR=y
+ CONFIG_INPUT_KIONIX_ACCEL=y
+ CONFIG_MSM_RPM_RBCPR_STATS_V2_LOG=y
+ CONFIG_SENSORS_STK3X1X=y
+diff --git a/drivers/input/misc/tmd27713.c b/drivers/input/misc/tmd27713.c
+index 877277c..b5a4ea5 100644
+--- a/drivers/input/misc/tmd27713.c
++++ b/drivers/input/misc/tmd27713.c
+@@ -213,7 +213,8 @@ static struct i2c_driver taos_driver = {
+ struct taos_data {
+ 	struct i2c_client *client;
+ 	struct cdev cdev;
+-	struct input_dev *input_dev;
++	struct input_dev *als_input_dev;
++	struct input_dev *ps_input_dev;
+ 	struct work_struct work;
+ 	struct mutex date_lock;
+ 	char taos_name[TAOS_ID_NAME_SIZE];
+@@ -506,8 +507,8 @@ static int taos_als_get_data(void)
+ 		printk(KERN_ERR
+ 		       "TAOS: call to taos_get_lux() returned error %d in ioctl als_data\n",
+ 		       lux_val);
+-	input_report_abs(taos_datap->input_dev, ABS_MISC, lux_val);
+-	input_sync(taos_datap->input_dev);
++	input_report_abs(taos_datap->als_input_dev, ABS_MISC, lux_val);
++	input_sync(taos_datap->als_input_dev);
+ 
+ 	return ret;
+ }
+@@ -562,8 +563,8 @@ static int taos_prox_threshold_set(void)
+ 		pro_buf[2] = 0xF4;
+ 		pro_buf[3] = 0x01;
+ 		data = 1;
+-		input_report_abs(taos_datap->input_dev, ABS_DISTANCE, data);
+-		input_sync(taos_datap->input_dev);
++		input_report_abs(taos_datap->ps_input_dev, ABS_DISTANCE, data);
++		input_sync(taos_datap->ps_input_dev);
+ 	} else if (proxdata > taos_cfgp->prox_threshold_hi) {
+ /*set prox_threshold_lo = 400*/
+ 		pro_buf[0] = 0x90;
+@@ -571,8 +572,8 @@ static int taos_prox_threshold_set(void)
+ 		pro_buf[2] = 0xff;
+ 		pro_buf[3] = 0xff;
+ 		data = 0;
+-		input_report_abs(taos_datap->input_dev, ABS_DISTANCE, data);
+-		input_sync(taos_datap->input_dev);
++		input_report_abs(taos_datap->ps_input_dev, ABS_DISTANCE, data);
++		input_sync(taos_datap->ps_input_dev);
+ 	}
+ 
+ 	for (mcount = 0; mcount < 4; mcount++) {
+@@ -626,7 +627,7 @@ static ssize_t enable_als_show(struct device *dev,
+ 	return sprintf(buf, "%d\n", ! !(ALS_ON));
+ }
+ 
+-static DEVICE_ATTR(enable_als, S_IRUGO | S_IWUSR | S_IWGRP | S_IWOTH,
++static DEVICE_ATTR(enable_als_sensor, S_IRUGO | S_IWUSR | S_IWGRP | S_IWOTH,
+ 		   enable_als_show, enable_als_store);
+ 
+ static ssize_t enable_ps_store(struct device *dev,
+@@ -657,7 +658,7 @@ static ssize_t enable_ps_show(struct device *dev,
+ 	return sprintf(buf, "%d\n", ! !(PS_ON));
+ }
+ 
+-static DEVICE_ATTR(enable_ps, S_IRUGO | S_IWUSR | S_IWGRP | S_IWOTH,
++static DEVICE_ATTR(enable_ps_sensor, S_IRUGO | S_IWUSR | S_IWGRP | S_IWOTH,
+ 		   enable_ps_show, enable_ps_store);
+ 
+ static ssize_t ps_adc_show(struct device *dev,
+@@ -685,17 +686,26 @@ static ssize_t als_lux_show(struct device *dev,
+ 
+ static DEVICE_ATTR(lux_adc, S_IRUGO, als_lux_show, NULL);
+ 
+-static struct attribute *tmd2771_attributes[] = {
++static struct attribute *tmd2771_als_attributes[] = {
+ 	&dev_attr_info.attr,
+-	&dev_attr_enable_als.attr,
+-	&dev_attr_enable_ps.attr,
+-	&dev_attr_raw_adc.attr,
++	&dev_attr_enable_als_sensor.attr,
+ 	&dev_attr_lux_adc.attr,
+ 	NULL
+ };
+ 
+-static struct attribute_group tmd2771_attribute_group = {
+-	.attrs = tmd2771_attributes,
++static struct attribute_group tmd2771_als_attribute_group = {
++	.attrs = tmd2771_als_attributes,
++};
++
++static struct attribute *tmd2771_ps_attributes[] = {
++	&dev_attr_info.attr,
++	&dev_attr_enable_ps_sensor.attr,
++	&dev_attr_raw_adc.attr,
++	NULL
++};
++
++static struct attribute_group tmd2771_ps_attribute_group = {
++	.attrs = tmd2771_ps_attributes,
+ };
+ 
+ /* ATTR end */
+@@ -788,6 +798,13 @@ static int tmd_parse_dt(struct device *dev,
+ 		tmd_pdata->irq_gpio = temp_val;
+ 	}
+ 
++	rc = of_property_read_u32(np, "taos,real_i2c_addr", &temp_val);
++	if (rc && (rc != -EINVAL)) {
++		tmd_pdata->real_i2c_addr = 0;
++	} else {
++		tmd_pdata->real_i2c_addr = (u16)temp_val;
++	}
++
+ 	return 0;
+ }
+ /*
+@@ -808,6 +825,7 @@ static int taos_probe(struct i2c_client *clientp,
+ 	unsigned char buf[TAOS_MAX_DEVICE_REGS];
+ 	char *device_name;
+ 	struct tmd2771x_platform_data *pdata;
++		unsigned short backup_org_i2c_adr = clientp->addr;
+ 		printk("==Jensen %s %d\n", __FUNCTION__, __LINE__);
+ 
+ 	if (!i2c_check_functionality
+@@ -859,41 +877,58 @@ static int taos_probe(struct i2c_client *clientp,
+ 	INIT_WORK(&(taos_datap->work), taos_work_func);
+ 	sema_init(&taos_datap->update_lock, 1);
+ 	mutex_init(&taos_datap->date_lock);
+-	taos_datap->input_dev = input_allocate_device();
+-	if (taos_datap->input_dev == NULL) {
+-		printk("[tmd27713] probe error\n");
++	taos_datap->als_input_dev = input_allocate_device();
++	if (taos_datap->als_input_dev == NULL) {
++		printk("[tmd27713 als_input_dev] probe error\n");
++		return -ENOMEM;
++	}
++	taos_datap->ps_input_dev = input_allocate_device();
++	if (taos_datap->ps_input_dev == NULL) {
++		printk("[tmd27713 ps_input_dev] probe error\n");
+ 		return -ENOMEM;
+ 	}
+ 
+-	taos_datap->input_dev->name = TAOS_INPUT_NAME;
+-	taos_datap->input_dev->id.bustype = BUS_I2C;
+-	set_bit(EV_ABS, taos_datap->input_dev->evbit);
+-	input_set_capability(taos_datap->input_dev, EV_ABS, ABS_DISTANCE);
+-	input_set_capability(taos_datap->input_dev, EV_ABS, ABS_MISC);
+-	input_set_abs_params(taos_datap->input_dev, ABS_MISC, 0, 10000, 0, 0);
+-	input_set_abs_params(taos_datap->input_dev, ABS_DISTANCE, 0, 1, 0, 0);
+-	ret = input_register_device(taos_datap->input_dev);
+-
++	taos_datap->als_input_dev->name = "lightsensor-level";
++	taos_datap->ps_input_dev->name = "proximity";
++	taos_datap->als_input_dev->id.bustype = BUS_I2C;
++	set_bit(EV_ABS, taos_datap->als_input_dev->evbit);
++	taos_datap->ps_input_dev->id.bustype = BUS_I2C;
++	set_bit(EV_ABS, taos_datap->ps_input_dev->evbit);
++	input_set_capability(taos_datap->ps_input_dev, EV_ABS, ABS_DISTANCE);
++	input_set_capability(taos_datap->als_input_dev, EV_ABS, ABS_MISC);
++	input_set_abs_params(taos_datap->als_input_dev, ABS_MISC, 0, 10000, 0, 0);
++	input_set_abs_params(taos_datap->ps_input_dev, ABS_DISTANCE, 0, 1, 0, 0);
++	ret = input_register_device(taos_datap->als_input_dev);
++	ret = input_register_device(taos_datap->ps_input_dev);
++
++	//check i2c addr
++    if((pdata->real_i2c_addr != 0) && pdata->real_i2c_addr != clientp->addr)
++    {   
++        pr_info("%s: change i2c addr from 0x%02x to 0x%02x\n", __func__, clientp->addr, pdata->real_i2c_addr);  
++        //we change the addr to the slave's real addr. if probe fail, we don't change the clientp->addr.    
++        clientp->addr = pdata->real_i2c_addr;
++    }
++	
+ 	for (i = 0; i < TAOS_MAX_DEVICE_REGS; i++) {
+ 		if ((buf[i] = taos_read_byte(clientp, TAOS_TRITON_CNTRL + i)) < 0) {
+ 			printk("%s: read the every reg is faild\n", __func__);
+ 			goto err_unregister_input_dev;
+ 		}
+ 	}
+-
++	
+ /*compare chip-id*/
+ 	if ((ret = taos_device_name(buf, &device_name)) == 0) {
+ 		printk(KERN_ERR
+ 		       "TAOS: chip id that was read found mismatched by taos_device_name(), in taos_probe()\n");
+ 		ret = -ENODEV;
+-		goto err_unregister_input_dev;
++		goto err_chip_id;
+ 	}
+ 
+ 	if (strcmp(device_name, TAOS_DEVICE_ID)) {
+ 		printk(KERN_ERR
+ 		       "TAOS: chip id that was read does not match expected id in taos_probe()\n");
+ 		ret = -ENODEV;
+-		goto err_unregister_input_dev;
++		goto err_chip_id;
+ 	} else {
+ 		pr_debug("TAOS: chip id of %s that was read matches expected id in taos_probe()\n",
+ 		     device_name);
+@@ -969,15 +1004,20 @@ static int taos_probe(struct i2c_client *clientp,
+ 	register_early_suspend(&taos_datap->early_suspend);
+ #endif
+ 
+-	ret = sysfs_create_group(&taos_datap->input_dev->dev.kobj,
+-			       &tmd2771_attribute_group);
++	ret = sysfs_create_group(&taos_datap->als_input_dev->dev.kobj,
++			       &tmd2771_als_attribute_group);
++	ret = sysfs_create_group(&taos_datap->ps_input_dev->dev.kobj,
++			       &tmd2771_ps_attribute_group);
+ 	if (!ret)
+ 		goto exit;
+ 
+  err_taos_cfgp_kfree:
+ 	kfree(taos_cfgp);
+  err_unregister_input_dev:
+-	input_unregister_device(taos_datap->input_dev);
++	input_unregister_device(taos_datap->als_input_dev);
++	input_unregister_device(taos_datap->ps_input_dev);
++ err_chip_id:
++    clientp->addr = backup_org_i2c_adr;
+  exit:
+ 	return ret;
+ }
+@@ -989,9 +1029,12 @@ static int __devexit taos_remove(struct i2c_client *client)
+ 	
+ 	kfree(taos_cfgp);
+ 	unregister_early_suspend(&taos_datap->early_suspend);
+-	input_unregister_device(taos_datap->input_dev);
+-	sysfs_remove_group(&taos_datap->input_dev->dev.kobj,
+-			   &tmd2771_attribute_group);
++	input_unregister_device(taos_datap->als_input_dev);
++	sysfs_remove_group(&taos_datap->als_input_dev->dev.kobj,
++			   &tmd2771_als_attribute_group);
++	input_unregister_device(taos_datap->ps_input_dev);
++	sysfs_remove_group(&taos_datap->ps_input_dev->dev.kobj,
++			   &tmd2771_ps_attribute_group);
+ 	ret = taos_config_regulator(taos_datap, false);
+ 	if (ret < 0) {
+ 		dev_err(&taos_datap->client->dev,
+diff --git a/include/linux/taos_common.h b/include/linux/taos_common.h
+index c26a618..77a7965 100644
+--- a/include/linux/taos_common.h
++++ b/include/linux/taos_common.h
+@@ -85,6 +85,7 @@ struct tmd2771x_platform_data {
+ 	u8	pdrive;
+ 	u8	ppcount;
+ 	int	irq_gpio;
++	unsigned short real_i2c_addr;
+ //	int	(*setup_resources)(void);
+ //	int	(*release_resources)(void);
+ };
+-- 
+1.7.8.3
+
