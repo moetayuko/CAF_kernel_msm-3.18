@@ -1,7 +1,7 @@
 From 39eb8cac10c0a2a89d9e632f43f6a6c4b06fbbe5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 19 Aug 2013 13:51:37 +0800
-Subject: [PATCH 10/11] support mr2 big board lcd
+Subject: [PATCH 10/12] support mr2 big board lcd
 
 Change-Id: I3ea72187926d2c2f4189cdfe8dd34913cf5fb620
 ---

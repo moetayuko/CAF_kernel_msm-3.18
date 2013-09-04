@@ -1,7 +1,7 @@
 From 12bc4ef9981504bd976cf014ea3704bce4ebb8de Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:39:14 +0800
-Subject: [PATCH 09/11] add flash led support for camera
+Subject: [PATCH 09/12] add flash led support for camera
 
 Change-Id: I4eac600748992132fddea97a2995f3afc3d443c1
 ---

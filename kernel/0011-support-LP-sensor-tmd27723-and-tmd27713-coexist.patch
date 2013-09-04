@@ -1,7 +1,7 @@
 From 1562393f007c84d49557e4cd2c44f3290d2b38ba Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Wed, 21 Aug 2013 14:02:21 +0800
-Subject: [PATCH 11/11] support LP-sensor tmd27723 and tmd27713 coexist
+Subject: [PATCH 11/12] support LP-sensor tmd27723 and tmd27713 coexist
 
 Change-Id: I35f4d783a76f041cd4e2a1ee2543f58895e4340f
 ---

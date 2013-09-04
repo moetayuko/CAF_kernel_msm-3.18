@@ -1,7 +1,7 @@
 From ec4c62b55c4676f9353819ffe0e8cd84e4ae512f Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:31:27 +0800
-Subject: [PATCH 08/11] add driver for camera
+Subject: [PATCH 08/12] add driver for camera
  ov8850/s5k4h5/s5k4el/ov5648/mt9v113
 
 Change-Id: Ife001b341bee8fe35a44fda87a87af6bfd35b7ea
