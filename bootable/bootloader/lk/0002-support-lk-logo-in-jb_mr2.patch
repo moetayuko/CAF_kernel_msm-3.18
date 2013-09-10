@@ -1,9 +1,9 @@
-From a0edfd760da7af584c1425703bccf5bb8c6a6624 Mon Sep 17 00:00:00 2001
+From 8e6b9adc54a6672dc7e63020724efd1c1130670f Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Wed, 21 Aug 2013 08:55:38 +0800
 Subject: [PATCH 2/2] support lk logo in jb_mr2
 
-Change-Id: Ia47754ba3839f21014c380ae5d0a291679aebfc4
+Change-Id: I9c4970bf758155db8e9fd8fb47303f49924389c5
 ---
  dev/panel/msm/mipi_auo_video_qhd.c                 |  270 +++++++
  dev/panel/msm/mipi_boe_video_qhd.c                 |  557 ++++++++++++++
@@ -11,7 +11,7 @@ Change-Id: Ia47754ba3839f21014c380ae5d0a291679aebfc4
  dev/panel/msm/mipi_emulator_video_qhd.c            |  169 +++++
  dev/panel/msm/mipi_otm9605a_video_qhd.c            |  786 ++++++++++++++++++++
  dev/panel/msm/mipi_tianma_video_qhd.c              |  321 ++++++++
- dev/panel/msm/rules.mk                             |    7 +-
+ dev/panel/msm/rules.mk                             |    8 +-
  include/hw_lcd_panel.h                             |   46 ++
  platform/msm8610/platform.c                        |    5 +
  platform/msm_shared/hw_boardid_self_adapt.c        |   44 ++
@@ -21,8 +21,8 @@ Change-Id: Ia47754ba3839f21014c380ae5d0a291679aebfc4
  target/msm8610/hw_lcd_panel.c                      |  132 ++++
  target/msm8610/init.c                              |    3 +-
  target/msm8610/rules.mk                            |    3 +-
- target/msm8610/target_display.c                    |   90 ++-
- 17 files changed, 2997 insertions(+), 24 deletions(-)
+ target/msm8610/target_display.c                    |   89 ++-
+ 17 files changed, 2998 insertions(+), 23 deletions(-)
  create mode 100644 dev/panel/msm/mipi_auo_video_qhd.c
  create mode 100644 dev/panel/msm/mipi_boe_video_qhd.c
  create mode 100644 dev/panel/msm/mipi_byd_video_qhd.c
@@ -2725,14 +2725,15 @@ index 0000000..4f3f1d9
 +	return;
 +}
 diff --git a/dev/panel/msm/rules.mk b/dev/panel/msm/rules.mk
-index b3bdac3..186592a 100644
+index ddeb6dd..de6e4ac 100644
 --- a/dev/panel/msm/rules.mk
 +++ b/dev/panel/msm/rules.mk
-@@ -35,5 +35,10 @@ endif
- 
- ifeq ($(PLATFORM),msm8610)
- OBJS += \
--	$(LOCAL_DIR)/mipi_truly_video_wvga.o
+@@ -38,5 +38,11 @@ OBJS += \
+ 	$(LOCAL_DIR)/mipi_truly_video_wvga.o \
+ 	$(LOCAL_DIR)/mipi_truly_cmd_wvga.o \
+ 	$(LOCAL_DIR)/mipi_hx8379a_video_wvga.o \
+-	$(LOCAL_DIR)/mipi_otm8018b_video_fwvga.o
++	$(LOCAL_DIR)/mipi_otm8018b_video_fwvga.o \
 +	$(LOCAL_DIR)/mipi_otm9605a_video_qhd.o \
 +	$(LOCAL_DIR)/mipi_auo_video_qhd.o \
 +	$(LOCAL_DIR)/mipi_byd_video_qhd.o \
@@ -2889,10 +2890,10 @@ index 0000000..0f349d4
 +/* DTS2013042403191 zhaorenjie add end > */
 +
 diff --git a/platform/msm_shared/rules.mk b/platform/msm_shared/rules.mk
-index f43f1f6..6f11856 100755
+index 9b7ff98..a98d55b 100755
 --- a/platform/msm_shared/rules.mk
 +++ b/platform/msm_shared/rules.mk
-@@ -168,6 +168,11 @@ DEFINES += DISPLAY_TYPE_MDSS=1
+@@ -172,6 +172,11 @@ DEFINES += DISPLAY_TYPE_MDSS=1
              $(LOCAL_DIR)/dev_tree.o \
              $(LOCAL_DIR)/gpio.o
  endif
@@ -2902,13 +2903,13 @@ index f43f1f6..6f11856 100755
 +endif
 +# /* shilongzhen > */
  
- ifeq ($(PLATFORM),msm7x27a)
- 	OBJS += $(LOCAL_DIR)/uart.o \
+ ifeq ($(PLATFORM),apq8084)
+     OBJS += $(LOCAL_DIR)/qgic.o \
 diff --git a/platform/msm_shared/smem.h b/platform/msm_shared/smem.h
-index 8ebbce8..92a622e 100755
+index ba77c86..f97c689 100755
 --- a/platform/msm_shared/smem.h
 +++ b/platform/msm_shared/smem.h
-@@ -336,6 +336,8 @@ enum platform {
+@@ -337,6 +337,8 @@ enum platform {
  	HW_PLATFORM_VIRTIO = 16,
  	HW_PLATFORM_BTS = 19,
  	HW_PLATFORM_DMA = 22,
@@ -2917,7 +2918,7 @@ index 8ebbce8..92a622e 100755
  	HW_PLATFORM_32BITS = 0x7FFFFFFF,
  };
  
-@@ -359,8 +361,10 @@ typedef enum {
+@@ -360,8 +362,10 @@ typedef enum {
  	SMEM_AARM_PARTITION_TABLE = 9,
  
  	SMEM_APPS_BOOT_MODE = 106,
@@ -3069,10 +3070,10 @@ index 0000000..3f0c9e2
 +}
 +/* DTS2013062001710 zhaoyuxia 20130620 end > */
 diff --git a/target/msm8610/init.c b/target/msm8610/init.c
-index a208ca3..2915699 100644
+index b662767..19a34f0 100644
 --- a/target/msm8610/init.c
 +++ b/target/msm8610/init.c
-@@ -288,7 +288,8 @@ int target_cont_splash_screen()
+@@ -287,7 +287,8 @@ int target_cont_splash_screen()
  			dprintf(SPEW, "Target_cont_splash=0\n");
  			ret = 0;
  	}
@@ -3094,7 +3095,7 @@ index 92c669f..b3d57aa 100644
 +    $(LOCAL_DIR)/target_display.o\
 +    $(LOCAL_DIR)/hw_lcd_panel.o
 diff --git a/target/msm8610/target_display.c b/target/msm8610/target_display.c
-index 6316fa8..c937789 100644
+index b9da11d..1f6ffc5 100644
 --- a/target/msm8610/target_display.c
 +++ b/target/msm8610/target_display.c
 @@ -37,6 +37,8 @@
@@ -3161,7 +3162,7 @@ index 6316fa8..c937789 100644
  		msm8610_mdss_mipi_panel_reset(enable);
  
  		pm8x41_ldo_control(&ldo19, enable);
-@@ -163,31 +163,83 @@ static int msm8610_mipi_panel_power(uint8_t enable)
+@@ -163,6 +163,64 @@ static int msm8610_mipi_panel_power(uint8_t enable)
  	return 0;
  }
  
@@ -3226,12 +3227,16 @@ index 6316fa8..c937789 100644
  void display_init(void)
  {
  	uint32_t hw_id = board_hardware_id();
+@@ -172,6 +230,7 @@ void display_init(void)
+ 	dprintf(SPEW, "display_init(),platform_subtype=%d.\n",
+ 		platform_subtype);
  
- 	dprintf(SPEW, "display_init(),target_id=%d.\n", hw_id);
--
 +#if 0
  	switch (hw_id) {
  	case HW_PLATFORM_QRD:
+ 		if ((0 == platform_subtype) || (1 == platform_subtype))
+@@ -192,21 +251,15 @@ void display_init(void)
+ 		break;
  	case HW_PLATFORM_MTP:
  	case HW_PLATFORM_SURF:
 -		mipi_truly_video_wvga_init(&(panel.panel_info));

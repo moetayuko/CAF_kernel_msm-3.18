@@ -1,7 +1,7 @@
-From ec4c62b55c4676f9353819ffe0e8cd84e4ae512f Mon Sep 17 00:00:00 2001
+From fb85fe70f39f6de2b5b6e907fe122b12ce53e974 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:31:27 +0800
-Subject: [PATCH 08/13] add driver for camera
+Subject: [PATCH 08/14] add driver for camera
  ov8850/s5k4h5/s5k4el/ov5648/mt9v113
 
 Change-Id: Ife001b341bee8fe35a44fda87a87af6bfd35b7ea
@@ -267,10 +267,10 @@ index 8c75ebf..29b475b 100644
  / {
  	model = "Qualcomm MSM 8610 QRD";
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 9a22f52..32201b4 100644
+index 8f1bc7d..1d98387 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -306,6 +306,11 @@ CONFIG_OV8825=y
+@@ -307,6 +307,11 @@ CONFIG_OV8825=y
  CONFIG_s5k4e1=y
  CONFIG_HI256=y
  CONFIG_OV12830=y
@@ -283,10 +283,10 @@ index 9a22f52..32201b4 100644
  CONFIG_MSM_CCI=y
  CONFIG_MSM_CSIPHY=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index b1b9397..2c15ff6 100644
+index f8c206b..8b20006 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3014,13 +3014,22 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3023,13 +3023,22 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006d"),
  	CLK_LOOKUP("cam_src_clk", mclk1_clk_src.c, "6-0078"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0020"),
@@ -394,10 +394,10 @@ index bd1b10b..8555d9c4 100644
 +obj-$(CONFIG_MT9V113_SUNNY_P0M01K) += mt9v113_sunny_p0m01k.o
 \ No newline at end of file
 diff --git a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
-index cd585c3..b53b098 100644
+index edd4575..988c0ac 100644
 --- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
 +++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
-@@ -1229,7 +1229,7 @@ int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
+@@ -1230,7 +1230,7 @@ int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
  		return rc;
  	}
  

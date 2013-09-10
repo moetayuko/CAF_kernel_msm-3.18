@@ -1,7 +1,7 @@
-From 12bc4ef9981504bd976cf014ea3704bce4ebb8de Mon Sep 17 00:00:00 2001
+From a9966e8e230f2e35c42f30791f00f76c38dfeac7 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:39:14 +0800
-Subject: [PATCH 09/13] add flash led support for camera
+Subject: [PATCH 09/14] add flash led support for camera
 
 Change-Id: I4eac600748992132fddea97a2995f3afc3d443c1
 ---
@@ -89,11 +89,11 @@ index bb55430..cc646ec 100644
  				qcom,sensor-name = "s5k4e1_liteon";
  				cam_vdig-supply = <&pm8110_l2>;
 diff --git a/arch/arm/boot/dts/msm8610.dtsi b/arch/arm/boot/dts/msm8610.dtsi
-index a93043e..2058c4f 100644
+index 2fc6cb9..4c1d76a 100644
 --- a/arch/arm/boot/dts/msm8610.dtsi
 +++ b/arch/arm/boot/dts/msm8610.dtsi
-@@ -505,7 +505,7 @@
- 		qcom,scl-gpio = <&msmgpio 17 0>;
+@@ -513,7 +513,7 @@
+                 qcom,master-id = <86>;
  	};
  
 -	i2c@f9925000 { /* BLSP-1 QUP-3 */
@@ -102,10 +102,10 @@ index a93043e..2058c4f 100644
  		compatible = "qcom,i2c-qup";
  		#address-cells = <1>;
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 32201b4..35b1d9f 100644
+index 1d98387..3cec6de 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -392,6 +392,7 @@ CONFIG_MMC_MSM=y
+@@ -393,6 +393,7 @@ CONFIG_MMC_MSM=y
  CONFIG_MMC_SDHCI_MSM=y
  CONFIG_MMC_MSM_SPS_SUPPORT=y
  CONFIG_LEDS_QPNP=y

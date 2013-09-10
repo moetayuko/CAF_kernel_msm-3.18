@@ -1,7 +1,7 @@
-From 2a6030108f73ef57f6a7a0794f7978c7f8215fe0 Mon Sep 17 00:00:00 2001
+From 977dd418a9f778dfc3ccdd6e9846899b7b89c80a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 3 Sep 2013 18:47:11 +0800
-Subject: [PATCH 12/13] add bf3905 driver
+Subject: [PATCH 11/14] add bf3905 driver
 
 Change-Id: If325c7b9c5dd8e527a0480be17bc8045a858cb72
 ---
@@ -59,10 +59,10 @@ index cc646ec..f7a475af 100644
  };
  
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index ee5c4b3..d92b9e1 100644
+index 8acee1b..3300010 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -302,6 +302,7 @@ CONFIG_MEDIA_CONTROLLER=y
+@@ -303,6 +303,7 @@ CONFIG_MEDIA_CONTROLLER=y
  CONFIG_VIDEO_DEV=y
  CONFIG_VIDEO_V4L2_SUBDEV_API=y
  # CONFIG_MSM_CAMERA is not set
@@ -71,10 +71,10 @@ index ee5c4b3..d92b9e1 100644
  CONFIG_s5k4e1=y
  CONFIG_HI256=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 2c15ff6..378d18e 100644
+index 8b20006..8922fd0 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3009,6 +3009,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3018,6 +3018,8 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("core_clk",         pnoc_iommu_clk.c, "fd010000.qcom,iommu"),
  
  	/* MM sensor clocks */

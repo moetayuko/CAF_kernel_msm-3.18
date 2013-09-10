@@ -1,9 +1,9 @@
-From 09b8983d594540cf9ad848b25804c88fea720dd5 Mon Sep 17 00:00:00 2001
+From 380b15842e9bc5a2570085adf3d0a92e2acbd645 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 09:01:41 +0800
-Subject: [PATCH 03/13] add ctp and LCD support
+Subject: [PATCH 03/14] add ctp and LCD support
 
-Change-Id: Idd770e84c59920da7825d49b073450d12154684d
+Change-Id: I9535d342642e9aad232be4466200998431a653c1
 ---
  .../dts/dsi-v2-panel-auo-rm68190-qhd-video.dtsi    |   92 +
  .../dts/dsi-v2-panel-boe-nt35517-qhd-video.dtsi    |  166 +
@@ -741,7 +741,7 @@ index da3e18e..51190cc 100755
  		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
  		qcom,rst-gpio = <&msmgpio 41 0>;
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index f3b8974..62db7ab 100644
+index 0b18f4d..b084491 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -28,7 +28,7 @@
@@ -753,10 +753,10 @@ index f3b8974..62db7ab 100644
  			compatible = "focaltech,5x06";
  			reg = <0x38>;
  			interrupt-parent = <&msmgpio>;
-@@ -43,6 +43,85 @@
- 			focaltech,button-map= <139 102 158>;
- 			focaltech,no-force-update;
- 			focaltech,i2c-pull-up;
+@@ -55,6 +55,85 @@
+ 			focaltech,fw-upgrade-id2 = <0x08>;
+ 			focaltech,fw-delay-readid-ms = <10>;
+ 			focaltech,fw-delay-era-flsh-ms = <2000>;
 +		};*/
 +		tsc@1a {
 +			compatible = "cy,cyttsp4_i2c_adapter";
@@ -856,7 +856,7 @@ index 4de516c..8c75ebf 100644
  / {
  	model = "Qualcomm MSM 8610 QRD";
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index a5f0704..601850c 100644
+index 20938d5..afd1456 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -223,12 +223,38 @@ CONFIG_INPUT_EVDEV=y
@@ -20199,10 +20199,10 @@ index 0000000..92308d8
 +MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard touchscreen device access API tester");
 +MODULE_AUTHOR("Cypress Semiconductor");
 diff --git a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
-index adbfbe7..cd585c3 100644
+index 1724db1..edd4575 100644
 --- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
 +++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
-@@ -1076,6 +1076,16 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
+@@ -1077,6 +1077,16 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
  		goto power_up_failed;
  	}
  
@@ -20220,7 +20220,7 @@ index adbfbe7..cd585c3 100644
  	return 0;
  power_up_failed:
 diff --git a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
-index 80a2bd4..d6de0ae 100644
+index a53d448..001d1f2 100644
 --- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
 +++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
 @@ -48,6 +48,8 @@ struct msm_sensor_fn_t {
@@ -20245,7 +20245,7 @@ index 017fa8e..327a7bd 100644
  
  mdss-dsi-objs := mdss_dsi.o mdss_dsi_host.o
 diff --git a/drivers/video/msm/mdss/dsi_panel_v2.c b/drivers/video/msm/mdss/dsi_panel_v2.c
-index 022d911..4c601aa 100644
+index b1a4293..7c81ce3 100644
 --- a/drivers/video/msm/mdss/dsi_panel_v2.c
 +++ b/drivers/video/msm/mdss/dsi_panel_v2.c
 @@ -25,6 +25,8 @@
@@ -20257,7 +20257,7 @@ index 022d911..4c601aa 100644
  #define DT_CMD_HDR 6
  
  struct dsi_panel_private {
-@@ -809,10 +811,10 @@ static int __devinit dsi_panel_probe(struct platform_device *pdev)
+@@ -859,10 +861,10 @@ static int __devinit dsi_panel_probe(struct platform_device *pdev)
  
  	panel_name = of_get_property(pdev->dev.of_node, "label", NULL);
  	if (!panel_name)
@@ -20270,7 +20270,7 @@ index 022d911..4c601aa 100644
  
  	rc = dsi_panel_init();
  	if (rc) {
-@@ -851,23 +853,19 @@ static int __devexit dsi_panel_remove(struct platform_device *pdev)
+@@ -901,23 +903,19 @@ static int __devexit dsi_panel_remove(struct platform_device *pdev)
  	return 0;
  }
  

@@ -1,7 +1,7 @@
-From 6416345d640ae67028ce8a34b9175f2b95d4269f Mon Sep 17 00:00:00 2001
+From 51a8a3a914ea3c5b035c72c36a902d8b6d6c4df3 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 17:00:22 +0800
-Subject: [PATCH 07/13] Add driver of als+ps sensor tmd27713&apds9900
+Subject: [PATCH 07/14] Add driver of als+ps sensor tmd27713&apds9900
 
 Change-Id: I603c2c2f975ad02048b2c174f7d3b34180ea022b
 ---
@@ -16,10 +16,10 @@ Change-Id: I603c2c2f975ad02048b2c174f7d3b34180ea022b
  create mode 100644 include/linux/taos_common.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index e996495..b337e49 100644
+index 0c0793b..7bc2013 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
-@@ -123,6 +123,7 @@
+@@ -135,6 +135,7 @@
  
  		};
  		};
@@ -27,7 +27,7 @@ index e996495..b337e49 100644
  	};
  
  	gen-vkeys {
-@@ -203,7 +204,19 @@
+@@ -215,7 +216,19 @@
                         tmd2772,prox_th_max = <480>;
                         tmd2772,als_gate = <10>;
          	};
@@ -49,10 +49,10 @@ index e996495..b337e49 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index c611e25..9a22f52 100644
+index 1902a59..8f1bc7d 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -462,6 +462,7 @@ CONFIG_CRYPTO_DEV_QCE=y
+@@ -463,6 +463,7 @@ CONFIG_CRYPTO_DEV_QCE=y
  CONFIG_CRYPTO_DEV_QCEDEV=m
  CONFIG_CRC_CCITT=y
  # CONFIG_INPUT_KXTJ9 is not set

@@ -1,7 +1,7 @@
-From 29f1b3b843155b3e54989c132c43a1d485083509 Mon Sep 17 00:00:00 2001
+From a92c645b4bc1db7df7e8080dde4de68b1cbf5bd0 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 10:35:06 +0800
-Subject: [PATCH 04/13] add G-sensor lis3dh & kx023 driver
+Subject: [PATCH 04/14] add G-sensor lis3dh & kx023 driver
 
 Change-Id: Ia49123b459f64282bfaa8d3e00ab01c3aa5e1c8e
 ---
@@ -17,10 +17,10 @@ Change-Id: Ia49123b459f64282bfaa8d3e00ab01c3aa5e1c8e
  create mode 100644 include/linux/input/kionix_accel.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 62db7ab..af78a24 100644
+index b084491..399f7df 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
-@@ -158,6 +158,33 @@
+@@ -170,6 +170,33 @@
  			kionix,negate-z;
  			kionix,res-12bit;
  		};
@@ -55,10 +55,10 @@ index 62db7ab..af78a24 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 601850c..36e8cc5 100644
+index afd1456..1c8f93f 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -269,6 +269,7 @@ CONFIG_I2C_QUP=y
+@@ -270,6 +270,7 @@ CONFIG_I2C_QUP=y
  CONFIG_INPUT_MPU3050=y
  CONFIG_BMP18X=y
  CONFIG_BMP18X_I2C=y
@@ -66,7 +66,7 @@ index 601850c..36e8cc5 100644
  CONFIG_MSM_BUSPM_DEV=m
  CONFIG_SPI=y
  CONFIG_SPI_QUP=y
-@@ -458,7 +459,8 @@ CONFIG_CRYPTO_DEV_QCRYPTO=m
+@@ -459,7 +460,8 @@ CONFIG_CRYPTO_DEV_QCRYPTO=m
  CONFIG_CRYPTO_DEV_QCE=y
  CONFIG_CRYPTO_DEV_QCEDEV=m
  CONFIG_CRC_CCITT=y

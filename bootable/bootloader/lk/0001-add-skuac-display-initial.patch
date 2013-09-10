@@ -1,0 +1,27 @@
+From c82ebf7d40ee4749e68ba90466eab4e97a733d13 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Fri, 6 Sep 2013 20:08:39 +0800
+Subject: [PATCH 1/2] add skuac display initial
+
+Change-Id: I130428e9a16761f1fbe1412f25bbb4d41aa52dcd
+---
+ target/msm8610/target_display.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/target/msm8610/target_display.c b/target/msm8610/target_display.c
+index 80d8316..b9da11d 100644
+--- a/target/msm8610/target_display.c
++++ b/target/msm8610/target_display.c
+@@ -178,7 +178,8 @@ void display_init(void)
+ 			mipi_hx8379a_video_wvga_init(&(panel.panel_info));
+ 		else if (3 == platform_subtype)
+ 			mipi_otm8018b_video_wvga_init(&(panel.panel_info));
+-
++                else if (4 == platform_subtype)
++			mipi_hx8379a_video_wvga_init(&(panel.panel_info));
+ 		panel.clk_func = msm8610_mdss_dsi_panel_clock;
+ 		panel.power_func = msm8610_mipi_panel_power;
+ 		panel.fb.base = MIPI_FB_ADDR;
+-- 
+1.7.8.3
+

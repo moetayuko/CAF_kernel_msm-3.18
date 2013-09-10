@@ -1,4 +1,4 @@
-From eaad22611640229acbbe713d6e0674286cd92a8e Mon Sep 17 00:00:00 2001
+From f304a91f8b03b6eaa6cdb5f2fe4182b560749456 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 17:03:22 +0800
 Subject: [PATCH] Change devnode mode of als+ps sensor tmd27713&apds9900
@@ -9,10 +9,10 @@ Change-Id: Iafa5a08cb3e9041c2601bda8acdff3a879cd1e05
  1 files changed, 3 insertions(+), 0 deletions(-)
 
 diff --git a/rootdir/init.rc b/rootdir/init.rc
-index 248cb84..c091744 100644
+index c4d234f..513e443 100644
 --- a/rootdir/init.rc
 +++ b/rootdir/init.rc
-@@ -355,6 +355,9 @@ on boot
+@@ -356,6 +356,9 @@ on boot
      chown system system /sys/kernel/ipv4/tcp_rmem_max
      chown root radio /proc/cmdline
  

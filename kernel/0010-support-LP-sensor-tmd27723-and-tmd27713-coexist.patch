@@ -1,7 +1,7 @@
-From 1562393f007c84d49557e4cd2c44f3290d2b38ba Mon Sep 17 00:00:00 2001
+From 93f96d05783aa97dd883098d7979f58fa135dbb2 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Wed, 21 Aug 2013 14:02:21 +0800
-Subject: [PATCH 11/13] support LP-sensor tmd27723 and tmd27713 coexist
+Subject: [PATCH 10/14] support LP-sensor tmd27723 and tmd27713 coexist
 
 Change-Id: I35f4d783a76f041cd4e2a1ee2543f58895e4340f
 ---
@@ -12,10 +12,10 @@ Change-Id: I35f4d783a76f041cd4e2a1ee2543f58895e4340f
  4 files changed, 111 insertions(+), 65 deletions(-)
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index b337e49..0445e35 100644
+index 7bc2013..dab2f83 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
-@@ -185,38 +185,40 @@
+@@ -197,38 +197,40 @@
  			lis3dh,negate_x = <0>;
  			lis3dh,negate_y = <0>;
  			lis3dh,negate_z = <1>;
@@ -85,10 +85,10 @@ index b337e49..0445e35 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 35b1d9f..ee5c4b3 100644
+index 3cec6de..8acee1b 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -468,7 +468,7 @@ CONFIG_CRYPTO_DEV_QCE=y
+@@ -469,7 +469,7 @@ CONFIG_CRYPTO_DEV_QCE=y
  CONFIG_CRYPTO_DEV_QCEDEV=m
  CONFIG_CRC_CCITT=y
  # CONFIG_INPUT_KXTJ9 is not set

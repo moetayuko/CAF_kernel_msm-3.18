@@ -1,4 +1,4 @@
-From 28aca4befe3e99ccab76035f69fc0e3e47240b9c Mon Sep 17 00:00:00 2001
+From 9b6ff6227a45771609d0a4b385ad17c72c93f7fd Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 12:46:20 +0800
 Subject: [PATCH] add LP-sensor isl29044 hal support
