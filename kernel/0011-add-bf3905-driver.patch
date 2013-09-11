@@ -1,7 +1,7 @@
 From 977dd418a9f778dfc3ccdd6e9846899b7b89c80a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 3 Sep 2013 18:47:11 +0800
-Subject: [PATCH 11/14] add bf3905 driver
+Subject: [PATCH 11/16] add bf3905 driver
 
 Change-Id: If325c7b9c5dd8e527a0480be17bc8045a858cb72
 ---

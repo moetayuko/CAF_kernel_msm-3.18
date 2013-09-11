@@ -1,7 +1,7 @@
 From ab03d13d509ba1e40ea619d51ab59e5389caacd8 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 9 Sep 2013 16:59:36 +0800
-Subject: [PATCH 14/14] fix LP sensor tmd27727 suspend crash issue
+Subject: [PATCH 14/16] fix LP sensor tmd27727 suspend crash issue
 
 Change-Id: Ia4a883683f6f07d9f03d5e45d781512263b973c0
 ---

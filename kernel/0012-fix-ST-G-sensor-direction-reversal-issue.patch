@@ -1,7 +1,7 @@
 From 3ff256fafe20cd9feecab4f6312d4d8753c62fa7 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 9 Sep 2013 09:58:12 +0800
-Subject: [PATCH 12/14] fix ST G-sensor direction reversal issue
+Subject: [PATCH 12/16] fix ST G-sensor direction reversal issue
 
 Change-Id: I65b657421cb3cfd8de0d04c811510f0c48f2a084
 ---

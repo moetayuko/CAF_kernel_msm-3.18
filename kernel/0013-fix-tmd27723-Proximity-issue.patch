@@ -1,7 +1,7 @@
 From fd60cf6cf61ed0fe2eb22a5d596bc006f02627aa Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 9 Sep 2013 12:23:46 +0800
-Subject: [PATCH 13/14] fix tmd27723 Proximity issue
+Subject: [PATCH 13/16] fix tmd27723 Proximity issue
 
 Change-Id: Idf5929c4cab093fb795fb7b4cf575df18bc6875b
 ---

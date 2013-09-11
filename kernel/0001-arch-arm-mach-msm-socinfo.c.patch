@@ -1,7 +1,7 @@
 From 723ba7b966f7928696daeb900ccd9ae0ad959c76 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 18:08:17 +0800
-Subject: [PATCH 01/14] arch/arm/mach-msm/socinfo.c
+Subject: [PATCH 01/16] arch/arm/mach-msm/socinfo.c
 
 Change-Id: Idea7ddc6b6ab67b6105258f5b87f1eac638bf357
 ---
