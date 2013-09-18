@@ -1,7 +1,7 @@
-From 532e1e2eafdbfdc05112b0bd61cd34569d17614c Mon Sep 17 00:00:00 2001
+From d3c620af768760947d59db8503defb5dc603805b Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Wed, 11 Sep 2013 09:43:27 +0800
-Subject: [PATCH 16/16] add big board LCD support
+Subject: [PATCH 16/22] add big board LCD support
 
 Change-Id: Ib1d114bfa556f612364b6fc299c494ce9ab95dba
 ---

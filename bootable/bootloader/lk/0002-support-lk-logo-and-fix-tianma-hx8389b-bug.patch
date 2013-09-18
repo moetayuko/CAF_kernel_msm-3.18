@@ -1,28 +1,25 @@
-From 8e6b9adc54a6672dc7e63020724efd1c1130670f Mon Sep 17 00:00:00 2001
+From c3ce4a12a315b222e29d5f322e0d1cc7e21c17e6 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Wed, 21 Aug 2013 08:55:38 +0800
-Subject: [PATCH 2/2] support lk logo in jb_mr2
+Date: Fri, 13 Sep 2013 13:51:45 +0800
+Subject: [PATCH 2/2] support lk logo and fix tianma hx8389b bug
 
-Change-Id: I9c4970bf758155db8e9fd8fb47303f49924389c5
+Change-Id: Id504ac9116d8dd3d39a532d9a64c2c5319696d05
 ---
- dev/panel/msm/mipi_auo_video_qhd.c                 |  270 +++++++
- dev/panel/msm/mipi_boe_video_qhd.c                 |  557 ++++++++++++++
- dev/panel/msm/mipi_byd_video_qhd.c                 |  551 ++++++++++++++
- dev/panel/msm/mipi_emulator_video_qhd.c            |  169 +++++
- dev/panel/msm/mipi_otm9605a_video_qhd.c            |  786 ++++++++++++++++++++
- dev/panel/msm/mipi_tianma_video_qhd.c              |  321 ++++++++
- dev/panel/msm/rules.mk                             |    8 +-
- include/hw_lcd_panel.h                             |   46 ++
- platform/msm8610/platform.c                        |    5 +
- platform/msm_shared/hw_boardid_self_adapt.c        |   44 ++
- .../msm_shared/include/hw_boardid_self_adapt.h     |   24 +
- platform/msm_shared/rules.mk                       |    5 +
- platform/msm_shared/smem.h                         |    8 +-
- target/msm8610/hw_lcd_panel.c                      |  132 ++++
- target/msm8610/init.c                              |    3 +-
- target/msm8610/rules.mk                            |    3 +-
- target/msm8610/target_display.c                    |   89 ++-
- 17 files changed, 2998 insertions(+), 23 deletions(-)
+ dev/panel/msm/mipi_auo_video_qhd.c      |  270 +++++++++++
+ dev/panel/msm/mipi_boe_video_qhd.c      |  557 ++++++++++++++++++++++
+ dev/panel/msm/mipi_byd_video_qhd.c      |  551 ++++++++++++++++++++++
+ dev/panel/msm/mipi_emulator_video_qhd.c |  169 +++++++
+ dev/panel/msm/mipi_otm9605a_video_qhd.c |  786 +++++++++++++++++++++++++++++++
+ dev/panel/msm/mipi_tianma_video_qhd.c   |  321 +++++++++++++
+ dev/panel/msm/rules.mk                  |    8 +-
+ include/hw_lcd_panel.h                  |   44 ++
+ platform/msm8610/platform.c             |    3 +
+ platform/msm_shared/smem.h              |    2 +
+ target/msm8610/hw_lcd_panel.c           |  132 ++++++
+ target/msm8610/init.c                   |    3 +-
+ target/msm8610/rules.mk                 |    3 +-
+ target/msm8610/target_display.c         |   87 +++-
+ 14 files changed, 2916 insertions(+), 20 deletions(-)
  create mode 100644 dev/panel/msm/mipi_auo_video_qhd.c
  create mode 100644 dev/panel/msm/mipi_boe_video_qhd.c
  create mode 100644 dev/panel/msm/mipi_byd_video_qhd.c
@@ -30,8 +27,6 @@ Change-Id: I9c4970bf758155db8e9fd8fb47303f49924389c5
  create mode 100644 dev/panel/msm/mipi_otm9605a_video_qhd.c
  create mode 100644 dev/panel/msm/mipi_tianma_video_qhd.c
  create mode 100644 include/hw_lcd_panel.h
- create mode 100644 platform/msm_shared/hw_boardid_self_adapt.c
- create mode 100644 platform/msm_shared/include/hw_boardid_self_adapt.h
  create mode 100644 target/msm8610/hw_lcd_panel.c
 
 diff --git a/dev/panel/msm/mipi_auo_video_qhd.c b/dev/panel/msm/mipi_auo_video_qhd.c
@@ -2399,7 +2394,7 @@ index 0000000..69d1e34
 +}
 diff --git a/dev/panel/msm/mipi_tianma_video_qhd.c b/dev/panel/msm/mipi_tianma_video_qhd.c
 new file mode 100644
-index 0000000..4f3f1d9
+index 0000000..0be2a2c
 --- /dev/null
 +++ b/dev/panel/msm/mipi_tianma_video_qhd.c
 @@ -0,0 +1,321 @@
@@ -2667,8 +2662,8 @@ index 0000000..4f3f1d9
 +	/* regulator */
 +	{0x09, 0x08, 0x05, 0x00, 0x20, 0x03},
 +	/* timing   */
-+	{0x9f, 0x25, 0x19, 0x00, 0x4d, 0x57,
-+		0x1d, 0x29, 0x2a, 0x03, 0x04, 0x00},
++	{0x92, 0x21, 0x15, 0x00, 0x48, 0x4f,
++		0x1a, 0x25, 0x25, 0x03, 0x04, 0x00},
 +	/* phy ctrl */
 +	{0x7f, 0x00, 0x00, 0x00},
 +	/* strength */
@@ -2694,7 +2689,7 @@ index 0000000..4f3f1d9
 +	pinfo->yres = 960;
 +	pinfo->lcdc.h_back_porch = 96;
 +	pinfo->lcdc.h_front_porch = 96;
-+	pinfo->lcdc.h_pulse_width = 96;
++	pinfo->lcdc.h_pulse_width = 5;
 +	pinfo->lcdc.v_back_porch = 15;
 +	pinfo->lcdc.v_front_porch = 10;
 +	pinfo->lcdc.v_pulse_width = 5;
@@ -2704,7 +2699,7 @@ index 0000000..4f3f1d9
 +	pinfo->type = MIPI_VIDEO_PANEL;
 +	pinfo->wait_cycle = 0;
 +	pinfo->bpp = 24;
-+	pinfo->clk_rate = 399000000;
++	pinfo->clk_rate = 525000000;
 +
 +	pinfo->mipi.mode = DSI_VIDEO_MODE;
 +	pinfo->mipi.traffic_mode = 1;
@@ -2743,11 +2738,10 @@ index ddeb6dd..de6e4ac 100644
  endif
 diff --git a/include/hw_lcd_panel.h b/include/hw_lcd_panel.h
 new file mode 100644
-index 0000000..ed2b8b3
+index 0000000..d21262f
 --- /dev/null
 +++ b/include/hw_lcd_panel.h
-@@ -0,0 +1,46 @@
-+/* < shilongzhen begin */
+@@ -0,0 +1,44 @@
 +/* Copyright (c) 2009-2011, HUAWEI Co. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -2792,124 +2786,25 @@ index 0000000..ed2b8b3
 +extern void init_wled(void);
 +
 +#endif
-+/* shilongzhen end > */
 diff --git a/platform/msm8610/platform.c b/platform/msm8610/platform.c
-index e4dad94..aabb0a8 100644
+index e4dad94..5d262fb 100644
 --- a/platform/msm8610/platform.c
 +++ b/platform/msm8610/platform.c
-@@ -75,6 +75,11 @@ void platform_early_init(void)
+@@ -75,6 +75,9 @@ void platform_early_init(void)
  void platform_init(void)
  {
  	dprintf(INFO, "platform_init()\n");
-+	/* < shilongzhen begin*/
 +#ifdef CONFIG_HUAWEI_LK
 +	boardid_init();
 +#endif
-+	/* shilongzhen end > */
  }
  
  uint32_t platform_get_sclk_count(void)
-diff --git a/platform/msm_shared/hw_boardid_self_adapt.c b/platform/msm_shared/hw_boardid_self_adapt.c
-new file mode 100644
-index 0000000..e3a9578
---- /dev/null
-+++ b/platform/msm_shared/hw_boardid_self_adapt.c
-@@ -0,0 +1,44 @@
-+#include <debug.h>
-+#include <hw_boardid_self_adapt.h>
-+#include <smem.h>
-+
-+uint32 hw_boardid = 0;
-+/*
-+ * get_boardid_from_sharemem ---- get board id from share memery
-+ * returns
-+ *   board id
-+ */
-+int get_boardid_from_sharemem()
-+{
-+	unsigned smem_status;
-+	int boardid = 0;
-+	hw_boardid_info_type boardid_info;
-+	memset((void*)&boardid_info, 0, sizeof(hw_boardid_info_type));
-+
-+	/* get allocated shared memory */
-+	smem_status = smem_read_alloc_entry(SMEM_HW_SW_BUILID_ID, &boardid_info, sizeof(hw_boardid_info_type));
-+	dprintf(INFO, "board_id0:%d,board_id1:%d\n",boardid_info.board_id0,boardid_info.board_id1);
-+	if (smem_status)
-+	{
-+		dprintf(CRITICAL, "get shared memory failed\n");
-+		return HW_BOARDID_FAIL;
-+	}
-+	/* set baord id */
-+	boardid = boardid_info.board_id0;
-+	boardid = boardid << 4;
-+	boardid |= boardid_info.board_id1;
-+	return boardid&HW_BOARDID_MASK;
-+}
-+
-+/*
-+ *set_boardid_config ---- set board id for selectting dts
-+ */
-+void boardid_init()
-+{
-+	hw_boardid = get_boardid_from_sharemem();
-+	if(HW_BOARDID_FAIL == hw_boardid)
-+	{
-+		dprintf(CRITICAL, "set board id failed\n");
-+	}
-+	return;
-+}
-diff --git a/platform/msm_shared/include/hw_boardid_self_adapt.h b/platform/msm_shared/include/hw_boardid_self_adapt.h
-new file mode 100644
-index 0000000..0f349d4
---- /dev/null
-+++ b/platform/msm_shared/include/hw_boardid_self_adapt.h
-@@ -0,0 +1,24 @@
-+/* < DTS2013042403191 zhaorenjie add begin */
-+#ifndef HW_BOARDID_SELF_ADAPT_H
-+#define HW_BOARDID_SELF_ADAPT_H
-+#include <smem.h>
-+
-+#include <libfdt.h>
-+#include <dev_tree.h>
-+#include "scm.h"
-+
-+
-+#define HW_BOARDID_MASK 0x000000FF
-+#define HW_BOARDID_FAIL 0
-+
-+typedef struct
-+{
-+   uint32           board_id0;
-+   uint32           board_id1;
-+   uint32           reserver[6];
-+}hw_boardid_info_type;
-+
-+void boardid_init();
-+#endif
-+/* DTS2013042403191 zhaorenjie add end > */
-+
-diff --git a/platform/msm_shared/rules.mk b/platform/msm_shared/rules.mk
-index 9b7ff98..a98d55b 100755
---- a/platform/msm_shared/rules.mk
-+++ b/platform/msm_shared/rules.mk
-@@ -172,6 +172,11 @@ DEFINES += DISPLAY_TYPE_MDSS=1
-             $(LOCAL_DIR)/dev_tree.o \
-             $(LOCAL_DIR)/gpio.o
- endif
-+# /* < shilongzhen*/
-+ifeq ($(PLATFORM),msm8610)
-+	OBJS += $(LOCAL_DIR)/hw_boardid_self_adapt.o
-+endif
-+# /* shilongzhen > */
- 
- ifeq ($(PLATFORM),apq8084)
-     OBJS += $(LOCAL_DIR)/qgic.o \
 diff --git a/platform/msm_shared/smem.h b/platform/msm_shared/smem.h
-index ba77c86..f97c689 100755
+index 0182cb3..98be818 100755
 --- a/platform/msm_shared/smem.h
 +++ b/platform/msm_shared/smem.h
-@@ -337,6 +337,8 @@ enum platform {
+@@ -340,6 +340,8 @@ enum platform {
  	HW_PLATFORM_VIRTIO = 16,
  	HW_PLATFORM_BTS = 19,
  	HW_PLATFORM_DMA = 22,
@@ -2917,19 +2812,6 @@ index ba77c86..f97c689 100755
 +	HW_HUAWEI_MAINBOARD = 8002,
  	HW_PLATFORM_32BITS = 0x7FFFFFFF,
  };
- 
-@@ -360,8 +362,10 @@ typedef enum {
- 	SMEM_AARM_PARTITION_TABLE = 9,
- 
- 	SMEM_APPS_BOOT_MODE = 106,
--
--	SMEM_BOARD_INFO_LOCATION = 137,
-+	/* < longzhen begin */	
-+	SMEM_HW_SW_BUILID_ID = 137,
-+	/* longzhen end> */
-+ 	SMEM_BOARD_INFO_LOCATION = 137,
- 
- 	SMEM_USABLE_RAM_PARTITION_TABLE = 402,
  
 diff --git a/target/msm8610/hw_lcd_panel.c b/target/msm8610/hw_lcd_panel.c
 new file mode 100644
@@ -3070,10 +2952,10 @@ index 0000000..3f0c9e2
 +}
 +/* DTS2013062001710 zhaoyuxia 20130620 end > */
 diff --git a/target/msm8610/init.c b/target/msm8610/init.c
-index b662767..19a34f0 100644
+index e055f4b..ce524b2 100644
 --- a/target/msm8610/init.c
 +++ b/target/msm8610/init.c
-@@ -287,7 +287,8 @@ int target_cont_splash_screen()
+@@ -347,7 +347,8 @@ int target_cont_splash_screen()
  			dprintf(SPEW, "Target_cont_splash=0\n");
  			ret = 0;
  	}
@@ -3095,7 +2977,7 @@ index 92c669f..b3d57aa 100644
 +    $(LOCAL_DIR)/target_display.o\
 +    $(LOCAL_DIR)/hw_lcd_panel.o
 diff --git a/target/msm8610/target_display.c b/target/msm8610/target_display.c
-index b9da11d..1f6ffc5 100644
+index 80d8316..20643fe 100644
 --- a/target/msm8610/target_display.c
 +++ b/target/msm8610/target_display.c
 @@ -37,6 +37,8 @@
@@ -3235,7 +3117,7 @@ index b9da11d..1f6ffc5 100644
  	switch (hw_id) {
  	case HW_PLATFORM_QRD:
  		if ((0 == platform_subtype) || (1 == platform_subtype))
-@@ -192,21 +251,15 @@ void display_init(void)
+@@ -191,20 +250,14 @@ void display_init(void)
  		break;
  	case HW_PLATFORM_MTP:
  	case HW_PLATFORM_SURF:
@@ -3254,14 +3136,12 @@ index b9da11d..1f6ffc5 100644
  	default:
  		return;
  	};
--
 +#endif	
-+	/*longzhen begin*/
++
 +	lcd_panel_init(hw_id);
-+	/*longzhen end*/
+ 
  	if (msm_display_init(&panel))
  	{
- 		dprintf(CRITICAL, "Display init failed!\n");
 -- 
 1.7.8.3
 

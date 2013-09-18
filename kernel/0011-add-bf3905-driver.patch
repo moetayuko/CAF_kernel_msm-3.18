@@ -1,7 +1,7 @@
-From 977dd418a9f778dfc3ccdd6e9846899b7b89c80a Mon Sep 17 00:00:00 2001
+From a5269dec9dd7d3ab90d15205fe6b41104559fdf5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 3 Sep 2013 18:47:11 +0800
-Subject: [PATCH 11/16] add bf3905 driver
+Subject: [PATCH 11/22] add bf3905 driver
 
 Change-Id: If325c7b9c5dd8e527a0480be17bc8045a858cb72
 ---
@@ -15,7 +15,7 @@ Change-Id: If325c7b9c5dd8e527a0480be17bc8045a858cb72
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/bf3905.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
-index cc646ec..f7a475af 100644
+index c6233a2..32045d3 100644
 --- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 @@ -299,5 +299,39 @@
@@ -59,7 +59,7 @@ index cc646ec..f7a475af 100644
  };
  
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 8acee1b..3300010 100644
+index e6e0160..0b82508 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -303,6 +303,7 @@ CONFIG_MEDIA_CONTROLLER=y
@@ -71,10 +71,10 @@ index 8acee1b..3300010 100644
  CONFIG_s5k4e1=y
  CONFIG_HI256=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 8b20006..8922fd0 100644
+index 4f8b72b..f66d002 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3018,6 +3018,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3021,6 +3021,8 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("core_clk",         pnoc_iommu_clk.c, "fd010000.qcom,iommu"),
  
  	/* MM sensor clocks */

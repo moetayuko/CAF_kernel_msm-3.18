@@ -1,7 +1,7 @@
-From d5041a85cb5afba9bb28cdc62907a9f3437d7717 Mon Sep 17 00:00:00 2001
+From ee6c706f064b32a815700116a4f44e1be27cdae3 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 16:32:37 +0800
-Subject: [PATCH 06/16] fix G-sensor ST lis3dh and Kionix X-Y direction
+Subject: [PATCH 06/22] fix G-sensor ST lis3dh and Kionix X-Y direction
  inverse issue
 
 Change-Id: I80e820b50303ce0d17fdd1bd5818e22f2f1c5777
@@ -12,7 +12,7 @@ Change-Id: I80e820b50303ce0d17fdd1bd5818e22f2f1c5777
  3 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index c16d994..0c0793b 100644
+index 88a129f..66ebd21 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -186,7 +186,7 @@

@@ -1,7 +1,7 @@
-From 380b15842e9bc5a2570085adf3d0a92e2acbd645 Mon Sep 17 00:00:00 2001
+From 6279d351c61f7f9955e299f6956446500217fc4a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 09:01:41 +0800
-Subject: [PATCH 03/16] add ctp and LCD support
+Subject: [PATCH 03/22] add ctp and LCD support
 
 Change-Id: I9535d342642e9aad232be4466200998431a653c1
 ---
@@ -741,7 +741,7 @@ index da3e18e..51190cc 100755
  		qcom,dsi-ctrl-phandle = <&mdss_dsi0>;
  		qcom,rst-gpio = <&msmgpio 41 0>;
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 0b18f4d..b084491 100644
+index 1688890..837024b 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -28,7 +28,7 @@
@@ -856,7 +856,7 @@ index 4de516c..8c75ebf 100644
  / {
  	model = "Qualcomm MSM 8610 QRD";
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 20938d5..afd1456 100644
+index b296a7b..377de58 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -223,12 +223,38 @@ CONFIG_INPUT_EVDEV=y

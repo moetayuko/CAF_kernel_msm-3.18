@@ -1,7 +1,7 @@
-From 723ba7b966f7928696daeb900ccd9ae0ad959c76 Mon Sep 17 00:00:00 2001
+From 102e71e91bc618819e7339271cb6e005c1a710c2 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 18:08:17 +0800
-Subject: [PATCH 01/16] arch/arm/mach-msm/socinfo.c
+Subject: [PATCH 01/22] arch/arm/mach-msm/socinfo.c
 
 Change-Id: Idea7ddc6b6ab67b6105258f5b87f1eac638bf357
 ---
@@ -55,7 +55,7 @@ index 910264e..646b1e0 100644
  # MSMSAMARIUM
     zreladdr-$(CONFIG_ARCH_MSMSAMARIUM)	:= 0x00008000
 diff --git a/arch/arm/mach-msm/socinfo.c b/arch/arm/mach-msm/socinfo.c
-index 9479492..d1b9ac4 100644
+index 2f615f7..26bf96b 100644
 --- a/arch/arm/mach-msm/socinfo.c
 +++ b/arch/arm/mach-msm/socinfo.c
 @@ -75,6 +75,7 @@ enum {
@@ -72,8 +72,8 @@ index 9479492..d1b9ac4 100644
  	[PLATFORM_SUBTYPE_SKUAB] = "SKUAB",
 +	[PLATFORM_SUBTYPE_SKUAC] = "SKUAC",
  	[PLATFORM_SUBTYPE_SKUG] = "SKUG",
+ 	[PLATFORM_SUBTYPE_QRD_INVALID] = "INVALID",
  };
- 
 -- 
 1.7.8.3
 

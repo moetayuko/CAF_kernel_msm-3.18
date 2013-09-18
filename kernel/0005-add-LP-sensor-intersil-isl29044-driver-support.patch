@@ -1,7 +1,7 @@
-From a99647d8e86fb720acdcd030a04421db6fbc863c Mon Sep 17 00:00:00 2001
+From 2ef66e21b5e6b3b670c1bbcde13dabcd8205dbe6 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 12:45:30 +0800
-Subject: [PATCH 05/16] add LP-sensor intersil isl29044 driver support
+Subject: [PATCH 05/22] add LP-sensor intersil isl29044 driver support
 
 Change-Id: I975e89c70ed9265ebc4fcaca01d908cba156b64e
 ---
@@ -18,7 +18,7 @@ Change-Id: I975e89c70ed9265ebc4fcaca01d908cba156b64e
  create mode 100644 include/linux/i2c/tmd277x.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 399f7df..c16d994 100644
+index 6145785..88a129f 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -196,7 +196,26 @@
@@ -50,7 +50,7 @@ index 399f7df..c16d994 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 1c8f93f..1902a59 100644
+index 4f94bfb..9dfa356 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -267,6 +267,8 @@ CONFIG_HW_RANDOM_MSM=y

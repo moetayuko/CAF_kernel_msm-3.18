@@ -1,7 +1,7 @@
-From fb85fe70f39f6de2b5b6e907fe122b12ce53e974 Mon Sep 17 00:00:00 2001
+From 8716db21676564973c5f95637c07d92886400b71 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:31:27 +0800
-Subject: [PATCH 08/16] add driver for camera
+Subject: [PATCH 08/22] add driver for camera
  ov8850/s5k4h5/s5k4el/ov5648/mt9v113
 
 Change-Id: Ife001b341bee8fe35a44fda87a87af6bfd35b7ea
@@ -27,7 +27,7 @@ Change-Id: Ife001b341bee8fe35a44fda87a87af6bfd35b7ea
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/s5k4h5_liteon_12p1ba855d.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
-index e73573a..bb55430 100644
+index fc3087a..70040ce 100644
 --- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 @@ -10,7 +10,7 @@
@@ -242,10 +242,10 @@ index e73573a..bb55430 100644
  };
  
 diff --git a/arch/arm/boot/dts/msm8610-regulator.dtsi b/arch/arm/boot/dts/msm8610-regulator.dtsi
-index 34cbd99..362397c 100644
+index b74d487..1ebbc15 100644
 --- a/arch/arm/boot/dts/msm8610-regulator.dtsi
 +++ b/arch/arm/boot/dts/msm8610-regulator.dtsi
-@@ -227,7 +227,7 @@
+@@ -228,7 +228,7 @@
  	rpm-regulator-ldoa7 {
  		status = "okay";
  		pm8110_l7: regulator-l7 {
@@ -267,7 +267,7 @@ index 8c75ebf..29b475b 100644
  / {
  	model = "Qualcomm MSM 8610 QRD";
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 8f1bc7d..1d98387 100644
+index 9b877fa..d31c7e5f 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -307,6 +307,11 @@ CONFIG_OV8825=y
@@ -283,10 +283,10 @@ index 8f1bc7d..1d98387 100644
  CONFIG_MSM_CCI=y
  CONFIG_MSM_CSIPHY=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index f8c206b..8b20006 100644
+index 92dab97..4f8b72b 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3023,13 +3023,22 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3026,13 +3026,22 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006d"),
  	CLK_LOOKUP("cam_src_clk", mclk1_clk_src.c, "6-0078"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0020"),

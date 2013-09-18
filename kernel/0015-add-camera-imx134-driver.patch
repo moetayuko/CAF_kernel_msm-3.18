@@ -1,7 +1,7 @@
-From 65d84d34c06e7c80e6ecddc5c02df8ffd9478fd5 Mon Sep 17 00:00:00 2001
+From a5148d1c29bd478c7d156662aa708d9a924f3ea6 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 10 Sep 2013 17:56:52 +0800
-Subject: [PATCH 15/16] add camera imx134 driver
+Subject: [PATCH 15/22] add camera imx134 driver
 
 Change-Id: I249e84ccfa11a7acc7bbfa23b705b806c45e2a8c
 ---
@@ -15,7 +15,7 @@ Change-Id: I249e84ccfa11a7acc7bbfa23b705b806c45e2a8c
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/imx134_sunny_p8n09c.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
-index f7a475af..c523c74 100644
+index 32045d3..112c6b3 100644
 --- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 @@ -333,5 +333,41 @@
@@ -61,7 +61,7 @@ index f7a475af..c523c74 100644
  };
  
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 3300010..e444ea1 100644
+index 0b82508..edbd915 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -313,6 +313,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
@@ -73,10 +73,10 @@ index 3300010..e444ea1 100644
  CONFIG_MSM_CCI=y
  CONFIG_MSM_CSIPHY=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 8922fd0..a6e04ee 100644
+index f66d002..d15fced 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3030,16 +3030,18 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3033,16 +3033,18 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0068"),	
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006a"),		
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-007a"),

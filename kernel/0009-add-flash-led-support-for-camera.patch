@@ -1,7 +1,7 @@
-From a9966e8e230f2e35c42f30791f00f76c38dfeac7 Mon Sep 17 00:00:00 2001
+From 4d57e70abfa8b0a326d7fa6d6cdd8e76aae5c0a8 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Sun, 18 Aug 2013 14:39:14 +0800
-Subject: [PATCH 09/16] add flash led support for camera
+Subject: [PATCH 09/22] add flash led support for camera
 
 Change-Id: I4eac600748992132fddea97a2995f3afc3d443c1
 ---
@@ -19,7 +19,7 @@ Change-Id: I4eac600748992132fddea97a2995f3afc3d443c1
  create mode 100644 drivers/leds/leds-tricolor.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
-index bb55430..cc646ec 100644
+index 70040ce..c6233a2 100644
 --- a/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd-camera-sensor.dtsi
 @@ -10,7 +10,28 @@
@@ -89,10 +89,10 @@ index bb55430..cc646ec 100644
  				qcom,sensor-name = "s5k4e1_liteon";
  				cam_vdig-supply = <&pm8110_l2>;
 diff --git a/arch/arm/boot/dts/msm8610.dtsi b/arch/arm/boot/dts/msm8610.dtsi
-index 2fc6cb9..4c1d76a 100644
+index 765adf4..3e9c959 100644
 --- a/arch/arm/boot/dts/msm8610.dtsi
 +++ b/arch/arm/boot/dts/msm8610.dtsi
-@@ -513,7 +513,7 @@
+@@ -511,7 +511,7 @@
                  qcom,master-id = <86>;
  	};
  
@@ -102,7 +102,7 @@ index 2fc6cb9..4c1d76a 100644
  		compatible = "qcom,i2c-qup";
  		#address-cells = <1>;
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 1d98387..3cec6de 100644
+index d31c7e5f..976fdf4 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -393,6 +393,7 @@ CONFIG_MMC_MSM=y

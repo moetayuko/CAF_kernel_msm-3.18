@@ -1,4 +1,4 @@
-From e54fddad58354b76a8875c332faaf4c28226e3f4 Mon Sep 17 00:00:00 2001
+From a781d0d021b17c71d66bd57b6ba4235357f6b934 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 4 Jul 2013 14:26:01 +0800
 Subject: [PATCH] modify partition size to match skuac partition change
@@ -9,7 +9,7 @@ Change-Id: I7ea5b6568394c2e113387df968452e5e79b3ad06
  1 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index ffd7f30..ecabe6c 100644
+index c0a11bc..feea79a 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
 @@ -62,11 +62,11 @@ BOARD_KERNEL_SEPARATED_DT := true
