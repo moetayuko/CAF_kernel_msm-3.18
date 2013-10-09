@@ -73,7 +73,7 @@ static const char *bockw_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(BOCKW_DT, "bockw")
+DT_MACHINE_START(BOCKW_DT)
 	.init_early	= r8a7778_init_delay,
 	.init_irq	= r8a7778_init_irq_dt,
 	.init_machine	= bockw_init,

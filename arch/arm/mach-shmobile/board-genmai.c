@@ -36,7 +36,7 @@ static const char * const genmai_boards_compat_dt[] __initconst = {
 	NULL,
 };
 
-DT_MACHINE_START(GENMAI_DT, "genmai")
+DT_MACHINE_START(GENMAI_DT)
 	.init_early	= r7s72100_init_early,
 	.init_machine	= genmai_add_standard_devices,
 	.dt_compat	= genmai_boards_compat_dt,

@@ -37,7 +37,7 @@ static const char * const rockchip_board_dt_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(ROCKCHIP_DT, "Rockchip Cortex-A9 (Device Tree)")
+DT_MACHINE_START(ROCKCHIP_DT)
 	.init_machine	= rockchip_dt_init,
 	.dt_compat	= rockchip_board_dt_compat,
 MACHINE_END

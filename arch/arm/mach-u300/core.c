@@ -405,7 +405,7 @@ static const char * u300_board_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(U300_DT, "U300 S335/B335 (Device Tree)")
+DT_MACHINE_START(U300_DT)
 	.map_io		= u300_map_io,
 	.init_irq	= u300_init_irq_dt,
 	.init_time	= clocksource_of_init,

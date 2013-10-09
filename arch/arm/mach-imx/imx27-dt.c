@@ -39,7 +39,7 @@ static void __init imx27_timer_init(void)
 	mx27_clocks_init_dt();
 }
 
-DT_MACHINE_START(IMX27_DT, "Freescale i.MX27 (Device Tree Support)")
+DT_MACHINE_START(IMX27_DT)
 	.map_io		= mx27_map_io,
 	.init_early	= imx27_init_early,
 	.init_irq	= mx27_init_irq,

@@ -611,7 +611,7 @@ void __init dump_machine_table(void)
 
 	early_print("Available machine support:\n\nID (hex)\tNAME\n");
 	for_each_machine_desc(p)
-		early_print("%08x\t%s\n", p->nr, p->name);
+		early_print("%08x\t%s\n", p->nr, p->name ? p->name : *p->dt_compat);
 
 	early_print("\nPlease check your kernel config and/or bootloader.\n");
 
@@ -859,7 +859,7 @@ void __init setup_arch(char **cmdline_p)
 	if (!mdesc)
 		mdesc = setup_machine_tags(__atags_pointer, __machine_arch_type);
 	machine_desc = mdesc;
-	machine_name = mdesc->name;
+	machine_name = mdesc->name ? mdesc->name : of_flat_dt_get_machine_name();
 
 	setup_dma_zone(mdesc);
 

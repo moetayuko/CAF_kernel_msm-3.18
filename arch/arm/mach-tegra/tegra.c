@@ -180,7 +180,7 @@ static const char * const tegra_dt_board_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(TEGRA_DT, "NVIDIA Tegra SoC (Flattened Device Tree)")
+DT_MACHINE_START(TEGRA_DT)
 	.map_io		= tegra_map_common_io,
 	.smp		= smp_ops(tegra_smp_ops),
 	.init_early	= tegra_init_early,

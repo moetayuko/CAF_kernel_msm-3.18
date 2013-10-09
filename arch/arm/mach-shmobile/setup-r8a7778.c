@@ -493,7 +493,7 @@ static const char *r8a7778_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(R8A7778_DT, "Generic R8A7778 (Flattened Device Tree)")
+DT_MACHINE_START(R8A7778_DT)
 	.init_early	= r8a7778_init_delay,
 	.init_irq	= r8a7778_init_irq_dt,
 	.dt_compat	= r8a7778_compat_dt,

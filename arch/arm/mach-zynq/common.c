@@ -101,7 +101,7 @@ static const char * const zynq_dt_match[] = {
 	NULL
 };
 
-DT_MACHINE_START(XILINX_EP107, "Xilinx Zynq Platform")
+DT_MACHINE_START(XILINX_EP107)
 	.smp		= smp_ops(zynq_smp_ops),
 	.map_io		= zynq_map_io,
 	.init_machine	= zynq_init_machine,

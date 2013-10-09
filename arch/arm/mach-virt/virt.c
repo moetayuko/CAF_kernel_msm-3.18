@@ -35,7 +35,7 @@ static const char *virt_dt_match[] = {
 	NULL
 };
 
-DT_MACHINE_START(VIRT, "Dummy Virtual Machine")
+DT_MACHINE_START(VIRT)
 	.init_machine	= virt_init,
 	.dt_compat	= virt_dt_match,
 MACHINE_END

@@ -312,7 +312,7 @@ static const char *r8a73a4_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(R8A73A4_DT, "Generic R8A73A4 (Flattened Device Tree)")
+DT_MACHINE_START(R8A73A4_DT)
 	.init_early	= r8a73a4_init_early,
 	.dt_compat	= r8a73a4_boards_compat_dt,
 MACHINE_END

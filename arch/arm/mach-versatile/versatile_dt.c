@@ -41,7 +41,7 @@ static const char *versatile_dt_match[] __initconst = {
 	NULL,
 };
 
-DT_MACHINE_START(VERSATILE_PB, "ARM-Versatile (Device Tree Support)")
+DT_MACHINE_START(VERSATILE_PB)
 	.map_io		= versatile_map_io,
 	.init_early	= versatile_init_early,
 	.init_irq	= versatile_init_irq,

@@ -1510,7 +1510,7 @@ static const char *mackerel_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(MACKEREL_DT, "mackerel")
+DT_MACHINE_START(MACKEREL_DT)
 	.map_io		= sh7372_map_io,
 	.init_early	= sh7372_add_early_devices,
 	.init_irq	= sh7372_init_irq,

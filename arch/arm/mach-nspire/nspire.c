@@ -72,7 +72,7 @@ static void nspire_restart(char mode, const char *cmd)
 	writel(2, base + NSPIRE_MISC_HWRESET);
 }
 
-DT_MACHINE_START(NSPIRE, "TI-NSPIRE")
+DT_MACHINE_START(NSPIRE)
 	.dt_compat	= nspire_dt_match,
 	.map_io		= nspire_map_io,
 	.init_machine	= nspire_init,

@@ -26,7 +26,7 @@ static const char * const msm_dt_match[] __initconst = {
 	NULL
 };
 
-DT_MACHINE_START(MSM_DT, "Qualcomm MSM (Flattened Device Tree)")
+DT_MACHINE_START(MSM_DT)
 	.smp = smp_ops(msm_smp_ops),
 	.dt_compat = msm_dt_match,
 MACHINE_END

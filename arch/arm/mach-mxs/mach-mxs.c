@@ -501,7 +501,7 @@ static const char *mxs_dt_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(MXS, "Freescale MXS (Device Tree)")
+DT_MACHINE_START(MXS)
 	.handle_irq	= icoll_handle_irq,
 	.init_machine	= mxs_machine_init,
 	.init_late      = mxs_pm_init,

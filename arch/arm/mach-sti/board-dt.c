@@ -39,7 +39,7 @@ static const char *stih41x_dt_match[] __initdata = {
 	NULL
 };
 
-DT_MACHINE_START(STM, "STiH415/416 SoC with Flattened Device Tree")
+DT_MACHINE_START(STM)
 	.init_machine	= stih41x_machine_init,
 	.smp		= smp_ops(sti_smp_ops),
 	.dt_compat	= stih41x_dt_match,

@@ -56,7 +56,7 @@ static void __init spear1310_map_io(void)
 	spear13xx_map_io();
 }
 
-DT_MACHINE_START(SPEAR1310_DT, "ST SPEAr1310 SoC with Flattened Device Tree")
+DT_MACHINE_START(SPEAR1310_DT)
 	.smp		=	smp_ops(spear13xx_smp_ops),
 	.map_io		=	spear1310_map_io,
 	.init_time	=	spear13xx_timer_init,

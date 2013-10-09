@@ -177,7 +177,7 @@ static const char * const kirkwood_dt_board_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(KIRKWOOD_DT, "Marvell Kirkwood (Flattened Device Tree)")
+DT_MACHINE_START(KIRKWOOD_DT)
 	/* Maintainer: Jason Cooper <jason@lakedaemon.net> */
 	.map_io		= kirkwood_map_io,
 	.init_machine	= kirkwood_dt_init,

@@ -46,7 +46,7 @@ static const char *kzm9g_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(KZM9G_DT, "kzm9g-reference")
+DT_MACHINE_START(KZM9G_DT)
 	.smp		= smp_ops(sh73a0_smp_ops),
 	.map_io		= sh73a0_map_io,
 	.init_early	= sh73a0_init_delay,

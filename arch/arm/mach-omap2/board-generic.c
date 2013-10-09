@@ -44,7 +44,7 @@ static const char *omap242x_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP242X_DT, "Generic OMAP2420 (Flattened Device Tree)")
+DT_MACHINE_START(OMAP242X_DT)
 	.reserve	= omap_reserve,
 	.map_io		= omap242x_map_io,
 	.init_early	= omap2420_init_early,
@@ -63,7 +63,7 @@ static const char *omap243x_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP243X_DT, "Generic OMAP2430 (Flattened Device Tree)")
+DT_MACHINE_START(OMAP243X_DT)
 	.reserve	= omap_reserve,
 	.map_io		= omap243x_map_io,
 	.init_early	= omap2430_init_early,
@@ -82,7 +82,7 @@ static const char *omap3_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP3_DT, "Generic OMAP3 (Flattened Device Tree)")
+DT_MACHINE_START(OMAP3_DT)
 	.reserve	= omap_reserve,
 	.map_io		= omap3_map_io,
 	.init_early	= omap3430_init_early,
@@ -100,7 +100,7 @@ static const char *omap36xx_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP36XX_DT, "Generic OMAP36xx (Flattened Device Tree)")
+DT_MACHINE_START(OMAP36XX_DT)
 	.reserve	= omap_reserve,
 	.map_io		= omap3_map_io,
 	.init_early	= omap3630_init_early,
@@ -119,7 +119,7 @@ static const char *omap3_gp_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP3_GP_DT, "Generic OMAP3-GP (Flattened Device Tree)")
+DT_MACHINE_START(OMAP3_GP_DT)
 	.reserve	= omap_reserve,
 	.map_io		= omap3_map_io,
 	.init_early	= omap3430_init_early,
@@ -139,7 +139,7 @@ static const char *am33xx_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(AM33XX_DT, "Generic AM33XX (Flattened Device Tree)")
+DT_MACHINE_START(AM33XX_DT)
 	.reserve	= omap_reserve,
 	.map_io		= am33xx_map_io,
 	.init_early	= am33xx_init_early,
@@ -159,7 +159,7 @@ static const char *omap4_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP4_DT, "Generic OMAP4 (Flattened Device Tree)")
+DT_MACHINE_START(OMAP4_DT)
 	.reserve	= omap_reserve,
 	.smp		= smp_ops(omap4_smp_ops),
 	.map_io		= omap4_map_io,
@@ -179,7 +179,7 @@ static const char *omap5_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(OMAP5_DT, "Generic OMAP5 (Flattened Device Tree)")
+DT_MACHINE_START(OMAP5_DT)
 	.reserve	= omap_reserve,
 	.smp		= smp_ops(omap4_smp_ops),
 	.map_io		= omap5_map_io,
@@ -199,7 +199,7 @@ static const char *am43_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(AM43_DT, "Generic AM43 (Flattened Device Tree)")
+DT_MACHINE_START(AM43_DT)
 	.map_io		= am33xx_map_io,
 	.init_early	= am43xx_init_early,
 	.init_late	= am43xx_init_late,
@@ -216,7 +216,7 @@ static const char *dra7xx_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(DRA7XX_DT, "Generic DRA7XX (Flattened Device Tree)")
+DT_MACHINE_START(DRA7XX_DT)
 	.reserve	= omap_reserve,
 	.smp		= smp_ops(omap4_smp_ops),
 	.map_io		= omap5_map_io,

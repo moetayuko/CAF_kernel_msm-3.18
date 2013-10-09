@@ -366,7 +366,7 @@ static const char *cns3xxx_dt_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(CNS3XXX_DT, "Cavium Networks CNS3xxx")
+DT_MACHINE_START(CNS3XXX_DT)
 	.dt_compat	= cns3xxx_dt_compat,
 	.nr_irqs	= NR_IRQS_CNS3XXX,
 	.map_io		= cns3xxx_map_io,

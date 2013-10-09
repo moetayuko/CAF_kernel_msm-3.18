@@ -51,7 +51,7 @@ static const char *pxa3xx_dt_board_compat[] __initdata = {
 #endif
 
 #ifdef CONFIG_PXA3xx
-DT_MACHINE_START(PXA_DT, "Marvell PXA3xx (Device Tree Support)")
+DT_MACHINE_START(PXA_DT)
 	.map_io		= pxa3xx_map_io,
 	.init_irq	= pxa3xx_dt_init_irq,
 	.handle_irq	= pxa3xx_handle_irq,

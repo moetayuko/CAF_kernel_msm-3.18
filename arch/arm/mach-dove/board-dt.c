@@ -35,7 +35,7 @@ static const char * const dove_dt_board_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(DOVE_DT, "Marvell Dove (Flattened Device Tree)")
+DT_MACHINE_START(DOVE_DT)
 	.map_io		= dove_map_io,
 	.init_machine	= dove_dt_init,
 	.restart	= dove_restart,

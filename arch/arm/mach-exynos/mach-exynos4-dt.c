@@ -43,7 +43,7 @@ static void __init exynos4_reserve(void)
 				mfc_mem.lsize);
 #endif
 }
-DT_MACHINE_START(EXYNOS4210_DT, "Samsung Exynos4 (Flattened Device Tree)")
+DT_MACHINE_START(EXYNOS4210_DT)
 	/* Maintainer: Thomas Abraham <thomas.abraham@linaro.org> */
 	.smp		= smp_ops(exynos_smp_ops),
 	.map_io		= exynos_init_io,

@@ -1311,7 +1311,7 @@ static const char *eva_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(ARMADILLO800EVA_DT, "armadillo800eva")
+DT_MACHINE_START(ARMADILLO800EVA_DT)
 	.map_io		= r8a7740_map_io,
 	.init_early	= eva_add_early_devices,
 	.init_irq	= r8a7740_init_irq_of,

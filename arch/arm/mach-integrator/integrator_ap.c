@@ -556,7 +556,7 @@ static const char * ap_dt_board_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(INTEGRATOR_AP_DT, "ARM Integrator/AP (Device Tree)")
+DT_MACHINE_START(INTEGRATOR_AP_DT)
 	.reserve	= integrator_reserve,
 	.map_io		= ap_map_io,
 	.init_early	= ap_init_early,

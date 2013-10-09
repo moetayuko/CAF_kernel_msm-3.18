@@ -70,7 +70,7 @@ static const char *sama5_dt_board_compat[] __initdata = {
 	NULL
 };
 
-DT_MACHINE_START(sama5_dt, "Atmel SAMA5 (Device Tree)")
+DT_MACHINE_START(sama5_dt)
 	/* Maintainer: Atmel */
 	.init_time	= at91sam926x_pit_init,
 	.map_io		= at91_map_io,

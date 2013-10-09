@@ -75,7 +75,7 @@ static char const *s3c64xx_dt_compat[] __initdata = {
 	NULL
 };
 
-DT_MACHINE_START(S3C6400_DT, "Samsung S3C64xx (Flattened Device Tree)")
+DT_MACHINE_START(S3C6400_DT)
 	/* Maintainer: Tomasz Figa <tomasz.figa@gmail.com> */
 	.dt_compat	= s3c64xx_dt_compat,
 	.map_io		= s3c64xx_dt_map_io,

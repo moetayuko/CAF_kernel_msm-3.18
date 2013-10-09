@@ -81,7 +81,7 @@ static const char *r7s72100_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(R7S72100_DT, "Generic R7S72100 (Flattened Device Tree)")
+DT_MACHINE_START(R7S72100_DT)
 	.init_early	= r7s72100_init_early,
 	.dt_compat	= r7s72100_boards_compat_dt,
 MACHINE_END

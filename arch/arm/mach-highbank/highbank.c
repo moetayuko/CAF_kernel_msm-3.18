@@ -157,7 +157,7 @@ static const char *highbank_match[] __initconst = {
 	NULL,
 };
 
-DT_MACHINE_START(HIGHBANK, "Highbank")
+DT_MACHINE_START(HIGHBANK)
 #if defined(CONFIG_ZONE_DMA) && defined(CONFIG_ARM_LPAE)
 	.dma_zone_size	= (4ULL * SZ_1G),
 #endif

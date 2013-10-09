@@ -38,7 +38,7 @@ static const char *kzm9d_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(KZM9D_DT, "kzm9d")
+DT_MACHINE_START(KZM9D_DT)
 	.smp		= smp_ops(emev2_smp_ops),
 	.map_io		= emev2_map_io,
 	.init_early	= emev2_init_delay,

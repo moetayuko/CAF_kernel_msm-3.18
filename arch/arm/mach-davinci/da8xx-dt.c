@@ -65,7 +65,7 @@ static const char *da850_boards_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(DA850_DT, "Generic DA850/OMAP-L138/AM18x")
+DT_MACHINE_START(DA850_DT)
 	.map_io		= da850_init,
 	.init_irq	= da8xx_init_irq,
 	.init_time	= davinci_timer_init,

@@ -128,7 +128,7 @@ static const char * const bcm2835_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(BCM2835, "BCM2835")
+DT_MACHINE_START(BCM2835)
 	.map_io = bcm2835_map_io,
 	.init_irq = bcm2835_init_irq,
 	.handle_irq = bcm2835_handle_irq,

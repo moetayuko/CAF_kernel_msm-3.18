@@ -78,7 +78,7 @@ static void picoxcell_wdt_restart(enum reboot_mode mode, const char *cmd)
 	}
 }
 
-DT_MACHINE_START(PICOXCELL, "Picochip picoXcell")
+DT_MACHINE_START(PICOXCELL)
 	.map_io		= picoxcell_map_io,
 	.init_machine	= picoxcell_init_machine,
 	.dt_compat	= picoxcell_dt_match,

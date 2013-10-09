@@ -88,11 +88,10 @@ static const struct machine_desc __mach_desc_##_type	\
 #define MACHINE_END				\
 };
 
-#define DT_MACHINE_START(_name, _namestr)		\
+#define DT_MACHINE_START(_name)		\
 static const struct machine_desc __mach_desc_##_name	\
  __used							\
  __attribute__((__section__(".arch.info.init"))) = {	\
 	.nr		= ~0,				\
-	.name		= _namestr,
 
 #endif

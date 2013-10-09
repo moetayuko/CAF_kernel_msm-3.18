@@ -349,7 +349,7 @@ static const char * intcp_dt_board_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(INTEGRATOR_CP_DT, "ARM Integrator/CP (Device Tree)")
+DT_MACHINE_START(INTEGRATOR_CP_DT)
 	.reserve	= integrator_reserve,
 	.map_io		= intcp_map_io,
 	.init_early	= intcp_init_early,

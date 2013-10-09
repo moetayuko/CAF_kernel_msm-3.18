@@ -378,7 +378,7 @@ static const char *marzen_boards_compat_dt[] __initdata = {
         NULL,
 };
 
-DT_MACHINE_START(MARZEN, "marzen")
+DT_MACHINE_START(MARZEN)
 	.smp		= smp_ops(r8a7779_smp_ops),
 	.map_io		= r8a7779_map_io,
 	.init_early	= r8a7779_add_early_devices,

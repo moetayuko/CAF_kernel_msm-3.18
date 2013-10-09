@@ -171,7 +171,7 @@ static const char * const vt8500_dt_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(WMT_DT, "VIA/Wondermedia SoC (Device Tree Support)")
+DT_MACHINE_START(WMT_DT)
 	.dt_compat	= vt8500_dt_compat,
 	.map_io		= vt8500_map_io,
 	.init_machine	= vt8500_init,

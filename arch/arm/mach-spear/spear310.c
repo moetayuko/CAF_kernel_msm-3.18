@@ -251,7 +251,7 @@ static void __init spear310_map_io(void)
 	spear3xx_map_io();
 }
 
-DT_MACHINE_START(SPEAR310_DT, "ST SPEAr310 SoC with Flattened Device Tree")
+DT_MACHINE_START(SPEAR310_DT)
 	.map_io		=	spear310_map_io,
 	.init_time	=	spear3xx_timer_init,
 	.init_machine	=	spear310_dt_init,

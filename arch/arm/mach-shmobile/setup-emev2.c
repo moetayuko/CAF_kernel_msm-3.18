@@ -202,7 +202,7 @@ static const char *emev2_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(EMEV2_DT, "Generic Emma Mobile EV2 (Flattened Device Tree)")
+DT_MACHINE_START(EMEV2_DT)
 	.smp		= smp_ops(emev2_smp_ops),
 	.map_io		= emev2_map_io,
 	.init_early	= emev2_init_delay,

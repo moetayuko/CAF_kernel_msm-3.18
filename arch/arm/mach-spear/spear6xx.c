@@ -420,7 +420,7 @@ static const char *spear600_dt_board_compat[] = {
 	NULL
 };
 
-DT_MACHINE_START(SPEAR600_DT, "ST SPEAr600 (Flattened Device Tree)")
+DT_MACHINE_START(SPEAR600_DT)
 	.map_io		=	spear6xx_map_io,
 	.init_time	=	spear6xx_timer_init,
 	.init_machine	=	spear600_dt_init,

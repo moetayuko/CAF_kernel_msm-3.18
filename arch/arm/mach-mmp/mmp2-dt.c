@@ -42,7 +42,7 @@ static const char *mmp2_dt_board_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(MMP2_DT, "Marvell MMP2 (Device Tree Support)")
+DT_MACHINE_START(MMP2_DT)
 	.map_io		= mmp_map_io,
 	.init_time	= mmp_dt_init_timer,
 	.init_machine	= mmp2_dt_init,

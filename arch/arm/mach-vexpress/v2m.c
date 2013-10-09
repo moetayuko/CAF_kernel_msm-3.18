@@ -441,7 +441,7 @@ static const char * const v2m_dt_match[] __initconst = {
 	NULL,
 };
 
-DT_MACHINE_START(VEXPRESS_DT, "ARM-Versatile Express")
+DT_MACHINE_START(VEXPRESS_DT)
 	.dt_compat	= v2m_dt_match,
 	.smp		= smp_ops(vexpress_smp_ops),
 	.smp_init	= smp_init_ops(vexpress_smp_init_ops),

@@ -963,7 +963,7 @@ static const char *sh73a0_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(SH73A0_DT, "Generic SH73A0 (Flattened Device Tree)")
+DT_MACHINE_START(SH73A0_DT)
 	.smp		= smp_ops(sh73a0_smp_ops),
 	.map_io		= sh73a0_map_io,
 	.init_early	= sh73a0_init_delay,

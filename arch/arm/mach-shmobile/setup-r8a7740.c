@@ -1062,7 +1062,7 @@ static const char *r8a7740_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(R8A7740_DT, "Generic R8A7740 (Flattened Device Tree)")
+DT_MACHINE_START(R8A7740_DT)
 	.map_io		= r8a7740_map_io,
 	.init_early	= r8a7740_init_delay,
 	.init_irq	= r8a7740_init_irq_of,

@@ -68,7 +68,7 @@ static const char *orion5x_dt_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(ORION5X_DT, "Marvell Orion5x (Flattened Device Tree)")
+DT_MACHINE_START(ORION5X_DT)
 	/* Maintainer: Thomas Petazzoni <thomas.petazzoni@free-electrons.com> */
 	.map_io		= orion5x_map_io,
 	.init_early	= orion5x_init_early,

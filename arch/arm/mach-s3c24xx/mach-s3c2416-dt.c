@@ -80,7 +80,7 @@ static char const *s3c2416_dt_compat[] __initdata = {
 	NULL
 };
 
-DT_MACHINE_START(S3C2416_DT, "Samsung S3C2416 (Flattened Device Tree)")
+DT_MACHINE_START(S3C2416_DT)
 	/* Maintainer: Heiko Stuebner <heiko@sntech.de> */
 	.dt_compat	= s3c2416_dt_compat,
 	.map_io		= s3c2416_dt_map_io,

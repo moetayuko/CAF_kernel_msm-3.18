@@ -114,7 +114,7 @@ static const char *altera_dt_match[] = {
 	NULL
 };
 
-DT_MACHINE_START(SOCFPGA, "Altera SOCFPGA")
+DT_MACHINE_START(SOCFPGA)
 	.smp		= smp_ops(socfpga_smp_ops),
 	.map_io		= socfpga_map_io,
 	.init_irq	= socfpga_init_irq,

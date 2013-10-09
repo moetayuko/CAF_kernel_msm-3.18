@@ -151,7 +151,7 @@ static const char * const spear1340_dt_board_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(SPEAR1340_DT, "ST SPEAr1340 SoC with Flattened Device Tree")
+DT_MACHINE_START(SPEAR1340_DT)
 	.smp		=	smp_ops(spear13xx_smp_ops),
 	.map_io		=	spear13xx_map_io,
 	.init_time	=	spear13xx_timer_init,

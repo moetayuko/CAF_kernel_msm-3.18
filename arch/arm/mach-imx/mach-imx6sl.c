@@ -66,7 +66,7 @@ static const char *imx6sl_dt_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(IMX6SL, "Freescale i.MX6 SoloLite (Device Tree)")
+DT_MACHINE_START(IMX6SL)
 	.map_io		= debug_ll_io_init,
 	.init_irq	= imx6sl_init_irq,
 	.init_machine	= imx6sl_init_machine,

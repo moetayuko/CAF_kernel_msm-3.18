@@ -31,7 +31,7 @@ static const char *vf610_dt_compat[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(VYBRID_VF610, "Freescale Vybrid VF610 (Device Tree)")
+DT_MACHINE_START(VYBRID_VF610)
 	.init_irq	= vf610_init_irq,
 	.init_machine   = vf610_init_machine,
 	.dt_compat	= vf610_dt_compat,

@@ -259,7 +259,7 @@ static char const *lpc32xx_dt_compat[] __initdata = {
 	NULL
 };
 
-DT_MACHINE_START(LPC32XX_DT, "LPC32XX SoC (Flattened Device Tree)")
+DT_MACHINE_START(LPC32XX_DT)
 	.atag_offset	= 0x100,
 	.map_io		= lpc32xx_map_io,
 	.init_irq	= lpc32xx_init_irq,

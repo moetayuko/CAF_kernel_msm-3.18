@@ -1162,7 +1162,7 @@ static const char *sh7372_boards_compat_dt[] __initdata = {
 	NULL,
 };
 
-DT_MACHINE_START(SH7372_DT, "Generic SH7372 (Flattened Device Tree)")
+DT_MACHINE_START(SH7372_DT)
 	.map_io		= sh7372_map_io,
 	.init_early	= sh7372_add_early_devices_dt,
 	.nr_irqs	= NR_IRQS_LEGACY,

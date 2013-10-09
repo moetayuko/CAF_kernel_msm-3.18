@@ -38,7 +38,7 @@ static const char * const koelsch_boards_compat_dt[] __initconst = {
 	NULL,
 };
 
-DT_MACHINE_START(KOELSCH_DT, "koelsch")
+DT_MACHINE_START(KOELSCH_DT)
 	.smp		= smp_ops(r8a7791_smp_ops),
 	.init_early	= r8a7791_init_early,
 	.init_machine	= koelsch_add_standard_devices,

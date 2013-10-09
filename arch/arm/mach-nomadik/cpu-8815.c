@@ -189,7 +189,7 @@ static const char * cpu8815_board_compat[] = {
 	NULL,
 };
 
-DT_MACHINE_START(NOMADIK_DT, "Nomadik STn8815")
+DT_MACHINE_START(NOMADIK_DT)
 	.map_io		= cpu8815_map_io,
 	.init_machine	= cpu8815_init_of,
 	.restart	= cpu8815_restart,

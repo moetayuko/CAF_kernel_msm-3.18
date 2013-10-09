@@ -67,7 +67,7 @@ void keystone_restart(enum reboot_mode mode, const char *cmd)
 	writel(val, keystone_rstctrl);
 }
 
-DT_MACHINE_START(KEYSTONE, "Keystone")
+DT_MACHINE_START(KEYSTONE)
 	.smp		= smp_ops(keystone_smp_ops),
 	.init_machine	= keystone_init,
 	.dt_compat	= keystone_match,
