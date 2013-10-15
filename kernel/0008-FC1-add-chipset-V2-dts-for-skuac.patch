@@ -1,0 +1,61 @@
+From 5d636eb66c73ce8564df9aac254a6dd49e776ee0 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Mon, 14 Oct 2013 10:17:11 +0800
+Subject: [PATCH 8/8] FC1: add chipset V2 dts for skuac
+
+Change-Id: I80dd50cdc249e62edf493c4243b1ae93fad9b3ed
+
+Signed-off-by: fsheng <fsheng@codeaurora.org>
+---
+ arch/arm/boot/dts/msm8610-v2-qrd-skuac.dts |   26 ++++++++++++++++++++++++++
+ arch/arm/boot/dts/msm8610-v2.dtsi          |    4 ----
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+ create mode 100644 arch/arm/boot/dts/msm8610-v2-qrd-skuac.dts
+
+diff --git a/arch/arm/boot/dts/msm8610-v2-qrd-skuac.dts b/arch/arm/boot/dts/msm8610-v2-qrd-skuac.dts
+new file mode 100644
+index 0000000..d087272
+--- /dev/null
++++ b/arch/arm/boot/dts/msm8610-v2-qrd-skuac.dts
+@@ -0,0 +1,26 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++/dts-v1/;
++
++/include/ "msm8610-v2.dtsi"
++/include/ "msm8610-qrd.dtsi"
++/include/ "msm8610-qrd-camera-sensor.dtsi"
++
++/ {
++	model = "Qualcomm MSM 8610v2 QRD";
++	compatible = "qcom,msm8610-qrd", "qcom,msm8610", "qcom,qrd";
++	qcom,board-id = <11 4>;
++	qcom,msm-id = <147 0x10001>, <165 0x10001>, <161 0x10001>, <162 0x10001>,
++				  <163 0x10001>, <164 0x10001>, <166 0x10001>;
++};
++
+diff --git a/arch/arm/boot/dts/msm8610-v2.dtsi b/arch/arm/boot/dts/msm8610-v2.dtsi
+index a1f466a..e88b527 100644
+--- a/arch/arm/boot/dts/msm8610-v2.dtsi
++++ b/arch/arm/boot/dts/msm8610-v2.dtsi
+@@ -19,7 +19,3 @@
+ /include/ "msm8610.dtsi"
+ /include/ "msm8610-v2-pm.dtsi"
+ 
+-/ {
+-	qcom,msm-id = <147 0x10001>, <165 0x10001>, <161 0x10001>, <162 0x10001>,
+-				  <163 0x10001>, <164 0x10001>, <166 0x10001>;
+-};
+-- 
+1.7.8.3
+
