@@ -1,7 +1,7 @@
 From f54587ca9737ef0327f9b0582f28870dfb195025 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 11 Oct 2013 16:25:08 +0800
-Subject: [PATCH 7/8] FC1: add effect support for mt9v113
+Subject: [PATCH 7/9] FC1: add effect support for mt9v113
 
 Change-Id: I5e14805772f24b7a9d4aff82678e735c75abfeeb
 

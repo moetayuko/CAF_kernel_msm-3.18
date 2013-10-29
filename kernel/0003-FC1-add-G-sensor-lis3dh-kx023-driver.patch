@@ -1,7 +1,7 @@
 From 58bb99627ae3c5c554b8b9aa1b93e8ea39dbd0b8 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 8 Oct 2013 15:40:43 +0800
-Subject: [PATCH 3/8] FC1: add G-sensor lis3dh & kx023 driver
+Subject: [PATCH 3/9] FC1: add G-sensor lis3dh & kx023 driver
 
 Change-Id: I14edb90058e0050f08ec283e80bd13f1b7c3c733
 

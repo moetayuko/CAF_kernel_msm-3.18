@@ -1,7 +1,7 @@
 From bd14687b334391e47a98c57a8fedd760735213e7 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 10 Oct 2013 15:59:17 +0800
-Subject: [PATCH 5/8] FC1: add camera imx134_sunny_p8n09c/mt9v113_sunny_p0m01k
+Subject: [PATCH 5/9] FC1: add camera imx134_sunny_p8n09c/mt9v113_sunny_p0m01k
  /
  ov5648_foxconn_sc0602/ov5648_sunny_p5v18/ov8850_foxconn_dc0901b
  / s5k4els5k4e1_liteon_13p1ba535d/s5k4e1_sunny_p5s07a /

@@ -1,7 +1,7 @@
 From 357e1fce8ee703a00bc8f1ae75b1f284bef6b4d1 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 14 Oct 2013 10:09:33 +0800
-Subject: [PATCH 2/8] FC1: support G730C&G620 lcd and ctp
+Subject: [PATCH 2/9] FC1: support G730C&G620 lcd and ctp
 
 Change-Id: I4642fa50921af9a223ea3c64aabf245cf347ca59
 

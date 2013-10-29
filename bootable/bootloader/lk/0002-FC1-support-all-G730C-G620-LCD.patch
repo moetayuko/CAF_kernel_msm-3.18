@@ -1,4 +1,4 @@
-From 01694b12b7b679f815e2ea8adbbbac84a16b4329 Mon Sep 17 00:00:00 2001
+From 0b331d0e65a6e9a57faa752d4c903f52ef0e64b1 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 14 Oct 2013 09:59:00 +0800
 Subject: [PATCH 2/2] FC1: support all G730C/G620 LCD

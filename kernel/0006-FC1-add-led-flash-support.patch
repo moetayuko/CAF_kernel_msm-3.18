@@ -1,7 +1,7 @@
 From 8166b4632d5ce65ee11e498b1a81acace71375ec Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 10 Oct 2013 16:19:16 +0800
-Subject: [PATCH 6/8] FC1: add led flash support
+Subject: [PATCH 6/9] FC1: add led flash support
 
 Change-Id: I862fa7f8eef32ef68945feecd5edf4a44df45973
 
