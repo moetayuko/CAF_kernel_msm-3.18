@@ -1,9 +1,9 @@
-From 0b331d0e65a6e9a57faa752d4c903f52ef0e64b1 Mon Sep 17 00:00:00 2001
+From 76382564f6062ff8aefca8ce670829b5badaf532 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Mon, 14 Oct 2013 09:59:00 +0800
-Subject: [PATCH 2/2] FC1: support all G730C/G620 LCD
+Date: Mon, 4 Nov 2013 14:25:24 +0800
+Subject: [PATCH 2/2] pre-cs: support all G730C/G620 LCD
 
-Change-Id: I2c467dc9024f8ccb4e1301eebfac634259571b85
+Change-Id: I6bf7e645ec9517ed6c67c8b62f2eeadbc8a6fd0c
 ---
  .../include/panel_auo_nt35517_5p5_qhd_video.h      |  529 +++++++++++++
  .../include/panel_auo_otm9605a_5p5_qhd_video.h     |  755 ++++++++++++++++++
@@ -15,9 +15,9 @@ Change-Id: I2c467dc9024f8ccb4e1301eebfac634259571b85
  .../include/panel_tianma_otm9605a_5_qhd_video.h    |  802 ++++++++++++++++++++
  include/hw_lcd_panel.h                             |   44 ++
  target/msm8610/hw_lcd_panel.c                      |  132 ++++
- target/msm8610/oem_panel.c                         |  235 ++++++
- target/msm8610/rules.mk                            |    4 +-
- 12 files changed, 4633 insertions(+), 1 deletions(-)
+ target/msm8610/oem_panel.c                         |  238 ++++++
+ target/msm8610/rules.mk                            |    3 +-
+ 12 files changed, 4635 insertions(+), 1 deletions(-)
  create mode 100644 dev/gcdb/display/include/panel_auo_nt35517_5p5_qhd_video.h
  create mode 100644 dev/gcdb/display/include/panel_auo_otm9605a_5p5_qhd_video.h
  create mode 100644 dev/gcdb/display/include/panel_boe_nt35517_5_qhd_video.h
@@ -4485,7 +4485,7 @@ index 0000000..4323818
 +}
 +/* DTS2013062001710 zhaoyuxia 20130620 end > */
 diff --git a/target/msm8610/oem_panel.c b/target/msm8610/oem_panel.c
-index e532b56..2052007 100755
+index 8ea0a5e..d8475dd 100644
 --- a/target/msm8610/oem_panel.c
 +++ b/target/msm8610/oem_panel.c
 @@ -37,6 +37,10 @@
@@ -4499,10 +4499,10 @@ index e532b56..2052007 100755
  /*---------------------------------------------------------------------------*/
  /* GCDB Panel Database                                                       */
  /*---------------------------------------------------------------------------*/
-@@ -45,6 +49,19 @@
- #include "include/panel_hx8379a_wvga_video.h"
+@@ -47,6 +51,20 @@
  #include "include/panel_otm8018b_fwvga_video.h"
  #include "include/panel_nt35590_720p_video.h"
+ 
 +/*G730C LCD*/
 +#include "include/panel_tianma_hx8389b_5p5_qhd_video.h"
 +#include "include/panel_byd_nt35517_5p5_qhd_video.h"
@@ -4516,13 +4516,14 @@ index e532b56..2052007 100755
 +#include "include/panel_boe_nt35517_5_qhd_video.h"
 +/*END G620 LCD*/
 +#include "include/panel_emulator_qhd_video.h"
- 
++
  /*---------------------------------------------------------------------------*/
  /* static panel selection variable                                           */
-@@ -55,6 +72,14 @@ TRULY_WVGA_VIDEO_PANEL,
- HX8379A_WVGA_VIDEO_PANEL,
+ /*---------------------------------------------------------------------------*/
+@@ -57,12 +75,21 @@ HX8379A_WVGA_VIDEO_PANEL,
  OTM8018B_FWVGA_VIDEO_PANEL,
  NT35590_720P_VIDEO_PANEL,
+ HX8389B_QHD_VIDEO_PANEL,
 +TIANMA_OTM9605A_5_QHD_VIDEO_PANEL,
 +BOE_NT35517_5_QHD_VIDEO_PANEL,
 +TIANMA_HX8389B_5P5_QHD_VIDEO_PANEL,
@@ -4533,250 +4534,257 @@ index e532b56..2052007 100755
 +EMULATOR_QHD_VIDEO_PANEL,
  };
  
+ enum {
+ QRD_DEF,
+ QRD_SKUAA,
+ QRD_SKUAB = 3,
++QRD_SKUAC,
+ };
+ 
  static uint32_t panel_id;
-@@ -186,6 +211,166 @@ static bool init_panel_data(struct panel_struct *panelstruct,
+@@ -214,6 +241,167 @@ static bool init_panel_data(struct panel_struct *panelstruct,
  		memcpy(phy_db->timing,
- 				nt35590_720p_video_timings, TIMING_SIZE);
+ 				hx8389b_qhd_video_timings, TIMING_SIZE);
  		break;
 +	case TIANMA_HX8389B_5P5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &tianma_hx8389b_5p5_qhd_video_panel_data;
-+		panelstruct->panelres     = &tianma_hx8389b_5p5_qhd_video_panel_res;
-+		panelstruct->color        = &tianma_hx8389b_5p5_qhd_video_color;
-+		panelstruct->videopanel   = &tianma_hx8389b_5p5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &tianma_hx8389b_5p5_qhd_video_command_panel;
-+		panelstruct->state        = &tianma_hx8389b_5p5_qhd_video_state;
-+		panelstruct->laneconfig   = &tianma_hx8389b_5p5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &tianma_hx8389b_5p5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &tianma_hx8389b_5p5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &tianma_hx8389b_5p5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= tianma_hx8389b_5p5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= TIANMA_HX8389B_5P5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				tianma_hx8389b_5p5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &tianma_hx8389b_5p5_qhd_video_panel_data;
++               panelstruct->panelres     = &tianma_hx8389b_5p5_qhd_video_panel_res;
++               panelstruct->color        = &tianma_hx8389b_5p5_qhd_video_color;
++               panelstruct->videopanel   = &tianma_hx8389b_5p5_qhd_video_video_panel;
++               panelstruct->commandpanel = &tianma_hx8389b_5p5_qhd_video_command_panel;
++               panelstruct->state        = &tianma_hx8389b_5p5_qhd_video_state;
++               panelstruct->laneconfig   = &tianma_hx8389b_5p5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &tianma_hx8389b_5p5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &tianma_hx8389b_5p5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &tianma_hx8389b_5p5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = tianma_hx8389b_5p5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = TIANMA_HX8389B_5P5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               tianma_hx8389b_5p5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case TIANMA_OTM9605A_5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &otm9605a_5_qhd_video_panel_data;
-+		panelstruct->panelres     = &otm9605a_5_qhd_video_panel_res;
-+		panelstruct->color        = &otm9605a_5_qhd_video_color;
-+		panelstruct->videopanel   = &otm9605a_5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &otm9605a_5_qhd_video_command_panel;
-+		panelstruct->state        = &otm9605a_5_qhd_video_state;
-+		panelstruct->laneconfig   = &otm9605a_5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &otm9605a_5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &otm9605a_5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &otm9605a_5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= otm9605a_5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= OTM9605A_5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				otm9605a_5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &otm9605a_5_qhd_video_panel_data;
++               panelstruct->panelres     = &otm9605a_5_qhd_video_panel_res;
++               panelstruct->color        = &otm9605a_5_qhd_video_color;
++               panelstruct->videopanel   = &otm9605a_5_qhd_video_video_panel;
++               panelstruct->commandpanel = &otm9605a_5_qhd_video_command_panel;
++               panelstruct->state        = &otm9605a_5_qhd_video_state;
++               panelstruct->laneconfig   = &otm9605a_5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &otm9605a_5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &otm9605a_5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &otm9605a_5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = otm9605a_5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = OTM9605A_5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               otm9605a_5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case BOE_NT35517_5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &boe_nt35517_5_qhd_video_panel_data;
-+		panelstruct->panelres     = &boe_nt35517_5_qhd_video_panel_res;
-+		panelstruct->color        = &boe_nt35517_5_qhd_video_color;
-+		panelstruct->videopanel   = &boe_nt35517_5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &boe_nt35517_5_qhd_video_command_panel;
-+		panelstruct->state        = &boe_nt35517_5_qhd_video_state;
-+		panelstruct->laneconfig   = &boe_nt35517_5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &boe_nt35517_5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &boe_nt35517_5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &boe_nt35517_5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= boe_nt35517_5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= BOE_NT35517_5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				boe_nt35517_5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &boe_nt35517_5_qhd_video_panel_data;
++               panelstruct->panelres     = &boe_nt35517_5_qhd_video_panel_res;
++               panelstruct->color        = &boe_nt35517_5_qhd_video_color;
++               panelstruct->videopanel   = &boe_nt35517_5_qhd_video_video_panel;
++               panelstruct->commandpanel = &boe_nt35517_5_qhd_video_command_panel;
++               panelstruct->state        = &boe_nt35517_5_qhd_video_state;
++               panelstruct->laneconfig   = &boe_nt35517_5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &boe_nt35517_5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &boe_nt35517_5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &boe_nt35517_5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = boe_nt35517_5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = BOE_NT35517_5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               boe_nt35517_5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case BYD_NT35517_5P5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &byd_nt35517_5p5_qhd_video_panel_data;
-+		panelstruct->panelres     = &byd_nt35517_5p5_qhd_video_panel_res;
-+		panelstruct->color        = &byd_nt35517_5p5_qhd_video_color;
-+		panelstruct->videopanel   = &byd_nt35517_5p5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &byd_nt35517_5p5_qhd_video_command_panel;
-+		panelstruct->state        = &byd_nt35517_5p5_qhd_video_state;
-+		panelstruct->laneconfig   = &byd_nt35517_5p5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &byd_nt35517_5p5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &byd_nt35517_5p5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &byd_nt35517_5p5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= byd_nt35517_5p5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= BYD_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				byd_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &byd_nt35517_5p5_qhd_video_panel_data;
++               panelstruct->panelres     = &byd_nt35517_5p5_qhd_video_panel_res;
++               panelstruct->color        = &byd_nt35517_5p5_qhd_video_color;
++               panelstruct->videopanel   = &byd_nt35517_5p5_qhd_video_video_panel;
++               panelstruct->commandpanel = &byd_nt35517_5p5_qhd_video_command_panel;
++               panelstruct->state        = &byd_nt35517_5p5_qhd_video_state;
++               panelstruct->laneconfig   = &byd_nt35517_5p5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &byd_nt35517_5p5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &byd_nt35517_5p5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &byd_nt35517_5p5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = byd_nt35517_5p5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = BYD_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               byd_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case BOE_NT35517_5P5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &boe_nt35517_5p5_qhd_video_panel_data;
-+		panelstruct->panelres     = &boe_nt35517_5p5_qhd_video_panel_res;
-+		panelstruct->color        = &boe_nt35517_5p5_qhd_video_color;
-+		panelstruct->videopanel   = &boe_nt35517_5p5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &boe_nt35517_5p5_qhd_video_command_panel;
-+		panelstruct->state        = &boe_nt35517_5p5_qhd_video_state;
-+		panelstruct->laneconfig   = &boe_nt35517_5p5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &boe_nt35517_5p5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &boe_nt35517_5p5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &boe_nt35517_5p5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= boe_nt35517_5p5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= BOE_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				boe_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &boe_nt35517_5p5_qhd_video_panel_data;
++               panelstruct->panelres     = &boe_nt35517_5p5_qhd_video_panel_res;
++               panelstruct->color        = &boe_nt35517_5p5_qhd_video_color;
++               panelstruct->videopanel   = &boe_nt35517_5p5_qhd_video_video_panel;
++               panelstruct->commandpanel = &boe_nt35517_5p5_qhd_video_command_panel;
++               panelstruct->state        = &boe_nt35517_5p5_qhd_video_state;
++               panelstruct->laneconfig   = &boe_nt35517_5p5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &boe_nt35517_5p5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &boe_nt35517_5p5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &boe_nt35517_5p5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = boe_nt35517_5p5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = BOE_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               boe_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case AUO_NT35517_5P5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &auo_nt35517_5p5_qhd_video_panel_data;
-+		panelstruct->panelres     = &auo_nt35517_5p5_qhd_video_panel_res;
-+		panelstruct->color        = &auo_nt35517_5p5_qhd_video_color;
-+		panelstruct->videopanel   = &auo_nt35517_5p5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &auo_nt35517_5p5_qhd_video_command_panel;
-+		panelstruct->state        = &auo_nt35517_5p5_qhd_video_state;
-+		panelstruct->laneconfig   = &auo_nt35517_5p5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &auo_nt35517_5p5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &auo_nt35517_5p5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &auo_nt35517_5p5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= auo_nt35517_5p5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= AUO_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				auo_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &auo_nt35517_5p5_qhd_video_panel_data;
++               panelstruct->panelres     = &auo_nt35517_5p5_qhd_video_panel_res;
++               panelstruct->color        = &auo_nt35517_5p5_qhd_video_color;
++               panelstruct->videopanel   = &auo_nt35517_5p5_qhd_video_video_panel;
++               panelstruct->commandpanel = &auo_nt35517_5p5_qhd_video_command_panel;
++               panelstruct->state        = &auo_nt35517_5p5_qhd_video_state;
++               panelstruct->laneconfig   = &auo_nt35517_5p5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &auo_nt35517_5p5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &auo_nt35517_5p5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &auo_nt35517_5p5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = auo_nt35517_5p5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = AUO_NT35517_5P5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               auo_nt35517_5p5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case AUO_OTM9605A_5P5_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &auo_otm9605a_5p5_qhd_video_panel_data;
-+		panelstruct->panelres     = &auo_otm9605a_5p5_qhd_video_panel_res;
-+		panelstruct->color        = &auo_otm9605a_5p5_qhd_video_color;
-+		panelstruct->videopanel   = &auo_otm9605a_5p5_qhd_video_video_panel;
-+		panelstruct->commandpanel = &auo_otm9605a_5p5_qhd_video_command_panel;
-+		panelstruct->state        = &auo_otm9605a_5p5_qhd_video_state;
-+		panelstruct->laneconfig   = &auo_otm9605a_5p5_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &auo_otm9605a_5p5_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &auo_otm9605a_5p5_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &auo_otm9605a_5p5_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= auo_otm9605a_5p5_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= AUO_OTM9605A_5P5_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				auo_otm9605a_5p5_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &auo_otm9605a_5p5_qhd_video_panel_data;
++               panelstruct->panelres     = &auo_otm9605a_5p5_qhd_video_panel_res;
++               panelstruct->color        = &auo_otm9605a_5p5_qhd_video_color;
++               panelstruct->videopanel   = &auo_otm9605a_5p5_qhd_video_video_panel;
++               panelstruct->commandpanel = &auo_otm9605a_5p5_qhd_video_command_panel;
++               panelstruct->state        = &auo_otm9605a_5p5_qhd_video_state;
++               panelstruct->laneconfig   = &auo_otm9605a_5p5_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &auo_otm9605a_5p5_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &auo_otm9605a_5p5_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &auo_otm9605a_5p5_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = auo_otm9605a_5p5_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = AUO_OTM9605A_5P5_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               auo_otm9605a_5p5_qhd_video_timings, TIMING_SIZE);
++               break;
 +	case EMULATOR_QHD_VIDEO_PANEL:
-+		panelstruct->paneldata    = &emulator_qhd_video_panel_data;
-+		panelstruct->panelres     = &emulator_qhd_video_panel_res;
-+		panelstruct->color        = &emulator_qhd_video_color;
-+		panelstruct->videopanel   = &emulator_qhd_video_video_panel;
-+		panelstruct->commandpanel = &emulator_qhd_video_command_panel;
-+		panelstruct->state        = &emulator_qhd_video_state;
-+		panelstruct->laneconfig   = &emulator_qhd_video_lane_config;
-+		panelstruct->paneltiminginfo
-+					 = &emulator_qhd_video_timing_info;
-+		panelstruct->panelresetseq
-+					 = &emulator_qhd_video_reset_seq;
-+		panelstruct->backlightinfo = &emulator_qhd_video_backlight;
-+		pinfo->mipi.panel_cmds
-+					= emulator_qhd_video_on_command;
-+		pinfo->mipi.num_of_panel_cmds
-+					= EMULATOR_QHD_VIDEO_ON_COMMAND;
-+		memcpy(phy_db->timing,
-+				emulator_qhd_video_timings, TIMING_SIZE);
-+		break;
++               panelstruct->paneldata    = &emulator_qhd_video_panel_data;
++               panelstruct->panelres     = &emulator_qhd_video_panel_res;
++               panelstruct->color        = &emulator_qhd_video_color;
++               panelstruct->videopanel   = &emulator_qhd_video_video_panel;
++               panelstruct->commandpanel = &emulator_qhd_video_command_panel;
++               panelstruct->state        = &emulator_qhd_video_state;
++               panelstruct->laneconfig   = &emulator_qhd_video_lane_config;
++               panelstruct->paneltiminginfo
++                                        = &emulator_qhd_video_timing_info;
++               panelstruct->panelresetseq
++                                        = &emulator_qhd_video_reset_seq;
++               panelstruct->backlightinfo = &emulator_qhd_video_backlight;
++               pinfo->mipi.panel_cmds
++                                       = emulator_qhd_video_on_command;
++               pinfo->mipi.num_of_panel_cmds
++                                       = EMULATOR_QHD_VIDEO_ON_COMMAND;
++               memcpy(phy_db->timing,
++                               emulator_qhd_video_timings, TIMING_SIZE);
++               break;
++
  	default:
  		dprintf(CRITICAL, "Panel ID not detected %d\n", panel_id);
  		return false;
-@@ -193,6 +378,52 @@ static bool init_panel_data(struct panel_struct *panelstruct,
+@@ -221,6 +409,51 @@ static bool init_panel_data(struct panel_struct *panelstruct,
  	return true;
  }
  
 +static uint32_t lcd_panel_init(uint32_t hw_id)
 +{
-+	uint32_t lcd_panel_id;
++       uint32_t lcd_panel_id;
 +
-+	hw_lcd_id_index lcd_hw_id = LCD_HW_ID_MAX;
-+	lcd_hw_id = (hw_lcd_id_index)hw_get_lcd_id(hw_id);
-+	dprintf(INFO,"lcd_panel_init lcd id = %d\n", lcd_hw_id);
++       hw_lcd_id_index lcd_hw_id = LCD_HW_ID_MAX;
++       lcd_hw_id = (hw_lcd_id_index)hw_get_lcd_id(hw_id);
++       dprintf(INFO,"lcd_panel_init lcd id = %d\n", lcd_hw_id);
 +
-+	switch(hw_id)
-+	{
-+		case 11:
-+			switch (lcd_hw_id)
-+			{
-+				case LCD_HW_ID4:
-+					lcd_panel_id = AUO_NT35517_5P5_QHD_VIDEO_PANEL;
-+					break;
-+				case LCD_HW_ID1:
-+					lcd_panel_id = BYD_NT35517_5P5_QHD_VIDEO_PANEL;
-+					break;
-+				case LCD_HW_ID5:
-+					lcd_panel_id = BOE_NT35517_5P5_QHD_VIDEO_PANEL;
-+					break;
-+				case LCD_HW_ID0:
-+					lcd_panel_id = TIANMA_HX8389B_5P5_QHD_VIDEO_PANEL;
-+					break;
-+				case LCD_HW_ID2:
-+					lcd_panel_id = AUO_OTM9605A_5P5_QHD_VIDEO_PANEL; //G730C
-+					//lcd_panel_id = BOE_NT35517_5_QHD_VIDEO_PANEL; //G620
-+					break;
-+				case LCD_HW_ID9:
-+					lcd_panel_id = TIANMA_OTM9605A_5_QHD_VIDEO_PANEL;
-+					break;
++       switch(hw_id)
++       {
++               case 11:
++                       switch (lcd_hw_id)
++                       {
++                               case LCD_HW_ID4:
++                                       lcd_panel_id = AUO_NT35517_5P5_QHD_VIDEO_PANEL;
++                                       break;
++                               case LCD_HW_ID1:
++                                       lcd_panel_id = BYD_NT35517_5P5_QHD_VIDEO_PANEL;
++                                       break;
++                               case LCD_HW_ID5:
++                                       lcd_panel_id = BOE_NT35517_5P5_QHD_VIDEO_PANEL;
++                                       break;
++                               case LCD_HW_ID0:
++                                       lcd_panel_id = TIANMA_HX8389B_5P5_QHD_VIDEO_PANEL;
++                                       break;
++                               case LCD_HW_ID2:
++                                       lcd_panel_id = AUO_OTM9605A_5P5_QHD_VIDEO_PANEL; //G730C
++                                       //lcd_panel_id = BOE_NT35517_5_QHD_VIDEO_PANEL; //G620
++                                       break;
++                               case LCD_HW_ID9:
++                                       lcd_panel_id = TIANMA_OTM9605A_5_QHD_VIDEO_PANEL;
++                                       break;
 +				default:
-+					lcd_panel_id = EMULATOR_QHD_VIDEO_PANEL;
-+					break;
-+			}
-+			break;
-+		default:
-+			lcd_panel_id = EMULATOR_QHD_VIDEO_PANEL;
-+		break;
-+	}
++                                       lcd_panel_id = EMULATOR_QHD_VIDEO_PANEL;
++                                       break;
++                       }
++                       break;
++               default:
++                       lcd_panel_id = EMULATOR_QHD_VIDEO_PANEL;
++               break;
++       }
 +
-+	return lcd_panel_id;
++       return lcd_panel_id;
 +};
-+
 +
  bool oem_panel_select(struct panel_struct *panelstruct,
  			struct msm_panel_info *pinfo,
  			struct mdss_dsi_phy_ctrl *phy_db)
-@@ -206,6 +437,10 @@ bool oem_panel_select(struct panel_struct *panelstruct,
- 			panel_id = HX8379A_WVGA_VIDEO_PANEL;
- 		else if (3 == platform_subtype)
- 			panel_id = OTM8018B_FWVGA_VIDEO_PANEL;
-+		else
-+//add huawei lcd auto detect
-+			panel_id = lcd_panel_init(hw_id);
-+//end huawei lcd auto detect
- 		break;
- 	case HW_PLATFORM_MTP:
- 		if (0 == platform_subtype)
+@@ -247,6 +480,11 @@ bool oem_panel_select(struct panel_struct *panelstruct,
+ 					dprintf(CRITICAL, "SKUAB Display not enabled for %d type\n",
+ 							target_id);
+ 				break;
++			case QRD_SKUAC:
++				//add huawei lcd auto detect
++				panel_id = lcd_panel_init(hw_id);
++				//end huawei lcd auto detect
++				break;
+ 			default:
+ 				dprintf(CRITICAL, "QRD Display not enabled for %d type\n",
+ 							platform_subtype);
 diff --git a/target/msm8610/rules.mk b/target/msm8610/rules.mk
-index 909e673..43e5a22 100644
+index 909e673..e46f376 100644
 --- a/target/msm8610/rules.mk
 +++ b/target/msm8610/rules.mk
-@@ -41,4 +41,6 @@ OBJS += \
+@@ -41,4 +41,5 @@ OBJS += \
      $(LOCAL_DIR)/init.o \
      $(LOCAL_DIR)/meminfo.o \
      $(LOCAL_DIR)/target_display.o \
 -    $(LOCAL_DIR)/oem_panel.o
 +    $(LOCAL_DIR)/oem_panel.o \
 +    $(LOCAL_DIR)/hw_lcd_panel.o
-+
 -- 
 1.7.8.3
 

@@ -1,9 +1,9 @@
-From 357e1fce8ee703a00bc8f1ae75b1f284bef6b4d1 Mon Sep 17 00:00:00 2001
+From e8ef774a0e664cbb0748c774271362de049a6612 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Mon, 14 Oct 2013 10:09:33 +0800
-Subject: [PATCH 2/9] FC1: support G730C&G620 lcd and ctp
+Date: Mon, 4 Nov 2013 14:39:57 +0800
+Subject: [PATCH 2/5] pre-cs: support G730C&G620 lcd and ctp
 
-Change-Id: I4642fa50921af9a223ea3c64aabf245cf347ca59
+Change-Id: Ib2ca83b2e13825f71bbc64a1055eb00fab9a6bc4
 
 Signed-off-by: fsheng <fsheng@codeaurora.org>
 ---
@@ -17,7 +17,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  .../dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi |  164 +
  arch/arm/boot/dts/msm8610-mdss-panels.dtsi         |   14 +
  arch/arm/boot/dts/msm8610-qrd.dtsi                 |   80 +-
- arch/arm/configs/msm8610_defconfig                 |   37 +-
+ arch/arm/configs/msm8610_defconfig                 |   40 +-
  drivers/input/touchscreen/Kconfig                  |    1 +
  drivers/input/touchscreen/Makefile                 |    1 +
  drivers/input/touchscreen/cypress/Kconfig          |  206 +
@@ -51,7 +51,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  include/linux/cyttsp4_mt.h                         |   84 +
  include/linux/cyttsp4_platform.h                   |   61 +
  include/linux/cyttsp4_proximity.h                  |   42 +
- 44 files changed, 21152 insertions(+), 6 deletions(-)
+ 44 files changed, 21153 insertions(+), 8 deletions(-)
  create mode 100644 arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
  create mode 100644 arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
  create mode 100644 arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
@@ -1262,16 +1262,15 @@ index 0000000..819a597
 +	};
 +};
 diff --git a/arch/arm/boot/dts/msm8610-mdss-panels.dtsi b/arch/arm/boot/dts/msm8610-mdss-panels.dtsi
-index 243d7e8..7c369f69 100644
+index afc5459..61cfac4 100644
 --- a/arch/arm/boot/dts/msm8610-mdss-panels.dtsi
 +++ b/arch/arm/boot/dts/msm8610-mdss-panels.dtsi
-@@ -14,4 +14,18 @@
- /include/ "dsi-panel-truly-wvga-cmd.dtsi"
- /include/ "dsi-panel-nt35590-720p-video.dtsi"
+@@ -16,3 +16,17 @@
  /include/ "dsi-panel-otm8018b-fwvga-video.dtsi"
+ /include/ "dsi-panel-hx8379a-wvga-video.dtsi"
+ /include/ "dsi-panel-hx8389b-qhd-video.dtsi"
 +
 +/*G620 LCD*/
- /include/ "dsi-panel-hx8379a-wvga-video.dtsi"
 +/include/ "dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi"
 +/*END G620 LCD*/
 +
@@ -1285,7 +1284,7 @@ index 243d7e8..7c369f69 100644
 +/*END G730C LCD*/
 +/include/ "dsi-panel-emulator-qhd-video.dtsi"
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index bdc8902..5565993 100644
+index 9052e3d..e9245f8 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -28,7 +28,7 @@
@@ -1384,10 +1383,10 @@ index bdc8902..5565993 100644
  
  	gen-vkeys {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 8238414..3416a24 100644
+index 1655fe6..20a9e37 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -231,11 +231,38 @@ CONFIG_INPUT_EVBUG=m
+@@ -231,13 +231,39 @@ CONFIG_INPUT_EVBUG=m
  CONFIG_KEYBOARD_GPIO=y
  CONFIG_INPUT_TOUCHSCREEN=y
  CONFIG_TOUCHSCREEN_ATMEL_MXT=y
@@ -1396,12 +1395,15 @@ index 8238414..3416a24 100644
 -CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4=y
 -CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_DEV=y
 -CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE=y
-+
+-CONFIG_TOUCHSCREEN_GT9XX=y
+-CONFIG_GT9XX_TOUCHPANEL_DRIVER=y
 +#CONFIG_TOUCHSCREEN_FT5X06=y
 +#CONFIG_TOUCHSCREEN_GEN_VKEYS=y
 +#CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4=y
 +#CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_DEV=y
 +#CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE=y
++#CONFIG_TOUCHSCREEN_GT9XX=y
++#CONFIG_GT9XX_TOUCHPANEL_DRIVER=y
 +#===========touch===============
 +CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4=y
 +CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_DEVICETREE_SUPPORT=y
@@ -1425,7 +1427,7 @@ index 8238414..3416a24 100644
 +# CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_PROXIMITY is not set
 +# CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_DEVICE_ACCESS_API is not set
 +# CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP4_TEST_DEVICE_ACCESS_API is not set
-+# CONFIG_EXTRA_FIRMWARE="cyttsp4_fw.bin" 
++# CONFIG_EXTRA_FIRMWARE="cyttsp4_fw.bin"
 +# CONFIG_EXTRA_FIRMWARE_DIR="firmware"
 +#==========end touch====================
  CONFIG_INPUT_MISC=y

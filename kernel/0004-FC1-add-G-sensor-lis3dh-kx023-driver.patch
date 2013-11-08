@@ -1,9 +1,9 @@
-From 58bb99627ae3c5c554b8b9aa1b93e8ea39dbd0b8 Mon Sep 17 00:00:00 2001
+From 2afd95299d49026c8ad2f8d0419595a3afc526da Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Tue, 8 Oct 2013 15:40:43 +0800
-Subject: [PATCH 3/9] FC1: add G-sensor lis3dh & kx023 driver
+Date: Mon, 4 Nov 2013 16:37:32 +0800
+Subject: [PATCH 4/5] FC1: add G-sensor lis3dh & kx023 driver
 
-Change-Id: I14edb90058e0050f08ec283e80bd13f1b7c3c733
+Change-Id: I004864f70444248e90bd75ebd7f62e1c77231695
 
 Signed-off-by: fsheng <fsheng@codeaurora.org>
 ---
@@ -19,7 +19,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  create mode 100644 include/linux/input/kionix_accel.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 5565993..65d76e2 100644
+index e9245f8..a54ae75 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -169,6 +169,33 @@
@@ -57,10 +57,10 @@ index 5565993..65d76e2 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 3416a24..e75ee4b 100644
+index 20a9e37..f00d601 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -278,6 +278,7 @@ CONFIG_I2C_QUP=y
+@@ -279,6 +279,7 @@ CONFIG_I2C_QUP=y
  CONFIG_INPUT_MPU3050=y
  CONFIG_BMP18X=y
  CONFIG_BMP18X_I2C=y
@@ -68,7 +68,7 @@ index 3416a24..e75ee4b 100644
  CONFIG_MSM_BUSPM_DEV=m
  CONFIG_SPI=y
  CONFIG_SPI_QUP=y
-@@ -481,7 +482,8 @@ CONFIG_PPP_BSDCOMP=y
+@@ -485,7 +486,8 @@ CONFIG_PPP_BSDCOMP=y
  CONFIG_PPPOE=y
  CONFIG_N_HDLC=y
  CONFIG_UNIX98_PTYS=y

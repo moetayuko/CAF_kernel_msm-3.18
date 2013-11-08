@@ -1,11 +1,11 @@
-From f5cbe19092b71b3342222802a4682b016c8de8f4 Mon Sep 17 00:00:00 2001
+From 242b2b9df0c44e06a7dbcee807fdb34473cbee18 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Tue, 8 Oct 2013 16:08:08 +0800
-Subject: [PATCH 4/9] FC1: Add LP-sensor intersil isl29044 driver support Add
+Date: Mon, 4 Nov 2013 16:38:53 +0800
+Subject: [PATCH 5/5] FC1: Add LP-sensor intersil isl29044 driver support Add
  als+ps sensor tmd27713&apds9900 driver support Support
  LP-sensor tmd27723 and tmd27713 coexist
 
-Change-Id: I776862062f0ddc3256f3e0e57cabb751f8fe3d76
+Change-Id: I208c9f026427a77bb2e7611d142029ab3a08df6c
 
 Signed-off-by: fsheng <fsheng@codeaurora.org>
 ---
@@ -26,7 +26,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  create mode 100644 include/linux/taos_common.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 65d76e2..8a31774 100644
+index a54ae75..0f279d1 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -134,6 +134,7 @@
@@ -79,10 +79,10 @@ index 65d76e2..8a31774 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index e75ee4b..07ac258 100644
+index f00d601..17c6b34 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -275,6 +275,8 @@ CONFIG_HW_RANDOM_MSM=y
+@@ -276,6 +276,8 @@ CONFIG_HW_RANDOM_MSM=y
  CONFIG_I2C=y
  CONFIG_I2C_CHARDEV=y
  CONFIG_I2C_QUP=y
@@ -91,7 +91,7 @@ index e75ee4b..07ac258 100644
  CONFIG_INPUT_MPU3050=y
  CONFIG_BMP18X=y
  CONFIG_BMP18X_I2C=y
-@@ -483,6 +485,7 @@ CONFIG_PPPOE=y
+@@ -487,6 +489,7 @@ CONFIG_PPPOE=y
  CONFIG_N_HDLC=y
  CONFIG_UNIX98_PTYS=y
  # CONFIG_INPUT_KXTJ9 is not set

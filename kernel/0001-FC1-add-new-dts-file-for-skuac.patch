@@ -1,9 +1,9 @@
-From 77fbd958b5286ab77e3ebc463d332deab5c6a250 Mon Sep 17 00:00:00 2001
+From 06cf293a50947844ffbfe57eb52cdf97f98fdc89 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Fri, 28 Jun 2013 18:08:17 +0800
-Subject: [PATCH 1/9] FC1: add new dts file for skuac
+Date: Mon, 4 Nov 2013 14:27:24 +0800
+Subject: [PATCH 1/5] FC1: add new dts file for skuac
 
-Change-Id: Idea7ddc6b6ab67b6105258f5b87f1eac638bf357
+Change-Id: Ic55e17123c9444ce4256f6be9cf99e304501ec2e
 
 Signed-off-by: fsheng <fsheng@codeaurora.org>
 ---
@@ -16,10 +16,10 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  create mode 100644 arch/arm/boot/dts/msm8610-v1-qrd-skuac.dts
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 3fb33e9..bdc8902 100644
+index 3d91cf9..9052e3d 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
-@@ -366,3 +366,21 @@
+@@ -369,3 +369,21 @@
  	qcom,android-usb-cdrom;
  	qcom,android-usb-internal-ums;
  };
@@ -85,10 +85,10 @@ index 9d8c411..74ae6a2 100644
 -			<163 0>, <164 0>, <166 0>;
 -};
 diff --git a/arch/arm/mach-msm/Makefile.boot b/arch/arm/mach-msm/Makefile.boot
-index 910264e..646b1e0 100644
+index 552ed16..a99eae7 100644
 --- a/arch/arm/mach-msm/Makefile.boot
 +++ b/arch/arm/mach-msm/Makefile.boot
-@@ -144,6 +144,7 @@ initrd_phys-$(CONFIG_ARCH_FSM9XXX)	:= 0x12000000
+@@ -147,6 +147,7 @@ initrd_phys-$(CONFIG_ARCH_FSM9XXX)	:= 0x12000000
          dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v1-qrd-skuab.dtb
          dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v2-qrd-skuaa.dtb
          dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-v2-qrd-skuab.dtb
@@ -97,7 +97,7 @@ index 910264e..646b1e0 100644
  # MSMSAMARIUM
     zreladdr-$(CONFIG_ARCH_MSMSAMARIUM)	:= 0x00008000
 diff --git a/arch/arm/mach-msm/socinfo.c b/arch/arm/mach-msm/socinfo.c
-index 888cd5e..e07840b 100644
+index 53bbe20..0e2aa43 100644
 --- a/arch/arm/mach-msm/socinfo.c
 +++ b/arch/arm/mach-msm/socinfo.c
 @@ -75,6 +75,7 @@ enum {
