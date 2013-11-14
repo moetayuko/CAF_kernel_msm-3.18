@@ -1,9 +1,9 @@
 From 242b2b9df0c44e06a7dbcee807fdb34473cbee18 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 16:38:53 +0800
-Subject: [PATCH 5/5] FC1: Add LP-sensor intersil isl29044 driver support Add
- als+ps sensor tmd27713&apds9900 driver support Support
- LP-sensor tmd27723 and tmd27713 coexist
+Subject: [PATCH 05/14] FC1: Add LP-sensor intersil isl29044 driver support
+ Add als+ps sensor tmd27713&apds9900 driver support
+ Support LP-sensor tmd27723 and tmd27713 coexist
 
 Change-Id: I208c9f026427a77bb2e7611d142029ab3a08df6c
 

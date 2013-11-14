@@ -1,7 +1,7 @@
 From 06cf293a50947844ffbfe57eb52cdf97f98fdc89 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 14:27:24 +0800
-Subject: [PATCH 1/5] FC1: add new dts file for skuac
+Subject: [PATCH 01/14] FC1: add new dts file for skuac
 
 Change-Id: Ic55e17123c9444ce4256f6be9cf99e304501ec2e
 

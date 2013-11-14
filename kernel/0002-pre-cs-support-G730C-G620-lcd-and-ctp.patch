@@ -1,7 +1,7 @@
 From e8ef774a0e664cbb0748c774271362de049a6612 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 14:39:57 +0800
-Subject: [PATCH 2/5] pre-cs: support G730C&G620 lcd and ctp
+Subject: [PATCH 02/14] pre-cs: support G730C&G620 lcd and ctp
 
 Change-Id: Ib2ca83b2e13825f71bbc64a1055eb00fab9a6bc4
 
