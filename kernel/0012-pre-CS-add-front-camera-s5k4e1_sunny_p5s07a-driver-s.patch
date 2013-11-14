@@ -1,0 +1,427 @@
+From c758a6000d288699644544eca00b38d89e8bf323 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 12 Nov 2013 17:03:22 +0800
+Subject: [PATCH 12/14] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
+ support
+
+Change-Id: I6cdfe39c5c5fae81f1ce7ebacfe950fcfe188aa4
+---
+ .../boot/dts/msm861x-qrd-camera-sensor-skuac.dtsi  |  143 ++++++++++++++++-
+ arch/arm/configs/msm8610_defconfig                 |    1 +
+ arch/arm/mach-msm/clock-8610.c                     |    4 +
+ drivers/media/platform/msm/camera_v2/Kconfig       |    8 +
+ .../media/platform/msm/camera_v2/sensor/Makefile   |    1 +
+ .../msm/camera_v2/sensor/s5k4e1_sunny_p5s07a.c     |  169 ++++++++++++++++++++
+ 6 files changed, 324 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/media/platform/msm/camera_v2/sensor/s5k4e1_sunny_p5s07a.c
+
+diff --git a/arch/arm/boot/dts/msm861x-qrd-camera-sensor-skuac.dtsi b/arch/arm/boot/dts/msm861x-qrd-camera-sensor-skuac.dtsi
+index 5821940..e1c74b1 100644
+--- a/arch/arm/boot/dts/msm861x-qrd-camera-sensor-skuac.dtsi
++++ b/arch/arm/boot/dts/msm861x-qrd-camera-sensor-skuac.dtsi
+@@ -39,9 +39,9 @@
+ 			compatible = "qcom,actuator";
+ 			qcom,cci-master = <0>;
+ 	};
+-	actuator1: qcom,actuator@30 {
++	actuator1: qcom,actuator@38 {
+ 		cell-index = <4>;
+-		reg = <0x30>;
++		reg = <0x38>;
+ 		compatible = "qcom,actuator";
+ 		qcom,cci-master = <0>;
+ 	};
+@@ -646,6 +646,111 @@
+ 				qcom,cam-power-seq-cfg-val = <1 1 1 1 24000000>;
+ 				qcom,cam-power-seq-delay = <1 1 5 10 5>;
+ 	};
++	eeprom6: qcom,eeprom@32{
++		cell-index = <0>;
++		reg = <0x32 0x0>;
++		qcom,eeprom-name = "sunny_p5s07a";
++		compatible = "qcom,msm_eeprom";
++		qcom,slave-addr = <0x30>;
++		qcom,cci-master = <0>;
++		qcom,num-blocks = <22>;
++
++		qcom,page0 = <1 0x30f9 2 0x0e 1 1>;
++		qcom,poll0 = <0 0x0 2 0 1 1>;
++		qcom,mem0 = <0 0x0 2 0 1 0>;
++		qcom,page1 = <1 0x30fa 2 0x0a 1 1>;
++		qcom,poll1 = <0 0x0 2 0 1 1>;
++		qcom,mem1 = <0 0x0 2 0 1 0>;
++		qcom,page2 = <1 0x30fb 2 0x71 1 1>;
++		qcom,poll2 = <0 0x0 2 0 1 1>;
++		qcom,mem2 = <0 0x0 2 0 1 0>;
++		qcom,page3 = <1 0x30fb 2 0x70 1 5>;
++		qcom,poll3 = <0 0x0 2 0 1 1>;
++		qcom,mem3 = <0 0x0 2 0 1 0>;
++
++		qcom,page4 = <1 0x310c 2 0x12 1 1>;
++		qcom,poll4 = <0 0x0 2 0 1 1>;
++		qcom,mem4 = <3 0x310d 2 0 1 0>;
++		qcom,page5 = <1 0x310c 2 0x13 1 1>;
++		qcom,poll5 = <0 0x0 2 0 1 1>;
++		qcom,mem5 = <3 0x310d 2 0 1 0>;
++		qcom,page6 = <1 0x310c 2 0x14 1 1>;
++		qcom,poll6 = <0 0x0 2 0 1 1>;
++		qcom,mem6 = <3 0x310d 2 0 1 0>;
++		qcom,page7 = <1 0x310c 2 0x15 1 1>;
++		qcom,poll7 = <0 0x0 2 0 1 1>;
++		qcom,mem7 = <3 0x310d 2 0 1 0>;
++		qcom,page8 = <1 0x310c 2 0x16 1 1>;
++		qcom,poll8 = <0 0x0 2 0 1 1>;
++		qcom,mem8 = <3 0x310d 2 0 1 0>;
++		qcom,page9 = <1 0x310c 2 0x17 1 1>;
++		qcom,poll9 = <0 0x0 2 0 1 1>;
++		qcom,mem9 = <3 0x310d 2 0 1 0>;
++		qcom,page10 = <1 0x310c 2 0x18 1 1>;
++		qcom,poll10 = <0 0x0 2 0 1 1>;
++		qcom,mem10 = <3 0x310d 2 0 1 0>;
++		qcom,page11 = <1 0x310c 2 0x19 1 1>;
++		qcom,poll11 = <0 0x0 2 0 1 1>;
++		qcom,mem11 = <3 0x310d 2 0 1 0>;
++		qcom,page12 = <1 0x310c 2 0x1a 1 1>;
++		qcom,poll12 = <0 0x0 2 0 1 1>;
++		qcom,mem12 = <3 0x310d 2 0 1 0>;
++		qcom,page13 = <1 0x310c 2 0x1b 1 1>;
++		qcom,poll13 = <0 0x0 2 0 1 1>;
++		qcom,mem13 = <3 0x310d 2 0 1 0>;
++		qcom,page14 = <1 0x310c 2 0x1c 1 1>;
++		qcom,poll14 = <0 0x0 2 0 1 1>;
++		qcom,mem14 = <3 0x310d 2 0 1 0>;
++		qcom,page15 = <1 0x310c 2 0x1d 1 1>;
++		qcom,poll15 = <0 0x0 2 0 1 1>;
++		qcom,mem15 = <3 0x310d 2 0 1 0>;
++		qcom,page16 = <1 0x310c 2 0x1e 1 1>;
++		qcom,poll16 = <0 0x0 2 0 1 1>;
++		qcom,mem16 = <3 0x310d 2 0 1 0>;
++		qcom,page17 = <1 0x310c 2 0x1f 1 1>;
++		qcom,poll17 = <0 0x0 2 0 1 1>;
++		qcom,mem17 = <3 0x310d 2 0 1 0>;
++		qcom,page18 = <1 0x310c 2 0x20 1 1>;
++		qcom,poll18 = <0 0x0 2 0 1 1>;
++		qcom,mem18 = <3 0x310d 2 0 1 0>;
++		qcom,page19 = <1 0x310c 2 0x21 1 1>;
++		qcom,poll19 = <0 0x0 2 0 1 1>;
++		qcom,mem19 = <3 0x310d 2 0 1 0>;
++		qcom,page20 = <1 0x310c 2 0x22 1 1>;
++		qcom,poll20 = <0 0x0 2 0 1 1>;
++		qcom,mem20 = <3 0x310d 2 0 1 0>;
++		qcom,page21 = <1 0x310c 2 0x23 1 1>;
++		qcom,poll21 = <0 0x0 2 0 1 1>;
++		qcom,mem21 = <3 0x310d 2 0 1 0>;
++
++		cam_vdig-supply = <&pm8110_l2>;
++		cam_vio-supply = <&pm8110_l7>;
++		cam_vana-supply = <&pm8110_l22>;
++		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
++		qcom,cam-vreg-type = <0 0 0>;
++		qcom,cam-vreg-min-voltage = <0 1800000 2850000>;
++		qcom,cam-vreg-max-voltage = <0 1800000 2850000>;
++		qcom,cam-vreg-op-mode = <0 200000 100000>;
++		qcom,gpio-no-mux = <0>;
++		gpios = <&msmgpio 13 0>,
++			<&msmgpio 15 0>,
++			<&msmgpio 85 0>;
++		qcom,gpio-reset = <1>;
++		qcom,gpio-standby = <2>;
++		qcom,gpio-req-tbl-num = <0 1 2>;
++		qcom,gpio-req-tbl-flags = <1 0 0>;
++		qcom,gpio-req-tbl-label = "CAMIF_MCLK",
++					  "CAM_RESET",
++					  "CAM_STANDBY";
++		qcom,cam-power-seq-type = "sensor_vreg",
++			"sensor_vreg",  "sensor_gpio",
++			 "sensor_clk";
++		qcom,cam-power-seq-val = "cam_vio", "cam_vana",
++			 "sensor_gpio_reset",
++			"sensor_cam_mclk" ;
++		qcom,cam-power-seq-cfg-val = <1 1 1 24000000>;
++		qcom,cam-power-seq-delay = <1 1 10 5>;
++	};
+ 
+ 	qcom,camera@28 {
+ 					compatible = "qcom,imx134_sunny_p8n09f";
+@@ -721,4 +826,38 @@
+ 		qcom,cci-master = <0>;
+ 	};
+ 
++	qcom,camera@30 {
++		compatible = "qcom,s5k4e1_sunny";
++		reg = <0x30>;
++		qcom,slave-id = <0x30 0x0000 0x4E10>;
++		qcom,csiphy-sd-index = <1>;
++		qcom,csid-sd-index = <1>;
++		qcom,eeprom-src = <&eeprom6>;
++		qcom,mount-angle = <270>;
++		qcom,sensor-name = "s5k4e1_sunny";
++		cam_vdig-supply = <&pm8110_l2>;
++		cam_vio-supply = <&pm8110_l7>;
++		cam_vana-supply = <&pm8110_l22>;
++		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
++		qcom,cam-vreg-type = <0 0 0>;
++		qcom,cam-vreg-min-voltage = <0 1800000 2850000>;
++		qcom,cam-vreg-max-voltage = <0 1800000 2850000>;
++		qcom,cam-vreg-op-mode = <0 200000 100000>;
++		qcom,gpio-no-mux = <0>;
++		gpios = <&msmgpio 13 0>,
++		<&msmgpio 15 0>,
++		<&msmgpio 85 0>;
++		qcom,gpio-reset = <1>;
++		qcom,gpio-standby = <2>;
++		qcom,gpio-req-tbl-num = <0 1 2>;
++		qcom,gpio-req-tbl-flags = <1 0 0>;
++		qcom,gpio-req-tbl-label = "CAMIF_MCLK",
++				  "CAM_RESET",
++				  "CAM_STANDBY";
++		qcom,csi-lane-assign = <0xe4>;
++		qcom,csi-lane-mask = <0x1>;
++		qcom,sensor-position = <1>;
++		qcom,sensor-mode = <1>;
++		qcom,cci-master = <0>;
++	};
+ };
+diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
+index 6972b0d..7240388 100644
+--- a/arch/arm/configs/msm8610_defconfig
++++ b/arch/arm/configs/msm8610_defconfig
+@@ -323,6 +323,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
+ CONFIG_S5K4E1_LITEON_13P1BA535D=y
+ CONFIG_IMX134_SUNNY_P8N09F=y
+ CONFIG_OV5648_FOXCONN_SC0602=y
++CONFIG_S5K4E1_SUNNY_P5S07A=y
+ CONFIG_MSM_CAMERA_SENSOR=y
+ CONFIG_MSM_EEPROM=y
+ CONFIG_MSM_CCI=y
+diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
+index 8f42f8c..252e295 100644
+--- a/arch/arm/mach-msm/clock-8610.c
++++ b/arch/arm/mach-msm/clock-8610.c
+@@ -3039,6 +3039,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+         CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0028"),
+ 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-003a"),
+ 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0034"),
++	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0030"),
++	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0032"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
+@@ -3057,6 +3059,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+         CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0028"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-003a"),
+ 	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
++	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0030"),
++	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0032"),
+ 	/* CSIPHY clocks */
+ 	CLK_LOOKUP("csiphy_timer_src_clk", csi0phytimer_clk_src.c,
+ 		"fda00c00.qcom,csiphy"),
+diff --git a/drivers/media/platform/msm/camera_v2/Kconfig b/drivers/media/platform/msm/camera_v2/Kconfig
+index 43dc579..810b8a6 100644
+--- a/drivers/media/platform/msm/camera_v2/Kconfig
++++ b/drivers/media/platform/msm/camera_v2/Kconfig
+@@ -254,6 +254,14 @@ config OV5648_FOXCONN_SC0602
+ 		preview set to 1296*972 at 30 fps,
+ 		snapshot set to 2592*1944 at 12 fps,
+ 		This sensor driver does not support auto focus.
++config S5K4E1_SUNNY_P5S07A
++	bool "Sensor S5K4E1 (BAYER 5M)"
++	depends on MSMB_CAMERA
++	---help---
++		Samsung 5 MP Bayer Sensor, only use 1 mipi lane,
++		preview set to 1296*972 at 30 fps,
++		snapshot set to 2592*1944 at 15 fps,
++		This sensor driver does not support auto focus.	
+ config s5k4e1
+ 	bool "Sensor s5k4e1 (BAYER 5MP)"
+ 	depends on MSMB_CAMERA
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/Makefile b/drivers/media/platform/msm/camera_v2/sensor/Makefile
+index a4c8aa8..0de599f 100644
+--- a/drivers/media/platform/msm/camera_v2/sensor/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_OV5648_SUNNY_P5V18G) += ov5648_sunny_p5v18g.o
+ obj-$(CONFIG_S5K4E1_LITEON_13P1BA535D) += s5k4e1_liteon_13p1ba535d.o
+ obj-$(CONFIG_IMX134_SUNNY_P8N09F) += imx134_sunny_p8n09f.o
+ obj-$(CONFIG_OV5648_FOXCONN_SC0602) += ov5648_foxconn_sc0602.o
++obj-$(CONFIG_S5K4E1_SUNNY_P5S07A) += s5k4e1_sunny_p5s07a.o
+ obj-$(CONFIG_OV2720) += ov2720.o
+ obj-$(CONFIG_OV9724) += ov9724.o
+ obj-$(CONFIG_HI256) += hi256.o
+diff --git a/drivers/media/platform/msm/camera_v2/sensor/s5k4e1_sunny_p5s07a.c b/drivers/media/platform/msm/camera_v2/sensor/s5k4e1_sunny_p5s07a.c
+new file mode 100644
+index 0000000..ff7f790
+--- /dev/null
++++ b/drivers/media/platform/msm/camera_v2/sensor/s5k4e1_sunny_p5s07a.c
+@@ -0,0 +1,169 @@
++/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 and
++ * only version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <mach/gpiomux.h>
++#include "msm_sensor.h"
++#include "msm_sd.h"
++#include "camera.h"
++#include "msm_cci.h"
++#include "msm_camera_io_util.h"
++#include "msm_camera_i2c_mux.h"
++#include <mach/rpm-regulator.h>
++#include <mach/rpm-regulator-smd.h>
++#include <linux/regulator/consumer.h>
++
++#define S5K4E1_SUNNY_SENSOR_NAME "s5k4e1_sunny"
++DEFINE_MSM_MUTEX(s5k4e1_sunny_mut);
++
++#undef CDBG
++#define S5K4E1_SUNNY_DEBUG
++#ifdef S5K4E1_SUNNY_DEBUG
++#define CDBG(fmt, args...) pr_err(fmt, ##args)
++#else
++#define CDBG(fmt, args...) do { } while (0)
++#endif
++
++
++static struct msm_sensor_ctrl_t s5k4e1_sunny_s_ctrl;
++
++
++static struct msm_sensor_power_setting s5k4e1_sunny_power_setting[] = {
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VANA,
++		.config_val = 0,
++		.delay = 5,
++	},	
++	{
++		.seq_type = SENSOR_VREG,
++		.seq_val = CAM_VIO,
++		.config_val = 0,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_LOW,
++		.delay = 10,
++	},
++	{
++		.seq_type = SENSOR_GPIO,
++		.seq_val = SENSOR_GPIO_RESET,
++		.config_val = GPIO_OUT_HIGH,
++		.delay = 10,
++	},
++	{
++		.seq_type = SENSOR_CLK,
++		.seq_val = SENSOR_CAM_MCLK,
++		.config_val = 24000000,
++		.delay = 5,
++	},
++	{
++		.seq_type = SENSOR_I2C_MUX,
++		.seq_val = 0,
++		.config_val = 0,
++		.delay = 0,
++	},
++};
++
++static struct v4l2_subdev_info s5k4e1_sunny_subdev_info[] = {
++	{
++		.code   = V4L2_MBUS_FMT_SGRBG10_1X10,
++		.colorspace = V4L2_COLORSPACE_JPEG,
++		.fmt    = 1,
++		.order    = 0,
++	},
++};
++
++static const struct i2c_device_id s5k4e1_sunny_i2c_id[] = {
++	{S5K4E1_SUNNY_SENSOR_NAME, (kernel_ulong_t)&s5k4e1_sunny_s_ctrl},
++	{ }
++};
++
++static int32_t msm_s5k4e1_sunny_i2c_probe(struct i2c_client *client,
++	const struct i2c_device_id *id)
++{
++	return msm_sensor_i2c_probe(client, id, &s5k4e1_sunny_s_ctrl);
++}
++
++static struct i2c_driver s5k4e1_sunny_i2c_driver = {
++	.id_table = s5k4e1_sunny_i2c_id,
++	.probe  = msm_s5k4e1_sunny_i2c_probe,
++	.driver = {
++		.name = S5K4E1_SUNNY_SENSOR_NAME,
++	},
++};
++
++static struct msm_camera_i2c_client s5k4e1_sunny_sensor_i2c_client = {
++	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
++};
++
++static const struct of_device_id s5k4e1_sunny_dt_match[] = {
++	{.compatible = "qcom,s5k4e1_sunny", .data = &s5k4e1_sunny_s_ctrl},
++	{}
++};
++
++MODULE_DEVICE_TABLE(of, s5k4e1_sunny_dt_match);
++
++static struct platform_driver s5k4e1_sunny_platform_driver = {
++	.driver = {
++		.name = "qcom,s5k4e1_sunny",
++		.owner = THIS_MODULE,
++		.of_match_table = s5k4e1_sunny_dt_match,
++	},
++};
++
++static int32_t s5k4e1_sunny_platform_probe(struct platform_device *pdev)
++{
++	int32_t rc = 0;
++	const struct of_device_id *match;
++	match = of_match_device(s5k4e1_sunny_dt_match, &pdev->dev);
++	rc = msm_sensor_platform_probe(pdev, match->data);
++	return rc;
++}
++
++static int __init s5k4e1_sunny_init_module(void)
++{
++	int32_t rc = 0;
++	pr_info("%s:%d\n", __func__, __LINE__);
++	rc = platform_driver_probe(&s5k4e1_sunny_platform_driver,
++		s5k4e1_sunny_platform_probe);
++	if (!rc)
++		return rc;
++	pr_err("%s:%d rc %d\n", __func__, __LINE__, rc);
++	return i2c_add_driver(&s5k4e1_sunny_i2c_driver);
++}
++
++static void __exit s5k4e1_sunny_exit_module(void)
++{
++	pr_info("%s:%d\n", __func__, __LINE__);
++	if (s5k4e1_sunny_s_ctrl.pdev) {
++		msm_sensor_free_sensor_data(&s5k4e1_sunny_s_ctrl);
++		platform_driver_unregister(&s5k4e1_sunny_platform_driver);
++	} else
++		i2c_del_driver(&s5k4e1_sunny_i2c_driver);
++	return;
++}
++
++static struct msm_sensor_ctrl_t s5k4e1_sunny_s_ctrl = {
++	.sensor_i2c_client = &s5k4e1_sunny_sensor_i2c_client,
++	.power_setting_array.power_setting = s5k4e1_sunny_power_setting,
++	.power_setting_array.size = ARRAY_SIZE(s5k4e1_sunny_power_setting),
++	.msm_sensor_mutex = &s5k4e1_sunny_mut,
++	.sensor_v4l2_subdev_info = s5k4e1_sunny_subdev_info,
++	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(s5k4e1_sunny_subdev_info),
++};
++
++module_init(s5k4e1_sunny_init_module);
++module_exit(s5k4e1_sunny_exit_module);
++MODULE_DESCRIPTION("s5k4e1_sunny");
++MODULE_LICENSE("GPL v2");
+-- 
+1.7.8.3
+
