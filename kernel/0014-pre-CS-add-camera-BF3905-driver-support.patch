@@ -1,7 +1,7 @@
 From 841010c3b4d485273465c298da6cc1486a2e341e Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 19:40:10 +0800
-Subject: [PATCH 14/14] pre-CS: add camera BF3905 driver support
+Subject: [PATCH 14/15] pre-CS: add camera BF3905 driver support
 
 Change-Id: I4f6b53530d5151d884c621784ff47b5c0e0a518d
 ---
