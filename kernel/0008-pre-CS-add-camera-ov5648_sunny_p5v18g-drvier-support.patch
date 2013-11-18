@@ -1,7 +1,7 @@
 From 27d56b4ba4d6913a0b27dfbf908c96ba3c32bdc9 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:59:58 +0800
-Subject: [PATCH 08/14] pre-CS:add camera ov5648_sunny_p5v18g drvier support
+Subject: [PATCH 08/15] pre-CS:add camera ov5648_sunny_p5v18g drvier support
 
 Change-Id: Ia71e1bdeabb4c2e54d3945dec62894e5a30cfb48
 ---

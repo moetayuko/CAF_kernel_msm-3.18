@@ -1,7 +1,7 @@
 From d83502050430cd3502c0b3e772d955a749d41d48 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 19:08:00 +0800
-Subject: [PATCH 13/14] pre-CS: add front camera mt9v113_sunny_p0m01k driver
+Subject: [PATCH 13/15] pre-CS: add front camera mt9v113_sunny_p0m01k driver
 
 Change-Id: I0d2586219c0124546bca21c4ac6bb198b1cf6ee4
 ---

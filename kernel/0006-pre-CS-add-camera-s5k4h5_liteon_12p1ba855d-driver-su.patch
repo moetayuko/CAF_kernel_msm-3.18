@@ -1,7 +1,7 @@
 From ed019050667c840208190b31c4a5b81e3b259369 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:55:03 +0800
-Subject: [PATCH 06/14] pre-CS: add camera s5k4h5_liteon_12p1ba855d driver
+Subject: [PATCH 06/15] pre-CS: add camera s5k4h5_liteon_12p1ba855d driver
  support
 
 Change-Id: Idb9bc866c8c39707f1da83ea1ed3f22535ac3cc0

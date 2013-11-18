@@ -1,7 +1,7 @@
 From c758a6000d288699644544eca00b38d89e8bf323 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:03:22 +0800
-Subject: [PATCH 12/14] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
+Subject: [PATCH 12/15] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
  support
 
 Change-Id: I6cdfe39c5c5fae81f1ce7ebacfe950fcfe188aa4

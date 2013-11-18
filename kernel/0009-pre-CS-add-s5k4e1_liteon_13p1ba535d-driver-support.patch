@@ -1,7 +1,7 @@
 From 161d8617c5f4c0d334db17b19c2fe1076203a613 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:00:34 +0800
-Subject: [PATCH 09/14] pre-CS:add s5k4e1_liteon_13p1ba535d driver support
+Subject: [PATCH 09/15] pre-CS:add s5k4e1_liteon_13p1ba535d driver support
 
 Change-Id: Ic8335ef0436cd738528a30f23375933b11ce0b12
 ---

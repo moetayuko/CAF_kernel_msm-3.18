@@ -1,7 +1,7 @@
 From f0c5b3b3af8af8af9f0d129966326f9a5ab43591 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:01:30 +0800
-Subject: [PATCH 10/14] pre-CS:add camera imx134_sunny_p8n09f driver support
+Subject: [PATCH 10/15] pre-CS:add camera imx134_sunny_p8n09f driver support
 
 Change-Id: I4ed13d96040fb62e773b91f07eb36aa118ebd936
 ---

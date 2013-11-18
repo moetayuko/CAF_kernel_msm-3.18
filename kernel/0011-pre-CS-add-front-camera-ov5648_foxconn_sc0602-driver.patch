@@ -1,7 +1,7 @@
 From b6695276f7f8bb0f92794708fbb16e5abb9c7b98 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:02:32 +0800
-Subject: [PATCH 11/14] pre-CS:add front camera ov5648_foxconn_sc0602 driver
+Subject: [PATCH 11/15] pre-CS:add front camera ov5648_foxconn_sc0602 driver
  support
 
 Change-Id: Idba93f5f981006f5d32bf3ed1e4333b3b0b9d960

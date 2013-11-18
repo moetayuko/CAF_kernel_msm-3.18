@@ -1,7 +1,7 @@
 From b25c291be905a1464175e11b1895521a2940381e Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:59:27 +0800
-Subject: [PATCH 07/14] pre-CS: add camera ov8850_foxconn_dc0901b driver
+Subject: [PATCH 07/15] pre-CS: add camera ov8850_foxconn_dc0901b driver
  support
 
 Change-Id: I6fc45be0ce8703acc50347101d3b4724c4f2f085
