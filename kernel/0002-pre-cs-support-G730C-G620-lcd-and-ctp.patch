@@ -1,4 +1,4 @@
-From e8ef774a0e664cbb0748c774271362de049a6612 Mon Sep 17 00:00:00 2001
+From 2a8cc74687a4d8bcf62d356d0702fd0621ef079b Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 14:39:57 +0800
 Subject: [PATCH 02/15] pre-cs: support G730C&G620 lcd and ctp
@@ -1284,7 +1284,7 @@ index afc5459..61cfac4 100644
 +/*END G730C LCD*/
 +/include/ "dsi-panel-emulator-qhd-video.dtsi"
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 9052e3d..e9245f8 100644
+index 9fa0913..e2b0bc2 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -28,7 +28,7 @@
@@ -1383,10 +1383,10 @@ index 9052e3d..e9245f8 100644
  
  	gen-vkeys {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 1655fe6..20a9e37 100644
+index c140a46..fb6cf3e 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -231,13 +231,39 @@ CONFIG_INPUT_EVBUG=m
+@@ -233,13 +233,39 @@ CONFIG_INPUT_EVBUG=m
  CONFIG_KEYBOARD_GPIO=y
  CONFIG_INPUT_TOUCHSCREEN=y
  CONFIG_TOUCHSCREEN_ATMEL_MXT=y

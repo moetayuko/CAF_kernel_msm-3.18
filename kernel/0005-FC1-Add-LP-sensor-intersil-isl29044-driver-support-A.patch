@@ -1,4 +1,4 @@
-From 242b2b9df0c44e06a7dbcee807fdb34473cbee18 Mon Sep 17 00:00:00 2001
+From cad35b79961c08a8e8dbdda27473e7b5b0f22690 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 16:38:53 +0800
 Subject: [PATCH 05/15] FC1: Add LP-sensor intersil isl29044 driver support
@@ -26,7 +26,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  create mode 100644 include/linux/taos_common.h
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index a54ae75..0f279d1 100644
+index eae6936..92fbdf8 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -134,6 +134,7 @@
@@ -79,10 +79,10 @@ index a54ae75..0f279d1 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index f00d601..17c6b34 100644
+index fb65fcd..1ca7ed6 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -276,6 +276,8 @@ CONFIG_HW_RANDOM_MSM=y
+@@ -278,6 +278,8 @@ CONFIG_HW_RANDOM_MSM=y
  CONFIG_I2C=y
  CONFIG_I2C_CHARDEV=y
  CONFIG_I2C_QUP=y
@@ -91,7 +91,7 @@ index f00d601..17c6b34 100644
  CONFIG_INPUT_MPU3050=y
  CONFIG_BMP18X=y
  CONFIG_BMP18X_I2C=y
-@@ -487,6 +489,7 @@ CONFIG_PPPOE=y
+@@ -496,6 +498,7 @@ CONFIG_PPP_MPPE=y
  CONFIG_N_HDLC=y
  CONFIG_UNIX98_PTYS=y
  # CONFIG_INPUT_KXTJ9 is not set

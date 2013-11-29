@@ -1,4 +1,4 @@
-From f0c5b3b3af8af8af9f0d129966326f9a5ab43591 Mon Sep 17 00:00:00 2001
+From a044788602168ae8f126e2e88c842363fb2c99b5 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:01:30 +0800
 Subject: [PATCH 10/15] pre-CS:add camera imx134_sunny_p8n09f driver support
@@ -18,7 +18,7 @@ Change-Id: I4ed13d96040fb62e773b91f07eb36aa118ebd936
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/imx134_sunny_p8n09f.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 0f279d1..2547097 100644
+index 92fbdf8..1bd1de3 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -25,7 +25,7 @@
@@ -252,10 +252,10 @@ index de8a058..43755a4 100644
 +	};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 030dd52..6de7543 100644
+index a616921..a3510c3 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -321,6 +321,7 @@ CONFIG_S5K4H5_LITEON_12P1BA855D=y
+@@ -323,6 +323,7 @@ CONFIG_S5K4H5_LITEON_12P1BA855D=y
  CONFIG_OV8850_FOXCONN_DC0901B=y
  CONFIG_OV5648_SUNNY_P5V18G=y
  CONFIG_S5K4E1_LITEON_13P1BA535D=y
@@ -264,10 +264,10 @@ index 030dd52..6de7543 100644
  CONFIG_MSM_EEPROM=y
  CONFIG_MSM_CCI=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 0e765a7..2a66489 100644
+index ff6d851..d4ff7ce 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3035,6 +3035,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3033,6 +3033,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0066"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0062"),
          CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0064"),
@@ -276,7 +276,7 @@ index 0e765a7..2a66489 100644
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
-@@ -3049,6 +3051,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3047,6 +3049,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0066"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0062"),
          CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0064"),
@@ -330,10 +330,10 @@ index 21c66a4..0b8c910 100644
  obj-$(CONFIG_OV9724) += ov9724.o
  obj-$(CONFIG_HI256) += hi256.o
 diff --git a/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c b/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
-index 7f13568..62e8652 100644
+index 45db19c..615fe08 100644
 --- a/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
 +++ b/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
-@@ -170,6 +170,16 @@ int32_t read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl)
+@@ -172,6 +172,16 @@ int32_t read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl)
  	emap = eb_info->eeprom_map;
  
  	for (j = 0; j < eb_info->num_blocks; j++) {
@@ -350,7 +350,7 @@ index 7f13568..62e8652 100644
  		if (emap[j].page.valid_size) {
  			e_ctrl->i2c_client.addr_type = emap[j].page.addr_t;
  			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
-@@ -315,7 +325,11 @@ static int msm_eeprom_alloc_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
+@@ -317,7 +327,11 @@ static int msm_eeprom_alloc_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
  				       struct device_node *of)
  {
  	int i, rc = 0;
@@ -362,7 +362,7 @@ index 7f13568..62e8652 100644
  	uint32_t count = 6;
  	struct msm_eeprom_board_info *eb = e_ctrl->eboard_info;
  
-@@ -335,6 +349,16 @@ static int msm_eeprom_alloc_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
+@@ -337,6 +351,16 @@ static int msm_eeprom_alloc_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
  	}
  
  	for (i = 0; i < eb->num_blocks; i++) {

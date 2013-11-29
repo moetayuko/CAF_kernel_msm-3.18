@@ -1,4 +1,4 @@
-From ed019050667c840208190b31c4a5b81e3b259369 Mon Sep 17 00:00:00 2001
+From ab766985acc08f0694e257376033ad39ae573a1b Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:55:03 +0800
 Subject: [PATCH 06/15] pre-CS: add camera s5k4h5_liteon_12p1ba855d driver
@@ -20,7 +20,7 @@ Change-Id: Idb9bc866c8c39707f1da83ea1ed3f22535ac3cc0
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/s5k4h5_liteon_12p1ba855d.c
 
 diff --git a/arch/arm/boot/dts/msm8610-regulator.dtsi b/arch/arm/boot/dts/msm8610-regulator.dtsi
-index f97d991..423538c 100644
+index 7eb6a22..9ffe9e5 100644
 --- a/arch/arm/boot/dts/msm8610-regulator.dtsi
 +++ b/arch/arm/boot/dts/msm8610-regulator.dtsi
 @@ -234,7 +234,7 @@
@@ -208,10 +208,10 @@ index 0000000..96adbabc
 +	};
 +};
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 17c6b34..7cb5cb9 100644
+index 1ca7ed6..668d634 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -317,6 +317,7 @@ CONFIG_s5k4e1=y
+@@ -319,6 +319,7 @@ CONFIG_s5k4e1=y
  CONFIG_HI256=y
  CONFIG_OV12830=y
  CONFIG_IMX134=y
@@ -220,10 +220,10 @@ index 17c6b34..7cb5cb9 100644
  CONFIG_MSM_EEPROM=y
  CONFIG_MSM_CCI=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 85a9f45..d22edb3 100644
+index 89d462c..c460fd4 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3028,6 +3028,7 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3026,6 +3026,7 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_src_clk", mclk1_clk_src.c, "6-0078"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0020"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006a"),
@@ -231,7 +231,7 @@ index 85a9f45..d22edb3 100644
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
-@@ -3035,6 +3036,7 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3033,6 +3034,7 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_clk", mclk1_clk.c, "6-0078"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0020"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006a"),

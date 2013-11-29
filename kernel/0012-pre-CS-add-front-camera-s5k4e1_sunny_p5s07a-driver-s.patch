@@ -1,4 +1,4 @@
-From c758a6000d288699644544eca00b38d89e8bf323 Mon Sep 17 00:00:00 2001
+From 1802416ba2674b194718764c5ac5d3282652bea2 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:03:22 +0800
 Subject: [PATCH 12/15] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
@@ -183,10 +183,10 @@ index 5821940..e1c74b1 100644
 +	};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 6972b0d..7240388 100644
+index b42c1b2..8b8d39e 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -323,6 +323,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
+@@ -325,6 +325,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
  CONFIG_S5K4E1_LITEON_13P1BA535D=y
  CONFIG_IMX134_SUNNY_P8N09F=y
  CONFIG_OV5648_FOXCONN_SC0602=y
@@ -195,10 +195,10 @@ index 6972b0d..7240388 100644
  CONFIG_MSM_EEPROM=y
  CONFIG_MSM_CCI=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 8f42f8c..252e295 100644
+index 0f12fa3..aa4144e 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3039,6 +3039,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3037,6 +3037,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0028"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-003a"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0034"),
@@ -207,7 +207,7 @@ index 8f42f8c..252e295 100644
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
-@@ -3057,6 +3059,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3055,6 +3057,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0028"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-003a"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),

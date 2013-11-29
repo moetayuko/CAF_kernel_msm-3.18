@@ -1,4 +1,4 @@
-From bcc8f0c69a08d2b44f1017dc353c8b5fd87d0b3d Mon Sep 17 00:00:00 2001
+From 8a9d046d3ddffe385aaf18f97a08992b8d8d8f66 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 14 Nov 2013 14:33:24 +0800
 Subject: [PATCH 15/15] camera flash light
@@ -13,7 +13,7 @@ Subject: [PATCH 15/15] camera flash light
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/flash/flash_lm3642.c
 
 diff --git a/arch/arm/boot/dts/msm8610-qrd.dtsi b/arch/arm/boot/dts/msm8610-qrd.dtsi
-index 2547097..5ea9524 100644
+index 1bd1de3..7e8a212 100644
 --- a/arch/arm/boot/dts/msm8610-qrd.dtsi
 +++ b/arch/arm/boot/dts/msm8610-qrd.dtsi
 @@ -228,12 +228,23 @@
