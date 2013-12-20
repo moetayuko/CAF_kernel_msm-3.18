@@ -1,4 +1,4 @@
-From b4b168febca0e139b929b2979f1d58eb4a4fcfed Mon Sep 17 00:00:00 2001
+From ae77ddd7580e62643e44ca23f2c284d4de5f85f7 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 28 Jun 2013 17:58:37 +0800
 Subject: [PATCH 1/2] CAF:QRD_BSP:LK/BOOT:None:none:add platform_subtype
@@ -23,7 +23,7 @@ Change-Id: I8aebb3907140558de09004fed1093d81046186ab
  1 files changed, 3 insertions(+), 0 deletions(-)
 
 diff --git a/target/msm8610/init.c b/target/msm8610/init.c
-index f8fc898..70d4200 100644
+index 3676151..c2a71a0 100644
 --- a/target/msm8610/init.c
 +++ b/target/msm8610/init.c
 @@ -59,6 +59,7 @@ enum target_subtype {

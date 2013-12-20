@@ -1,4 +1,4 @@
-From a3380e33e1f2e42a72c9d229ba1c150784d51304 Mon Sep 17 00:00:00 2001
+From a0fcb03b113a5e89682af0efaf6459bde6e72368 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:59:27 +0800
 Subject: [PATCH 07/15] pre-CS: add camera ov8850_foxconn_dc0901b driver
@@ -171,7 +171,7 @@ index 96adbabc..5b65048 100644
 +		};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 668d634..c40acf9 100644
+index 4961c9e..c434ff1 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -320,6 +320,7 @@ CONFIG_HI256=y
@@ -183,10 +183,10 @@ index 668d634..c40acf9 100644
  CONFIG_MSM_EEPROM=y
  CONFIG_MSM_CCI=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index c460fd4..ec84844 100644
+index b935c93..c82f487 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3027,6 +3027,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3030,6 +3030,8 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0020"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006a"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0022"),
@@ -195,7 +195,7 @@ index c460fd4..ec84844 100644
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
-@@ -3035,7 +3037,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3038,7 +3040,8 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0020"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006a"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0022"),

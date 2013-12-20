@@ -1,4 +1,4 @@
-From aec88d508d8365bb6a8689be09547ad8eed8f1b0 Mon Sep 17 00:00:00 2001
+From 692f8802c543b100bb2457e3116b42fc4814c579 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 27 Sep 2013 16:06:29 +0800
 Subject: [PATCH] FC1: modify LP sensor hal to fix LP sensor not work issue

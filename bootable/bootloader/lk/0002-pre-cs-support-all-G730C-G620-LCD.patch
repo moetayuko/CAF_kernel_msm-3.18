@@ -1,4 +1,4 @@
-From 02eee4262913e4856386414c69c8b064ded33b20 Mon Sep 17 00:00:00 2001
+From 34e446c3f3a604918707426ecde46a91e27cf607 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 14:25:24 +0800
 Subject: [PATCH 2/2] pre-cs: support all G730C/G620 LCD

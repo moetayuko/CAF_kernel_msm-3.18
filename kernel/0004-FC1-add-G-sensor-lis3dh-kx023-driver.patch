@@ -1,4 +1,4 @@
-From e0cd981ba4232329b8113c00bf2a9e320761822f Mon Sep 17 00:00:00 2001
+From a14e75e2595ecd59c0f415a4a8f22c540ef2fdab Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 16:37:32 +0800
 Subject: [PATCH 04/15] FC1: add G-sensor lis3dh & kx023 driver
@@ -57,7 +57,7 @@ index e2b0bc2..eae6936 100644
  
  	flashlight {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index fb6cf3e..fb65fcd 100644
+index 2679702..9c32762 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -281,6 +281,7 @@ CONFIG_I2C_QUP=y
@@ -68,7 +68,7 @@ index fb6cf3e..fb65fcd 100644
  CONFIG_MSM_BUSPM_DEV=m
  CONFIG_SPI=y
  CONFIG_SPI_QUP=y
-@@ -494,7 +495,8 @@ CONFIG_PPPOPNS=y
+@@ -498,7 +499,8 @@ CONFIG_PPPOPNS=y
  CONFIG_PPP_MPPE=y
  CONFIG_N_HDLC=y
  CONFIG_UNIX98_PTYS=y

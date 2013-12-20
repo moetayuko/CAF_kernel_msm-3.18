@@ -1,20 +1,18 @@
-From 2a8cc74687a4d8bcf62d356d0702fd0621ef079b Mon Sep 17 00:00:00 2001
+From dfc3e5829b67926b9e671add8083530f907cd26e Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
-Date: Mon, 4 Nov 2013 14:39:57 +0800
-Subject: [PATCH 02/15] pre-cs: support G730C&G620 lcd and ctp
+Date: Tue, 17 Dec 2013 19:34:41 +0800
+Subject: [PATCH 02/15] cs support G730C G620 lcd and ctp
 
-Change-Id: Ib2ca83b2e13825f71bbc64a1055eb00fab9a6bc4
-
-Signed-off-by: fsheng <fsheng@codeaurora.org>
+Change-Id: I60203b6ec4aa1af3940d5a21fc2b39050e25beb1
 ---
- .../dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi   |  203 +
- .../dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi  |  156 +
- .../dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi     |  117 +
- .../dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi   |  117 +
- .../dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi   |  172 +
+ .../dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi   |  204 +
+ .../dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi  |  157 +
+ .../dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi     |  118 +
+ .../dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi   |  118 +
+ .../dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi   |  173 +
  .../arm/boot/dts/dsi-panel-emulator-qhd-video.dtsi |   71 +
- .../dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi    |  121 +
- .../dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi |  164 +
+ .../dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi    |  122 +
+ .../dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi |  165 +
  arch/arm/boot/dts/msm8610-mdss-panels.dtsi         |   14 +
  arch/arm/boot/dts/msm8610-qrd.dtsi                 |   80 +-
  arch/arm/configs/msm8610_defconfig                 |   40 +-
@@ -51,7 +49,7 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
  include/linux/cyttsp4_mt.h                         |   84 +
  include/linux/cyttsp4_platform.h                   |   61 +
  include/linux/cyttsp4_proximity.h                  |   42 +
- 44 files changed, 21153 insertions(+), 8 deletions(-)
+ 44 files changed, 21160 insertions(+), 8 deletions(-)
  create mode 100644 arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
  create mode 100644 arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
  create mode 100644 arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
@@ -94,10 +92,10 @@ Signed-off-by: fsheng <fsheng@codeaurora.org>
 
 diff --git a/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
 new file mode 100644
-index 0000000..d19730a
+index 0000000..67dc66d
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,204 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -299,14 +297,15 @@ index 0000000..d19730a
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 +		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
 new file mode 100644
-index 0000000..36866a4
+index 0000000..b63ebf5
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,157 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -461,14 +460,15 @@ index 0000000..36866a4
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 +		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
 new file mode 100644
-index 0000000..4202de2
+index 0000000..2543c00
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,118 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -584,14 +584,15 @@ index 0000000..4202de2
 +		qcom,mdss-dsi-dma-trigger = <4>;
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi
 new file mode 100644
-index 0000000..c557c76
+index 0000000..7110d1b
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,118 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -707,14 +708,15 @@ index 0000000..c557c76
 +		qcom,mdss-dsi-dma-trigger = <4>;
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi
 new file mode 100644
-index 0000000..3f2ad10
+index 0000000..f7f3373
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,173 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -885,6 +887,7 @@ index 0000000..3f2ad10
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 +		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-emulator-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-emulator-qhd-video.dtsi
@@ -966,10 +969,10 @@ index 0000000..85be786
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi
 new file mode 100644
-index 0000000..35db898
+index 0000000..d0bff61
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,122 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -1089,14 +1092,15 @@ index 0000000..35db898
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 +		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi
 new file mode 100644
-index 0000000..819a597
+index 0000000..c5afdb5
 --- /dev/null
 +++ b/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,165 @@
 +/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -1259,6 +1263,7 @@ index 0000000..819a597
 +		qcom,mdss-dsi-mdp-trigger = <0>;
 +		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 +		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
 +	};
 +};
 diff --git a/arch/arm/boot/dts/msm8610-mdss-panels.dtsi b/arch/arm/boot/dts/msm8610-mdss-panels.dtsi
@@ -1383,10 +1388,10 @@ index 9fa0913..e2b0bc2 100644
  
  	gen-vkeys {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index c140a46..fb6cf3e 100644
+index 02db2f2..2679702 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -233,13 +233,39 @@ CONFIG_INPUT_EVBUG=m
+@@ -232,13 +232,39 @@ CONFIG_INPUT_EVBUG=m
  CONFIG_KEYBOARD_GPIO=y
  CONFIG_INPUT_TOUCHSCREEN=y
  CONFIG_TOUCHSCREEN_ATMEL_MXT=y

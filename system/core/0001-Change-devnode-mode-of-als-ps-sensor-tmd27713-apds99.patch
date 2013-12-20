@@ -1,4 +1,4 @@
-From 1ae42cd36e7cd3c68713910080d71daf81c84ab4 Mon Sep 17 00:00:00 2001
+From 036dd84a36b45f8449f8c01d6b04a739c790c445 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Fri, 16 Aug 2013 17:03:22 +0800
 Subject: [PATCH] Change devnode mode of als+ps sensor tmd27713&apds9900

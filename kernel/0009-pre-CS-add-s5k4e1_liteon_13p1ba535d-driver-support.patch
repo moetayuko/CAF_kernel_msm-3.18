@@ -1,4 +1,4 @@
-From 1a69560ac97e64fe42f6c02e2b20a9a4097308e3 Mon Sep 17 00:00:00 2001
+From cbe67654cd7a5e2cae9263b28a755d96bae21c28 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:00:34 +0800
 Subject: [PATCH 09/15] pre-CS:add s5k4e1_liteon_13p1ba535d driver support
@@ -173,7 +173,7 @@ index 297e339..de8a058 100644
  			cell-index = <0>;
  			reg = <0x22 0x0>;
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 933c88e..a616921 100644
+index 6203c5d..811c726 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -322,6 +322,7 @@ CONFIG_IMX134=y
@@ -185,10 +185,10 @@ index 933c88e..a616921 100644
  CONFIG_MSM_EEPROM=y
  CONFIG_MSM_CCI=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 39861ce..ff6d851 100644
+index 26d373a..a3c75e1 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3031,6 +3031,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3034,6 +3034,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-006b"),
  	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0068"),
          CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "6-0066"),
@@ -197,7 +197,7 @@ index 39861ce..ff6d851 100644
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006f"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0034"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-007d"),
-@@ -3043,7 +3045,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3046,7 +3048,8 @@ static struct clk_lookup msm_clocks_8610[] = {
          CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-006b"),
  	CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0068"),
          CLK_LOOKUP("cam_clk", mclk0_clk.c, "6-0066"),

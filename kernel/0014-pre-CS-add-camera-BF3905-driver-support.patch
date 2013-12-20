@@ -1,4 +1,4 @@
-From afd495b5155213859b379b9910977b959c5ecda4 Mon Sep 17 00:00:00 2001
+From 3114362963420a5af6d87a0591f84cba08fef996 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 19:40:10 +0800
 Subject: [PATCH 14/15] pre-CS: add camera BF3905 driver support
@@ -58,7 +58,7 @@ index c6df9ae..cf41a4a 100644
 +
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index df3c914..bc64d84 100644
+index 5a1a60c..9ab8f33 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
 @@ -314,6 +314,7 @@ CONFIG_MEDIA_CONTROLLER=y
@@ -70,10 +70,10 @@ index df3c914..bc64d84 100644
  CONFIG_s5k4e1=y
  CONFIG_HI256=y
 diff --git a/arch/arm/mach-msm/clock-8610.c b/arch/arm/mach-msm/clock-8610.c
-index 21775a5..2027ea7 100644
+index 5f85230..50109b7 100644
 --- a/arch/arm/mach-msm/clock-8610.c
 +++ b/arch/arm/mach-msm/clock-8610.c
-@@ -3019,6 +3019,8 @@ static struct clk_lookup msm_clocks_8610[] = {
+@@ -3022,6 +3022,8 @@ static struct clk_lookup msm_clocks_8610[] = {
  	CLK_LOOKUP("core_clk",         pnoc_iommu_clk.c, "fd010000.qcom,iommu"),
  
  	/* MM sensor clocks */

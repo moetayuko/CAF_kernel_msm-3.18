@@ -1,4 +1,4 @@
-From 8a9d046d3ddffe385aaf18f97a08992b8d8d8f66 Mon Sep 17 00:00:00 2001
+From a5f7444f1bee0c116cb5cf04de4af25ee7848469 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 14 Nov 2013 14:33:24 +0800
 Subject: [PATCH 15/15] camera flash light
@@ -257,10 +257,10 @@ index 0000000..6438356
 +MODULE_DESCRIPTION("lm3642 FLASH");
 +MODULE_LICENSE("GPL v2");
 diff --git a/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h b/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
-index 9f3a81c..9328b7c 100644
+index a4d7f15..0cadfee 100644
 --- a/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
 +++ b/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
-@@ -60,6 +60,8 @@ struct msm_led_flash_ctrl_t {
+@@ -62,6 +62,8 @@ struct msm_led_flash_ctrl_t {
  	uint32_t num_sources;
  	enum msm_camera_device_type_t flash_device_type;
  	uint32_t subdev_id;
