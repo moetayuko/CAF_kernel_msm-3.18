@@ -1,7 +1,7 @@
-From a0fcb03b113a5e89682af0efaf6459bde6e72368 Mon Sep 17 00:00:00 2001
+From 449faad99c0ea99e42ba74787331a33894b5c863 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:59:27 +0800
-Subject: [PATCH 07/15] pre-CS: add camera ov8850_foxconn_dc0901b driver
+Subject: [PATCH 07/16] pre-CS: add camera ov8850_foxconn_dc0901b driver
  support
 
 Change-Id: I6fc45be0ce8703acc50347101d3b4724c4f2f085
@@ -171,10 +171,10 @@ index 96adbabc..5b65048 100644
 +		};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 4961c9e..c434ff1 100644
+index 06e2a7d..92020da 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -320,6 +320,7 @@ CONFIG_HI256=y
+@@ -322,6 +322,7 @@ CONFIG_HI256=y
  CONFIG_OV12830=y
  CONFIG_IMX134=y
  CONFIG_S5K4H5_LITEON_12P1BA855D=y

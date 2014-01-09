@@ -1,7 +1,7 @@
-From 0e67418bb59d74458af4234251194bd11d7a2933 Mon Sep 17 00:00:00 2001
+From 7b137c082d960e904cd8c92f5c725c21b3c660e3 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 4 Nov 2013 14:27:24 +0800
-Subject: [PATCH 01/15] FC1: add new dts file for skuac
+Subject: [PATCH 01/16] FC1: add new dts file for skuac
 
 Change-Id: Ic55e17123c9444ce4256f6be9cf99e304501ec2e
 
@@ -97,10 +97,10 @@ index 83c1d4c..4dbdbc6 100644
  # MSMSAMARIUM
     zreladdr-$(CONFIG_ARCH_MSMSAMARIUM)	:= 0x00008000
 diff --git a/arch/arm/mach-msm/socinfo.c b/arch/arm/mach-msm/socinfo.c
-index 4b68e66..2eaf2d0 100644
+index e7cec58..8948892 100644
 --- a/arch/arm/mach-msm/socinfo.c
 +++ b/arch/arm/mach-msm/socinfo.c
-@@ -85,6 +85,7 @@ enum {
+@@ -84,6 +84,7 @@ enum {
  	PLATFORM_SUBTYPE_SKUAA = 0x1,
  	PLATFORM_SUBTYPE_SKUF = 0x2,
  	PLATFORM_SUBTYPE_SKUAB = 0x3,
@@ -108,7 +108,7 @@ index 4b68e66..2eaf2d0 100644
  	PLATFORM_SUBTYPE_SKUG = 0x5,
  	PLATFORM_SUBTYPE_QRD_INVALID,
  };
-@@ -94,6 +95,7 @@ const char *qrd_hw_platform_subtype[] = {
+@@ -93,6 +94,7 @@ const char *qrd_hw_platform_subtype[] = {
  	[PLATFORM_SUBTYPE_SKUAA] = "SKUAA",
  	[PLATFORM_SUBTYPE_SKUF] = "SKUF",
  	[PLATFORM_SUBTYPE_SKUAB] = "SKUAB",

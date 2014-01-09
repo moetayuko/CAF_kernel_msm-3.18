@@ -1,7 +1,7 @@
-From 85afd65d0035dacaf1934a14ecac9129b59be793 Mon Sep 17 00:00:00 2001
+From 075463e76eef685cb2e0bd548a9d030007762755 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Mon, 14 Oct 2013 10:17:11 +0800
-Subject: [PATCH 03/15] FC1: add chipset V2 dts for skuac
+Subject: [PATCH 03/16] FC1: add chipset V2 dts for skuac
 
 Change-Id: I80dd50cdc249e62edf493c4243b1ae93fad9b3ed
 

@@ -1,7 +1,7 @@
-From a4b7778a86feadad5453d1781642c3833d1f300a Mon Sep 17 00:00:00 2001
+From f78f6f9b00846412e074d819e9d90cee115ccdc0 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:03:22 +0800
-Subject: [PATCH 12/15] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
+Subject: [PATCH 12/16] pre-CS:add front camera s5k4e1_sunny_p5s07a driver
  support
 
 Change-Id: I6cdfe39c5c5fae81f1ce7ebacfe950fcfe188aa4
@@ -183,10 +183,10 @@ index 5821940..e1c74b1 100644
 +	};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 3ff64e9..b866139 100644
+index fa2c692..bef90ea 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -325,6 +325,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
+@@ -327,6 +327,7 @@ CONFIG_OV5648_SUNNY_P5V18G=y
  CONFIG_S5K4E1_LITEON_13P1BA535D=y
  CONFIG_IMX134_SUNNY_P8N09F=y
  CONFIG_OV5648_FOXCONN_SC0602=y

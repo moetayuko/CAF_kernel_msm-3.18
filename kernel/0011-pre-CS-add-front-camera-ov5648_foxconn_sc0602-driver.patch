@@ -1,7 +1,7 @@
-From 6643cd700727b12b2b603ce4a7735bac6ed8ea3f Mon Sep 17 00:00:00 2001
+From bd36b9884bd8733fd37586136425cee81965d215 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:02:32 +0800
-Subject: [PATCH 11/15] pre-CS:add front camera ov5648_foxconn_sc0602 driver
+Subject: [PATCH 11/16] pre-CS:add front camera ov5648_foxconn_sc0602 driver
  support
 
 Change-Id: Idba93f5f981006f5d32bf3ed1e4333b3b0b9d960
@@ -132,10 +132,10 @@ index 43755a4..5821940 100644
 +
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 0d09735..3ff64e9 100644
+index 6d7a8d7..fa2c692 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -324,6 +324,7 @@ CONFIG_OV8850_FOXCONN_DC0901B=y
+@@ -326,6 +326,7 @@ CONFIG_OV8850_FOXCONN_DC0901B=y
  CONFIG_OV5648_SUNNY_P5V18G=y
  CONFIG_S5K4E1_LITEON_13P1BA535D=y
  CONFIG_IMX134_SUNNY_P8N09F=y

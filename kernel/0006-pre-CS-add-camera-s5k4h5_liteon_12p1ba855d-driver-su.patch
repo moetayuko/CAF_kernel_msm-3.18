@@ -1,7 +1,7 @@
-From e6f9363ead294a4f89c4caeeb26dbfacd80e2dc6 Mon Sep 17 00:00:00 2001
+From 1aa24f726658d02a47d7446271e07c5ea3476b35 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:55:03 +0800
-Subject: [PATCH 06/15] pre-CS: add camera s5k4h5_liteon_12p1ba855d driver
+Subject: [PATCH 06/16] pre-CS: add camera s5k4h5_liteon_12p1ba855d driver
  support
 
 Change-Id: Idb9bc866c8c39707f1da83ea1ed3f22535ac3cc0
@@ -20,10 +20,10 @@ Change-Id: Idb9bc866c8c39707f1da83ea1ed3f22535ac3cc0
  create mode 100644 drivers/media/platform/msm/camera_v2/sensor/s5k4h5_liteon_12p1ba855d.c
 
 diff --git a/arch/arm/boot/dts/msm8610-regulator.dtsi b/arch/arm/boot/dts/msm8610-regulator.dtsi
-index 4b250c6..5170b88 100644
+index f9bafb4..bc0fc78 100644
 --- a/arch/arm/boot/dts/msm8610-regulator.dtsi
 +++ b/arch/arm/boot/dts/msm8610-regulator.dtsi
-@@ -234,7 +234,7 @@
+@@ -233,7 +233,7 @@
  	rpm-regulator-ldoa7 {
  		status = "okay";
  		pm8110_l7: regulator-l7 {
@@ -208,10 +208,10 @@ index 0000000..96adbabc
 +	};
 +};
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index ed5332b..4961c9e 100644
+index 113059b..06e2a7d 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -319,6 +319,7 @@ CONFIG_s5k4e1=y
+@@ -321,6 +321,7 @@ CONFIG_s5k4e1=y
  CONFIG_HI256=y
  CONFIG_OV12830=y
  CONFIG_IMX134=y

@@ -1,7 +1,7 @@
-From 08b4d6f8c55afbd726450692aa205cc712d01dcb Mon Sep 17 00:00:00 2001
+From bdf74063861304eba745689c710f6214bf8fd7b6 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 16:59:58 +0800
-Subject: [PATCH 08/15] pre-CS:add camera ov5648_sunny_p5v18g drvier support
+Subject: [PATCH 08/16] pre-CS:add camera ov5648_sunny_p5v18g drvier support
 
 Change-Id: Ia71e1bdeabb4c2e54d3945dec62894e5a30cfb48
 ---
@@ -262,10 +262,10 @@ index 5b65048..297e339 100644
  		};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index c434ff1..6203c5d 100644
+index 92020da..3cd8169 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -321,6 +321,7 @@ CONFIG_OV12830=y
+@@ -323,6 +323,7 @@ CONFIG_OV12830=y
  CONFIG_IMX134=y
  CONFIG_S5K4H5_LITEON_12P1BA855D=y
  CONFIG_OV8850_FOXCONN_DC0901B=y

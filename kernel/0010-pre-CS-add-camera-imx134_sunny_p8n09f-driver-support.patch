@@ -1,7 +1,7 @@
-From 3d1ba913afdb42a367aefd0b221bcbd1f750615c Mon Sep 17 00:00:00 2001
+From 8f777fc0b8002ef65fa32e4e0d9c7d582060f060 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:01:30 +0800
-Subject: [PATCH 10/15] pre-CS:add camera imx134_sunny_p8n09f driver support
+Subject: [PATCH 10/16] pre-CS:add camera imx134_sunny_p8n09f driver support
 
 Change-Id: I4ed13d96040fb62e773b91f07eb36aa118ebd936
 ---
@@ -252,10 +252,10 @@ index de8a058..43755a4 100644
 +	};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 811c726..0d09735 100644
+index 0bfba3be..6d7a8d7 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -323,6 +323,7 @@ CONFIG_S5K4H5_LITEON_12P1BA855D=y
+@@ -325,6 +325,7 @@ CONFIG_S5K4H5_LITEON_12P1BA855D=y
  CONFIG_OV8850_FOXCONN_DC0901B=y
  CONFIG_OV5648_SUNNY_P5V18G=y
  CONFIG_S5K4E1_LITEON_13P1BA535D=y

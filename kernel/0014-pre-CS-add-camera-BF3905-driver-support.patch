@@ -1,7 +1,7 @@
-From 3114362963420a5af6d87a0591f84cba08fef996 Mon Sep 17 00:00:00 2001
+From cf1d9ec76d3582c1eaf7df925bae8469469f9021 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 19:40:10 +0800
-Subject: [PATCH 14/15] pre-CS: add camera BF3905 driver support
+Subject: [PATCH 14/16] pre-CS: add camera BF3905 driver support
 
 Change-Id: I4f6b53530d5151d884c621784ff47b5c0e0a518d
 ---
@@ -58,10 +58,10 @@ index c6df9ae..cf41a4a 100644
 +
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 5a1a60c..9ab8f33 100644
+index 2e26a85..46e78fb 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -314,6 +314,7 @@ CONFIG_MEDIA_CONTROLLER=y
+@@ -316,6 +316,7 @@ CONFIG_MEDIA_CONTROLLER=y
  CONFIG_VIDEO_DEV=y
  CONFIG_VIDEO_V4L2_SUBDEV_API=y
  # CONFIG_MSM_CAMERA is not set

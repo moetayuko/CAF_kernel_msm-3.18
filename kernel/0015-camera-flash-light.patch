@@ -1,7 +1,7 @@
-From a5f7444f1bee0c116cb5cf04de4af25ee7848469 Mon Sep 17 00:00:00 2001
+From 5ac84a852c98636eb01c692bd19e4417a8adca2a Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Thu, 14 Nov 2013 14:33:24 +0800
-Subject: [PATCH 15/15] camera flash light
+Subject: [PATCH 15/16] camera flash light
 
 ---
  arch/arm/boot/dts/msm8610-qrd.dtsi                 |   15 ++-

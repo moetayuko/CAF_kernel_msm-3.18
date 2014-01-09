@@ -1,7 +1,7 @@
-From bce9fdc8030587b8e0ccc4371a01bc731ad2c5e8 Mon Sep 17 00:00:00 2001
+From ce1cda0ee519a30db0134b38899d060bce83e49c Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 19:08:00 +0800
-Subject: [PATCH 13/15] pre-CS: add front camera mt9v113_sunny_p0m01k driver
+Subject: [PATCH 13/16] pre-CS: add front camera mt9v113_sunny_p0m01k driver
 
 Change-Id: I0d2586219c0124546bca21c4ac6bb198b1cf6ee4
 ---
@@ -57,10 +57,10 @@ index e1c74b1..c6df9ae 100644
 +	};
  };
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index b866139..5a1a60c 100644
+index bef90ea..2e26a85 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -326,6 +326,7 @@ CONFIG_S5K4E1_LITEON_13P1BA535D=y
+@@ -328,6 +328,7 @@ CONFIG_S5K4E1_LITEON_13P1BA535D=y
  CONFIG_IMX134_SUNNY_P8N09F=y
  CONFIG_OV5648_FOXCONN_SC0602=y
  CONFIG_S5K4E1_SUNNY_P5S07A=y

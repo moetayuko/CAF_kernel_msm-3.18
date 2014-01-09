@@ -1,0 +1,31 @@
+From 3734b8cfd88f8d7ef739ba7cd62324a975d69299 Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 10 Dec 2013 13:52:39 -0800
+Subject: [PATCH 3/3] dev: gcdb: Fix bug in passing of boot argument
+
+Bug is in previous gerrit preventing the panel name
+from being passed from the LK to the kernel.
+
+Change-Id: Idbb0bd8daf0eb974863d7d97b2331d350dc6aa60
+---
+ dev/gcdb/display/gcdb_display.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/dev/gcdb/display/gcdb_display.c b/dev/gcdb/display/gcdb_display.c
+index 5d81843..060f225 100755
+--- a/dev/gcdb/display/gcdb_display.c
++++ b/dev/gcdb/display/gcdb_display.c
+@@ -201,8 +201,8 @@ bool target_display_panel_node(char *pbuf, uint16_t buf_size)
+ 
+ 	if (buf_size < (strlen(panel_node) + dsi_id_len +
+ 			MAX_PANEL_FORMAT_STRING + 1) ||
+-		strlen(panel_node) ||
+-		strlen(dsi_id))
++		!strlen(panel_node) ||
++		!strlen(dsi_id))
+ 	{
+ 		ret = false;
+ 	}
+-- 
+1.7.8.3
+

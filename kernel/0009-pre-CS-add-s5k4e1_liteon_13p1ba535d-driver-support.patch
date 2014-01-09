@@ -1,7 +1,7 @@
-From cbe67654cd7a5e2cae9263b28a755d96bae21c28 Mon Sep 17 00:00:00 2001
+From 7fbfb07ea3985879c937213d43936a57eb6bbdb1 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 12 Nov 2013 17:00:34 +0800
-Subject: [PATCH 09/15] pre-CS:add s5k4e1_liteon_13p1ba535d driver support
+Subject: [PATCH 09/16] pre-CS:add s5k4e1_liteon_13p1ba535d driver support
 
 Change-Id: Ic8335ef0436cd738528a30f23375933b11ce0b12
 ---
@@ -173,10 +173,10 @@ index 297e339..de8a058 100644
  			cell-index = <0>;
  			reg = <0x22 0x0>;
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 6203c5d..811c726 100644
+index 3cd8169..0bfba3be 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -322,6 +322,7 @@ CONFIG_IMX134=y
+@@ -324,6 +324,7 @@ CONFIG_IMX134=y
  CONFIG_S5K4H5_LITEON_12P1BA855D=y
  CONFIG_OV8850_FOXCONN_DC0901B=y
  CONFIG_OV5648_SUNNY_P5V18G=y

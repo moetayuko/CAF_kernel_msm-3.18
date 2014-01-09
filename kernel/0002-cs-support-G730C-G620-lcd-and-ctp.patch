@@ -1,7 +1,7 @@
-From dfc3e5829b67926b9e671add8083530f907cd26e Mon Sep 17 00:00:00 2001
+From e5649997aa044698356965f81602be5d8261fe82 Mon Sep 17 00:00:00 2001
 From: lnxbuild <lnxbuild@localhost>
 Date: Tue, 17 Dec 2013 19:34:41 +0800
-Subject: [PATCH 02/15] cs support G730C G620 lcd and ctp
+Subject: [PATCH 02/16] cs support G730C G620 lcd and ctp
 
 Change-Id: I60203b6ec4aa1af3940d5a21fc2b39050e25beb1
 ---
@@ -1388,10 +1388,10 @@ index 9fa0913..e2b0bc2 100644
  
  	gen-vkeys {
 diff --git a/arch/arm/configs/msm8610_defconfig b/arch/arm/configs/msm8610_defconfig
-index 02db2f2..2679702 100644
+index 6035149..7884274 100644
 --- a/arch/arm/configs/msm8610_defconfig
 +++ b/arch/arm/configs/msm8610_defconfig
-@@ -232,13 +232,39 @@ CONFIG_INPUT_EVBUG=m
+@@ -234,13 +234,39 @@ CONFIG_INPUT_EVBUG=m
  CONFIG_KEYBOARD_GPIO=y
  CONFIG_INPUT_TOUCHSCREEN=y
  CONFIG_TOUCHSCREEN_ATMEL_MXT=y

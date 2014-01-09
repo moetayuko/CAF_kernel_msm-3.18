@@ -1,0 +1,298 @@
+From 13efda6b6aa9211c64e9c57b600e28ceb1a72edc Mon Sep 17 00:00:00 2001
+From: lnxbuild <lnxbuild@localhost>
+Date: Tue, 7 Jan 2014 22:46:42 +0800
+Subject: [PATCH 16/16] dtsi file change
+
+---
+ .../dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi   |   11 +++++------
+ .../dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi  |   11 +++++------
+ .../dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi     |   10 +++++-----
+ .../dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi   |    8 ++++----
+ .../dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi   |   11 +++++------
+ .../dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi    |   11 +++++------
+ .../dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi |   18 +++++++++---------
+ drivers/video/msm/mdss/mdss_dsi_panel.c            |   16 +++++++++++-----
+ 8 files changed, 49 insertions(+), 47 deletions(-)
+
+diff --git a/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
+index 67dc66d..ccc5a48 100644
+--- a/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-auo-nt35517-5p5-qhd-video.dtsi
+@@ -184,8 +184,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-lane-0-state;
+@@ -195,10 +195,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+-		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
+index b63ebf5..83c1fb1 100644
+--- a/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-auo-otm9605a-5p5-qhd-video.dtsi
+@@ -134,8 +134,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-hfpPowerMode;
+@@ -148,10 +148,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+-		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
+index 2543c00..eda24e7 100644
+--- a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5-qhd-video.dtsi
+@@ -99,8 +99,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-lane-0-state;
+@@ -110,9 +110,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi
+index 7110d1b..0bd58bd 100644
+--- a/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-boe-nt35517-5p5-qhd-video.dtsi
+@@ -99,8 +99,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-lane-0-state;
+@@ -110,8 +110,8 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
+ 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+diff --git a/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi
+index f7f3373..98bef9e 100644
+--- a/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-byd-nt35517-5p5-qhd-video.dtsi
+@@ -153,8 +153,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-lane-0-state;
+@@ -164,10 +164,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+-		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi
+index d0bff61..91015ca 100644
+--- a/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-tianma-hx8389b-5p5-qhd-video.dtsi
+@@ -99,8 +99,8 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+ 		qcom,mdss-dsi-hfpPowerMode;
+@@ -113,10 +113,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+-		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi b/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi
+index c5afdb5..b99d219 100644
+--- a/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi
++++ b/arch/arm/boot/dts/dsi-panel-tianma-otm9605a-5-qhd-video.dtsi
+@@ -18,6 +18,7 @@
+ &mdss_mdp {
+ 		dsi_tianma_otm9605a_5_qhd_vid: qcom,mdss_dsi_tianma_otm9605a_5_qhd_video {
+ 		qcom,mdss-dsi-panel-name = "TIANMA_OTM9605A_5 QHD video dsi panel";
++		qcom,cont-splash-enabled;
+ 		qcom,mdss-dsi-panel-controller = <&mdss_dsi0>;
+ 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+ 		qcom,mdss-dsi-panel-destination = "display_1";
+@@ -142,13 +143,13 @@
+ 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
+ 		qcom,mdss-dsi-h-sync-pulse = <1>;
+-		qcom,mdss-dsi-traffic-mode = <2>;
+-		qcom,mdss-dsi-lane-map = <1>;
++		qcom,mdss-dsi-traffic-mode = "burst_mode";
++		qcom,mdss-dsi-lane-map = "lane_map_3012";
+ 		qcom,mdss-dsi-bllp-eof-power-mode;
+ 		qcom,mdss-dsi-bllp-power-mode;
+-		qcom,mdss-dsi-hfpPowerMode;
+-		qcom,mdss-dsi-hbpPowerMode;
+-		qcom,mdss-dsi-hsaPowerMode;
++		//qcom,mdss-dsi-hfpPowerMode;
++		//qcom,mdss-dsi-hbpPowerMode;
++		//qcom,mdss-dsi-hsaPowerMode;
+ 		qcom,mdss-dsi-lane-0-state;
+ 		qcom,mdss-dsi-lane-1-state;
+ 		qcom,mdss-dsi-panel-timings = [96 22 17 00 4a 54 1b 26 27 03 04 00];
+@@ -156,10 +157,9 @@
+ 		qcom,mdss-dsi-t-clk-pre = <0x1b>;
+ 		qcom,mdss-dsi-bl-min-level = <1>;
+ 		qcom,mdss-dsi-bl-max-level = <255>;
+-		qcom,mdss-dsi-dma-trigger = <4>;
+-		qcom,mdss-dsi-mdp-trigger = <0>;
+-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+-		//qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
++		qcom,mdss-dsi-dma-trigger = "trigger_sw";
++		qcom,mdss-dsi-mdp-trigger = "none";
++		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+ 		qcom,mdss-dsi-reset-sequence = <1 20>, <0 2>, <1 20>;
+ 	};
+ };
+diff --git a/drivers/video/msm/mdss/mdss_dsi_panel.c b/drivers/video/msm/mdss/mdss_dsi_panel.c
+index 2c425ee..7309a93 100644
+--- a/drivers/video/msm/mdss/mdss_dsi_panel.c
++++ b/drivers/video/msm/mdss/mdss_dsi_panel.c
+@@ -28,6 +28,8 @@
+ 
+ DEFINE_LED_TRIGGER(bl_led_trigger);
+ 
++extern void dsi_set_tx_power_mode(int mode);
++
+ void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
+ {
+ 	int ret;
+@@ -153,8 +155,6 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
+ {
+ 	struct dcs_cmd_req cmdreq;
+ 
+-	pr_debug("%s: level=%d\n", __func__, level);
+-
+ 	led_pwm1[1] = (unsigned char)level;
+ 
+ 	memset(&cmdreq, 0, sizeof(cmdreq));
+@@ -163,8 +163,9 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
+ 	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+ 	cmdreq.rlen = 0;
+ 	cmdreq.cb = NULL;
+-
++	dsi_set_tx_power_mode(0);
+ 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
++	dsi_set_tx_power_mode(1);	
+ }
+ 
+ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
+@@ -284,6 +285,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
+ 							u32 bl_level)
+ {
+ 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
++	
+ 
+ 	if (pdata == NULL) {
+ 		pr_err("%s: Invalid input data\n", __func__);
+@@ -328,7 +330,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
+ 		pr_err("%s: Invalid input data\n", __func__);
+ 		return -EINVAL;
+ 	}
+-
++      
+ 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+ 				panel_data);
+ 	mipi  = &pdata->panel_info.mipi;
+@@ -336,8 +338,12 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
+ 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+ 
+ 	if (ctrl->on_cmds.cmd_cnt)
++	{
++	      pr_err("%s: mdss_dsi_panel_on\n", __func__);
++		dsi_set_tx_power_mode(1);
+ 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
+-
++		dsi_set_tx_power_mode(0);
++	}
+ 	pr_debug("%s:-\n", __func__);
+ 	return 0;
+ }
+-- 
+1.7.8.3
+
