@@ -125,6 +125,7 @@ static inline void queued_write_lock(struct qrwlock *lock)
  * queued_read_unlock - release read lock of a queue rwlock
  * @lock : Pointer to queue rwlock structure
  */
+#ifndef queued_read_unlock
 static inline void queued_read_unlock(struct qrwlock *lock)
 {
 	/*
@@ -133,15 +134,18 @@ static inline void queued_read_unlock(struct qrwlock *lock)
 	smp_mb__before_atomic();
 	atomic_sub(_QR_BIAS, &lock->cnts);
 }
+#endif
 
 /**
  * queued_write_unlock - release write lock of a queue rwlock
  * @lock : Pointer to queue rwlock structure
  */
+#ifndef queued_write_unlock
 static inline void queued_write_unlock(struct qrwlock *lock)
 {
 	smp_store_release((u8 *)&lock->cnts, 0);
 }
+#endif
 
 /*
  * Remapping rwlock architecture specific functions to the corresponding

@@ -23,6 +23,10 @@
 #include <linux/spinlock.h>
 #include <asm/qrwlock.h>
 
+#ifndef arch_qrwlock_relax
+# define arch_qrwlock_relax(lock)	cpu_relax_lowlatency()
+#endif
+
 /*
  * This internal data structure is used for optimizing access to some of
  * the subfields within the atomic_t cnts.
@@ -56,7 +60,7 @@ rspin_until_writer_unlock(struct qrwlock *lock)
 	u32 cnts = smp_load_acquire((u32 *)&lock->cnts);
 
 	while ((cnts & _QW_WMASK) == _QW_LOCKED) {
-		cpu_relax_lowlatency();
+		arch_qrwlock_relax(lock);
 		cnts = smp_load_acquire((u32 *)&lock->cnts);
 	}
 }
@@ -97,7 +101,7 @@ void queued_read_lock_slowpath(struct qrwlock *lock, u32 cnts)
 	 * to make sure that the write lock isn't taken.
 	 */
 	while (atomic_read(&lock->cnts) & _QW_WMASK)
-		cpu_relax_lowlatency();
+		arch_qrwlock_relax(lock);
 
 	atomic_add(_QR_BIAS, &lock->cnts);
 	rspin_until_writer_unlock(lock);
@@ -140,7 +144,7 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 		   (cmpxchg_relaxed(&l->wmode, 0, _QW_WAITING) == 0))
 			break;
 
-		cpu_relax_lowlatency();
+		arch_qrwlock_relax(lock);
 	}
 
 	/* When no more readers, set the locked flag */
@@ -151,7 +155,7 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 				    _QW_LOCKED) == _QW_WAITING))
 			break;
 
-		cpu_relax_lowlatency();
+		arch_qrwlock_relax(lock);
 	}
 unlock:
 	arch_spin_unlock(&lock->lock);
