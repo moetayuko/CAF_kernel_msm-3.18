@@ -22,15 +22,61 @@
  */
 
 #include <linux/init.h>
+#include <linux/io.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/slab.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
 #include "core.h"
 
+#define VERSATILE_SYS_PCICTL_OFFSET           0x44
+
+static void __init versatile_dt_pci_init(void)
+{
+	u32 val;
+	void __iomem *base;
+	struct device_node *np;
+	struct property *newprop;
+
+	np = of_find_compatible_node(NULL, NULL, "arm,core-module-versatile");
+	if (!np)
+		return;
+
+	base = of_iomap(np, 0);
+	if (!base)
+		return;
+
+	/* Check if PCI backplane is detected */
+	val = __raw_readl(base + VERSATILE_SYS_PCICTL_OFFSET);
+	if (val & 1)
+		goto err;
+
+	np = of_find_compatible_node(NULL, NULL, "arm,versatile-pci");
+	if (!np)
+		goto err;
+
+	newprop = kzalloc(sizeof(*newprop), GFP_KERNEL);
+	if (!newprop)
+		goto err;
+
+	newprop->name = kstrdup("status", GFP_KERNEL);
+	newprop->value = kstrdup("disabled", GFP_KERNEL);
+	newprop->length = sizeof("disabled");
+	of_update_property(np, newprop);
+
+	pr_info("Not plugged into PCI backplane!\n");
+err:
+	iounmap(base);
+}
+
 static void __init versatile_dt_init(void)
 {
+	versatile_dt_pci_init();
+
 	of_platform_populate(NULL, of_default_bus_match_table,
 			     versatile_auxdata_lookup, NULL);
 }
