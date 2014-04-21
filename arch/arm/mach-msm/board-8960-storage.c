@@ -439,6 +439,7 @@ static unsigned int sdc4_sup_clk_rates[] = {
 };
 
 static struct mmc_platform_data msm8960_sdc4_data = {
+	.built_in      = 1,
 	.ocr_mask      = MMC_VDD_165_195 | MMC_VDD_27_28 | MMC_VDD_28_29,
 	.mmc_bus_width = MMC_CAP_4_BIT_DATA,
 	.sup_clk_table = sdc4_sup_clk_rates,
