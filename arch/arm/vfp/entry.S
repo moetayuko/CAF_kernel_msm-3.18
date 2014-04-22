@@ -26,7 +26,7 @@
 @  r9  = normal "successful" return address
 @  r10 = this threads thread_info structure
 @  lr  = unrecognised instruction return address
-@  IRQs disabled.
+@  IRQs enabled.
 @
 ENTRY(do_vfp)
 #ifdef CONFIG_PREEMPT_COUNT
@@ -34,7 +34,6 @@ ENTRY(do_vfp)
 	add	r11, r4, #1		@ increment it
 	str	r11, [r10, #TI_PREEMPT]
 #endif
-	enable_irq
 	str	r2, [sp, #S_PC]		@ update regs->ARM_pc for Thumb 2 case
  	ldr	r4, .LCvfp
 	ldr	r11, [r10, #TI_CPU]	@ CPU number
