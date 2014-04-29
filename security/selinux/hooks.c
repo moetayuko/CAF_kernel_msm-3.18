@@ -2865,7 +2865,7 @@ static int selinux_inode_permission(struct inode *inode, int mask)
 		ad.selinux_audit_data->auditdeny |= FILE__AUDIT_ACCESS;
 
 	rc2 = slow_avc_audit(sid, isec->sid, isec->sclass, perms,
-			     audited, denied, &ad, flags);
+			     audited, denied, rc, &ad, flags);
 	if (rc2)
 		return rc2;
 	return rc;
