@@ -178,6 +178,9 @@ config ARCH_HAS_ILOG2_U64
 config ARCH_HAS_BANDGAP
 	bool
 
+config FIX_EARLYCON_MEM
+	def_bool EARLY_IOREMAP
+
 config GENERIC_HWEIGHT
 	bool
 	default y
