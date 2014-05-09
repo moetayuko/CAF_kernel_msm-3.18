@@ -27,8 +27,19 @@
 int tick_program_event(ktime_t expires, int force)
 {
 	struct clock_event_device *dev = __this_cpu_read(tick_cpu_device.evtdev);
+	int ret = 0;
 
-	return clockevents_program_event(dev, expires, force);
+	/* Shut down event device if it is not required for long */
+	if (unlikely(expires.tv64 == KTIME_MAX)) {
+		clockevents_set_mode(dev, CLOCK_EVT_MODE_SHUTDOWN);
+	} else {
+		/* restore mode when restarting event dev */
+		if (unlikely(dev->mode == CLOCK_EVT_MODE_SHUTDOWN))
+			clockevents_set_mode(dev, CLOCK_EVT_MODE_ONESHOT);
+		ret = clockevents_program_event(dev, expires, force);
+	}
+
+	return ret;
 }
 
 /**
