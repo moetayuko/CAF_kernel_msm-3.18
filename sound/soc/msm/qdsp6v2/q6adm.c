@@ -204,12 +204,12 @@ static int adm_get_next_available_copp(int port_idx)
 	return idx;
 }
 
-int srs_trumedia_open(int port_id, int copp_idx, int srs_tech_id,
+int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 		      void *srs_params)
 {
 	struct adm_cmd_set_pp_params_inband_v5 *adm_params = NULL;
-	int ret = 0, sz = 0;
-	int port_idx;
+	__s32 sz = 0;
+	int ret = 0, port_idx;
 
 	pr_debug("SRS - %s", __func__);
 

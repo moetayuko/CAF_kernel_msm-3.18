@@ -18,7 +18,7 @@
 
 union srs_trumedia_params_u {
 	struct srs_trumedia_params srs_params;
-	unsigned short int raw_params[1];
+	__u16 raw_params[1];
 };
 
 void msm_dts_srs_tm_init(int port_id, int copp_idx);

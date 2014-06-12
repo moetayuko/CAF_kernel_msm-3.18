@@ -32,7 +32,7 @@ struct route_payload {
 	unsigned int session_id;
 };
 
-int srs_trumedia_open(int port_id, int copp_idx, int srs_tech_id,
+int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 		      void *srs_params);
 
 int adm_get_params(int port_id, int copp_idx, uint32_t module_id,

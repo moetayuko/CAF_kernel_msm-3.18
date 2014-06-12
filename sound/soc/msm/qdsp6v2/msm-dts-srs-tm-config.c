@@ -39,10 +39,10 @@ static int set_port_id(int port_id, int copp_idx)
 	return 0;
 }
 
-static void msm_dts_srs_tm_send_params(int port_id, unsigned int techs,
-				       int param_block_idx)
+static void msm_dts_srs_tm_send_params(__s32 port_id, __u32 techs,
+				       __u16 param_block_idx)
 {
-	int index;
+	__s32 index;
 	/* only send commands to dsp if srs alsa ctrl was used
 	   at least one time */
 	if (!srs_alsa_ctrl_ever_called)
@@ -60,7 +60,7 @@ static void msm_dts_srs_tm_send_params(int port_id, unsigned int techs,
 			 __func__);
 		return;
 	}
-	pr_debug("SRS %s: called, port_id = %d, techs flags = %u, paramblockidx %d\n",
+	pr_debug("SRS %s: called, port_id = %d, techs flags = %u, paramblockidx %u\n",
 		__func__, port_id, techs, param_block_idx);
 	/* force all if techs is set to 1 */
 	if (techs == 1)
@@ -98,13 +98,13 @@ static int msm_dts_srs_trumedia_control_set_(int port_id,
 					    struct snd_kcontrol *kcontrol,
 					    struct snd_ctl_elem_value *ucontrol)
 {
-	unsigned int techs = 0;
-	unsigned short offset, value, max, index;
+	__u32 techs = 0;
+	__u16 offset, value, max, index;
 
 	srs_alsa_ctrl_ever_called = 1;
 
 	max = sizeof(msm_srs_trumedia_params) >> 1;
-	index = (unsigned short)((ucontrol->value.integer.value[0] &
+	index = (__u16)((ucontrol->value.integer.value[0] &
 			SRS_PARAM_INDEX_MASK) >> 31);
 	if (SRS_CMD_UPLOAD ==
 		(ucontrol->value.integer.value[0] & SRS_CMD_UPLOAD)) {
@@ -115,9 +115,9 @@ static int msm_dts_srs_trumedia_control_set_(int port_id,
 			msm_dts_srs_tm_send_params(port_id, techs, index);
 		return 0;
 	}
-	offset = (unsigned short)((ucontrol->value.integer.value[0] &
+	offset = (__u16)((ucontrol->value.integer.value[0] &
 			SRS_PARAM_OFFSET_MASK) >> 16);
-	value = (unsigned short)(ucontrol->value.integer.value[0] &
+	value = (__u16)(ucontrol->value.integer.value[0] &
 			SRS_PARAM_VALUE_MASK);
 	if (offset < max) {
 		msm_srs_trumedia_params[index].raw_params[offset] = value;
@@ -126,24 +126,6 @@ static int msm_dts_srs_trumedia_control_set_(int port_id,
 	} else {
 		pr_err("SRS %s: index out of bounds! (max %d, requested %d)",
 				__func__, max, offset);
-	}
-	if (offset == 4) {
-		int i;
-		for (i = 0; i < max; i++) {
-			if (i == 0) {
-				pr_debug("SRS %s: global block start",
-						__func__);
-			}
-			if (i ==
-			(sizeof(struct srs_trumedia_params_GLOBAL) >> 1)) {
-				pr_debug("SRS %s: wowhd block start at offset %d word offset %d",
-					__func__, i, i>>1);
-				break;
-			}
-			pr_debug("SRS %s: param_index %d index %d val %d",
-				__func__, index, i,
-				msm_srs_trumedia_params[index].raw_params[i]);
-		}
 	}
 	return 0;
 }
