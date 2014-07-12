@@ -212,7 +212,7 @@ int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 		      void *srs_params)
 {
 	struct adm_cmd_set_pp_params_inband_v5 *adm_params = NULL;
-	struct adm_cmd_set_pp_params_v5 *adm_params_ob = NULL;
+	struct adm_cmd_set_pp_params_v5 *adm_params_ = NULL;
 	__s32 sz = 0, param_id, module_id = SRS_TRUMEDIA_MODULE_ID, outband = 0;
 	int ret = 0, port_idx;
 
@@ -320,9 +320,9 @@ int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 	case SRS_ID_AEQ: {
 		int *update_params_ptr = (int *)this_adm.outband_memmap.kvaddr;
 		outband = 1;
-		adm_params_ = (struct adm_cmd_set_pp_params_v5 *)adm_params =
-			     kzalloc(sizeof(struct adm_cmd_set_pp_params_v5),
+		adm_params = kzalloc(sizeof(struct adm_cmd_set_pp_params_v5),
 				     GFP_KERNEL);
+		adm_params_ = (struct adm_cmd_set_pp_params_v5 *)adm_params;
 		if (!adm_params_) {
 			pr_err("%s, adm params memory alloc failed\n",
 				__func__);
@@ -444,7 +444,7 @@ int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 	}
 	/* Wait for the callback with copp id */
 	ret = wait_event_timeout(this_adm.copp.wait[port_idx][copp_idx],
-			this_adm.copp.stat[port_idx][copp_idx],
+			atomic_read(&this_adm.copp.stat[port_idx][copp_idx]),
 			msecs_to_jiffies(TIMEOUT_MS));
 	if (!ret) {
 		pr_err("%s: SRS set params timed out port = %d\n",
@@ -1456,7 +1456,7 @@ int adm_open(int port_id, int path, int rate, int channel_mode,
 	if ((topology == SRS_TRUMEDIA_TOPOLOGY_ID) && !perf_mode) {
 		int res;
 		atomic_set(&this_adm.mem_map_cal_index, ADM_SRS_TRUMEDIA);
-		msm_dts_ion_memmap(&this_adm.outband_memmap);
+		msm_dts_srs_tm_ion_memmap(&this_adm.outband_memmap);
 		res = adm_memory_map_regions(&this_adm.outband_memmap.paddr, 0,
 					     &this_adm.outband_memmap.size, 1);
 

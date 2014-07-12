@@ -81,7 +81,7 @@ static void msm_dts_srs_tm_send_params(__s32 port_id, __u32 techs)
 	if (techs & (1 << SRS_ID_HPF))
 		srs_trumedia_open(port_id, srs_copp_idx[index], SRS_ID_HPF,
 			(void *)&msm_srs_trumedia_params.srs_params.hpf);
-	if (techs & (1 << SRS_ID_PEQ))
+	if (techs & (1 << SRS_ID_AEQ))
 		srs_trumedia_open(port_id, srs_copp_idx[index], SRS_ID_AEQ,
 			(void *)&msm_srs_trumedia_params.srs_params.aeq);
 	if (techs & (1 << SRS_ID_HL))
@@ -291,17 +291,17 @@ static void reg_ion_mem(void)
 	int rc;
 	pr_err("%s: entered\n", __func__);
 	rc = msm_audio_ion_alloc("SRS_TRUMEDIA", &ion_client, &ion_handle,
-				 ION_MEM_SIZE, &po.paddr, &po.pa_len,
+				 ION_MEM_SIZE, &po.paddr, &po.size,
 				 &po.kvaddr);
 	if (rc != 0)
 		pr_err("%s: failed to allocate memory.\n", __func__);
 
 	pr_debug("%s: exited ion_client = %p, ion_handle = %p, phys_addr = %lu, length = %u, vaddr = %p, rc = 0x%x\n",
 		__func__, ion_client, ion_handle, (long)po.paddr,
-		po.pa_len, po.kvaddr, rc);
+		po.size, po.kvaddr, rc);
 }
 
-void msm_dts_ion_memmap(struct param_outband *po_)
+void msm_dts_srs_tm_ion_memmap(struct param_outband *po_)
 {
 	po_->size = ION_MEM_SIZE;
 	po_->kvaddr = po.kvaddr;
@@ -337,6 +337,6 @@ void msm_dts_srs_tm_init(int port_id, int copp_idx)
 		reg_ion_mem();
 	}
 
-	msm_dts_srs_tm_send_params(port_id, 1, 0);
+	msm_dts_srs_tm_send_params(port_id, 1);
 	return;
 }

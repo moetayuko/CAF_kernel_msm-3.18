@@ -6751,7 +6751,7 @@ struct afe_spkr_prot_calib_get_resp {
 #define SRS_ID_HPF			0x00000004
 #define SRS_ID_AEQ			0x00000005
 #define SRS_ID_HL			0x00000006
-#define SRS_ID_GEQ			0x00000005
+#define SRS_ID_GEQ			0x00000007
 
 #define SRS_CMD_UPLOAD			0x7FFF0000
 #define SRS_PARAM_OFFSET_MASK		0x3FFF0000
@@ -6842,7 +6842,7 @@ struct srs_trumedia_params {
 	struct srs_trumedia_params_WOWHD	wowhd;
 	struct srs_trumedia_params_CSHP		cshp;
 	struct srs_trumedia_params_HPF		hpf;
-	struct srs_trumedia_params_PEQ		aeq;
+	struct srs_trumedia_params_AEQ		aeq;
 	struct srs_trumedia_params_HL		hl;
 	struct srs_trumedia_params_GEQ		geq;
 } __packed;
