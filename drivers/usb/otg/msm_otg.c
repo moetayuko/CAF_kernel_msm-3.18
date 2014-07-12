@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  *
  */
+
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -36,9 +37,7 @@
 #include <linux/usb/msm_hsusb.h>
 #include <linux/usb/msm_hsusb_hw.h>
 #include <linux/regulator/consumer.h>
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
 #include <linux/mfd/pm8xxx/pm8921-charger.h>
-#endif
 #include <linux/mfd/pm8xxx/misc.h>
 #include <linux/power_supply.h>
 #include <linux/mhl_8334.h>
@@ -72,7 +71,9 @@
 #define USB_PHY_VDD_DIG_VOL_MIN	1045000 /* uV */
 #define USB_PHY_VDD_DIG_VOL_MAX	1320000 /* uV */
 
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 static DECLARE_COMPLETION(pmic_vbus_init);
+#endif
 static struct msm_otg *the_msm_otg;
 static bool debug_aca_enabled;
 static bool debug_bus_voting_enabled;
@@ -94,6 +95,19 @@ static inline bool aca_enabled(void)
 	return debug_aca_enabled;
 #endif
 }
+
+static const int vdd_val[VDD_TYPE_MAX][VDD_VAL_MAX] = {
+		{  /* VDD_CX CORNER Voting */
+			[VDD_NONE]	= RPM_VREG_CORNER_NONE,
+			[VDD_MIN]	= RPM_VREG_CORNER_NOMINAL,
+			[VDD_MAX]	= RPM_VREG_CORNER_HIGH,
+		},
+		{ /* VDD_CX Voltage Voting */
+			[VDD_NONE]	= USB_PHY_VDD_DIG_VOL_NONE,
+			[VDD_MIN]	= USB_PHY_VDD_DIG_VOL_MIN,
+			[VDD_MAX]	= USB_PHY_VDD_DIG_VOL_MAX,
+		},
+};
 
 #ifdef CONFIG_USB_HOST_NOTIFY
 static void msm_otg_set_id_state_pbatest(int id, struct host_notify_dev *ndev)
@@ -141,19 +155,6 @@ static void msm_otg_notify_work(struct work_struct *w)
 	}
 }
 #endif
-
-static const int vdd_val[VDD_TYPE_MAX][VDD_VAL_MAX] = {
-		{  /* VDD_CX CORNER Voting */
-			[VDD_NONE]	= RPM_VREG_CORNER_NONE,
-			[VDD_MIN]	= RPM_VREG_CORNER_NOMINAL,
-			[VDD_MAX]	= RPM_VREG_CORNER_HIGH,
-		},
-		{ /* VDD_CX Voltage Voting */
-			[VDD_NONE]	= USB_PHY_VDD_DIG_VOL_NONE,
-			[VDD_MIN]	= USB_PHY_VDD_DIG_VOL_MIN,
-			[VDD_MAX]	= USB_PHY_VDD_DIG_VOL_MAX,
-		},
-};
 
 static int msm_hsusb_ldo_init(struct msm_otg *motg, int init)
 {
@@ -1120,7 +1121,7 @@ psy_not_supported:
 	dev_dbg(motg->phy.dev, "Power Supply doesn't support USB charger\n");
 	return -ENXIO;
 }
-
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 static int msm_otg_notify_chg_type(struct msm_otg *motg)
 {
 	int charger_type;
@@ -1142,9 +1143,9 @@ static int msm_otg_notify_chg_type(struct msm_otg *motg)
 		motg->chg_type == USB_ACA_C_CHARGER))
 		charger_type = POWER_SUPPLY_TYPE_USB_ACA;
 	else
-		charger_type = POWER_SUPPLY_TYPE_BATTERY;
-	return 0;
-//	return pm8921_set_usb_power_supply_type(charger_type);
+		charger_type = POWER_SUPPLY_TYPE_UNKNOWN;
+
+	return pm8921_set_usb_power_supply_type(charger_type);
 }
 
 static int msm_otg_notify_power_supply(struct msm_otg *motg, unsigned mA)
@@ -1173,9 +1174,11 @@ psy_not_supported:
 	dev_dbg(motg->phy.dev, "Power Supply doesn't support USB charger\n");
 	return -ENXIO;
 }
+#endif
 
 static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 {
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 	struct usb_gadget *g = motg->phy.otg->gadget;
 
 	if (g && g->is_a_peripheral)
@@ -1202,13 +1205,11 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 	 *  Use Power Supply API if supported, otherwise fallback
 	 *  to legacy pm8921 API.
 	 */
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
 	if (msm_otg_notify_power_supply(motg, mA))
 		pm8921_charger_vbus_draw(mA);
-#else
-	msm_otg_notify_power_supply(motg, mA);
-#endif
+
 	motg->cur_power = mA;
+#endif
 }
 
 static int msm_otg_set_power(struct usb_phy *phy, unsigned mA)
@@ -1241,8 +1242,12 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 #ifdef CONFIG_USB_HOST_NOTIFY
 	if (on == 1) {
 		motg->ndev.mode = NOTIFY_HOST_MODE;
+		if (!motg->smartdock)
+			host_state_notify(&motg->ndev, NOTIFY_HOST_ADD);
 	} else if (on == 0) {
 		motg->ndev.mode = NOTIFY_NONE_MODE;
+		if (!motg->smartdock)
+			host_state_notify(&motg->ndev, NOTIFY_HOST_REMOVE);
 	}
 #endif
 	hcd = bus_to_hcd(otg->host);
@@ -1377,14 +1382,16 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 		return;
 
 	if (motg->pdata->vbus_power) {
-		ret = motg->pdata->vbus_power(on);
-		if (!ret)
-			vbus_is_on = on;
+		if (!motg->smartdock) {
+			ret = motg->pdata->vbus_power(on);
+			if (!ret)
+				vbus_is_on = on;
 #ifdef CONFIG_USB_HOST_NOTIFY
-		else
-			schedule_delayed_work(&motg->late_power_work,
-						(1000 * HZ/1000));
+			else
+				schedule_delayed_work(&motg->late_power_work,
+							(1000 * HZ/1000));
 #endif
+		}
 		return;
 	}
 
@@ -2416,28 +2423,21 @@ static void msm_otg_init_sm(struct msm_otg *motg)
 			else
 				clear_bit(B_SESS_VLD, &motg->inputs);
 		} else if (pdata->otg_control == OTG_PMIC_CONTROL) {
-			if (otgsc & OTGSC_ID) {
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
+			if (pdata->pmic_id_irq) {
 				if (msm_otg_read_pmic_id_state(motg))
 					set_bit(ID, &motg->inputs);
 				else
 					clear_bit(ID, &motg->inputs);
 			}
-			if (pdata->smb347s) {
-				pr_info("%s: smb347s\n", __func__);
-				if (otgsc & OTGSC_BSV)
-					set_bit(B_SESS_VLD, &motg->inputs);
-				else
-					clear_bit(B_SESS_VLD, &motg->inputs);
-			}
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
-			else {
-                                pr_info("msm_otg_init_sm, PM8921\n");
-				/*
-				 * VBUS initial state is reported after PMIC
-				 * driver initialization. Wait for it.
-				 */
-				wait_for_completion(&pmic_vbus_init);
-			}
+			/*
+			 * VBUS initial state is reported after PMIC
+			 * driver initialization. Wait for it.
+			 */
+			wait_for_completion(&pmic_vbus_init);
+#else
+			set_bit(ID, &motg->inputs);
+			clear_bit(B_SESS_VLD, &motg->inputs);
 #endif
 		}
 		break;
@@ -2452,7 +2452,7 @@ static void msm_otg_init_sm(struct msm_otg *motg)
 			else
 				clear_bit(B_SESS_VLD, &motg->inputs);
 		} else if (pdata->otg_control == OTG_PMIC_CONTROL) {
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 			/*
 			 * VBUS initial state is reported after PMIC
 			 * driver initialization. Wait for it.
@@ -2510,12 +2510,6 @@ static void msm_otg_sm_work(struct work_struct *w)
 			otg->phy->state = OTG_STATE_A_IDLE;
 			work = 1;
 		} else if (test_bit(B_SESS_VLD, &motg->inputs)) {
-#ifdef CONFIG_USB_SWITCH_FSA9485
-			if (motg->chg_state != USB_CHG_STATE_DETECTED) {
-				motg->chg_type = USB_SDP_CHARGER;
-				motg->chg_state = USB_CHG_STATE_DETECTED;
-			}
-#endif
 			pr_debug("b_sess_vld\n");
 			switch (motg->chg_state) {
 			case USB_CHG_STATE_UNDEFINED:
@@ -2817,6 +2811,15 @@ static void msm_otg_sm_work(struct work_struct *w)
 			msm_otg_start_timer(motg, TA_WAIT_VFALL, A_WAIT_VFALL);
 		} else if (test_bit(A_VBUS_VLD, &motg->inputs)) {
 			pr_debug("a_vbus_vld\n");
+			ulpi_write(otg->phy, 0x33, 0x81);
+			ulpi_write(otg->phy, 0x14, 0x82);
+			pr_info("%s: ULPI 0x%02x:0x%02x:0x%02x:0x%02x\n",
+				__func__,
+				ulpi_read(otg->phy, 0x80),
+				ulpi_read(otg->phy, 0x81),
+				ulpi_read(otg->phy, 0x82),
+				ulpi_read(otg->phy, 0x83));
+			mdelay(100);
 			otg->phy->state = OTG_STATE_A_WAIT_BCON;
 			if (TA_WAIT_BCON > 0)
 				msm_otg_start_timer(motg, TA_WAIT_BCON,
@@ -3098,7 +3101,7 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		set_bit(A_SRP_DET, &motg->inputs);
 		set_bit(A_BUS_REQ, &motg->inputs);
 		work = 1;
-	} else if (otgsc & OTGSC_BSVIS) {
+	} else if ((otgsc & OTGSC_BSVIS) && (otgsc & OTGSC_BSVIE)) {
 		writel_relaxed(otgsc, USB_OTGSC);
 		/*
 		 * BSV interrupt comes when operating as an A-device
@@ -3212,37 +3215,22 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 	return ret;
 }
 
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 void msm_otg_set_vbus_state(int online)
 {
 	static bool init;
 	struct msm_otg *motg = the_msm_otg;
 	struct usb_otg *otg = motg->phy.otg;
 
-	/* Ignore received BSV interrupts, if ID pin is GND */
-	pr_info("%s: %d", __func__, online);
-#if 0
-	if (!test_bit(ID, &motg->inputs)) {
-		/*
-		 * state machine work waits for initial VBUS
-		 * completion in UNDEFINED state.  Process
-		 * the initial VBUS event in ID_GND state.
-		 */
-		if (init) {
-			dev_info(motg->phy.dev, "msm_otg_set_vbus_state(1): on working\n");
-			return;
-		}
-	}
-#endif
+	/* In A Host Mode, ignore received BSV interrupts */
+	if (otg->phy->state >= OTG_STATE_A_IDLE)
+		return;
+
 	if (online) {
-		if (otg->phy->state > OTG_STATE_B_IDLE) {
-			dev_info(motg->phy.dev, "msm_otg_set_vbus_state(1): on working\n");
-			return;
-		}
-		pr_info("PMIC: BSV set\n");
+		dev_info(otg->phy->dev, "PMIC: BSV set\n");
 		set_bit(B_SESS_VLD, &motg->inputs);
 	} else {
-		pr_info("PMIC: BSV clear\n");
+		dev_info(otg->phy->dev, "PMIC: BSV clear\n");
 		clear_bit(B_SESS_VLD, &motg->inputs);
 	}
 
@@ -3250,6 +3238,7 @@ void msm_otg_set_vbus_state(int online)
 		init = true;
 		complete(&pmic_vbus_init);
 		pr_debug("PMIC: BSV init complete\n");
+		return;
 	}
 
 	if (test_bit(MHL, &motg->inputs) ||
@@ -3262,7 +3251,6 @@ void msm_otg_set_vbus_state(int online)
 		motg->sm_work_pending = true;
 	else
 		queue_work(system_nrt_wq, &motg->sm_work);
-	return;
 }
 #else
 void msm_otg_set_vbus_state(int online)
@@ -3286,9 +3274,8 @@ void msm_otg_set_vbus_state(int online)
 	else
 		queue_work(system_nrt_wq, &motg->sm_work);
 }
-#endif
 EXPORT_SYMBOL_GPL(msm_otg_set_vbus_state);
-
+#endif
 void msm_otg_set_charging_state(bool enable)
 {
 	struct msm_otg *motg = the_msm_otg;
@@ -3304,28 +3291,58 @@ void msm_otg_set_charging_state(bool enable)
 	if (enable) {
 		motg->chg_type = USB_DCP_CHARGER;
 		motg->chg_state = USB_CHG_STATE_DETECTED;
+		schedule_work(&motg->sm_work);
 	} else {
 		motg->chg_state = USB_CHG_STATE_UNDEFINED;
 		motg->chg_type = USB_INVALID_CHARGER;
-		if (test_bit(B_SESS_VLD, &motg->inputs))
-			clear_bit(B_SESS_VLD, &motg->inputs);
 	}
-
-	schedule_work(&motg->sm_work);
 }
 EXPORT_SYMBOL_GPL(msm_otg_set_charging_state);
-
-void msm_otg_set_id_state(bool enable)
+void msm_otg_set_id_state(int online)
 {
 	struct msm_otg *motg = the_msm_otg;
-	struct usb_phy *phy = &motg->phy;
 
-	if (atomic_read(&motg->in_lpm)) {
-		pr_info("msm_otg_set_id_state : in LPM\n");
-		pm_runtime_resume(phy->dev);
+	if (online) {
+		dev_info(motg->phy.dev, "MUIC: ID set\n");
+		set_bit(ID, &motg->inputs);
+		host_state_notify(&motg->ndev, NOTIFY_HOST_REMOVE);
+	} else {
+		dev_info(motg->phy.dev, "MUIC: ID clear\n");
+		clear_bit(ID, &motg->inputs);
+		set_bit(A_BUS_REQ, &motg->inputs);
+		host_state_notify(&motg->ndev, NOTIFY_HOST_ADD);
 	}
+
+	if (atomic_read(&motg->pm_suspended))
+		motg->sm_work_pending = true;
+	else
+		queue_work(system_nrt_wq, &motg->sm_work);
 }
 EXPORT_SYMBOL_GPL(msm_otg_set_id_state);
+
+void msm_otg_set_smartdock_state(bool online)
+{
+	struct msm_otg *motg = the_msm_otg;
+
+	if (online) {
+		dev_info(motg->phy.dev, "SMARTDOCK : ID set\n");
+		motg->smartdock = false;
+		set_bit(ID, &motg->inputs);
+	} else {
+		dev_info(motg->phy.dev, "SMARTDOCK : ID clear\n");
+		motg->smartdock = true;
+		clear_bit(ID, &motg->inputs);
+	}
+
+	if (test_bit(B_SESS_VLD, &motg->inputs))
+		clear_bit(B_SESS_VLD, &motg->inputs);
+
+	if (atomic_read(&motg->pm_suspended))
+		motg->sm_work_pending = true;
+	else
+		queue_work(system_nrt_wq, &motg->sm_work);
+}
+EXPORT_SYMBOL_GPL(msm_otg_set_smartdock_state);
 
 static void msm_pmic_id_status_w(struct work_struct *w)
 {
@@ -4080,7 +4097,7 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 		dev_dbg(&pdev->dev, "mode debugfs file is"
 			"not available\n");
 
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 	if (motg->pdata->otg_control == OTG_PMIC_CONTROL)
 		pm8921_charger_register_vbus_sn(&msm_otg_set_vbus_state);
 #endif
@@ -4135,6 +4152,7 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "request irq succeed for otg_power\n");
 	}
 #endif
+	motg->smartdock = false;
 	if (motg->pdata->bus_scale_table) {
 		motg->bus_perf_client =
 		    msm_bus_scale_register_client(motg->pdata->bus_scale_table);
@@ -4200,7 +4218,7 @@ static int __devexit msm_otg_remove(struct platform_device *pdev)
 
 	if (pdev->dev.of_node)
 		msm_otg_setup_devices(pdev, motg->pdata->mode, false);
-#ifndef CONFIG_USB_MSM_USE_POWER_SUPPLY_API
+#ifdef CONFIG_PM8921_CHARGER_CALLBACK
 	if (motg->pdata->otg_control == OTG_PMIC_CONTROL)
 		pm8921_charger_unregister_vbus_sn(0);
 	msm_otg_mhl_register_callback(motg, NULL);

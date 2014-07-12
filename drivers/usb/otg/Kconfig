@@ -135,7 +135,7 @@ config USB_MSM_OTG
 	  This driver is not supported on boards like trout which
 	  has an external PHY.
 
-config USB_MSM_USE_POWER_SUPPLY_API
+config PM8921_CHARGER_CALLBACK
 	bool "USB OTG power controlled by chip other than PM8921"
 	depends on USB_MSM_OTG
 	default n

@@ -1273,7 +1273,11 @@ static void fsa9485_otg_cb(bool attached)
 
 	if (attached) {
 		pr_info("%s set id state\n", __func__);
-//		msm_otg_set_id_state(attached);
+		msm_otg_set_id_state(0);
+	}
+	else {
+		pr_info("%s set id state\n", __func__);
+		msm_otg_set_id_state(1);
 	}
 }
 
@@ -1287,10 +1291,10 @@ static void fsa9485_usb_cb(bool attached)
 	set_cable_status = attached ? CABLE_TYPE_USB : CABLE_TYPE_NONE;
 
 	if (system_rev >= 0x9) {
-//		if (attached) {
+
 			pr_info("%s set vbus state\n", __func__);
 			msm_otg_set_vbus_state(attached);
-//		}
+
 	}
 
 	for (i = 0; i < 10; i++) {
@@ -1515,15 +1519,50 @@ static void fsa9485_smartdock_cb(bool attached)
 		pr_err("%s: fail to set power_suppy ONLINE property(%d)\n",
 			__func__, ret);
 	}
-
-//	msm_otg_set_smartdock_state(attached);
+	msm_otg_set_smartdock_state(0);
 }
 
 static void fsa9485_audio_dock_cb(bool attached)
 {
+	union power_supply_propval value;
+	int i, ret = 0;
+	struct power_supply *psy;
+
 	pr_info("fsa9485_audio_dock_cb attached %d\n", attached);
 
-//	msm_otg_set_smartdock_state(attached);
+	set_cable_status =
+		attached ? CABLE_TYPE_AC : CABLE_TYPE_NONE;
+
+	for (i = 0; i < 10; i++) {
+		psy = power_supply_get_by_name("battery");
+		if (psy)
+			break;
+	}
+	if (i == 10) {
+		pr_err("%s: fail to get battery ps\n", __func__);
+		return;
+	}
+
+	switch (set_cable_status) {
+	case CABLE_TYPE_AC:
+		value.intval = POWER_SUPPLY_TYPE_MAINS;
+		break;
+	case CABLE_TYPE_NONE:
+		value.intval = POWER_SUPPLY_TYPE_BATTERY;
+		break;
+	default:
+		pr_err("invalid status:%d\n", attached);
+		return;
+	}
+
+	ret = psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE,
+		&value);
+	if (ret) {
+		pr_err("%s: fail to set power_suppy ONLINE property(%d)\n",
+			__func__, ret);
+	}
+
+	msm_otg_set_smartdock_state(0);
 }
 
 static int fsa9485_dock_init(void)
@@ -1553,7 +1592,7 @@ int msm8960_get_cable_type(void)
 	}
 	if (i == 10) {
 		pr_err("%s: fail to get battery ps\n", __func__);
-		return -1;
+		return 0;
 	}
 #endif
 
