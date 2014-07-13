@@ -112,9 +112,12 @@ extern int poweroff_charging;
 extern struct msm_rtb_platform_data msm8960_rtb_pdata;
 extern struct msm_cache_dump_platform_data msm8960_cache_dump_pdata;
 extern void msm8960_add_vidc_device(void);
+extern void msm_otg_set_cable_state(int);
 extern void msm_otg_set_vbus_state(int);
-extern void msm_otg_set_charging_state(bool);
-extern void msm_otg_set_id_state(bool);
+extern void msm_otg_set_charging_state(bool enable);
+extern void msm_otg_set_id_state(bool enable);
+extern void msm_otg_set_smartdock_state(bool enable);
+
 
 #if defined(CONFIG_BCM4334) || defined(CONFIG_BCM4334_MODULE)
 int brcm_wlan_init(void);
