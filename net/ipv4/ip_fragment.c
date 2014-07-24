@@ -487,7 +487,6 @@ found:
 	}
 
 	skb_dst_drop(skb);
-	inet_frag_lru_move(&qp->q);
 	return -EINPROGRESS;
 
 err:
