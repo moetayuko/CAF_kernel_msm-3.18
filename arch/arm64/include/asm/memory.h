@@ -95,6 +95,12 @@
 #define MT_NORMAL_NC		3
 #define MT_NORMAL		4
 
+/*
+ * Memory types for Stage-2 translation
+ */
+#define MT_S2_NORMAL		0xf
+#define MT_S2_DEVICE_nGnRE	0x1
+
 #ifndef __ASSEMBLY__
 
 extern phys_addr_t		memstart_addr;
@@ -132,6 +138,7 @@ static inline void *phys_to_virt(phys_addr_t x)
 #define __pa(x)			__virt_to_phys((unsigned long)(x))
 #define __va(x)			((void *)__phys_to_virt((phys_addr_t)(x)))
 #define pfn_to_kaddr(pfn)	__va((pfn) << PAGE_SHIFT)
+#define virt_to_pfn(x)      __phys_to_pfn(__virt_to_phys(x))
 
 /*
  *  virt_to_page(k)	convert a _valid_ virtual address to struct page *
