@@ -391,8 +391,6 @@ int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 			sizeof(struct adm_cmd_set_pp_params_inband_v5));
 		memcpy(geq_params, srs_params,
 			sizeof(struct srs_trumedia_params_GEQ));
-
-		pr_err("SRS - %s: GEQ params prepared\n", __func__);
 		break;
 	}
 	default:
