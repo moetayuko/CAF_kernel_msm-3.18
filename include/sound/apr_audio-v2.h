@@ -6766,6 +6766,7 @@ struct srs_trumedia_params_GLOBAL {
 	uint8_t		v6;
 	uint8_t		v7;
 	uint8_t		v8;
+	uint16_t	v9;
 } __packed;
 
 struct srs_trumedia_params_WOWHD {
