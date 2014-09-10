@@ -398,7 +398,7 @@ extern ktime_t hrtimer_get_next_event(void);
  */
 static inline int hrtimer_active(const struct hrtimer *timer)
 {
-	return timer->state != HRTIMER_STATE_INACTIVE;
+	return (timer->state & (~HRTIMER_STATE_PINNED)) != HRTIMER_STATE_INACTIVE;
 }
 
 /*
