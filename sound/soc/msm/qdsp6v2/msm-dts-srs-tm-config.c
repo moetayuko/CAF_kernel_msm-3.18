@@ -291,13 +291,17 @@ static void reg_ion_mem(void)
 	if (rc != 0)
 		pr_err("%s: failed to allocate memory.\n", __func__);
 
-	pr_debug("%s: exited ion_client = %p, ion_handle = %p, phys_addr = %lu, length = %u, vaddr = %p, rc = 0x%x\n",
+	pr_debug("%s: exited ion_client = %p, ion_handle = %p, phys_addr = %lu, length = %zd, vaddr = %p, rc = 0x%x\n",
 		__func__, ion_client, ion_handle, (long)po.paddr,
 		po.size, po.kvaddr, rc);
 }
 
 void msm_dts_srs_tm_ion_memmap(struct param_outband *po_)
 {
+	if (po.kvaddr == NULL) {
+		pr_debug("%s: calling reg_ion_mem()\n", __func__);
+		reg_ion_mem();
+	}
 	po_->size = ION_MEM_SIZE;
 	po_->kvaddr = po.kvaddr;
 	po_->paddr = po.paddr;
@@ -306,6 +310,9 @@ void msm_dts_srs_tm_ion_memmap(struct param_outband *po_)
 static void unreg_ion_mem(void)
 {
 	msm_audio_ion_free(ion_client, ion_handle);
+	po.kvaddr = NULL;
+	po.paddr = 0;
+	po.size = 0;
 }
 
 void msm_dts_srs_tm_deinit(int port_id)
@@ -327,7 +334,7 @@ void msm_dts_srs_tm_init(int port_id, int copp_idx)
 		return;
 	}
 
-	if (!ref_cnt++) {
+	if (!ref_cnt++ && po.kvaddr == NULL) {
 		pr_debug("%s: calling reg_ion_mem()\n", __func__);
 		reg_ion_mem();
 	}

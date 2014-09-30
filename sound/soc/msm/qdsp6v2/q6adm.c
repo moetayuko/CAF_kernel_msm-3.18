@@ -1459,7 +1459,7 @@ int adm_open(int port_id, int path, int rate, int channel_mode,
 					     &this_adm.outband_memmap.size, 1);
 
 		if (res < 0) {
-			pr_err("%s: SRS adm_memory_map_regions failed ! addr = 0x%x, size = %d\n",
+			pr_err("%s: SRS adm_memory_map_regions failed ! addr = 0x%x, size = %zd\n",
 				__func__, this_adm.outband_memmap.paddr,
 				this_adm.outband_memmap.size);
 		}
