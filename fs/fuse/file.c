@@ -228,7 +228,8 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	return err;
 }
 
-static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode)
+static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode,
+				 struct file *file)
 {
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_req *req = ff->reserved_req;
@@ -249,6 +250,14 @@ static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode)
 	req->in.numargs = 1;
 	req->in.args[0].size = sizeof(struct fuse_release_in);
 	req->in.args[0].value = inarg;
+
+	if (ff->flock) {
+		struct fuse_release_in *inarg = &req->misc.release.in;
+
+		inarg->release_flags |= FUSE_RELEASE_FLOCK_UNLOCK;
+		inarg->lock_owner = fuse_lock_owner_id(ff->fc,
+						       (fl_owner_t) file);
+	}
 }
 
 void fuse_release_common(struct file *file, int opcode)
@@ -261,14 +270,8 @@ void fuse_release_common(struct file *file, int opcode)
 		return;
 
 	req = ff->reserved_req;
-	fuse_prepare_release(ff, file->f_flags, opcode);
+	fuse_prepare_release(ff, file->f_flags, opcode, file);
 
-	if (ff->flock) {
-		struct fuse_release_in *inarg = &req->misc.release.in;
-		inarg->release_flags |= FUSE_RELEASE_FLOCK_UNLOCK;
-		inarg->lock_owner = fuse_lock_owner_id(ff->fc,
-						       (fl_owner_t) file);
-	}
 	/* Hold inode until release is finished */
 	req->misc.release.inode = igrab(file->f_path.dentry->d_inode);
 
@@ -306,7 +309,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 void fuse_sync_release(struct fuse_file *ff, int flags)
 {
 	WARN_ON(atomic_read(&ff->count) > 1);
-	fuse_prepare_release(ff, flags, FUSE_RELEASE);
+	fuse_prepare_release(ff, flags, FUSE_RELEASE, NULL);
 	ff->reserved_req->force = 1;
 	ff->reserved_req->background = 0;
 	fuse_request_send(ff->fc, ff->reserved_req);
