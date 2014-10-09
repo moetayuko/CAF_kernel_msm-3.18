@@ -95,7 +95,7 @@ static void fuse_release_end(struct fuse_conn *fc, struct fuse_req *req)
 	iput(req->misc.release.inode);
 }
 
-static void fuse_file_put(struct fuse_file *ff, bool sync)
+static void fuse_file_put(struct fuse_file *ff)
 {
 	if (atomic_dec_and_test(&ff->count)) {
 		struct fuse_req *req = ff->reserved_req;
@@ -106,11 +106,6 @@ static void fuse_file_put(struct fuse_file *ff, bool sync)
 			 * implement 'open'
 			 */
 			req->background = 0;
-			iput(req->misc.release.inode);
-			fuse_put_request(ff->fc, req);
-		} else if (sync) {
-			req->background = 0;
-			fuse_request_send(ff->fc, req);
 			iput(req->misc.release.inode);
 			fuse_put_request(ff->fc, req);
 		} else {
@@ -204,6 +199,9 @@ void fuse_finish_open(struct inode *inode, struct file *file)
 	}
 	if ((file->f_mode & FMODE_WRITE) && fc->writeback_cache)
 		fuse_link_write_file(file);
+	/* fuseblk gets sync release by default */
+	if (fc->destroy_req)
+		ff->open_flags |= FOPEN_SYNC_RELEASE;
 }
 
 int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
@@ -283,12 +281,8 @@ void fuse_release_common(struct file *file, int opcode)
 	 * Normally this will send the RELEASE request, however if
 	 * some asynchronous READ or WRITE requests are outstanding,
 	 * the sending will be delayed.
-	 *
-	 * Make the release synchronous if this is a fuseblk mount,
-	 * synchronous RELEASE is allowed (and desirable) in this case
-	 * because the server can be trusted not to screw up.
 	 */
-	fuse_file_put(ff, ff->fc->destroy_req != NULL);
+	fuse_file_put(ff);
 }
 
 static int fuse_open(struct inode *inode, struct file *file)
@@ -845,7 +839,7 @@ static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 		page_cache_release(page);
 	}
 	if (req->ff)
-		fuse_file_put(req->ff, false);
+		fuse_file_put(req->ff);
 }
 
 static void fuse_send_readpages(struct fuse_req *req, struct file *file)
@@ -1523,7 +1517,7 @@ static void fuse_writepage_free(struct fuse_conn *fc, struct fuse_req *req)
 		__free_page(req->pages[i]);
 
 	if (req->ff)
-		fuse_file_put(req->ff, false);
+		fuse_file_put(req->ff);
 }
 
 static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
@@ -1680,7 +1674,7 @@ int fuse_write_inode(struct inode *inode, struct writeback_control *wbc)
 	ff = __fuse_write_file_get(fc, fi);
 	err = fuse_flush_times(inode, ff);
 	if (ff)
-		fuse_file_put(ff, 0);
+		fuse_file_put(ff);
 
 	return err;
 }
@@ -1993,7 +1987,7 @@ static int fuse_writepages(struct address_space *mapping,
 		err = 0;
 	}
 	if (data.ff)
-		fuse_file_put(data.ff, false);
+		fuse_file_put(data.ff);
 
 	kfree(data.orig_pages);
 out:
