@@ -157,6 +157,9 @@ struct fuse_file {
 
 	/** Has flock been performed on this file? */
 	bool flock:1;
+
+	/** Wait queue head for sync release */
+	wait_queue_head_t release_waitq;
 };
 
 /** One input argument of a request */
@@ -665,6 +668,8 @@ void fuse_file_free(struct fuse_file *ff);
 void fuse_finish_open(struct inode *inode, struct file *file);
 
 void fuse_sync_release(struct fuse_file *ff, int flags);
+
+void fuse_try_sync_release(struct file *file, int opcode);
 
 /**
  * Send RELEASE or RELEASEDIR request

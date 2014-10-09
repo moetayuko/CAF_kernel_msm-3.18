@@ -1501,6 +1501,12 @@ static int fuse_dir_open(struct inode *inode, struct file *file)
 	return fuse_open_common(inode, file, true);
 }
 
+static int fuse_dir_flush(struct file *file, fl_owner_t id)
+{
+	fuse_try_sync_release(file, FUSE_RELEASEDIR);
+	return 0;
+}
+
 static int fuse_dir_release(struct inode *inode, struct file *file)
 {
 	fuse_release_common(file, FUSE_RELEASEDIR);
@@ -2037,6 +2043,7 @@ static const struct file_operations fuse_dir_operations = {
 	.read		= generic_read_dir,
 	.iterate	= fuse_readdir,
 	.open		= fuse_dir_open,
+	.flush		= fuse_dir_flush,
 	.release	= fuse_dir_release,
 	.fsync		= fuse_dir_fsync,
 	.unlocked_ioctl	= fuse_dir_ioctl,

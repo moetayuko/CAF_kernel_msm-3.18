@@ -69,6 +69,7 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 	atomic_set(&ff->count, 0);
 	RB_CLEAR_NODE(&ff->polled_node);
 	init_waitqueue_head(&ff->poll_wait);
+	init_waitqueue_head(&ff->release_waitq);
 
 	spin_lock(&fc->lock);
 	ff->kh = ++fc->khctr;
@@ -148,6 +149,9 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		} else {
 			fc->no_open = 1;
 		}
+	} else {
+		/* This is to wake up fuse_try_sync_release() */
+		wake_up(&ff->release_waitq);
 	}
 
 	if (isdir)
@@ -318,6 +322,46 @@ void fuse_sync_release(struct fuse_file *ff, int flags)
 }
 EXPORT_SYMBOL_GPL(fuse_sync_release);
 
+void fuse_try_sync_release(struct file *file, int opcode)
+{
+	struct fuse_file *ff = file->private_data;
+	struct fuse_conn *fc = ff->fc;
+	struct fuse_req *req;
+
+	if (fc->no_open)
+		return;
+
+	if (unlikely(!ff))
+		return;
+
+	if (!(ff->open_flags & FOPEN_SYNC_RELEASE))
+		return;
+
+	/* Optimization for the non-final case */
+	if (atomic_long_read(&file->f_count) != 1)
+		return;
+
+	/*
+	 * Even if file count is 1, fget() can find it due to RCU and increment
+	 * the refcount.
+	 */
+	synchronize_rcu();
+	if (atomic_long_read(&file->f_count) != 1)
+		return;
+
+	if (wait_event_killable(ff->release_waitq, atomic_read(&ff->count)))
+		return;
+
+	req = ff->reserved_req;
+	fuse_prepare_release(ff, file->f_flags, opcode, file);
+	req->misc.release.in.release_flags |= FUSE_RELEASE_ISSYNC;
+	req->force = 1;
+	fuse_request_send(fc, req);
+	fuse_put_request(fc, req);
+	file->private_data = NULL;
+	kfree(ff);
+}
+
 /*
  * Scramble the ID space with XTEA, so that the value of the files_struct
  * pointer is not exposed to userspace.
@@ -418,7 +462,7 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 		return -EIO;
 
 	if (fc->no_flush)
-		return 0;
+		goto no_flush;
 
 	err = write_inode_now(inode, 1);
 	if (err)
@@ -443,8 +487,11 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 	fuse_put_request(fc, req);
 	if (err == -ENOSYS) {
 		fc->no_flush = 1;
+no_flush:
 		err = 0;
 	}
+	fuse_try_sync_release(file, FUSE_RELEASE);
+
 	return err;
 }
 
