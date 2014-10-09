@@ -2084,6 +2084,7 @@ static int fuse_launder_page(struct page *page)
 static void fuse_vma_close(struct vm_area_struct *vma)
 {
 	filemap_write_and_wait(vma->vm_file->f_mapping);
+	fuse_try_sync_release(vma->vm_file, FUSE_RELEASE);
 }
 
 /*
@@ -2143,7 +2144,7 @@ static int fuse_direct_mmap(struct file *file, struct vm_area_struct *vma)
 
 	invalidate_inode_pages2(file->f_mapping);
 
-	return generic_file_mmap(file, vma);
+	return fuse_file_mmap(file, vma);
 }
 
 static int convert_fuse_file_lock(const struct fuse_file_lock *ffl,
