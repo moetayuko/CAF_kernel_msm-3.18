@@ -334,7 +334,6 @@ static const struct of_device_id of_platform_serial_table[] = {
 static struct platform_driver of_platform_serial_driver = {
 	.driver = {
 		.name = "of_serial",
-		.owner = THIS_MODULE,
 		.of_match_table = of_platform_serial_table,
 		.pm = &of_serial_pm_ops,
 	},
