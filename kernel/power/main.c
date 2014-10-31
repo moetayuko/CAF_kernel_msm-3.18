@@ -530,6 +530,33 @@ static ssize_t wakeup_count_store(struct kobject *kobj,
 
 power_attr(wakeup_count);
 
+static ssize_t wakeup_type_show(struct kobject *kobj,
+				struct kobj_attribute *attr,
+				char *buf)
+{
+	enum wakeup_type type = pm_get_wakeup_source_type();
+
+	switch (type) {
+	case WAKEUP_UNKNOWN:
+		return sprintf(buf, "unknown\n");
+	case WAKEUP_AUTOMATIC:
+		return sprintf(buf, "automatic\n");
+	case WAKEUP_USER:
+		return sprintf(buf, "user\n");
+	default:
+		return sprintf(buf, "invalid\n");
+	}
+}
+
+static ssize_t wakeup_type_store(struct kobject *kobj,
+				struct kobj_attribute *attr,
+				const char *buf, size_t n)
+{
+	return -EINVAL;
+}
+
+power_attr(wakeup_type);
+
 #ifdef CONFIG_PM_AUTOSLEEP
 static ssize_t autosleep_show(struct kobject *kobj,
 			      struct kobj_attribute *attr,
@@ -713,6 +740,7 @@ static struct attribute * g[] = {
 #ifdef CONFIG_SUSPEND
 	&mem_sleep_attr.attr,
 #endif
+	&wakeup_type_attr.attr,
 #ifdef CONFIG_PM_AUTOSLEEP
 	&autosleep_attr.attr,
 #endif
