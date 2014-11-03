@@ -225,7 +225,7 @@ int led_classdev_register(struct device *parent, struct led_classdev *led_cdev)
 
 	led_init_core(led_cdev);
 
-	dev_dark_resume_init(led_cdev->dev, NULL, -1, NULL);
+	dev_dark_resume_add_consumer(led_cdev->dev);
 
 #ifdef CONFIG_LEDS_TRIGGERS
 	led_trigger_set_default(led_cdev);
@@ -262,7 +262,7 @@ void led_classdev_unregister(struct led_classdev *led_cdev)
 
 	flush_work(&led_cdev->set_brightness_work);
 
-	dev_dark_resume_remove(led_cdev->dev);
+	dev_dark_resume_remove_consumer(led_cdev->dev);
 
 	device_unregister(led_cdev->dev);
 
