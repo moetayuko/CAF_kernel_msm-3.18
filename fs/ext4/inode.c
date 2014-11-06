@@ -877,6 +877,101 @@ int do_journal_get_write_access(handle_t *handle,
 
 static int ext4_get_block_write_nolock(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create);
+
+static int ext4_block_write_begin(struct page *page, loff_t pos, unsigned len,
+				  get_block_t *get_block)
+{
+	unsigned from = pos & (PAGE_CACHE_SIZE - 1);
+	unsigned to = from + len;
+	struct inode *inode = page->mapping->host;
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	unsigned block_start, block_end;
+	sector_t block;
+	int err = 0;
+	unsigned blocksize, bbits;
+	struct buffer_head *bh, *head, *wait[2], **wait_bh=wait;
+	bool decrypt = false;
+	struct ext4_crypto_ctx *ctx;
+
+	BUG_ON(!PageLocked(page));
+	BUG_ON(from > PAGE_CACHE_SIZE);
+	BUG_ON(to > PAGE_CACHE_SIZE);
+	BUG_ON(from > to);
+
+	head = create_page_buffers(page, inode, 0);
+	blocksize = head->b_size;
+	bbits = ilog2(blocksize);
+	block = (sector_t)page->index << (PAGE_CACHE_SHIFT - bbits);
+
+	for(bh = head, block_start = 0; bh != head || !block_start;
+	    block++, block_start=block_end, bh = bh->b_this_page) {
+		block_end = block_start + blocksize;
+		if (block_end <= from || block_start >= to) {
+			if (PageUptodate(page)) {
+				if (!buffer_uptodate(bh))
+					set_buffer_uptodate(bh);
+			}
+			continue;
+		}
+		if (buffer_new(bh))
+			clear_buffer_new(bh);
+		if (!buffer_mapped(bh)) {
+			WARN_ON(bh->b_size != blocksize);
+			err = get_block(inode, block, bh, 1);
+			if (err)
+				break;
+			if (buffer_new(bh)) {
+				unmap_underlying_metadata(bh->b_bdev,
+							  bh->b_blocknr);
+				if (PageUptodate(page)) {
+					clear_buffer_new(bh);
+					set_buffer_uptodate(bh);
+					mark_buffer_dirty(bh);
+					continue;
+				}
+				if (block_end > to || block_start < from)
+					zero_user_segments(page, to, block_end,
+							   block_start, from);
+				continue;
+			}
+		}
+		if (PageUptodate(page)) {
+			if (!buffer_uptodate(bh))
+				set_buffer_uptodate(bh);
+			continue;
+		}
+		if (!buffer_uptodate(bh) && !buffer_delay(bh) &&
+		    !buffer_unwritten(bh) &&
+		    (block_start < from || block_end > to)) {
+			ll_rw_block(READ, 1, &bh);
+			*wait_bh++=bh;
+			decrypt = ext4_is_encryption_enabled(ei);
+		}
+	}
+	/*
+	 * If we issued read requests, let them complete.
+	 */
+	while (wait_bh > wait) {
+		wait_on_buffer(*--wait_bh);
+		if (!buffer_uptodate(*wait_bh))
+			err = -EIO;
+	}
+	if (unlikely(err)) {
+		page_zero_new_buffers(page, from, to);
+	} else if (decrypt) {
+		ctx = ext4_get_crypto_ctx(false, &ei->i_encryption_key);
+		if (!ctx) {
+			err = -ENOMEM;
+			goto out;
+		}
+		err = ext4_decrypt(ctx, page);
+		ext4_release_crypto_ctx(ctx);
+	}
+out:
+	return err;
+}
+
+
 static int ext4_write_begin(struct file *file, struct address_space *mapping,
 			    loff_t pos, unsigned len, unsigned flags,
 			    struct page **pagep, void **fsdata)
@@ -940,10 +1035,11 @@ retry_journal:
 	wait_for_stable_page(page);
 
 	if (ext4_should_dioread_nolock(inode))
-		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
+		ret = ext4_block_write_begin(page, pos, len,
+					     ext4_get_block_write);
 	else
-		ret = __block_write_begin(page, pos, len, ext4_get_block);
-
+		ret = ext4_block_write_begin(page, pos, len,
+					     ext4_get_block);
 	if (!ret && ext4_should_journal_data(inode)) {
 		ret = ext4_walk_page_buffers(handle, page_buffers(page),
 					     from, to, NULL,
@@ -2280,6 +2376,7 @@ static int ext4_writepages(struct address_space *mapping,
 	handle_t *handle = NULL;
 	struct mpage_da_data mpd;
 	struct inode *inode = mapping->host;
+	struct ext4_inode_info *ei = EXT4_I(inode);
 	int needed_blocks, rsv_blocks = 0, ret = 0;
 	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
 	bool done;
@@ -2296,7 +2393,7 @@ static int ext4_writepages(struct address_space *mapping,
 	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
 		goto out_writepages;
 
-	if (ext4_should_journal_data(inode)) {
+	if (ext4_should_journal_data(inode) || ext4_is_encryption_enabled(ei)) {
 		struct blk_plug plug;
 
 		blk_start_plug(&plug);
@@ -2575,7 +2672,8 @@ retry_journal:
 	/* In case writeback began while the page was unlocked */
 	wait_for_stable_page(page);
 
-	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);
+	ret = ext4_block_write_begin(page, pos, len,
+				     ext4_da_get_block_prep);
 	if (ret < 0) {
 		unlock_page(page);
 		ext4_journal_stop(handle);
@@ -2957,6 +3055,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
+	struct ext4_inode_info *ei = EXT4_I(inode);
 	ssize_t ret;
 	size_t count = iov_iter_count(iter);
 	int overwrite = 0;
@@ -3033,6 +3132,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 		get_block_func = ext4_get_block_write;
 		dio_flags = DIO_LOCKING;
 	}
+	BUG_ON(ext4_is_encryption_enabled(ei));
 	ret = __blockdev_direct_IO(rw, iocb, inode,
 				   inode->i_sb->s_bdev, iter,
 				   offset,
@@ -3093,8 +3193,12 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
+	struct ext4_inode_info *ei = EXT4_I(inode);
 	size_t count = iov_iter_count(iter);
 	ssize_t ret;
+
+	if (ext4_is_encryption_enabled(ei))
+		return 0;
 
 	/*
 	 * If we are doing data journalling we don't support O_DIRECT

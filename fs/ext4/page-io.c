@@ -61,6 +61,18 @@ static void buffer_io_error(struct buffer_head *bh)
 			(unsigned long long)bh->b_blocknr);
 }
 
+static void ext4_restore_control_page(struct page *data_page)
+{
+	struct ext4_crypto_ctx *ctx =
+		(struct ext4_crypto_ctx *)page_private(data_page);
+
+	set_bh_to_page(page_buffers(ctx->control_page), ctx->control_page);
+	set_page_private(data_page, (unsigned long)NULL);
+	ClearPagePrivate(data_page);
+	unlock_page(data_page);
+	ext4_release_crypto_ctx(ctx);
+}
+
 static void ext4_finish_bio(struct bio *bio)
 {
 	int i;
@@ -69,6 +81,8 @@ static void ext4_finish_bio(struct bio *bio)
 
 	bio_for_each_segment_all(bvec, bio, i) {
 		struct page *page = bvec->bv_page;
+		struct page *data_page = NULL;
+		struct ext4_crypto_ctx *ctx = NULL;
 		struct buffer_head *bh, *head;
 		unsigned bio_start = bvec->bv_offset;
 		unsigned bio_end = bio_start + bvec->bv_len;
@@ -77,6 +91,13 @@ static void ext4_finish_bio(struct bio *bio)
 
 		if (!page)
 			continue;
+
+		if (!page->mapping) {
+			/* The bounce data pages are unmapped. */
+			data_page = page;
+			ctx = (struct ext4_crypto_ctx *)page_private(data_page);
+			page = ctx->control_page;
+		}
 
 		if (error) {
 			SetPageError(page);
@@ -102,8 +123,11 @@ static void ext4_finish_bio(struct bio *bio)
 		} while ((bh = bh->b_this_page) != head);
 		bit_spin_unlock(BH_Uptodate_Lock, &head->b_state);
 		local_irq_restore(flags);
-		if (!under_io)
+		if (!under_io) {
+			if (ctx)
+				ext4_restore_control_page(data_page);
 			end_page_writeback(page);
+		}
 	}
 }
 
@@ -398,40 +422,60 @@ submit_and_retry:
 	return 0;
 }
 
-int ext4_bio_write_page(struct ext4_io_submit *io,
-			struct page *page,
-			int len,
-			struct writeback_control *wbc,
-			bool keep_towrite)
+static void ext4_abort_bio_write(struct page *page,
+				 struct writeback_control *wbc) {
+	struct buffer_head *bh, *head;
+
+	redirty_page_for_writepage(wbc, page);
+	bh = head = page_buffers(page);
+	do {
+		clear_buffer_async_write(bh);
+		bh = bh->b_this_page;
+	} while (bh != head);
+}
+
+static int io_encrypt_submit_page(struct ext4_io_submit *io, struct page *page)
+{
+	struct page *data_page = NULL;
+	struct ext4_crypto_ctx *ctx = NULL;
+	struct inode *inode = page->mapping->host;
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	struct buffer_head *bh;
+	int res = 0;
+
+	ctx = ext4_get_crypto_ctx(true, &ei->i_encryption_key);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
+
+	bh = page_buffers(page);
+	data_page = ext4_encrypt(ctx, page);
+	if (IS_ERR(data_page)) {
+		ext4_release_crypto_ctx(ctx);
+		res = PTR_ERR(data_page);
+		printk_ratelimited(KERN_ERR "%s: ext4_encrypt() returned %d\n",
+				   __func__, res);
+		goto out;
+	}
+	lock_page(data_page);
+	res = io_submit_add_bh(io, inode, bh);
+	if (res)
+		ext4_restore_control_page(data_page);
+out:
+	return res;
+}
+
+static int ext4_bio_write_buffers(struct ext4_io_submit *io,
+				  struct page *page,
+				  int len,
+				  struct writeback_control *wbc)
 {
 	struct inode *inode = page->mapping->host;
-	unsigned block_start, blocksize;
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	unsigned block_start;
 	struct buffer_head *bh, *head;
 	int ret = 0;
 	int nr_submitted = 0;
 
-	blocksize = 1 << inode->i_blkbits;
-
-	BUG_ON(!PageLocked(page));
-	BUG_ON(PageWriteback(page));
-
-	if (keep_towrite)
-		set_page_writeback_keepwrite(page);
-	else
-		set_page_writeback(page);
-	ClearPageError(page);
-
-	/*
-	 * Comments copied from block_write_full_page:
-	 *
-	 * The page straddles i_size.  It must be zeroed out on each and every
-	 * writepage invocation because it may be mmapped.  "A file is mapped
-	 * in multiples of the page size.  For a file that is not a multiple of
-	 * the page size, the remaining memory is zeroed when mapped, and
-	 * writes to that region are not written out to the file."
-	 */
-	if (len < PAGE_CACHE_SIZE)
-		zero_user_segment(page, len, PAGE_CACHE_SIZE);
 	/*
 	 * In the first loop we prepare and mark buffers to submit. We have to
 	 * mark all buffers in the page before submitting so that
@@ -449,7 +493,6 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 		}
 		if (!buffer_dirty(bh) || buffer_delay(bh) ||
 		    !buffer_mapped(bh) || buffer_unwritten(bh)) {
-			/* A hole? We can safely clear the dirty bit */
 			if (!buffer_mapped(bh))
 				clear_buffer_dirty(bh);
 			if (io->io_bio)
@@ -468,14 +511,17 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 	do {
 		if (!buffer_async_write(bh))
 			continue;
-		ret = io_submit_add_bh(io, inode, bh);
+		if (ext4_is_encryption_enabled(ei)) {
+			ret = io_encrypt_submit_page(io, page);
+		} else {
+			ret = io_submit_add_bh(io, inode, bh);
+		}
 		if (ret) {
 			/*
 			 * We only get here on ENOMEM.  Not much else
 			 * we can do but mark the page as dirty, and
 			 * better luck next time.
 			 */
-			redirty_page_for_writepage(wbc, page);
 			break;
 		}
 		nr_submitted++;
@@ -484,14 +530,44 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 
 	/* Error stopped previous loop? Clean up buffers... */
 	if (ret) {
-		do {
-			clear_buffer_async_write(bh);
-			bh = bh->b_this_page;
-		} while (bh != head);
+		printk_ratelimited(KERN_ERR "%s: ret = %d\n", __func__, ret);
+		ext4_abort_bio_write(page, wbc);
 	}
 	unlock_page(page);
 	/* Nothing submitted - we have to end page writeback */
 	if (!nr_submitted)
 		end_page_writeback(page);
+	return ret;
+}
+
+int ext4_bio_write_page(struct ext4_io_submit *io,
+			struct page *page,
+			int len,
+			struct writeback_control *wbc,
+			bool keep_towrite)
+{
+	int ret = 0;
+
+	BUG_ON(!PageLocked(page));
+	BUG_ON(PageWriteback(page));
+	if (keep_towrite)
+		set_page_writeback_keepwrite(page);
+	else
+		set_page_writeback(page);
+	ClearPageError(page);
+
+	/*
+	 * Comments copied from block_write_full_page_endio:
+	 *
+	 * The page straddles i_size.  It must be zeroed out on each and every
+	 * writepage invocation because it may be mmapped.  "A file is mapped
+	 * in multiples of the page size.  For a file that is not a multiple of
+	 * the page size, the remaining memory is zeroed when mapped, and
+	 * writes to that region are not written out to the file."
+	 */
+	if (len < PAGE_CACHE_SIZE)
+		zero_user_segment(page, len, PAGE_CACHE_SIZE);
+
+	ret = ext4_bio_write_buffers(io, page, len, wbc);
 	return ret;
 }

@@ -2222,6 +2222,7 @@ static int ext4_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 {
 	handle_t *handle;
 	struct inode *inode;
+	struct ext4_sb_info *sbi = EXT4_SB(dir->i_sb);
 	int err, credits, retries = 0;
 
 	dquot_initialize(dir);
@@ -2238,8 +2239,14 @@ retry:
 		inode->i_fop = &ext4_file_operations;
 		ext4_set_aops(inode);
 		err = ext4_add_nondir(handle, dentry, inode);
-		if (!err && IS_DIRSYNC(dir))
-			ext4_handle_sync(handle);
+		if (!err) {
+			if (sbi->s_default_encryption_mode !=
+			    EXT4_ENCRYPTION_MODE_INVALID) {
+				ext4_set_crypto_key(dentry);
+			}
+			if (IS_DIRSYNC(dir))
+				ext4_handle_sync(handle);
+		}
 	}
 	if (handle)
 		ext4_journal_stop(handle);
