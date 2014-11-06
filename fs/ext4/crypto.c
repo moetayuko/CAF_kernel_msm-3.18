@@ -27,16 +27,18 @@
 #include <linux/random.h>
 #include <linux/scatterlist.h>
 #include <linux/spinlock_types.h>
+#include <linux/key.h>
 
 #include "ext4.h"
 #include "xattr.h"
 
 /* Encryption added and removed here! (L: */
 
-mempool_t *ext4_bounce_page_pool = NULL;
+static mempool_t *ext4_bounce_page_pool = NULL;
 
-LIST_HEAD(ext4_free_crypto_ctxs);
-DEFINE_SPINLOCK(ext4_crypto_ctx_lock);
+static LIST_HEAD(ext4_free_crypto_ctxs);
+static DEFINE_SPINLOCK(ext4_crypto_ctx_lock);
+static struct ext4_encryption_key dummy_key;
 
 /**
  * ext4_release_crypto_ctx() - Releases an encryption context
@@ -79,7 +81,7 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
  * Return: An allocated and initialized encryption context on success. An error
  * value or NULL otherwise.
  */
-static struct ext4_crypto_ctx *ext4_alloc_and_init_crypto_ctx(u32 mask)
+static struct ext4_crypto_ctx *ext4_alloc_and_init_crypto_ctx(gfp_t mask)
 {
 	struct ext4_crypto_ctx *ctx = kzalloc(sizeof(struct ext4_crypto_ctx),
 					      mask);
@@ -367,8 +369,8 @@ static void ext4_prep_pages_for_write(struct page *ciphertext_page,
  * Return: An allocated page with the encrypted content on success. Else, an
  * error value or NULL.
  */
-struct page *ext4_xts_encrypt(struct ext4_crypto_ctx *ctx,
-			      struct page *plaintext_page)
+static struct page *ext4_xts_encrypt(struct ext4_crypto_ctx *ctx,
+				     struct page *plaintext_page)
 {
 	struct page *ciphertext_page = ctx->bounce_page;
 	u8 xts_tweak[EXT4_XTS_TWEAK_SIZE];
@@ -473,7 +475,7 @@ struct page *ext4_encrypt(struct ext4_crypto_ctx *ctx,
  *
  * Return: Zero on success, non-zero otherwise.
  */
-int ext4_xts_decrypt(struct ext4_crypto_ctx *ctx, struct page *page)
+static int ext4_xts_decrypt(struct ext4_crypto_ctx *ctx, struct page *page)
 {
 	u8 xts_tweak[EXT4_XTS_TWEAK_SIZE];
 	struct ablkcipher_request *req = NULL;
@@ -514,7 +516,7 @@ int ext4_xts_decrypt(struct ext4_crypto_ctx *ctx, struct page *page)
 	ablkcipher_request_free(req);
 out:
 	if (res)
-		printk_ratelimited(KERN_ERR "%s: res = [%d]\n", __func__, res);
+		printk_ratelimited(KERN_ERR "%s: res = %d\n", __func__, res);
 	return res;
 }
 
@@ -570,11 +572,18 @@ static int ext4_get_wrapping_key_from_keyring(
 	payload = (struct encrypted_key_payload *)create_key->payload.data;
 	if (WARN_ON_ONCE(create_key->datalen !=
 			 sizeof(struct ecryptfs_auth_tok))) {
+		printk(KERN_ERR
+		       "%s: Got auth tok length %d, expected %zd\n",
+		       __func__, create_key->datalen,
+		       sizeof(struct ecryptfs_auth_tok));
 		return -EINVAL;
 	}
 	auth_tok = (struct ecryptfs_auth_tok *)(&(payload)->payload_data);
 	if (WARN_ON_ONCE(!(auth_tok->token.password.flags &
 			   ECRYPTFS_SESSION_KEY_ENCRYPTION_KEY_SET))) {
+		printk(KERN_ERR
+		       "%s: ECRYPTFS_SESSION_KEY_ENCRYPTION_KEY_SET not set in auth_tok->token.password.flags\n",
+		       __func__);
 		return -EINVAL;
 	}
 	BUILD_BUG_ON(EXT4_MAX_KEY_SIZE < EXT4_AES_256_XTS_KEY_SIZE);
@@ -662,7 +671,7 @@ static uint32_t ext4_validate_encryption_key_size(uint32_t mode, uint32_t size)
 struct ext4_hmac_result {
 	struct completion completion;
 	int res;
-} ext4_hmac_result;
+};
 
 /**
  * ext4_hmac_complete() - Completion for async HMAC
@@ -705,8 +714,11 @@ static int ext4_hmac(bool derivation, const char *key, size_t key_size,
 	int res = 0;
 
 	BUG_ON(dst_size > SHA512_DIGEST_SIZE);
-	if (IS_ERR(tfm))
+	if (IS_ERR(tfm)) {
+		printk(KERN_ERR "%s: crypto_alloc_ahash() returned %ld\n",
+		       __func__, PTR_ERR(tfm));
 		return PTR_ERR(tfm);
+	}
 	req = ahash_request_alloc(tfm, GFP_NOFS);
 	if (!req) {
 		res = -ENOMEM;
@@ -718,8 +730,11 @@ static int ext4_hmac(bool derivation, const char *key, size_t key_size,
 				   ext4_hmac_complete, &ehr);
 
 	res = crypto_ahash_setkey(tfm, key, key_size);
-	if (res)
+	if (res) {
+		printk(KERN_ERR "%s: crypto_ahash_setkey() returned %d\n",
+		       __func__, res);
 		goto out;
+	}
 	sg_init_one(&sg, src, src_size);
 	ahash_request_set_crypt(req, &sg, hmac, src_size);
 	init_completion(&ehr.completion);
@@ -729,13 +744,18 @@ static int ext4_hmac(bool derivation, const char *key, size_t key_size,
 		wait_for_completion(&ehr.completion);
 		res = ehr.res;
 	}
-	if (res)
+	if (res) {
+		printk(KERN_ERR "%s: crypto_ahash_digest() returned %d\n",
+		       __func__, res);
 		goto out;
+	}
 	memcpy(dst, hmac, dst_size);
 out:
 	crypto_free_ahash(tfm);
 	if (req)
 		ahash_request_free(req);
+	if (res)
+		printk(KERN_ERR "%s: returning %d\n", __func__, res);
 	return res;
 }
 
@@ -799,8 +819,11 @@ static int ext4_crypt_wrapper_virt(const char *enc_key, const char *iv,
 	int res = 0;
 
 	desc.tfm = crypto_alloc_blkcipher("ctr(aes)", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(desc.tfm))
+	if (IS_ERR(desc.tfm)) {
+		printk(KERN_ERR "%s: crypto_alloc_blkcipher() returned %ld\n",
+		       __func__, PTR_ERR(desc.tfm));
 		return PTR_ERR(desc.tfm);
+	}
 	if (!desc.tfm)
 		return -ENOMEM;
 	crypto_blkcipher_set_flags(desc.tfm, CRYPTO_TFM_REQ_WEAK_KEY);
@@ -809,12 +832,19 @@ static int ext4_crypt_wrapper_virt(const char *enc_key, const char *iv,
 	crypto_blkcipher_set_iv(desc.tfm, iv, EXT4_WRAPPING_IV_SIZE);
 	res = crypto_blkcipher_setkey(desc.tfm, enc_key,
 				      EXT4_AES_256_CTR_KEY_SIZE);
-	if (res)
+	if (res) {
+		printk(KERN_ERR "%s: crypto_blkcipher_setkey() returned %d\n",
+		       __func__, res);
 		goto out;
+	}
 	if (enc)
 		res = crypto_blkcipher_encrypt(&desc, &dst, &src, size);
 	else
 		res = crypto_blkcipher_decrypt(&desc, &dst, &src, size);
+	if (res) {
+		printk(KERN_ERR "%s: crypto_blkcipher_*crypt() returned %d\n",
+		       __func__, res);
+	}
 out:
 	crypto_free_blkcipher(desc.tfm);
 	return res;
@@ -953,8 +983,12 @@ static int ext4_wrap_key(char *wrapped_key_packet, size_t *key_packet_size,
 		return 0;
 	}
 	res = ext4_get_wrapping_key(wrapping_key, packet->sig, inode);
-	if (res)
+	if (res) {
+		ext4_error(inode->i_sb,
+			   "%s: ext4_get_wrapping_key() with packet->sig %s returned %d\n",
+			   __func__, packet->sig, res);
 		return res;
+	}
 	BUG_ON(*key_packet_size != EXT4_FULL_WRAPPED_KEY_PACKET_V0_SIZE);
 
 	/* Size, type, nonce, and IV */
@@ -970,8 +1004,12 @@ static int ext4_wrap_key(char *wrapped_key_packet, size_t *key_packet_size,
 				   packet->nonce,
 				   EXT4_DERIVATION_TWEAK_NONCE_SIZE,
 				   enc_key, EXT4_AES_256_CTR_KEY_SIZE);
-	if (res)
+	if (res) {
+		ext4_error(inode->i_sb,
+			   "%s: ext4_hmac_derive_key() returned %d\n",
+			   __func__, res);
 		goto out;
+	}
 
 	/* Wrap the data key with the wrapping encryption key */
 	*((uint32_t *)key_packet.mode) = htonl(key->mode);
@@ -984,8 +1022,12 @@ static int ext4_wrap_key(char *wrapped_key_packet, size_t *key_packet_size,
 				      EXT4_V0_SERIALIZED_KEY_SIZE, true);
 	memset(enc_key, 0, EXT4_AES_256_CTR_KEY_SIZE);
 	memset(key_packet.raw, 0, EXT4_MAX_KEY_SIZE);
-	if (res)
+	if (res) {
+		ext4_error(inode->i_sb,
+			   "%s: ext4_crypt_wrapper_virt() returned %d\n",
+			   __func__, res);
 		goto out;
+	}
 
 	/* Calculate the HMAC over the entire packet (except, of
 	 * course, the HMAC buffer at the end) */
@@ -994,8 +1036,12 @@ static int ext4_wrap_key(char *wrapped_key_packet, size_t *key_packet_size,
 				   packet->nonce,
 				   EXT4_DERIVATION_TWEAK_NONCE_SIZE,
 				   int_key, EXT4_HMAC_KEY_SIZE);
-	if (res)
+	if (res) {
+		ext4_error(inode->i_sb,
+			   "%s: ext4_hmac_derive_key() returned %d\n",
+			   __func__, res);
 		goto out;
+	}
 	BUILD_BUG_ON(EXT4_FULL_WRAPPED_KEY_PACKET_V0_SIZE < EXT4_HMAC_SIZE);
 	res = ext4_hmac_integrity(int_key, EXT4_HMAC_KEY_SIZE,
 				  wrapped_key_packet,
@@ -1006,6 +1052,8 @@ static int ext4_wrap_key(char *wrapped_key_packet, size_t *key_packet_size,
 	memset(int_key, 0, EXT4_HMAC_KEY_SIZE);
 out:
 	memset(wrapping_key, 0, EXT4_AES_256_XTS_KEY_SIZE);
+	if (res)
+		ext4_error(inode->i_sb, "%s: returning %d\n", __func__, res);
 	return res;
 }
 
@@ -1024,6 +1072,26 @@ static void ext4_generate_encryption_key(const struct dentry *dentry)
 	BUG_ON(!key->size);
 	get_random_bytes(key->raw, key->size);
 }
+
+/*
+ * Ted lost his saving throw vs ecryptfs key management, so use a
+ * dummy key for testing purposes.  It appears the ecryptfs userspace
+ * ABI is mysteriously kconfig dependent, or there is some mysterious
+ * silent failure if you are missing some kconfig option.  This also
+ * allows us to avoid bloating the kvm-xfstests image with
+ * ecryptfs-utils.
+ */
+static void generate_dummy_key(struct inode *inode)
+{
+	int i;
+
+	dummy_key.mode = EXT4_SB(inode->i_sb)->s_default_encryption_mode;
+	dummy_key.size = ext4_encryption_key_size(dummy_key.mode);
+	for (i = 0; i < dummy_key.size; i++) {
+		dummy_key.raw[i] = "TESTKEY"[i % 7];
+	}
+}
+
 
 /**
  * ext4_set_crypto_key() - Generates and sets the encryption key for the inode
@@ -1045,12 +1113,23 @@ int ext4_set_crypto_key(struct dentry *dentry)
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	int res = 0;
 
+	if (test_opt2(inode->i_sb, DUMMY_ENCRYPTION)) {
+		if (unlikely(dummy_key.mode) == 0)
+			generate_dummy_key(inode);
+		ei->i_encryption_key = dummy_key;
+		return 0;
+	}
+
 try_again:
 	ext4_generate_encryption_key(dentry);
 	res = ext4_wrap_key(wrapped_key_packet, &wrapped_key_packet_size,
 			    &ei->i_encryption_key, inode);
-	if (res)
+	if (res) {
+		ext4_error(dentry->d_inode->i_sb,
+			   "%s: ext4_wrap_key() returned %d\n", __func__,
+			   res);
 		goto out;
+	}
 	root_packet[0] = EXT4_PACKET_SET_VERSION_V0;
 	BUILD_BUG_ON(EXT4_PACKET_SET_V0_MAX_SIZE !=
 		     (EXT4_PACKET_HEADER_SIZE +
@@ -1058,12 +1137,17 @@ try_again:
 	BUG_ON(sizeof(root_packet) != root_packet_size);
 	res = ext4_xattr_set(inode, EXT4_XATTR_INDEX_ENCRYPTION_METADATA, "",
 			     root_packet, root_packet_size, 0);
+	if (res) {
+		ext4_error(dentry->d_inode->i_sb,
+			   "%s: ext4_xattr_set() returned %d\n", __func__,
+			   res);
+	}
 out:
 	if (res) {
 		if (res == -EINTR)
 			goto try_again;
 		ei->i_encryption_key.mode = EXT4_ENCRYPTION_MODE_INVALID;
-		printk_ratelimited(KERN_ERR "%s: res = [%d]\n", __func__, res);
+		printk_ratelimited(KERN_ERR "%s: res = %d\n", __func__, res);
 	}
 	return res;
 }
@@ -1095,7 +1179,7 @@ static int ext4_get_root_packet(struct inode *inode, char *root_packet,
 	if (root_packet[0] != EXT4_PACKET_SET_VERSION_V0) {
 		printk_ratelimited(
 			KERN_ERR
-			"%s: Expected root packet version [%d]; got [%d]\n",
+			"%s: Expected root packet version %d; got %d\n",
 			__func__, EXT4_PACKET_SET_VERSION_V0, root_packet[0]);
 		return -EINVAL;
 	}
@@ -1117,8 +1201,16 @@ int ext4_get_crypto_key(const struct file *file)
 				   wrapped_key_packet_size);
 	struct inode *inode = file->f_mapping->host;
 	struct ext4_inode_info *ei = EXT4_I(inode);
-	int res = ext4_get_root_packet(inode, root_packet, &root_packet_size);
+	int res;
 
+	if (test_opt2(inode->i_sb, DUMMY_ENCRYPTION)) {
+		if (unlikely(dummy_key.mode) == 0)
+			generate_dummy_key(inode);
+		ei->i_encryption_key = dummy_key;
+		return 0;
+	}
+
+	res = ext4_get_root_packet(inode, root_packet, &root_packet_size);
 	if (res)
 		goto out;
 	res = ext4_unwrap_key(wrapped_key_packet,

@@ -1147,7 +1147,7 @@ enum {
 	Opt_inode_readahead_blks, Opt_journal_ioprio,
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
-	Opt_max_dir_size_kb, Opt_encrypt_key_sig,
+	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption
 };
 
 static const match_table_t tokens = {
@@ -1224,6 +1224,7 @@ static const match_table_t tokens = {
 	{Opt_noinit_itable, "noinit_itable"},
 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
 	{Opt_encrypt_key_sig, "encrypt_key_sig=%s"},
+	{Opt_dummy_encryption, "dummy_encryption" },
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1423,6 +1424,7 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
 	{Opt_encrypt_key_sig, 0, MOPT_STRING},
+	{Opt_dummy_encryption, 0, 0},
 	{Opt_err, 0, 0}
 };
 
@@ -1546,6 +1548,10 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		       ECRYPTFS_SIG_SIZE_HEX);
 		sbi->s_default_encryption_wrapper_desc.wrapping_key_sig[
 			ECRYPTFS_SIG_SIZE_HEX] = '\0';
+	} else if (token == Opt_dummy_encryption) {
+		sbi->s_default_encryption_mode =
+			EXT4_ENCRYPTION_MODE_AES_256_XTS;
+		set_opt2(sb, DUMMY_ENCRYPTION);
 	} else if (token == Opt_stripe) {
 		sbi->s_stripe = arg;
 	} else if (token == Opt_resuid) {
