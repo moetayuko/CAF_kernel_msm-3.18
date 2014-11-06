@@ -901,6 +901,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 	atomic_set(&ei->i_ioend_count, 0);
 	atomic_set(&ei->i_unwritten, 0);
 	INIT_WORK(&ei->i_rsv_conversion_work, ext4_end_io_rsv_work);
+	ei->i_encryption_key.mode = EXT4_ENCRYPTION_MODE_INVALID;
 
 	return &ei->vfs_inode;
 }
@@ -1146,7 +1147,7 @@ enum {
 	Opt_inode_readahead_blks, Opt_journal_ioprio,
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
-	Opt_max_dir_size_kb,
+	Opt_max_dir_size_kb, Opt_encrypt_key_sig,
 };
 
 static const match_table_t tokens = {
@@ -1222,6 +1223,7 @@ static const match_table_t tokens = {
 	{Opt_init_itable, "init_itable"},
 	{Opt_noinit_itable, "noinit_itable"},
 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
+	{Opt_encrypt_key_sig, "encrypt_key_sig=%s"},
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1420,6 +1422,7 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsv0, QFMT_VFS_V0, MOPT_QFMT},
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
+	{Opt_encrypt_key_sig, 0, MOPT_STRING},
 	{Opt_err, 0, 0}
 };
 
@@ -1521,6 +1524,28 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		sbi->s_li_wait_mult = arg;
 	} else if (token == Opt_max_dir_size_kb) {
 		sbi->s_max_dir_size_kb = arg;
+	} else if (token == Opt_encrypt_key_sig) {
+		char *encrypt_key_sig;
+
+		encrypt_key_sig = match_strdup(&args[0]);
+		if (!encrypt_key_sig) {
+			ext4_msg(sb, KERN_ERR,
+				 "error: could not dup encryption key sig string");
+			return -1;
+		}
+		if (strlen(encrypt_key_sig) != ECRYPTFS_SIG_SIZE_HEX) {
+			ext4_msg(sb, KERN_ERR,
+				 "error: encryption key sig string must be length %d",
+				 ECRYPTFS_SIG_SIZE_HEX);
+			return -1;
+		}
+		sbi->s_default_encryption_mode =
+			EXT4_ENCRYPTION_MODE_AES_256_XTS;
+		memcpy(sbi->s_default_encryption_wrapper_desc.wrapping_key_sig,
+		       encrypt_key_sig,
+		       ECRYPTFS_SIG_SIZE_HEX);
+		sbi->s_default_encryption_wrapper_desc.wrapping_key_sig[
+			ECRYPTFS_SIG_SIZE_HEX] = '\0';
 	} else if (token == Opt_stripe) {
 		sbi->s_stripe = arg;
 	} else if (token == Opt_resuid) {
@@ -5536,6 +5561,8 @@ struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 static int __init ext4_init_fs(void)
 {
 	int i, err;
+	static size_t num_prealloc_crypto_pages = 32;
+	static size_t num_prealloc_crypto_ctxs = 128;
 
 	ext4_li_info = NULL;
 	mutex_init(&ext4_li_mtx);
@@ -5548,9 +5575,14 @@ static int __init ext4_init_fs(void)
 		init_waitqueue_head(&ext4__ioend_wq[i]);
 	}
 
-	err = ext4_init_es();
+	err = ext4_allocate_crypto(num_prealloc_crypto_pages,
+				   num_prealloc_crypto_ctxs);
 	if (err)
 		return err;
+
+	err = ext4_init_es();
+	if (err)
+		goto out8;
 
 	err = ext4_init_pageio();
 	if (err)
@@ -5604,6 +5636,8 @@ out6:
 	ext4_exit_pageio();
 out7:
 	ext4_exit_es();
+out8:
+	ext4_delete_crypto();
 
 	return err;
 }

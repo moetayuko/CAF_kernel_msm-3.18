@@ -32,6 +32,7 @@
 #include <linux/ratelimit.h>
 #include <crypto/hash.h>
 #include <linux/falloc.h>
+#include <linux/ecryptfs.h>
 #ifdef __KERNEL__
 #include <linux/compat.h>
 #endif
@@ -808,6 +809,8 @@ do {									       \
 
 #endif /* defined(__KERNEL__) || defined(__linux__) */
 
+#include "ext4_crypto.h"
+
 #include "extents_status.h"
 
 /*
@@ -943,6 +946,10 @@ struct ext4_inode_info {
 
 	/* Precomputed uuid+inum+igen checksum for seeding inode checksums */
 	__u32 i_csum_seed;
+
+	/* Encryption params */
+	struct ext4_encryption_key i_encryption_key;
+	struct ext4_encryption_wrapper_desc i_encryption_wrapper_desc;
 };
 
 /*
@@ -1342,6 +1349,10 @@ struct ext4_sb_info {
 	struct ratelimit_state s_err_ratelimit_state;
 	struct ratelimit_state s_warning_ratelimit_state;
 	struct ratelimit_state s_msg_ratelimit_state;
+
+	/* Encryption */
+	uint32_t s_default_encryption_mode;
+	struct ext4_encryption_wrapper_desc s_default_encryption_wrapper_desc;
 };
 
 static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
@@ -2815,6 +2826,24 @@ static inline int bitmap_uptodate(struct buffer_head *bh)
 static inline void set_bitmap_uptodate(struct buffer_head *bh)
 {
 	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
+}
+
+/* crypto.c */
+extern struct workqueue_struct *mpage_read_workqueue;
+int ext4_allocate_crypto(size_t num_crypto_pages, size_t num_crypto_ctxs);
+void ext4_delete_crypto(void);
+struct ext4_crypto_ctx *ext4_get_crypto_ctx(
+	bool with_page, const struct ext4_encryption_key *key);
+void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx);
+void set_bh_to_page(struct buffer_head *head, struct page *page);
+struct page *ext4_encrypt(struct ext4_crypto_ctx *ctx,
+			  struct page *plaintext_page);
+int ext4_decrypt(struct ext4_crypto_ctx *ctx, struct page *page);
+int ext4_get_crypto_key(const struct file *file);
+int ext4_set_crypto_key(struct dentry *dentry);
+static inline bool ext4_is_encryption_enabled(struct ext4_inode_info *ei)
+{
+	return ei->i_encryption_key.mode != EXT4_ENCRYPTION_MODE_INVALID;
 }
 
 /*
