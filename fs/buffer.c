@@ -276,7 +276,7 @@ static void free_more_memory(void)
  * I/O completion handler for block_read_full_page() - pages
  * which come unlocked at the end of I/O.
  */
-static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
+void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 {
 	unsigned long flags;
 	struct buffer_head *first;
@@ -318,6 +318,13 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 	bit_spin_unlock(BH_Uptodate_Lock, &first->b_state);
 	local_irq_restore(flags);
 
+	if (bh->b_private) {
+		struct bio *bio = (struct bio *)bh->b_private;
+		BUG_ON(!bio->bi_cb);
+		if (!bio->bi_cb(bio, !(page_uptodate && !PageError(page))))
+			goto out;
+	}
+
 	/*
 	 * If none of the buffers had errors and they are all
 	 * uptodate then we can set the page uptodate.
@@ -325,6 +332,7 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 	if (page_uptodate && !PageError(page))
 		SetPageUptodate(page);
 	unlock_page(page);
+out:
 	return;
 
 still_busy:
@@ -332,6 +340,7 @@ still_busy:
 	local_irq_restore(flags);
 	return;
 }
+EXPORT_SYMBOL_GPL(end_buffer_async_read);
 
 /*
  * Completion handler for block_write_full_page() - pages which are unlocked
@@ -404,11 +413,12 @@ EXPORT_SYMBOL(end_buffer_async_write);
  * PageLocked prevents anyone from starting writeback of a page which is
  * under read I/O (PageWriteback is only ever set against a locked page).
  */
-static void mark_buffer_async_read(struct buffer_head *bh)
+void mark_buffer_async_read(struct buffer_head *bh)
 {
 	bh->b_end_io = end_buffer_async_read;
 	set_buffer_async_read(bh);
 }
+EXPORT_SYMBOL_GPL(mark_buffer_async_read);
 
 static void mark_buffer_async_write_endio(struct buffer_head *bh,
 					  bh_end_io_t *handler)
@@ -1636,7 +1646,8 @@ static inline int block_size_bits(unsigned int blocksize)
 	return ilog2(blocksize);
 }
 
-static struct buffer_head *create_page_buffers(struct page *page, struct inode *inode, unsigned int b_state)
+struct buffer_head *create_page_buffers(struct page *page, struct inode *inode,
+					unsigned int b_state)
 {
 	BUG_ON(!PageLocked(page));
 
@@ -1644,6 +1655,7 @@ static struct buffer_head *create_page_buffers(struct page *page, struct inode *
 		create_empty_buffers(page, 1 << ACCESS_ONCE(inode->i_blkbits), b_state);
 	return page_buffers(page);
 }
+EXPORT_SYMBOL_GPL(create_page_buffers);
 
 /*
  * NOTE! All mapped/uptodate combinations are valid:
@@ -2997,7 +3009,8 @@ void guard_bio_eod(int rw, struct bio *bio)
 	}
 }
 
-int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
+int _submit_bh_cb(int rw, struct buffer_head *bh, unsigned long bio_flags,
+		  bio_completion_cb_t *cb, void *cb_ctx)
 {
 	struct bio *bio;
 	int ret = 0;
@@ -3031,6 +3044,8 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
 
 	bio->bi_end_io = end_bio_bh_io_sync;
 	bio->bi_private = bh;
+	bio->bi_cb = cb;
+	bio->bi_cb_ctx = cb_ctx;
 	bio->bi_flags |= bio_flags;
 
 	/* Take care of bh's that straddle the end of the device */
@@ -3042,6 +3057,12 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
 		rw |= REQ_PRIO;
 
 	bio_get(bio);
+
+	if (bio->bi_cb) {
+		BUG_ON(bh->b_private);
+		bh->b_private = bio;
+	}
+
 	submit_bio(rw, bio);
 
 	if (bio_flagged(bio, BIO_EOPNOTSUPP))
@@ -3050,13 +3071,25 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
 	bio_put(bio);
 	return ret;
 }
+
+int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
+{
+	return _submit_bh_cb(rw, bh, bio_flags, NULL, NULL);
+}
 EXPORT_SYMBOL_GPL(_submit_bh);
 
 int submit_bh(int rw, struct buffer_head *bh)
 {
-	return _submit_bh(rw, bh, 0);
+	return submit_bh_cb(rw, bh, NULL, NULL);
 }
 EXPORT_SYMBOL(submit_bh);
+
+int submit_bh_cb(int rw, struct buffer_head *bh, bio_completion_cb_t *cb,
+		 void *cb_ctx)
+{
+	return _submit_bh_cb(rw, bh, 0, cb, cb_ctx);
+}
+EXPORT_SYMBOL_GPL(submit_bh_cb);
 
 /**
  * ll_rw_block: low-level access to block devices (DEPRECATED)

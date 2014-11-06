@@ -16,6 +16,7 @@ struct io_context;
 struct cgroup_subsys_state;
 typedef void (bio_end_io_t) (struct bio *, int);
 typedef void (bio_destructor_t) (struct bio *);
+typedef int (bio_completion_cb_t) (struct bio *, int);
 
 /*
  * was unsigned short, but we might as well be ready for > 64kB I/O pages
@@ -97,6 +98,9 @@ struct bio {
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
 	struct bio_set		*bi_pool;
+
+	bio_completion_cb_t     *bi_cb;          /* completion callback */
+	void                    *bi_cb_ctx;      /* callback context */
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
