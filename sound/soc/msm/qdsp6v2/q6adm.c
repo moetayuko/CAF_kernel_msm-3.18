@@ -1451,24 +1451,24 @@ int adm_open(int port_id, int path, int rate, int channel_mode,
 		}
 	}
 
-	if ((topology == SRS_TRUMEDIA_TOPOLOGY_ID) && !perf_mode) {
-		int res;
-		atomic_set(&this_adm.mem_map_cal_index, ADM_SRS_TRUMEDIA);
-		msm_dts_srs_tm_ion_memmap(&this_adm.outband_memmap);
-		res = adm_memory_map_regions(&this_adm.outband_memmap.paddr, 0,
-					     &this_adm.outband_memmap.size, 1);
-
-		if (res < 0) {
-			pr_err("%s: SRS adm_memory_map_regions failed ! addr = 0x%x, size = %zd\n",
-				__func__, this_adm.outband_memmap.paddr,
-				this_adm.outband_memmap.size);
-		}
-	}
-
 	/* Create a COPP if port id are not enabled */
 	if (atomic_read(&this_adm.copp.cnt[port_idx][copp_idx]) == 0) {
 		pr_debug("%s:open ADM: port_idx: %d, copp_idx: %d\n", __func__,
 			 port_idx, copp_idx);
+		if ((topology == SRS_TRUMEDIA_TOPOLOGY_ID) && !perf_mode) {
+			int res;
+			atomic_set(&this_adm.mem_map_cal_index,
+					ADM_SRS_TRUMEDIA);
+			msm_dts_srs_tm_ion_memmap(&this_adm.outband_memmap);
+			res = adm_memory_map_regions(
+					&this_adm.outband_memmap.paddr,
+					0, &this_adm.outband_memmap.size, 1);
+			if (res < 0) {
+				pr_err("%s: SRS adm_memory_map_regions failed! addr = 0x%x, size = %zd\n",
+					__func__, this_adm.outband_memmap.paddr,
+					this_adm.outband_memmap.size);
+			}
+		}
 		open.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
 						   APR_HDR_LEN(APR_HDR_SIZE),
 						   APR_PKT_VER);
@@ -1716,7 +1716,9 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 		pr_debug("%s: Closing ADM port_idx:%d copp_idx:%d copp_id:0x%x\n",
 			 __func__, port_idx, copp_idx, copp_id);
 
-		if ((!perf_mode) && (this_adm.outband_memmap.paddr != 0)) {
+		if ((!perf_mode) && (this_adm.outband_memmap.paddr != 0) &&
+		    (atomic_read(&this_adm.copp.topology[port_idx][copp_idx]) ==
+			SRS_TRUMEDIA_TOPOLOGY_ID)) {
 			atomic_set(&this_adm.mem_map_cal_index,
 				   ADM_SRS_TRUMEDIA);
 			ret = adm_memory_unmap_regions();
