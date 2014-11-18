@@ -18,11 +18,7 @@ struct msm_pcm_routing_bdai_data;
 struct snd_pcm;
 struct audio_client;
 
-struct param_outband {
-	size_t       size;
-	void        *kvaddr;
-	phys_addr_t  paddr;
-};
+struct param_outband;
 
 #ifdef CONFIG_DTS_EAGLE
 void msm_dts_ion_memmap(struct param_outband *po);

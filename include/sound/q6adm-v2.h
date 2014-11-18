@@ -34,6 +34,7 @@ enum {
 	ADM_AUDVOL_CAL,
 	ADM_RTAC_INFO_CAL,
 	ADM_RTAC_APR_CAL,
+	ADM_SRS_TRUMEDIA,
 	ADM_DTS_EAGLE,
 	ADM_MAX_CAL_TYPES
 };
@@ -52,7 +53,7 @@ struct route_payload {
 	unsigned int session_id;
 };
 
-int srs_trumedia_open(int port_id, int copp_idx, int srs_tech_id,
+int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 		      void *srs_params);
 
 int adm_dts_eagle_set(int port_id, int copp_idx, int param_id,
