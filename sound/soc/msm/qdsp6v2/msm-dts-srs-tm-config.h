@@ -18,16 +18,9 @@
 
 union srs_trumedia_params_u {
 	struct srs_trumedia_params srs_params;
-	__u16 raw_params[1];
+	unsigned short int raw_params[1];
 };
 
-struct param_outband {
-	size_t		size;
-	void	       *kvaddr;
-	phys_addr_t	paddr;
-};
-
-void msm_dts_srs_tm_ion_memmap(struct param_outband *po_);
 void msm_dts_srs_tm_init(int port_id, int copp_idx);
 void msm_dts_srs_tm_deinit(int port_id);
 void msm_dts_srs_tm_add_controls(struct snd_soc_platform *platform);
