@@ -871,10 +871,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 	spin_lock_init(&ei->i_prealloc_lock);
 	ext4_es_init_tree(&ei->i_es_tree);
 	rwlock_init(&ei->i_es_lock);
-	INIT_LIST_HEAD(&ei->i_es_lru);
+	INIT_LIST_HEAD(&ei->i_es_list);
 	ei->i_es_all_nr = 0;
-	ei->i_es_lru_nr = 0;
-	ei->i_touch_when = 0;
+	ei->i_es_shk_nr = 0;
 	ei->i_reserved_data_blocks = 0;
 	ei->i_reserved_meta_blocks = 0;
 	ei->i_allocated_meta_blocks = 0;
