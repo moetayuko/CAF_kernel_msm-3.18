@@ -151,6 +151,8 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
 				       int nr_to_scan);
 static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
 			    struct ext4_inode_info *locked_ei);
+static void ext4_es_lru_add(struct inode *inode);
+static void ext4_es_lru_del(struct inode *inode);
 
 int __init ext4_init_es(void)
 {
@@ -314,7 +316,8 @@ ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
 	 * We don't count delayed extent because we never try to reclaim them
 	 */
 	if (!ext4_es_is_delayed(es)) {
-		EXT4_I(inode)->i_es_lru_nr++;
+		if (!EXT4_I(inode)->i_es_lru_nr++)
+			ext4_es_lru_add(inode);
 		percpu_counter_inc(&EXT4_SB(inode->i_sb)->
 					s_es_stats.es_stats_lru_cnt);
 	}
@@ -333,7 +336,8 @@ static void ext4_es_free_extent(struct inode *inode, struct extent_status *es)
 	/* Decrease the lru counter when this es is not delayed */
 	if (!ext4_es_is_delayed(es)) {
 		BUG_ON(EXT4_I(inode)->i_es_lru_nr == 0);
-		EXT4_I(inode)->i_es_lru_nr--;
+		if (!--EXT4_I(inode)->i_es_lru_nr)
+			ext4_es_lru_del(inode);
 		percpu_counter_dec(&EXT4_SB(inode->i_sb)->
 					s_es_stats.es_stats_lru_cnt);
 	}
@@ -1225,7 +1229,7 @@ void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi)
 	unregister_shrinker(&sbi->s_es_shrinker);
 }
 
-void ext4_es_lru_add(struct inode *inode)
+static void ext4_es_lru_add(struct inode *inode)
 {
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -1241,7 +1245,7 @@ void ext4_es_lru_add(struct inode *inode)
 	spin_unlock(&sbi->s_es_lru_lock);
 }
 
-void ext4_es_lru_del(struct inode *inode)
+static void ext4_es_lru_del(struct inode *inode)
 {
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
