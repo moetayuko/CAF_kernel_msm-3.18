@@ -1,0 +1,34 @@
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&soc{
+	i2c@f9967000 { /* BLSP#11 */
+		analogix_i2c@72{
+			compatible ="analogix,anx7816";
+			status = "ok";
+			reg = <0x72>;
+			interrupt-parent = <&pm8941_gpios>;
+			interrupts = <13 0>; //cable_det gpio is interrupt pin
+			analogix,p-dwn-gpio = <&pm8941_gpios 23 0x0>;//EDU_PM_GPIO1
+			analogix,reset-gpio = <&pm8941_gpios 24 0x0>;//EDU_PM_GPIO2
+			analogix,v10-ctrl-gpio = <&pm8941_gpios 35 0x0>;//EDU_PM_GPIO3
+			/*analogix,irq-gpio = <&msmgpio 14 0x0>;*///APQ_GPIO_14
+			analogix,v33-ctrl-gpio = <&msmgpio 14 0x0>;//APQ_GPIO_14
+			analogix,cbl-det-gpio = <&msmgpio 80 0x0>;//APQ_GPIO_80
+			analogix,external-ldo-control = <1>;
+			analogix,i2c-pull-up = <1>;
+		
+		};
+	};	
+
+
+};
