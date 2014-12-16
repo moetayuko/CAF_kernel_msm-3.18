@@ -11,6 +11,7 @@
 6. Add CONFIG_SLIMPORT_COLORADO3=y to file kernel/arch/arm/configs/msm8974_defconfig
 
 7. Build the project.
+
 8. Our cable detect signal is high (1) when the dongle cable is plugged, and low (0) when dongle cable is unplugged. But in system msm8974, the value we get using gpio_get_value from GPIO is opposite with the signal.So if you want to modify the value of GPIO, you can modify the makefile drivers/video/msm/ANX_Colorado3/Makefile:
 ccflags- += -D DONGLE_CABLE_INSERT=1 to ccflags- += -D DONGLE_CABLE_INSERT=0
 9. If the PMIC chip is SMB1357,should open ccflags-y += -D QUALCOMM_SMB1357 in 

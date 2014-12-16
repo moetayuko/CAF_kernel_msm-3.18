@@ -22,7 +22,7 @@ static unchar s_AP_cap;
 static unchar s_request_vol;
 static unchar s_voltage_cap[4] = {5, 9, 12, 20};
 static unchar s_count = ACK_TIMEOUT;
-static unchar s_pmic_0e;
+static unchar s_pmic_0c;
 static unchar s_pmic_11;
 static unchar s_pmic_40;
 static unchar s_pmic_0d;
@@ -119,14 +119,14 @@ void pmic_BQ_config_access(void)
 #endif
 }
 
-int pmic_init(void)
+/*int pmic_init(void)
 {
 #ifdef QUALCOMM_SMB1357
 	char buf[2] = {0};
 	unchar vol = 0;
-	msleep(20);
+	msleep(20);*/
 	/*enable hvdcp*/
-	sp_read_reg(PMIC_ADDRESS, PMIC_HVDCP_CONFIG_OFFSET, buf);
+	/*sp_read_reg(PMIC_ADDRESS, PMIC_HVDCP_CONFIG_OFFSET, buf);
 	s_pmic_0e = buf[0];
 	pr_err("pmic_init, hvdcp buf=%x\n", (int)buf[0]);
 	if ((buf[0] & 0x8) == 0) {
@@ -145,16 +145,16 @@ int pmic_init(void)
 				(buf[0] & 0xCF) | (vol << 4));
 	msleep(20);
 	sp_read_reg(PMIC_ADDRESS, PMIC_HVDCP_CONFIG_OFFSET, buf);
-	pr_err("pmic_init, hvdcp 0e=%x\n", (int)buf[0]);
+	pr_err("pmic_init, hvdcp 0e=%x\n", (int)buf[0]);*/
 	/*AICL enable*/
-	sp_read_reg(PMIC_ADDRESS, PMIC_AICL_OFFSET, buf);
+	/*sp_read_reg(PMIC_ADDRESS, PMIC_AICL_OFFSET, buf);
 	pr_err("pmic_init, AICL buf=%x\n", (int)buf[0]);
 	s_pmic_0d = buf[0];
 	pmic_BQ_config_access();
-	sp_write_reg(PMIC_ADDRESS, PMIC_AICL_OFFSET, buf[0] | 4);
+	sp_write_reg(PMIC_ADDRESS, PMIC_AICL_OFFSET, buf[0] | 4);*/
 
 	/*Auto source detect disabled*/
-	sp_read_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET, buf);
+	/*sp_read_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET, buf);
 	s_pmic_11 = buf[0];
 	pr_err("pmic_init, Auto source detect buf=%x\n", (int)buf[0]);
 	if (buf[0] & 0x01) {
@@ -163,9 +163,9 @@ int pmic_init(void)
 		sp_write_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET,
 				buf[0]);
 	}
-	msleep(20);
+	msleep(20);*/
 	/*SDP normal*/
-	sp_read_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET, buf);
+	/*sp_read_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET, buf);
 	pr_err("pmic_init, SDP normal buf=%x\n", (int)buf[0]);
 	if (buf[0] & 0x10) {
 		buf[0] &= 0xEF;
@@ -176,29 +176,48 @@ int pmic_init(void)
 	msleep(20);
 #endif
 	return 0;
-}
-int pmic_recovery(void)
+}*/
+
+int pmic_process(unchar vol)
 {
 #ifdef QUALCOMM_SMB1357
+	char buf[2] = {0};
+	unchar pmic_vol = 0;
+	switch (vol) {
+	case 5:
+		pmic_vol = 0;
+		break;
+	case 9:
+		pmic_vol = (3 << 5);
+		break;
+	case 12:
+		break;
+	case 20:
+		break;
+	default:
+		break;
+	}
+	/*Set USBIN 9v or 12V*/
+	sp_read_reg(PMIC_ADDRESS, PMIC_USBIN_CONFIG_OFFSET, buf);
+	s_pmic_0c = buf[0];
+	pr_err("pmic_init, USBIN=%x\n", (int)buf[0]);
 	pmic_BQ_config_access();
-	sp_write_reg(PMIC_ADDRESS, PMIC_HVDCP_CONFIG_OFFSET, s_pmic_0e);
-	msleep(20);
-	pmic_BQ_config_access();
-	sp_write_reg(PMIC_ADDRESS, PMIC_AUTO_SOURCE_DETECT_OFFSET, s_pmic_11);
-	msleep(20);
-	sp_write_reg(PMIC_ADDRESS, PMIC_BQ_CONFIG_OFFSET, s_pmic_40);
+	sp_write_reg(PMIC_ADDRESS, PMIC_USBIN_CONFIG_OFFSET,
+				(buf[0] & 0x9F) | pmic_vol);
 #endif
 	return 0;
 }
 
-/*bool is_power_on_vbus(void)
+
+
+int pmic_recovery(void)
 {
-	unchar val = 0;
-	pr_info("%s, is_power_on_vbus, val=%d\n", LOG_TAG, val);
-	if (val & 0x08)
-		return 1;
+#ifdef QUALCOMM_SMB1357
+	pmic_BQ_config_access();
+	sp_write_reg(PMIC_ADDRESS, PMIC_USBIN_CONFIG_OFFSET, s_pmic_0c);
+#endif
 	return 0;
-}*/
+}
 
 int read_AP_cap(void)
 {
@@ -237,7 +256,7 @@ int charge_initialization(void)
 	*/
 	unchar val;
 	s_request_vol = 0;
-	s_pmic_0e = 0;
+	s_pmic_0c = 0;
 	s_pmic_11 = 0;
 	s_pmic_40 = 0;
 	s_pmic_0d = 0;
@@ -245,8 +264,8 @@ int charge_initialization(void)
 	s_count = ACK_TIMEOUT;
 	s_charger_connected = 1;
 	pr_info("%s ,charge_initialization\n", LOG_TAG);
-	s_AP_cap = read_AP_cap();
-	pmic_init();
+	s_AP_cap = PMIC_MAX_INPUT_VOL;/*read_AP_cap()*/
+	/*pmic_init();*/
 	val = 0x01;
 	sp_tx_aux_dpcdwrite_bytes(DPCD_HIGH_ADDRESS, DPCD_MID_ADDRESS,
 				DPCD_GOOD_BATTERY_CAP, 1, &val);
@@ -254,28 +273,6 @@ int charge_initialization(void)
 	s_pre_process = PROCESS_IDLE;
 	return 0;
 }
-
-/*int is_charge_request_back(void)
-{*/
-	/*
-	Is NEW_CHARGE_REQUEST 0? (0x72A0:2==0 & 0x72A0:3 == 0)
-	*/
-/*	unchar val;
-	sp_read_columbia_reg(TX_P2, NEW_CHARGE_REQUEST_FLAG, &val);
-	pr_info("%s, is_charge_request_back val=%d\n", LOG_TAG, val);
-	if ((val != 0) && s_count > 0) {
-		s_count--;
-	}
-	if (val == 0) {
-		s_count = ACK_TIMEOUT;
-		return RETURN_OK;
-	}
-	if (s_count == 0) {
-		s_count = ACK_TIMEOUT;
-		return RETURN_ERR;
-	}
-	return 0;
-}*/
 
 int is_sink_charge_ack_back(void)
 {
@@ -336,9 +333,6 @@ int charger_plugged_process(void)
 	idx = (0x01|(idx << 1));
 	sp_tx_aux_dpcdwrite_bytes(DPCD_HIGH_ADDRESS, DPCD_MID_ADDRESS,
 				DPCD_GOOD_BATTERY_CAP, 1, &idx);
-	/*read 0x72A6*/
-	/*sp_tx_aux_dpcdwrite_bytes(DPCD_HIGH_ADDRESS,
-				DPCD_MID_ADDRESS,,0x0c);*/
 	return RETURN_OK;
 }
 
@@ -389,20 +383,18 @@ int read_charger_type(void)
 	return val;
 }
 
-int read_PMIC_input_voltage(void)
+int check_PMIC_charge_status(void)
 {
 #ifdef QUALCOMM_SMB1357
 	unchar val;
-	sp_read_reg(PMIC_ADDRESS, 0x4d, &val);
-	pr_info("%s, read_PMIC_input_voltage, val=%d\n", LOG_TAG, val);
-	if (val & 0x01)
-		return 5;
-	else if (val & 0x2)
-		return 9;
-	else if (val & 0x4)
-		return 12;
+	sp_read_reg(PMIC_ADDRESS, 0x55, &val);
+	pr_info("%s, check_PMIC_charge_status, val=%d\n", LOG_TAG, val);
+	if (val & 0x01) {
+		/*power ok*/
+		return 1;
+	}
 #endif
-	return 5;
+	return 0;
 }
 
 int get_input_charger_type(void)
@@ -426,61 +418,6 @@ void set_pmic_voltage(int vol)
 	s_pmic_voltage = vol;
 }
 
-
-int set_PMIC_charger_type(unchar type)
-{
-	int ret = 0;
-#ifdef QUALCOMM_SMB1357
-	/*4Bh? status register*/
-	unchar val;
-	pr_info("%s, set_PMIC_charger_type,type=%d\n", LOG_TAG, type);
-	sp_read_reg(PMIC_ADDRESS, 0x4B, &val);
-	pr_info("%s, set_PMIC_charger_type, val=%d\n", LOG_TAG, val);
-	switch (type) {
-	case 1:
-		/*sdp*/
-		val = 0x10;
-		break;
-	case 2:
-		/*cdp*/
-		val = 0x80;
-		break;
-	case 3:
-		/*dcp*/
-		val = 0x40;
-		break;
-	case 4:
-		/*ACA dock*/
-		val = 0x01;
-		break;
-	case 5:
-		/*ACA_A*/
-		val = 0x08;
-		break;
-	case 6:
-		/*ACA_B*/
-		val = 0x04;
-		break;
-	case 7:
-		/*ACA_C*/
-		val = 0x02;
-		break;
-	case 8:
-		/*other device*/
-		val = 0x20;
-		break;
-	case 9:
-		/*HVDP*/
-		val = 0x40;
-		break;
-	default:
-		break;
-	}
-	ret = sp_write_reg(PMIC_ADDRESS, 0x4b, val);
-#endif
-	return ret;
-
-}
 
 int set_request_voltage(int voltage)
 {
@@ -529,8 +466,7 @@ int set_chager_to_tx(void)
 	if (s_request_vol == 0) {
 		s_request_vol = (s_AP_cap > s_dongle_cap) ?
 				s_dongle_cap : s_AP_cap;
-	} /*else
-		vol = set_request_voltage();*/
+	}
 	for (vol = 0; vol < 4; vol++) {
 		if (s_request_vol == s_voltage_cap[vol])
 			break;
@@ -545,25 +481,46 @@ int set_chager_to_tx(void)
 		pr_info("set_chager_to_tx, 0x72A3, write val=%x\n", (int)val);
 		sp_tx_aux_dpcdwrite_bytes(DPCD_HIGH_ADDRESS, DPCD_MID_ADDRESS,
 					DPCD_POWER_DELIVERY, 1, &val);
+		pmic_process(s_request_vol);
 		s_pre_process++;
 		s_current_process++;
 	} else {
+		pmic_process(5);
 		s_current_process = PROCESS_IDLE;
 		s_pre_process = PROCESS_IDLE;
 	}
-	/*set_PMIC_charger_type(type);*/
 	return 0;
+}
+
+void set_new_voltage(void)
+{
+	switch (s_request_vol) {
+	case 5:
+		break;
+	case 9:
+		s_request_vol = 5;
+		break;
+	case 12:
+		s_request_vol = 9;
+		break;
+	case 20:
+		s_request_vol = 12;
+		break;
+	}
 }
 
 int charge_finish_process(void)
 {
 	pr_info("%s,\n", LOG_TAG);
-	if (read_PMIC_input_voltage() != s_request_vol)	{
-		/*if (s_request_vol > 5)
-			set_chager_to_tx();*/
+	if (!check_PMIC_charge_status()) {
+		s_pre_process = SET_CHARGER_TO_TX;
+		s_current_process = SET_CHARGER_TO_TX;
+		set_new_voltage();
+		set_chager_to_tx();
+	} else {
+		s_current_process++;
+		s_pre_process++;
 	}
-	s_current_process++;
-	s_pre_process++;
 	return 0;
 }
 
@@ -608,6 +565,7 @@ void quick_charge_main_process(void)
 			sp_tx_hardware_powerdown();
 			reset_process();
 		} else if (ret == RETURN_OK) {
+			//pmic_process(s_request_vol);
 			s_current_process++;
 			s_pre_process++;
 			(*state_functions[s_current_process])();
