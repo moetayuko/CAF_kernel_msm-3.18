@@ -50,6 +50,6 @@ int get_dongle_capability(void);
 int get_current_voltage(void);
 void set_pmic_voltage(int vol);
 int set_request_voltage(int voltage);
-
+int is_sink_charge_ack_back(void);
 
 #endif

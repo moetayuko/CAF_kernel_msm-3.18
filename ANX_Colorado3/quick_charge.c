@@ -11,9 +11,10 @@
  * GNU General Public License for more details.
  *
  */
-
+#ifdef QUICK_CHARGE_SUPPORT
 #include "quick_charge.h"
-#include "slimport.h"
+#include "slimport_tx_drv.h"
+#include <linux/notifier.h>
 /*10*100ms*/
 #define ACK_TIMEOUT 10
 
@@ -47,6 +48,7 @@ static unchar s_current_process = CHARGER_INITIALIZE;
 static unchar s_charger_connected = 1;
 static unchar s_charger_status;
 
+extern struct blocking_notifier_head *get_notifier_list_head(void);
 
 int enable_otg(void)
 {
@@ -222,30 +224,9 @@ int pmic_recovery(void)
 int read_AP_cap(void)
 {
 #ifdef QUALCOMM_SMB1357
-	unchar cap = 12;
-	sp_read_reg(PMIC_ADDRESS, 0x0c, &cap);
-	pr_info("%s, read_AP_cap, cap=%d\n", LOG_TAG, cap);
-	cap = cap >> 5;
-	switch (cap & 0x07) {
-	case 0:
-	case 4:
-		cap = 5;
-		break;
-	case 1:
-	case 2:
-	case 3:
-	case 5:
-		cap = 9;
-		break;
-
-	default:
-		cap = 5;
-		break;
-	}
-	return cap;
-#else
-	return 9;
+	return PMIC_MAX_INPUT_VOL;
 #endif
+	return 9;
 }
 int charge_initialization(void)
 {
@@ -264,11 +245,9 @@ int charge_initialization(void)
 	s_count = ACK_TIMEOUT;
 	s_charger_connected = 1;
 	pr_info("%s ,charge_initialization\n", LOG_TAG);
-	s_AP_cap = PMIC_MAX_INPUT_VOL;/*read_AP_cap()*/
+	s_AP_cap = read_AP_cap();
 	/*pmic_init();*/
 	val = 0x01;
-	sp_tx_aux_dpcdwrite_bytes(DPCD_HIGH_ADDRESS, DPCD_MID_ADDRESS,
-				DPCD_GOOD_BATTERY_CAP, 1, &val);
 	s_current_process = PROCESS_IDLE;
 	s_pre_process = PROCESS_IDLE;
 	return 0;
@@ -362,6 +341,7 @@ int charger_plug_process(void)
 void set_charger_status(int status)
 {
 	s_charger_status = status;
+	blocking_notifier_call_chain(get_notifier_list_head(), status, NULL);
 	if (status > 0) {
 		if (s_current_process == CHARGER_INITIALIZE)
 			charge_initialization();
@@ -565,7 +545,7 @@ void quick_charge_main_process(void)
 			sp_tx_hardware_powerdown();
 			reset_process();
 		} else if (ret == RETURN_OK) {
-			//pmic_process(s_request_vol);
+			/*pmic_process(s_request_vol);*/
 			s_current_process++;
 			s_pre_process++;
 			(*state_functions[s_current_process])();
@@ -574,4 +554,4 @@ void quick_charge_main_process(void)
 		return;
 
 }
-
+#endif /*#ifdef QUICK_CHARGE_SUPPORT*/

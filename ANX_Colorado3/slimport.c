@@ -12,8 +12,11 @@
  *
  */
 #include "slimport.h"
+#include "slimport_tx_drv.h"
+#include "slimport_tx_reg.h"
+#ifdef QUICK_CHARGE_SUPPORT
 #include "quick_charge.h"
-
+#endif
 
 /* Enable or Disable HDCP by default */
 /* hdcp_enable = 1: Enable,  0: Disable */
@@ -76,9 +79,9 @@ struct anx7816_data {
 	struct wake_lock slimport_lock;
 };
 
+extern struct blocking_notifier_head *get_notifier_list_head(void);
 
-
-bool slimport_dongle_is_connected(void)
+bool slimport_is_connected(void)
 {
 	struct anx7816_platform_data *pdata = NULL;
 	bool result = false;
@@ -103,31 +106,6 @@ bool slimport_dongle_is_connected(void)
 		}
 
 	return result;
-}
-
-
-/*For QC 2.0*/
-void charger_status_changed(void)
-{
-       /*Get the status of charger*/
-	unchar status = 0;
-	sp_tx_aux_dpcdread_bytes(0, 5, DPCD_CHARGER_TYPE_OFFSET, 1, &status);
-	/*charger plugged in*/
-	pr_info("charger_status_changed, status=%d", status);
-	set_charger_status(status);
-	if (status > 0)
-		status = 1;
-	blocking_notifier_call_chain(get_notifier_list_head(), status, NULL);
-}
-
-void enable_pmic_otg(void)
-{
-	enable_otg();
-}
-
-int get_current_dongle_voltage(void)
-{
-	return get_current_voltage();
 }
 
 
@@ -813,7 +791,7 @@ void sp_tx_hardware_powerdown(void)
 	pr_info("%s %s: anx7816 power down\n", LOG_TAG, __func__);
 }
 
-int slimport_get_edid_block(int block, uint8_t *edid_buf)
+int slimport_read_edid_block(int block, uint8_t *edid_buf)
 {
 	if (block == 0) {
 		memcpy(edid_buf, edid_blocks, 128 * sizeof(char));
@@ -927,9 +905,11 @@ void cable_disconnect(void *data)
 	struct anx7816_data *anx7816 = data;
 	cancel_delayed_work_sync(&anx7816->work);
 	flush_workqueue(anx7816->workqueue);
+#ifdef QUICK_CHARGE_SUPPORT
 	disable_otg();
 	pmic_recovery();
 	reset_process();
+#endif
 	sp_tx_hardware_powerdown();
 	sp_tx_clean_state_machine();
 	wake_unlock(&anx7816->slimport_lock);
@@ -968,7 +948,9 @@ static irqreturn_t anx7816_cbl_det_isr(int irq, void *data)
 					LOG_TAG, __func__, cable_connected);
 	if (cable_connected == DONGLE_CABLE_INSERT) {
 		wake_lock(&anx7816->slimport_lock);
+#ifdef QUICK_CHARGE_SUPPORT
 		reset_process();
+#endif
 		pr_info("%s %s : detect cable insertion\n", LOG_TAG, __func__);
 		queue_delayed_work(anx7816->workqueue, &anx7816->work, 0);
 	} else {
@@ -990,9 +972,11 @@ static void anx7816_work_func(struct work_struct *work)
 		workqueu_timer = 100;
 	mutex_lock(&td->lock);
 	slimport_main_process();
+#ifdef QUICK_CHARGE_SUPPORT
 	if (sp_tx_cur_states() >= STATE_SINK_CONNECTION) {
 		quick_charge_main_process();
 	}
+#endif
 	mutex_unlock(&td->lock);
 	queue_delayed_work(td->workqueue, &td->work,
 			   msecs_to_jiffies(workqueu_timer));
@@ -1280,7 +1264,7 @@ static int anx7816_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
-bool is_anx_slimport_vga(void)
+bool is_slimport_vga(void)
 {
 	return ((sp_tx_cur_cable_type() == DWN_STRM_IS_VGA_9832)
 		|| (sp_tx_cur_cable_type() == DWN_STRM_IS_ANALOG)) ? 1 : 0;
@@ -1291,12 +1275,12 @@ bool is_anx_slimport_vga(void)
     0x03: Old VGA device is attached // RX_VGA_9832
     0x04: new combo VGA device is attached // RX_VGA_GEN
     0x00: unknow device            */
-bool is_anx_slimport_dp(void)
+bool is_slimport_dp(void)
 {
 	return (sp_tx_cur_cable_type() == DWN_STRM_IS_DIGITAL) ? TRUE : FALSE;
 }
 
-unchar sp_get_slimport_link_bw(void)
+unchar sp_get_link_bw(void)
 {
 	return sp_tx_cur_bw();
 }

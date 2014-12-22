@@ -23,6 +23,7 @@
 /*---End---*/
 
 #include "slimport_tx_reg.h"
+#include "slimport.h"
 
 /*//#define CEC_PHYCISAL_ADDRESS_INSERT*/
 /*//#define CEC_DBG_MSG_ENABLED*/

@@ -1,5 +1,6 @@
 #ccflags-y += -D QUALCOMM_SMB1357
 ccflags-y += -D DONGLE_CABLE_INSERT=1
+ccflags-y += -D QUICK_CHARGE_SUPPORT
 
 obj-$(CONFIG_SLIMPORT_COLORADO3)	+= co3.o
 co3-objs := slimport.o \

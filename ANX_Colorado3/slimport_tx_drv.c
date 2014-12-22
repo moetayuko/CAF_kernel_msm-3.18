@@ -13,7 +13,9 @@
  */
 
 #include "slimport_custom_declare.h"
-
+#ifdef QUICK_CHARGE_SUPPORT
+#include "quick_charge.h"
+#endif
 
 
 #define SLIMPORT_DRV_DEBUG
@@ -767,7 +769,7 @@ bool slimport_chip_detect(void)
 /*========cable plug*/
 unchar is_cable_detected(void)
 {
-	return slimport_dongle_is_connected();
+	return slimport_is_connected();
 	/*
 	   if(cable_detected()) {
 	   mdelay(50);
@@ -782,7 +784,9 @@ void slimport_waitting_cable_plug_process(void)
 	if (is_cable_detected()) {
 		hardware_power_ctl(1);
 		/*enable otg,QC2.0*/
-		enable_pmic_otg();
+#ifdef QUICK_CHARGE_SUPPORT
+		enable_otg();
+#endif
 		goto_next_system_state();
 	} else
 		hardware_power_ctl(0);
@@ -937,7 +941,6 @@ unchar sp_tx_get_downstream_connection(void)
 
 void slimport_sink_connection(void)
 {
-	unchar val = 0;
 	if (check_cable_det_pin() == 0) {
 		sp_tx_set_sys_state(STATE_WAITTING_CABLE_PLUG);
 		return;
@@ -2635,11 +2638,12 @@ void slimport_config_audio_output(void)
 
 }
 
+#ifdef QUICK_CHARGE_SUPPORT
 void QC20_process(void)
 {
 	unchar val = 0;
 	/*Write dpcd for QC2.0*/
-	val = get_current_dongle_voltage();
+	val = get_current_voltage();
 	pr_info("QC20_process, val=%d\n", val);
 	switch (val) {
 	case 0:
@@ -2654,7 +2658,7 @@ void QC20_process(void)
 	sp_tx_aux_dpcdwrite_bytes(0, 5, SINK_GOOD_BATTERY, 1, &val);
 
 }
-
+#endif
 
 /******************End Audio process********************/
 void slimport_initialization(void)
@@ -2672,7 +2676,9 @@ void slimport_initialization(void)
 	hdmi_rx_initialization();
 	sp_tx_initialization();
 	msleep(200);
+#ifdef QUICK_CHARGE_SUPPORT
 	QC20_process();
+#endif
 	sp_tx_aux_polling_enable();
 	goto_next_system_state();
 }
@@ -3213,7 +3219,13 @@ static void sp_tx_sink_irq_int_handler(void)
 				/*charger status changed*/
 				pr_info("%s,%s, chager status changed!!\n",
 					LOG_TAG, __func__);
-				charger_status_changed();
+				/*Get the status of charger*/
+				sp_tx_aux_dpcdread_bytes(0, 5, DPCD_CHARGER_TYPE_OFFSET, 1, &temp);
+				/*charger plugged in*/
+				pr_info("charger_status_changed, status=%d", temp);
+#ifdef QUICK_CHARGE_SUPPORT
+				set_charger_status(temp);
+#endif
 			}
 		} else if (sp_tx_rx_type != DWN_STRM_IS_HDMI) {
 			/*//sp_tx_aux_dpcdread_bytes(0x00, 0x02, 0x00, 1, &c);*/
