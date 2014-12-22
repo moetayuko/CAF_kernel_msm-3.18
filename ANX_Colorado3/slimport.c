@@ -79,7 +79,9 @@ struct anx7816_data {
 	struct wake_lock slimport_lock;
 };
 
+#ifdef QUICK_CHARGE_SUPPORT
 extern struct blocking_notifier_head *get_notifier_list_head(void);
+#endif
 
 bool slimport_is_connected(void)
 {
@@ -1229,8 +1231,9 @@ static int anx7816_i2c_probe(struct i2c_client *client,
 	}
 
 	/*QC2.0*/
+#ifdef QUICK_CHARGE_SUPPORT
 	BLOCKING_INIT_NOTIFIER_HEAD(get_notifier_list_head());
-
+#endif
 	pr_info("%s %s end\n", LOG_TAG, __func__);
 	goto exit;
 

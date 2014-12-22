@@ -14,7 +14,6 @@
 #include "slimport.h"
 #ifdef QUICK_CHARGE_SUPPORT
 #include "quick_charge.h"
-#endif
 
 static struct blocking_notifier_head charger_notifier_head;
 
@@ -37,7 +36,6 @@ int unregister_slimport_charge_status(struct notifier_block *nb)
 	return blocking_notifier_chain_unregister(&charger_notifier_head, nb);
 }
 
-#ifdef QUICK_CHARGE_SUPPORT
 int get_slimport_max_charge_voltage(void)
 {
 	return get_dongle_capability();
