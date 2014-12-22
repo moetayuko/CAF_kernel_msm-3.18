@@ -1,4 +1,3 @@
-
 /*
  * Copyright(c) 2014, Analogix Semiconductor. All rights reserved.
  *
@@ -12,10 +11,27 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef __ANX_SLIMPORT_H__
-#define __ANX_SLIMPORT_H__
+
+#ifndef _ANX_SLIMPORT_H
+#define _ANX_SLIMPORT_H
+
+#include <linux/types.h>
 #include <linux/notifier.h>
 
+void sp_set_link_bw(unchar link_bw);
+
+bool slimport_is_connected(void);
+
+int slimport_read_edid_block(int block, uint8_t *edid_buf);
+
+bool is_slimport_dp(void);
+
+bool is_slimport_vga(void);
+
+unchar sp_get_link_bw(void);
+
+
+/*for quick charge*/
 
 /*Used for get slimport charger status change.
 If you want to get charger status change for example:
@@ -77,33 +93,19 @@ int get_slimport_max_charge_voltage(void);
 */
 int get_slimport_charger_type(void);
 
+
 /*request a charge voltage from slimport
   param: 5/9/12/20
   return: 1: fail. 2: success
 */
-int request_charge_voltage(int voltage);
+int request_slimport_charge_voltage(int voltage);
 
-/*return: 5/9/12/20 v*/
-int get_current_slimport_charge_voltage(void);
-
-/*Set PMIC real charge voltage to slimport module
-parameter: 5/9/12/20 v*/
-void set_pmic_charge_voltage(int voltage);
-
-/*Get EDID block*/
-int slimport_read_edid_block(int block, uint8_t *edid_buf);
-
-/*Get link bw*/
-unsigned char sp_get_link_bw(void);
-
-
-bool slimport_is_connected(void);
-
-
-bool is_slimport_vga(void);
-
-bool is_slimport_dp(void);
-
-
+/*
+return: 2, yes, ack back. others, no ack.
+This function should be called after calling
+int request_slimport_charge_voltage(int voltage);
+for checking slimport charge request success or fail.
+*/
+int is_request_ack_back(void);
 
 #endif
