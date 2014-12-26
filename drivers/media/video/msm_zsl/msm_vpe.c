@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,7 +12,6 @@
  */
 
 #include <linux/uaccess.h>
-#include <linux/module.h>
 #include <linux/interrupt.h>
 #include <mach/irqs.h>
 #include <linux/io.h>
@@ -48,12 +47,6 @@ static long long vpe_do_div(long long num, long long den)
 
 static int vpe_start(void)
 {
-
-	if(vpe_ctrl->vpebase == NULL){
-		pr_err("vpe_ctrl->vpebase is not iomapped\n");
-		return -EIO;
-	}
-
 	/*  enable the frame irq, bit 0 = Display list 0 ROI done */
 	msm_io_w_mb(1, vpe_ctrl->vpebase + VPE_INTR_ENABLE_OFFSET);
 	msm_io_dump(vpe_ctrl->vpebase, 0x120);
@@ -130,11 +123,6 @@ static int msm_vpe_cfg_update(void *pinfo)
 {
 	uint32_t  rot_flag, rc = 0;
 	struct msm_pp_crop *pcrop = (struct msm_pp_crop *)pinfo;
-
-	if(vpe_ctrl->vpebase == NULL){
-		pr_err("vpe_ctrl->vpebase is not iomapped\n");
-		return -EIO;
-	}
 
 	rot_flag = msm_io_r(vpe_ctrl->vpebase +
 						VPE_OP_MODE_OFFSET) & 0xE00;
@@ -228,12 +216,6 @@ static int vpe_update_scaler(struct msm_pp_crop *pcrop)
 	uint32_t yscale_filter_sel, xscale_filter_sel;
 	uint32_t scale_unit_sel_x, scale_unit_sel_y;
 	uint64_t numerator, denominator;
-
-	if(vpe_ctrl->vpebase == NULL){
-		pr_err("vpe_ctrl->vpebase is not iomapped\n");
-		return -EIO;
-	}
-
 	if ((pcrop->src_w >= pcrop->dst_w) &&
 		(pcrop->src_h >= pcrop->dst_h)) {
 		CDBG(" =======VPE no zoom needed.\n");
@@ -459,11 +441,6 @@ static int msm_send_frame_to_vpe(void)
 	int rc = 0;
 	unsigned long flags;
 
-	if(vpe_ctrl->vpebase == NULL){
-		pr_err("vpe_ctrl->vpebase is not iomapped\n");
-		return -EIO;
-	}
-
 	spin_lock_irqsave(&vpe_ctrl->lock, flags);
 	msm_io_w((vpe_ctrl->pp_frame_info->src_frame.sp.phy_addr +
 			  vpe_ctrl->pp_frame_info->src_frame.sp.y_off),
@@ -489,11 +466,6 @@ static void vpe_send_outmsg(void)
 	struct msm_vpe_resp rp;
 	memset(&rp, 0, sizeof(rp));
 	spin_lock_irqsave(&vpe_ctrl->lock, flags);
-	if (vpe_ctrl->state == VPE_STATE_IDLE) {
-		pr_err("%s VPE is in IDLE state. Ignore the ack msg", __func__);
-		spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
-		return;
-	}
 	rp.type = vpe_ctrl->pp_frame_info->pp_frame_cmd.path;
 	rp.extdata = (void *)vpe_ctrl->pp_frame_info;
 	rp.extlen = sizeof(*vpe_ctrl->pp_frame_info);
@@ -516,8 +488,6 @@ DECLARE_TASKLET(vpe_tasklet, vpe_do_tasklet, 0);
 
 static irqreturn_t vpe_parse_irq(int irq_num, void *data)
 {
-	if (!vpe_ctrl->vpebase)
-		return IRQ_HANDLED; /* null check */
 	vpe_ctrl->irq_status = msm_io_r_mb(vpe_ctrl->vpebase +
 							VPE_INTR_STATUS_OFFSET);
 	msm_io_w_mb(vpe_ctrl->irq_status, vpe_ctrl->vpebase +
@@ -547,7 +517,14 @@ int vpe_enable(uint32_t clk_rate)
 	}
 	vpe_ctrl->state = VPE_STATE_INIT;
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
-	enable_irq(vpe_ctrl->vpeirq->start);
+
+	rc = request_irq(vpe_ctrl->vpeirq->start, vpe_parse_irq,
+		IRQF_TRIGGER_RISING, "vpe", 0);
+	if (rc < 0) {
+		pr_err("%s: irq request fail\n", __func__);
+		return -EBUSY;
+	}
+
 	vpe_ctrl->fs_vpe = regulator_get(NULL, "fs_vpe");
 	if (IS_ERR(vpe_ctrl->fs_vpe)) {
 		pr_err("%s: Regulator FS_VPE get failed %ld\n", __func__,
@@ -572,7 +549,7 @@ vpe_clk_failed:
 	regulator_put(vpe_ctrl->fs_vpe);
 	vpe_ctrl->fs_vpe = NULL;
 vpe_fs_failed:
-	disable_irq(vpe_ctrl->vpeirq->start);
+	free_irq(vpe_ctrl->vpeirq->start, 0);
 	vpe_ctrl->state = VPE_STATE_IDLE;
 	return rc;
 }
@@ -588,19 +565,17 @@ int vpe_disable(void)
 		spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
 		return rc;
 	}
+	vpe_ctrl->state = VPE_STATE_IDLE;
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
 
-	disable_irq(vpe_ctrl->vpeirq->start);
-	tasklet_kill(&vpe_tasklet);
 	msm_cam_clk_enable(&vpe_ctrl->pdev->dev, vpe_clk_info,
 			vpe_ctrl->vpe_clk, ARRAY_SIZE(vpe_clk_info), 0);
 
 	regulator_disable(vpe_ctrl->fs_vpe);
 	regulator_put(vpe_ctrl->fs_vpe);
 	vpe_ctrl->fs_vpe = NULL;
-	spin_lock_irqsave(&vpe_ctrl->lock, flags);
-	vpe_ctrl->state = VPE_STATE_IDLE;
-	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
+	free_irq(vpe_ctrl->vpeirq->start, 0);
+	tasklet_kill(&vpe_tasklet);
 	return rc;
 }
 
@@ -633,12 +608,6 @@ static long msm_vpe_subdev_ioctl(struct v4l2_subdev *sd,
 		(struct msm_mctl_pp_params *)arg;
 	struct msm_mctl_pp_cmd *cmd = vpe_params->cmd;
 	int rc = 0;
-
-	if(vpe_ctrl->vpebase == NULL){
-		pr_err("vpe_ctrl->vpebase is not iomapped\n");
-		return -EIO;
-	}
-
 	switch (cmd->id) {
 	case VPE_CMD_INIT:
 	case VPE_CMD_DEINIT:
@@ -664,7 +633,10 @@ static long msm_vpe_subdev_ioctl(struct v4l2_subdev *sd,
 		break;
 	}
 	case VPE_CMD_ENABLE: {
-		rc = vpe_enable(VPE_TURBO_MODE_CLOCK_RATE);
+		struct msm_vpe_clock_rate *clk_rate = cmd->value;
+		int turbo_mode = (int)clk_rate->rate;
+		rc = turbo_mode ? vpe_enable(VPE_TURBO_MODE_CLOCK_RATE) :
+			vpe_enable(VPE_NORMAL_MODE_CLOCK_RATE);
 		break;
 	}
 	case VPE_CMD_DISABLE:
@@ -706,6 +678,9 @@ int msm_vpe_subdev_init(struct v4l2_subdev *sd, void *data,
 		atomic_set(&vpe_init_done, 0);
 		return rc;
 	}
+
+	disable_irq(vpe_ctrl->vpeirq->start);
+
 	v4l2_set_subdev_hostdata(sd, data);
 	spin_lock_init(&vpe_ctrl->lock);
 	CDBG("%s:end", __func__);
@@ -742,7 +717,6 @@ void msm_vpe_subdev_release(struct platform_device *pdev)
 	}
 
 	iounmap(vpe_ctrl->vpebase);
-	vpe_ctrl->vpebase = NULL;
 	atomic_set(&vpe_init_done, 0);
 }
 EXPORT_SYMBOL(msm_vpe_subdev_release);
@@ -785,24 +759,12 @@ static int __devinit vpe_probe(struct platform_device *pdev)
 		goto vpe_no_resource;
 	}
 
-	rc = request_irq(vpe_ctrl->vpeirq->start, vpe_parse_irq,
-		IRQF_TRIGGER_RISING, "vpe", 0);
-	if (rc < 0) {
-		release_mem_region(vpe_ctrl->vpemem->start,
-			resource_size(vpe_ctrl->vpemem));
-		pr_err("%s: irq request fail\n", __func__);
-		rc = -EBUSY;
-		goto vpe_no_resource;
-	}
-
-	disable_irq(vpe_ctrl->vpeirq->start);
-
 	vpe_ctrl->pdev = pdev;
 	return 0;
 
 vpe_no_resource:
 	kfree(vpe_ctrl);
-	return rc;
+	return 0;
 }
 
 struct platform_driver vpe_driver = {

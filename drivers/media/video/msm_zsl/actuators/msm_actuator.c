@@ -168,6 +168,12 @@ int32_t msm_actuator_init_table(
 		kmalloc(sizeof(uint16_t) * (a_ctrl->set_info.total_steps + 1),
 			GFP_KERNEL);
 	cur_code = a_ctrl->initial_code;
+
+	if(!a_ctrl->step_position_table){
+		CDBG("kmalloc failed!!!\n\n");
+		rc = -ENOMEM;
+		return rc;
+	}
 	a_ctrl->step_position_table[step_index++] = cur_code;
 	for (region_index = 0;
 		region_index < a_ctrl->region_size;
@@ -177,13 +183,6 @@ int32_t msm_actuator_init_table(
 		step_boundary =
 			a_ctrl->region_params[region_index].
 			step_bound[MOVE_NEAR];
-		if (a_ctrl->set_info.total_steps < step_boundary) {
-			pr_err("%s: Region params / total steps mismatch\n",
-				__func__);
-			kfree(a_ctrl->step_position_table);
-			a_ctrl->step_position_table = NULL;
-			return -EINVAL;
-		}
 		for (; step_index <= step_boundary;
 			step_index++) {
 			cur_code += code_per_step;

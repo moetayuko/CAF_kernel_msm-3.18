@@ -21,8 +21,6 @@
 #include "msm_gemini_platform.h"
 #include "msm_gemini_common.h"
 
-#include <linux/delay.h>
-
 static int release_buf;
 
 /*************** queue helper ****************/
@@ -230,8 +228,6 @@ int msm_gemini_evt_get(struct msm_gemini_device *pgmn_dev,
 	ctrl_cmd.type = buf_p->vbuf.type;
 	kfree(buf_p);
 
-	GMN_DBG("%s:%d] 0x%08x %d\n", __func__, __LINE__,
-		(int) ctrl_cmd.value, ctrl_cmd.len);
 
 	if (copy_to_user(to, &ctrl_cmd, sizeof(ctrl_cmd))) {
 		GMN_PR_ERR("%s:%d]\n", __func__, __LINE__);
@@ -269,7 +265,6 @@ void msm_gemini_err_irq(struct msm_gemini_device *pgmn_dev,
 	if (!rc)
 		GMN_PR_ERR("%s:%d] err err\n", __func__, __LINE__);
 
-	pgmn_dev->core_reset = 1;
 	return;
 }
 
@@ -297,12 +292,14 @@ int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 	if (buf_out) {
 		rc = msm_gemini_core_we_buf_update(buf_out);
 		kfree(buf_out);
-	} else {
-		msm_gemini_core_we_buf_reset(buf_in);
-		GMN_DBG("%s:%d] no output buffer\n", __func__, __LINE__);
-		rc = -2;
-	}
-
+	}else{
+                 if(buf_in)
+                 {
+                     msm_gemini_core_we_buf_reset(buf_in);
+                     GMN_DBG("%s:%d] no output buffer\n", __func__, __LINE__);
+                     rc = -2;
+                 }
+        }
 	if (buf_in)
 		rc = msm_gemini_q_wakeup(&pgmn_dev->output_rtn_q);
 
@@ -497,8 +494,8 @@ int msm_gemini_input_buf_enqueue(struct msm_gemini_device *pgmn_dev,
 		return -1;
 	}
 
-	GMN_DBG("%s:%d] 0x%08x %d mode %d\n", __func__, __LINE__,
-		(int) buf_cmd.vaddr, buf_cmd.y_len, pgmn_dev->op_mode);
+	GMN_DBG("%s:%d] 0x%08x %d\n", __func__, __LINE__,
+		(int) buf_cmd.vaddr, buf_cmd.y_len);
 
 #if !defined(CONFIG_MSM_IOMMU)
 	buf_p->subsystem_id = kmalloc(sizeof(int), GFP_ATOMIC);
@@ -514,12 +511,11 @@ int msm_gemini_input_buf_enqueue(struct msm_gemini_device *pgmn_dev,
 			&buf_p->msm_buffer, buf_p->subsystem_id, &buf_p->handle)
 			+ buf_cmd.offset;
 #else
-			&buf_p->handle)	+ buf_cmd.offset + buf_cmd.y_off;
+			&buf_p->handle)	+ buf_cmd.offset;
 #endif
 	buf_p->y_len          = buf_cmd.y_len;
 
-	buf_p->cbcr_buffer_addr = buf_p->y_buffer_addr + buf_cmd.y_len +
-					buf_cmd.cbcr_off;
+	buf_p->cbcr_buffer_addr = buf_p->y_buffer_addr + buf_cmd.y_len;
 	buf_p->cbcr_len       = buf_cmd.cbcr_len;
 
 	buf_p->num_of_mcu_rows = buf_cmd.num_of_mcu_rows;
@@ -605,7 +601,6 @@ int __msm_gemini_open(struct msm_gemini_device *pgmn_dev)
 	msm_gemini_q_cleanup(&pgmn_dev->input_rtn_q);
 	msm_gemini_q_cleanup(&pgmn_dev->input_buf_q);
 	msm_gemini_core_init();
-	pgmn_dev->core_reset = 0;
 
 	GMN_DBG("%s:%d] success\n", __func__, __LINE__);
 	return rc;
@@ -622,16 +617,6 @@ int __msm_gemini_release(struct msm_gemini_device *pgmn_dev)
 	}
 	pgmn_dev->open_count--;
 	mutex_unlock(&pgmn_dev->lock);
-
-	if (pgmn_dev->core_reset) {
-		GMN_PR_ERR(KERN_ERR "gemini core reset cfg %x mode %d",
-			msm_gemini_io_r(0x8),
-			pgmn_dev->op_mode);
-		wmb();
-		msm_gemini_io_w(0x4, 0x8000);
-		msleep(5);
-		wmb();
-	}
 
 	msm_gemini_core_release(release_buf);
 	msm_gemini_q_cleanup(&pgmn_dev->evt_q);
@@ -779,11 +764,19 @@ int msm_gemini_ioctl_reset(struct msm_gemini_device *pgmn_dev,
 		return -EFAULT;
 	}
 
-	pgmn_dev->op_mode = MSM_GEMINI_MODE_OFFLINE_ENCODE;
+	pgmn_dev->op_mode = ctrl_cmd.type;
 
 	rc = msm_gemini_core_reset(pgmn_dev->op_mode, pgmn_dev->base,
 		resource_size(pgmn_dev->mem));
 	return rc;
+}
+
+int msm_gemini_ioctl_test_dump_region(struct msm_gemini_device *pgmn_dev,
+	unsigned long arg)
+{
+	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+	msm_gemini_hw_region_dump(arg);
+	return 0;
 }
 
 long __msm_gemini_ioctl(struct msm_gemini_device *pgmn_dev,
@@ -848,6 +841,10 @@ long __msm_gemini_ioctl(struct msm_gemini_device *pgmn_dev,
 
 	case MSM_GMN_IOCTL_HW_CMDS:
 		rc = msm_gemini_ioctl_hw_cmds(pgmn_dev, (void __user *) arg);
+		break;
+
+	case MSM_GMN_IOCTL_TEST_DUMP_REGION:
+		rc = msm_gemini_ioctl_test_dump_region(pgmn_dev, arg);
 		break;
 
 	default:

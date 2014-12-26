@@ -38,12 +38,12 @@ config ISX012
 	SONY 5 MP CMOS Sensor
 config S5C73M3
 	bool "Sensor S5C73M3 (8M)"
-	default n
+	default y
 	---help---
 	LSI 8 MP CMOS Sensor
 config S5K6A3YX
 	bool "Sensor S5K6A3YX (BAYER 2M)"
-	default n
+	default y
 	---help---
 	Samsung 2 MP Bayer Sensor
 config S5K8AAY

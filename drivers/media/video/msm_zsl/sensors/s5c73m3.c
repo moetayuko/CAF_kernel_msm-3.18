@@ -12,7 +12,6 @@
  */
 
 #include <linux/delay.h>
-#include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/types.h>
 #include <linux/i2c.h>
@@ -28,18 +27,14 @@
 #include <mach/vreg.h>
 #include <linux/io.h>
 
-#include "msm.h"
+#include "../msm.h"
 #include "s5c73m3.h"
-#include "msm_ispif.h"
+#include "../csi/msm_ispif.h"
 #include <linux/vmalloc.h>
 #include <linux/firmware.h>
 
 #define SENSOR_NAME "s5c73m3"
 #define PLATFORM_DRIVER_NAME "msm_camera_s5c73m3"
-#define CAMERA_FLASH_OFF                0
-#define CAMERA_FLASH_ON         1
-#define CAMERA_FLASH_AUTO               2
-#define CAMERA_FLASH_TORCH      3
 
 #define S5C73M3_FW_PATH		"/mnt/sdcard/SlimISP.bin"
 #define S5C73M3_FW_REQUEST_PATH	"/system/cameradata/"
@@ -49,6 +44,8 @@
 #define FLASHMODE_FLASH	18
 
 #define ERROR 1
+
+//#define CONFIG_S5C73M3
 
 #define IN_AUTO_MODE 1
 #define IN_MACRO_MODE 2
@@ -124,6 +121,7 @@ static int s5c73m3_set_af_mode(int val);
 static int s5c73m3_open_firmware_file(const char *filename,
 	u8 *buf, u16 offset, u16 size);
 
+void power_on_flash(void);
 
 static DECLARE_WAIT_QUEUE_HEAD(s5c73m3_wait_queue);
 
@@ -136,8 +134,8 @@ static char FW_buf[409600] = {0}; /*static QCTK 400KB*/
 				return x; \
 			}
 
-static char fw_path[40] = {0};
-static char fw_path_in_data[40] = {0};
+char fw_path[40] = {0};
+char fw_path_in_data[40] = {0};
 struct s5c73m3_fw_version camfw_info[S5C73M3_PATH_MAX];
 
 static int s5c73m3_i2c_write(unsigned short addr, unsigned short data)
@@ -146,7 +144,6 @@ static int s5c73m3_i2c_write(unsigned short addr, unsigned short data)
 	int i, err;
 	int retry_count = 5;
 	struct i2c_msg msg = {s5c73m3_client->addr, 0, sizeof(buf), buf};
-
 	if (!s5c73m3_client->adapter) {
 		cam_err("s5c73m3_client->adapter is not!!\n");
 		return -EIO;
@@ -179,7 +176,6 @@ static int s5c73m3_i2c_write(unsigned short addr, unsigned short data)
 static void s5c73m3_i2c_write_check(void)
 {
 	int index = 0;
-
 	do {
 		if (s5c73m3_ctrl->i2c_write_check == 1) {
 			cam_err("i2c is writing now!!, index : %d\n", index);
@@ -307,7 +303,6 @@ static int s5c73m3_write(unsigned short addr1,
 
 	s5c73m3_i2c_write_check();
 	s5c73m3_ctrl->i2c_write_check = 1;
-
 	err = s5c73m3_i2c_write(0x0050, addr1);
 	if (err < 0)
 		cam_err("fail s5c73m3_i2c_write!!\n");
@@ -330,7 +325,6 @@ static int s5c73m3_read(unsigned short addr1,
 
 	s5c73m3_i2c_write_check();
 	s5c73m3_ctrl->i2c_write_check = 1;
-
 	err = s5c73m3_i2c_write(0xfcfc, 0x3310);
 	if (err < 0)
 		cam_err("fail s5c73m3_i2c_write!!\n");
@@ -370,7 +364,6 @@ static int s5c73m3_i2c_check_status_with_CRC(void)
 	u16 status = 0;
 	u16 i2c_status = 0;
 	u16 i2c_seq_status = 0;
-
 	do {
 		err = s5c73m3_read(0x0009, S5C73M3_STATUS, &status);
 		err = s5c73m3_read(0x0009,
@@ -427,7 +420,6 @@ static int s5c73m3_reset_module(bool powerReset)
 	int err = 0;
 
 	CAM_DBG_M("E\n");
-
 	if (powerReset) {
 		s5c73m3_ctrl->sensordata->sensor_platform_info \
 			->sensor_power_off(0);
@@ -460,7 +452,6 @@ static int s5c73m3_wait_ISP_status(void)
 	int index = 0;
 
 	CAM_DBG_H("Entered\n");
-
 	/*Waiting until ISP will be prepared*/
 	do {
 		err = s5c73m3_read(0x0009, 0x5080, &stream_status);
@@ -506,28 +497,27 @@ static int s5c73m3_wait_ISP_status(void)
 
 void s5c73m3_jpeg_update(void)
 {
+
 	CAM_DBG_H("Entered\n");
 
 }
-#if 0
+#ifndef CONFIG_S5C73M3
 static int s5c73m3_sensor_af_status(void)
 {
 	CAM_DBG_H("Entered\n");
 	return 0;
 }
+
 static int s5c73m3_sensor_af_result(void)
 {
-
 	CAM_DBG_H("Entered\n");
 	return 0;
 }
-
 #endif
 static int s5c73m3_set_antibanding(int val)
 {
 	int err = 0;
 	int antibanding_mode = 0;
-
 	CAM_DBG_M("E, value %d\n", val);
 
 	switch (val) {
@@ -556,7 +546,7 @@ static int s5c73m3_set_antibanding(int val)
 static int s5c73m3_set_flash(int val)
 {
 	int err;
-	CAM_DBG_H("E, value %d\n", val);
+	printk("E, value %d\n", val);
 
 retry:
 	switch  (val) {
@@ -570,6 +560,7 @@ retry:
 		break;
 
 	case MAIN_CAMERA_FLASH_AUTO:
+		power_on_flash();
 		err = s5c73m3_writeb(S5C73M3_FLASH_TORCH,
 			S5C73M3_FLASH_TORCH_OFF);
 		CHECK_ERR(err);
@@ -579,6 +570,7 @@ retry:
 		break;
 
 	case MAIN_CAMERA_FLASH_ON:
+		power_on_flash();
 		err = s5c73m3_writeb(S5C73M3_FLASH_TORCH,
 			S5C73M3_FLASH_TORCH_OFF);
 		CHECK_ERR(err);
@@ -588,6 +580,7 @@ retry:
 		break;
 
 	case MAIN_CAMERA_FLASH_TORCH:
+		power_on_flash();
 		err = s5c73m3_writeb(S5C73M3_FLASH_MODE,
 			S5C73M3_FLASH_MODE_OFF);
 		CHECK_ERR(err);
@@ -632,7 +625,6 @@ bool s5c73m3_CAF_enabled(void)
 	bool val = false;
 
 	CAM_DBG_H("Entered\n");
-
 	if (camera_focus.mode >=
 		FOCUS_MODE_CONTINOUS &&
 		camera_focus.mode <=
@@ -648,7 +640,6 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 	int err = 0;
 
 	CAM_DBG_M("Entered, enable %d\n", enable);
-
 	if (enable) {
 		err = s5c73m3_wait_ISP_status();
 		if (err < 0) {
@@ -667,17 +658,17 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 #else
 		switch (rt) { /*nishu rhint*/
 		case RES_PREVIEW:
-			CAM_DBG_H("Camcorder Interleaved Preview\n");
+			printk("Camcorder Interleaved Preview\n");
 			if ((s5c73m3_ctrl->record_size_width >= 1920) &&
 				(s5c73m3_ctrl->record_size_height >= 1080)) {
 				if (s5c73m3_ctrl->vdis_mode == true) {
-					CAM_DBG_M("FHD VDIS preview\n");
+					printk("FHD VDIS preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_FHD_VDIS,
 						sizeof(S5C73M3_FHD_VDIS)/
 						sizeof(S5C73M3_FHD_VDIS[0]));
 				} else {
-					CAM_DBG_M("FHD Normal preview\n");
+					printk("FHD Normal preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_FHD,
 						sizeof(S5C73M3_FHD)/
@@ -686,13 +677,13 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 			} else if ((s5c73m3_ctrl->record_size_width >= 1280) ||
 				(s5c73m3_ctrl->record_size_height >= 720)) {
 				if (s5c73m3_ctrl->vdis_mode == true) {
-					CAM_DBG_M("HD VDIS preview\n");
+					printk("HD VDIS preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_HD_VDIS,
 						sizeof(S5C73M3_HD_VDIS)/
 						sizeof(S5C73M3_HD_VDIS[0]));
 				} else {
-					CAM_DBG_M("HD Normal preview\n");
+					printk("HD Normal preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_HD,
 						sizeof(S5C73M3_HD)/
@@ -700,13 +691,13 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 				}
 			} else {
 				if (s5c73m3_ctrl->wide_preview) {
-					CAM_DBG_M("WVGA preview\n");
+					printk("WVGA preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_WVGA,
 						sizeof(S5C73M3_WVGA)/
 						sizeof(S5C73M3_WVGA[0]));
 				} else {
-					CAM_DBG_M("VGA preview\n");
+					printk("VGA preview\n");
 					err = s5c73m3_i2c_write_block(
 						S5C73M3_VGA,
 						sizeof(S5C73M3_VGA)/
@@ -725,10 +716,10 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 			break;
 
 		case RES_CAPTURE:
-			CAM_DBG_M("Camera Interleaved Preview\n");
+			printk("Camera Interleaved Preview\n");
 
 			if (s5c73m3_ctrl->hdr_mode == 1) {
-				CAM_DBG_H("Start HDR\n");
+				printk("Start HDR\n");
 				err = s5c73m3_i2c_write_block(
 					S5C73M3_HDR,
 					sizeof(S5C73M3_HDR)/
@@ -746,7 +737,7 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 					return -EIO;
 				}
 			} else if (s5c73m3_ctrl->low_light_mode_size == 1) {
-				CAM_DBG_H("Start Low Light Shot\n");
+				printk("Start Low Light Shot\n");
 				err = s5c73m3_i2c_write_block(
 					S5C73M3_LLS,
 					sizeof(S5C73M3_LLS)/
@@ -764,9 +755,9 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 					return -EIO;
 				}
 			} else {
-				CAM_DBG_M("preview_size : %x\n",
+				printk("preview_size : %x\n",
 					s5c73m3_ctrl->preview_size);
-				CAM_DBG_M("jpeg_size : %x\n",
+				printk("jpeg_size : %x\n",
 					s5c73m3_ctrl->jpeg_size);
 					err = s5c73m3_i2c_write_block(
 				S5C73M3_PREVIEW,
@@ -820,11 +811,6 @@ static int s5c73m3_s_stream_preview(int enable, int rt)
 static int s5c73m3_sensor_setting(int update_type, int rt)
 {
 	int32_t rc = 0;
-#ifdef QC_TEST
-	int index = 0;
-	u16 stream_status = 0;
-	u16 temp, temp1, temp2, temp3 = 0;
-#endif
 	struct msm_camera_csid_params s5c73m3_csid_params;
 	struct msm_camera_csiphy_params s5c73m3_csiphy_params;
 
@@ -888,11 +874,6 @@ static int s5c73m3_sensor_setting(int update_type, int rt)
 				/*s5c73m3_delay_msecs_stdby*/
 				/*msleep(20);*/
 				config_csi2 = 1;
-			}
-
-			if (rc < 0) {
-				cam_err("fail!!\n");
-				return rc;
 			}
 
 			rc = s5c73m3_s_stream_preview(1, rt);
@@ -970,8 +951,7 @@ static int s5c73m3_sensor_setting(int update_type, int rt)
 static int s5c73m3_video_config(int mode)
 {
 	int32_t	rc = 0;
-	CAM_DBG_H("Entered, mode %d\n", mode);
-
+	printk("Entered, mode %d\n", mode);
 	if (s5c73m3_sensor_setting(UPDATE_PERIODIC, RES_PREVIEW) < 0) {
 		cam_err("fail s5c73m3_sensor_setting!!\n");
 		return rc;
@@ -983,8 +963,7 @@ static int s5c73m3_video_config(int mode)
 static int s5c73m3_set_sensor_mode(int mode)
 {
 	int err = 0;
-	CAM_DBG_M("Entered, mode %d\n", mode);
-
+	printk("Entered, mode %d\n", mode);
 	switch (mode) {
 	case SENSOR_PREVIEW_MODE:
 	case SENSOR_VIDEO_MODE:
@@ -1025,7 +1004,7 @@ static int s5c73m3_set_effect(int effect)
 {
 	int32_t rc = 0;
 
-	CAM_DBG_H("Entered, effect %d\n", effect);
+	printk("Entered, effect %d\n", effect);
 	switch (effect) {
 	case CAMERA_EFFECT_OFF:
 		rc = s5c73m3_writeb(S5C73M3_IMAGE_EFFECT,
@@ -1092,6 +1071,11 @@ static int s5c73m3_set_effect(int effect)
 			S5C73M3_IMAGE_EFFECT_POINT_COLOR_4);
 		break;
 
+	case CAMERA_EFFECT_CARTOONIZE:
+		rc = s5c73m3_writeb(S5C73M3_IMAGE_EFFECT,
+				    S5C73M3_IMAGE_EFFECT_CARTOONIZE);
+		break;
+
 	default:
 		CAM_DBG_M("default effect\n");
 		rc = s5c73m3_writeb(S5C73M3_IMAGE_EFFECT,
@@ -1105,8 +1089,7 @@ static int s5c73m3_set_whitebalance(int wb)
 {
 	int32_t rc = 0;
 
-	CAM_DBG_H("Entered, %d\n", wb);
-
+	printk("Entered, %d\n", wb);
 	switch (wb) {
 	case CAMERA_WHITE_BALANCE_AUTO:
 		rc = s5c73m3_writeb(S5C73M3_AWB_MODE,
@@ -1147,7 +1130,7 @@ static int s5c73m3_set_whitebalance(int wb)
 static int s5c73m3_set_ev(int ev)
 {
 	int32_t rc = 0;
-	CAM_DBG_H("Entered, ev %d\n", ev);
+	printk("Entered, ev %d\n", ev);
 
 	switch (ev) {
 	case CAMERA_EV_M4:
@@ -1208,8 +1191,7 @@ static int s5c73m3_set_scene_mode(int mode)
 {
 	int32_t rc = 0;
 
-	CAM_DBG_H("Entered, mode %d\n", mode);
-
+	printk("Entered, mode %d\n", mode);
 	switch (mode) {
 	case CAMERA_SCENE_AUTO:
 		rc = s5c73m3_writeb(S5C73M3_SCENE_MODE,
@@ -1296,7 +1278,7 @@ static int s5c73m3_set_iso(int iso)
 {
 	int32_t rc = 0;
 
-	CAM_DBG_H("Entered, iso %d\n", iso);
+	printk("Entered, iso %d\n", iso);
 	switch (iso) {
 	case CAMERA_ISO_MODE_AUTO:
 		rc = s5c73m3_writeb(S5C73M3_ISO,
@@ -1336,7 +1318,7 @@ static int s5c73m3_set_metering(int mode)
 {
 	int32_t rc = 0;
 
-	CAM_DBG_H("Entered, mode %d\n", mode);
+	printk("Entered, mode %d\n", mode);
 	switch (mode) {
 	case CAMERA_CENTER_WEIGHT:
 		rc = s5c73m3_writeb(S5C73M3_METER,
@@ -1364,11 +1346,10 @@ static int s5c73m3_set_metering(int mode)
 
 static int s5c73m3_set_zoom(int level)
 {
-	int32_t rc = 0;
 	int err;
 	int diff = 0;
 
-	CAM_DBG_H("Entered, zoom %d\n", level);
+	printk("Entered, zoom %d\n", level);
 
 retry:
 	if (level < 0 || level > 30) {
@@ -1410,16 +1391,17 @@ retry:
 	if (err < 0)
 		cam_err("fail s5c73m3_i2c_write!!\n");
 	err = s5c73m3_i2c_write(0x0F14, 0x0001);
-	if (err < 0)
+	/* if (err < 0)
+		cam_err("fail s5c73m3_i2c_write!!\n"); */
+
+
+	if (err < 0) {
 		cam_err("fail s5c73m3_i2c_write!!\n");
-
-
-	if (rc < 0) {
 		cam_err("fail s5c73m3_zoom!!\n");
-		return rc;
+		return err;
 	}
 
-	return rc;
+	return err;
 }
 
 static int s5c73m3_set_jpeg_quality(int quality)
@@ -1451,7 +1433,7 @@ static int s5c73m3_set_jpeg_quality(int quality)
 static int s5c73m3_set_face_detection(int val)
 {
 	int32_t rc = 0;
-	CAM_DBG_H("Entered, Face detection %d\n", val);
+	printk("Entered, Face detection %d\n", val);
 
 retry:
 	switch (val) {
@@ -1478,7 +1460,7 @@ static int s5c73m3_aeawb_lock_unlock(int32_t ae_lock, int32_t awb_lock)
 {
 	int err = 0;
 
-	CAM_DBG_H("Entered, wb :%d\n", s5c73m3_ctrl->wb);
+	printk("Entered, wb :%d\n", s5c73m3_ctrl->wb);
 
 	if (ae_lock) {
 		CAM_DBG_M("ae lock");
@@ -1716,7 +1698,7 @@ retry:
 	return 0;
 }
 
-static int s5c73m3_set_touch_auto_focus(void)
+static int s5c73m3_set_touch_auto_focus()
 {
 	int err;
 
@@ -1775,7 +1757,6 @@ static int s5c73m3_capture_firework(void)
 {
 	int err = 0;
 	CAM_DBG_H("E\n");
-
 	err = s5c73m3_writeb(S5C73M3_FIREWORK_CAPTURE, 0x0001);
 	CHECK_ERR(err);
 
@@ -1786,7 +1767,6 @@ static int s5c73m3_capture_nightshot(void)
 {
 	int err = 0;
 	CAM_DBG_H("E\n");
-
 	err = s5c73m3_writeb(S5C73M3_NIGHTSHOT_CAPTURE, 0x0001);
 	CHECK_ERR(err);
 
@@ -1800,7 +1780,6 @@ static int s5c73m3_start_capture(int val)
 	u16 pre_flash = false;
 
 	isPreflashFired = false;
-
 	err = s5c73m3_read(0x0009,
 			S5C73M3_STILL_PRE_FLASH | 0x5000, &pre_flash);
 
@@ -1843,7 +1822,6 @@ static int s5c73m3_set_wdr(int val)
 {
 	int err;
 	CAM_DBG_H("E, value %d\n", val);
-
 retry:
 	switch (val) {
 	case WDR_OFF:
@@ -1873,7 +1851,6 @@ static int s5c73m3_set_HDR(int val)
 	int err = 0;
 	CAM_DBG_H("E, value %d\n", val);
 	s5c73m3_ctrl->hdr_mode = val;
-
 #if defined(TEMP_REMOVE)
 	/* this case for JPEG HDR */
 	if (val) {
@@ -1907,7 +1884,7 @@ static int s5c73m3_set_HDR(int val)
 static int s5c73m3_start_HDR(int val)
 {
 	int err = 0;
-	CAM_DBG_H("E, value %d\n", val);
+	printk("E, value %d\n", val);
 
 	if (s5c73m3_ctrl->hdr_mode & val) {
 		CAM_DBG_H("SET AE_BRACKET\n");
@@ -1957,6 +1934,7 @@ static int s5c73m3_set_low_light(int val)
 
 static int s5c73m3_set_antishake(int val)
 {
+	
 
 	int err = 0;
 	CAM_DBG_H("Entered, %d\n", val);
@@ -2020,7 +1998,7 @@ static int s5c73m3_set_jpeg_size(int width, int height)
 static int s5c73m3_set_record_size(int width, int height)
 {
 	int32_t rc = 0;
-	CAM_DBG_M("Entered, width : %d, height : %d\n", width, height);
+	printk("Entered, width : %d, height : %d\n", width, height);
 	s5c73m3_ctrl->record_size_width = width;
 	s5c73m3_ctrl->record_size_height = height;
 
@@ -2037,41 +2015,41 @@ static int s5c73m3_set_fps(int fps)
 {
 	int err;
 
-	CAM_DBG_M("Entered, %s mode fps %d\n",
+	printk("Entered, %s mode fps %d\n",
 		s5c73m3_ctrl->camcorder_mode ? "camcorder" : "camera",
 		fps);
 
 	/* It can't support camera mode */
 	if (s5c73m3_ctrl->camcorder_mode == 0) {
-		CAM_DBG_M("set default fps\n");
+		printk("set default fps\n");
 		err = s5c73m3_writeb(S5C73M3_AE_MODE,
 			S5C73M3_AUTO_MODE_AE_SET);
 		CHECK_ERR(err);
 	} else {
 		switch (fps) {
 		case 30:
-			CAM_DBG_M("set 30fps\n");
+			printk("set 30fps\n");
 			err = s5c73m3_writeb(S5C73M3_AE_MODE,
 				S5C73M3_FIXED_30FPS);
 			CHECK_ERR(err);
 			break;
 
 		case 20:
-			CAM_DBG_M("set 20fps\n");
+			printk("set 20fps\n");
 			err = s5c73m3_writeb(S5C73M3_AE_MODE,
 				S5C73M3_FIXED_20FPS);
 			CHECK_ERR(err);
 			break;
 
 		case 15:
-			CAM_DBG_M("set 15fps\n");
+			printk("set 15fps\n");
 			err = s5c73m3_writeb(S5C73M3_AE_MODE,
 				S5C73M3_FIXED_15FPS);
 			CHECK_ERR(err);
 			break;
 
 		case 7:
-			CAM_DBG_M("set 7fps\n");
+			printk("set 7fps\n");
 			err = s5c73m3_writeb(S5C73M3_AE_MODE,
 				S5C73M3_FIXED_7FPS);
 			CHECK_ERR(err);
@@ -2173,7 +2151,7 @@ static int s5c73m3_set_vdis(int onoff)
 static int s5c73m3_get_lux(void)
 {
 	int err = 0;
-	u16 lux_val = 0;
+	unsigned short int lux_val = 0;
 
 	err = s5c73m3_read(0x0009, 0x5C88, &lux_val);
 	if (err < 0) {
@@ -2186,9 +2164,8 @@ static int s5c73m3_get_lux(void)
 
 static int s5c73m3_set_preview_size(int32_t width, int32_t height)
 {
-	CAM_DBG_H("Entered, width %d, height %d\n",
+	printk("Entered, width %d, height %d\n",
 			 width, height);
-
 	s5c73m3_ctrl->preview_size_width = width;
 	s5c73m3_ctrl->preview_size_height = height;
 
@@ -2201,8 +2178,6 @@ static int s5c73m3_set_preview_size(int32_t width, int32_t height)
 		s5c73m3_ctrl->preview_size = 0x000D;
 	else if (width == 2304 && height == 1296)
 		s5c73m3_ctrl->preview_size = 0x000C;
-	else if (width == 720 && height == 480)
-		s5c73m3_ctrl->preview_size = 0x000B;
 	else if (width == 1920 && height == 1080)
 		s5c73m3_ctrl->preview_size = 0x000A;
 	else if (width == 800 && height == 600)
@@ -2242,15 +2217,13 @@ static int s5c73m3_load_fw(void)
 	#define FW_WRITE_SIZE 65536
 #endif
 
-	int err=0;
-	int txSize;
+	int err = 0, txSize;
 
 	struct file *fp = NULL;
 	mm_segment_t old_fs;
 	long fsize, nread;
 
 	CAM_DBG_M("Entered\n");
-
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -2275,9 +2248,9 @@ static int s5c73m3_load_fw(void)
 
 	fsize = fp->f_path.dentry->d_inode->i_size;
 
-	CAM_DBG_M("index %d is opened\n",
+	printk("index %d is opened\n",
 		s5c73m3_ctrl->fw_index);
-	CAM_DBG_M("fsize is %ld\n", fsize);
+	printk("fsize is %ld\n", fsize);
 
 	Fbuf = (char *)roundup((unsigned int)FW_buf, 64); /*ALRAN 64*/
 	nread = vfs_read(fp, (char __user *)Fbuf,
@@ -2313,8 +2286,8 @@ out:
 static int s5c73m3_SPI_booting(void)
 {
 	u16 read_val;
-	int i, err;
-
+	int i, err = 0;
+	
 	CAM_DBG_M("Entered\n");
 
 	/*ARM go*/
@@ -2400,7 +2373,7 @@ static int s5c73m3_SPI_booting(void)
 
 #if defined(DEBUG_LEVEL_HIGH)
 	/* check FW version name */
-	CAM_DBG_H("FW version is : ");
+	printk("FW version is : ");
 	for (i = 0; i < 19; i++) {
 		err = s5c73m3_read(0x0000, 0x0060+i, &read_val);
 		if (err < 0) {
@@ -2443,7 +2416,6 @@ static int s5c73m3_get_sensor_fw_binary(void)
 	u32 IntOriginalCRC = 0;
 	u32 crc_index = 0;
 	int retryCnt = 2;
-
 	CAM_DBG_M("Entered\n");
 
 	if (s5c73m3_ctrl->sensor_fw[0] == 'O') {
@@ -2544,7 +2516,13 @@ retry:
 
 	rxSize = 64*1024;
 	mdelay(10);
-	s5c73m3_wait_ISP_status();
+
+	/* check whether ISP can be used */
+        err = s5c73m3_wait_ISP_status();
+        if (err < 0) {
+                cam_err("failed s5c73m3_wait_ISP_status\n");
+                return -EIO;
+        }
 
 	Fbuf = (char *)roundup((unsigned int)FW_buf, 64); /*ALRAN 64*/
 	err = s5c73m3_spi_read(Fbuf,
@@ -2625,7 +2603,6 @@ static int s5c73m3_get_sensor_fw_version(void)
 	u16 temp_buf;
 
 	CAM_DBG_H("Entered\n");
-
 	/*ARM go*/
 	err = s5c73m3_write(0x3000, 0x0004, 0xFFFF);
 	if (err < 0) {
@@ -2775,7 +2752,6 @@ static int s5c73m3_open_firmware_file(const char *filename,
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-
 	fp = filp_open(filename, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
 		err = -ENOENT;
@@ -3000,13 +2976,12 @@ static int s5c73m3_update_camerafw_to_FROM(void)
 	else
 		return 0;
 }
-#if 0
+#ifndef CONFIG_S5C73M3
 static int s5c73m3_SPI_booting_by_ISP(void)
 {
 	u16 read_val;
 	int i;
 	int err = 0;
-
 	/*ARM go*/
 	err = s5c73m3_write(0x3000, 0x0004, 0xFFFF);
 	CHECK_ERR(err);
@@ -3109,7 +3084,6 @@ static int s5c73m3_check_fw(const struct msm_camera_sensor_info *data,
 	int err = 0;
 	int retVal;
 	int i = 0;
-
 	CAM_DBG_M("Enter\n");
 
 	if (!download) {
@@ -3193,7 +3167,7 @@ static int s5c73m3_check_fw(const struct msm_camera_sensor_info *data,
 				camfw_info[s5c73m3_ctrl->fw_index].ver,
 				S5C73M3_FW_VER_LEN);
 			s5c73m3_ctrl->phone_fw[S5C73M3_FW_VER_LEN+1] = '\0';
-//			CAM_DBG_M("FW is %s!!\n", &s5c73m3_ctrl->phone_fw);
+			CAM_DBG_M("FW is %s!!\n", &s5c73m3_ctrl->phone_fw[0]);
 			data->sensor_platform_info->sensor_get_fw(
 				s5c73m3_ctrl->sensor_fw,
 				s5c73m3_ctrl->phone_fw);
@@ -3204,8 +3178,8 @@ static int s5c73m3_check_fw(const struct msm_camera_sensor_info *data,
 		}
 	}
 #if defined(TEMP_REMOVE)
-	data->sensor_platform_info->sensor_get_fw(s5c73m3_ctrl->sensor_fw,
-		s5c73m3_ctrl->phone_fw);
+	data->sensor_platform_info->sensor_get_fw(&s5c73m3_ctrl->sensor_fw,
+		&s5c73m3_ctrl->phone_fw);
 
 	if ((s5c73m3_ctrl->phone_fw[0] >= 'A')
 		&& s5c73m3_ctrl->phone_fw[0] <= 'Z') {
@@ -3222,13 +3196,12 @@ static int s5c73m3_check_fw(const struct msm_camera_sensor_info *data,
 	CAM_DBG_M("Exit\n");
 	return 0;
 }
-#if 0
+#ifndef CONFIG_S5C73M3
 static int s5c73m3_init_param(void)
 {
 	int err = 0;
 
 	CAM_DBG_H("Entered\n");
-
 	err = s5c73m3_i2c_write_block(S5C73M3_INIT,
 		sizeof(S5C73M3_INIT)/sizeof(S5C73M3_INIT[0]));
 
@@ -3342,7 +3315,6 @@ static int s5c73m3_sensor_init_probe(const struct msm_camera_sensor_info *data)
 {
 	int rc = 0;
 	int retVal = 0;
-
 	CAM_DBG_M("Entered\n");
 
 	/*data->sensor_platform_info->sensor_power_on(0);*/
@@ -3396,7 +3368,6 @@ int s5c73m3_sensor_init(const struct msm_camera_sensor_info *data)
 	int rc = 0;
 
 	CAM_DBG_M("Entered\n");
-
 	if (!s5c73m3_ctrl) {
 		cam_err("s5c73m3_init failed!\n");
 		rc = -ENOMEM;
@@ -3411,9 +3382,12 @@ int s5c73m3_sensor_init(const struct msm_camera_sensor_info *data)
 	s5c73m3_ctrl->low_light_mode_size = 0;
 
 	config_csi2 = 0;
-	rc = s5c73m3_sensor_init_probe(data);
-	if (rc < 0)
-		cam_err("s5c73m3_sensor_init failed!\n");
+	if(data)
+	{
+		rc = s5c73m3_sensor_init_probe(data);
+		if (rc < 0)
+			cam_err("s5c73m3_sensor_init failed!\n");
+	}
 
 init_done:
 	return rc;
@@ -3422,7 +3396,6 @@ init_done:
 static int s5c73m3_init_client(struct i2c_client *client)
 {
 	CAM_DBG_M("Entered\n");
-
 	/* Initialize the MSM_CAMI2C Chip */
 	init_waitqueue_head(&s5c73m3_wait_queue);
 	return 0;
@@ -3437,9 +3410,6 @@ void sensor_native_control(void __user *arg)
 		(const void *)arg, sizeof(ctrl_info)))
 		CAM_DBG_M("fail copy_from_user!\n");
 
-	CAM_DBG_M("Entered, %d, %d, %d, %d\n",
-		ctrl_info.mode, ctrl_info.address,
-		ctrl_info.value_1, ctrl_info.value_2);
 
 	switch (ctrl_info.mode) {
 
@@ -3723,7 +3693,6 @@ static int s5c73m3_i2c_probe(struct i2c_client *client,
 {
 	int rc = 0;
 	CAM_DBG_M("Entered\n");
-
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		rc = -ENOTSUPP;
 		goto probe_failure;
@@ -3776,7 +3745,7 @@ static int s5c73m3_sensor_probe(const struct msm_camera_sensor_info *info,
 	CAM_DBG_M("Entered\n");
 
 	if (rc < 0 || s5c73m3_client == NULL) {
-		//cam_err("%d :%d\n", rc, s5c73m3_client);
+	//	cam_err("%d :%d\n", rc, s5c73m3_client);
 		rc = -ENOTSUPP;
 		goto probe_done;
 	}

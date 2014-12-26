@@ -106,9 +106,9 @@ int s5c73m3_spi_read(u8 *buf, size_t len, const int rxSize)
 {
 	int k;
 	int ret = 0;
-//	int z = 0;
+	
 
-//	u8 paddingData[32];
+	
 	u8 temp_buf[4] = {0};
 	u32 count = len/rxSize;
 	u32 extra = len%rxSize;
@@ -153,7 +153,6 @@ int s5c73m3_spi_write(const u8 *addr, const int len, const int txSize)
 	cam_err("count = %d extra = %d\n", count, extra);
 
 	memset(paddingData, 0, sizeof(paddingData));
-
 	for (i = 0 ; i < count ; i++) {
 		ret = spi_xmit(&addr[j], txSize);
 		j += txSize;

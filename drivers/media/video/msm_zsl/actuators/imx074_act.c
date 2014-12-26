@@ -12,7 +12,7 @@
  */
 
 #include "msm_actuator.h"
-#include "msm_camera_i2c.h"
+#include "../io/msm_camera_i2c.h"
 
 #define	IMX074_TOTAL_STEPS_NEAR_TO_FAR			41
 DEFINE_MUTEX(imx074_act_mutex);

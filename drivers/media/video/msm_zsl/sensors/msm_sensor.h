@@ -22,9 +22,9 @@
 #include <mach/gpio.h>
 #include <media/msm_camera.h>
 #include <media/v4l2-subdev.h>
-#include "msm.h"
-#include "msm_camera_i2c.h"
-#include "msm_camera_eeprom.h"
+#include "../msm.h"
+#include "../io/msm_camera_i2c.h"
+#include "../io/msm_camera_eeprom.h"
 #define Q8  0x00000100
 #define Q10 0x00000400
 
@@ -50,9 +50,22 @@ enum msm_sensor_cam_mode_t {
 	MSM_SENSOR_MODE_INVALID
 };
 
+struct msm_sensor_output_reg_addr_t {
+	uint16_t x_output;
+	uint16_t y_output;
+	uint16_t line_length_pclk;
+	uint16_t frame_length_lines;
+};
+
 struct msm_sensor_id_info_t {
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
+};
+
+struct msm_sensor_exp_gain_info_t {
+	uint16_t coarse_int_time_addr;
+	uint16_t global_gain_addr;
+	uint16_t vert_offset;
 };
 
 struct msm_sensor_reg_t {

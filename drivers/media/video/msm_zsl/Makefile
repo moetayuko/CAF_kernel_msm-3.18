@@ -28,16 +28,16 @@ obj-$(CONFIG_MT9E013) += mt9e013.o mt9e013_reg.o
 obj-$(CONFIG_S5K3E2FX) += s5k3e2fx.o
 obj-$(CONFIG_S5K4E1) += s5k4e1.o s5k4e1_reg.o
 #FIXME: Merge the two ifeq causes VX6953 preview not coming up.
-ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
-  obj-$(CONFIG_VX6953) += vx6953_v4l2.o vx6953_reg_v4l2.o
-  obj-$(CONFIG_IMX074) += imx074_v4l2.o imx074_reg.o
-  obj-$(CONFIG_ISX012) += isx012_v4l2.o
-  obj-$(CONFIG_S5K6AA) += s5k6aa_v4l2.o cam_pmic_s5k6aa.o
-  obj-$(CONFIG_S5K8AAY) += s5k8aay_v4l2.o
-else
-  obj-$(CONFIG_VX6953) += vx6953.o vx6953_reg.o
-  obj-$(CONFIG_IMX074) += imx074.o imx074_reg.o
-endif
+#ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
+#  obj-$(CONFIG_VX6953) += vx6953_v4l2.o vx6953_reg_v4l2.o
+#  obj-$(CONFIG_IMX074) += imx074_v4l2.o imx074_reg.o
+#  obj-$(CONFIG_ISX012) += isx012_v4l2.o
+#  obj-$(CONFIG_S5K6AA) += s5k6aa_v4l2.o cam_pmic_s5k6aa.o
+#  obj-$(CONFIG_S5K8AAY) += s5k8aay_v4l2.o
+#else
+#  obj-$(CONFIG_VX6953) += vx6953.o vx6953_reg.o
+#  obj-$(CONFIG_IMX074) += imx074.o imx074_reg.o
+#endif
 obj-$(CONFIG_QS_S5K4E1) += qs_s5k4e1.o qs_s5k4e1_reg.o
 obj-$(CONFIG_VB6801) += vb6801.o
 obj-$(CONFIG_IMX072) += imx072.o imx072_reg.o
@@ -48,3 +48,4 @@ obj-$(CONFIG_OV5640) += ov5640.o
 obj-$(CONFIG_MT9D112) += mt9d112.o mt9d112_reg.o
 
 obj-$(CONFIG_MT9D113) += mt9d113.o mt9d113_reg.o
+#obj-$(CONFIG_FB_MSM_WRITEBACK_MSM_PANEL) += ../msm_wfd/

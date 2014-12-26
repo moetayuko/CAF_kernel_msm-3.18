@@ -66,15 +66,15 @@ uint32_t msm_gemini_platform_v2p(int fd, uint32_t len, struct file **file_p,
 	int flags;
 #endif
 
-#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-	*ionhandle = ion_import_dma_buf(gemini_client, fd);
+#if 0 //CONFIG_MSM_MULTIMEDIA_USE_ION
+	*ionhandle = ion_import_fd(gemini_client, fd);
 	if (IS_ERR_OR_NULL(*ionhandle))
 		return 0;
 #if !defined(CONFIG_MSM_IOMMU)
 	rc = ion_phys(gemini_client, *ionhandle, &paddr, (size_t *)&size);
 #else
 	rc = ion_map_iommu(gemini_client, *ionhandle, CAMERA_DOMAIN, GEN_POOL,
-			SZ_4K, 0, &paddr, (unsigned long *)&size, 0, 0);
+			SZ_4K, 0, &paddr, (unsigned long *)&size, UNCACHED, 0);
 #endif
 #elif CONFIG_ANDROID_PMEM
 	unsigned long kvstart;

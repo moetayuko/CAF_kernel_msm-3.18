@@ -12,9 +12,10 @@
  */
 
 #include "msm_sensor.h"
-#include <linux/module.h>
 #define SENSOR_NAME "s5k6a3yx"
 #define PLATFORM_DRIVER_NAME "msm_camera_s5k6a3yx"
+
+//#define CONFIG_S5C73M3
 
 DEFINE_MUTEX(s5k6a3yx_mut);
 static struct msm_sensor_ctrl_t s5k6a3yx_s_ctrl;
@@ -168,7 +169,7 @@ static struct msm_sensor_output_info_t s5k6a3yx_dimensions[] = {
 		.line_length_pclk = 0x0642, /* 1602 */
 		.frame_length_lines = 0x05AA, /* 1450*/
 		.vt_pixel_clk =  72000000, /*76800000*/
-		.op_pixel_clk = 320000000, /*76800000*/
+		.op_pixel_clk = 72000000, /*76800000*/
 		.binning_factor = 1,
 	},
 	/* mode 1 */
@@ -178,7 +179,7 @@ static struct msm_sensor_output_info_t s5k6a3yx_dimensions[] = {
 		.line_length_pclk = 0x0642, /* 1602 */
 		.frame_length_lines = 0x05AA, /* 1450*/
 		.vt_pixel_clk =  72000000, /*76800000*/
-		.op_pixel_clk = 320000000, /*76800000*/
+		.op_pixel_clk = 72000000, /*76800000*/
 		.binning_factor = 1,
 	},
 };
@@ -355,7 +356,7 @@ uint8_t msb_gain, lsb_gain;
 
 	s_ctrl->func_tbl->sensor_group_hold_off(s_ctrl);
 }
-#if 0
+#ifndef CONFIG_S5C73M3
 static void s5k6a3yx_write_fl_lines(
 	struct msm_sensor_ctrl_t *s_ctrl,
 	uint32_t gain,
@@ -399,6 +400,7 @@ static void s5k6a3yx_write_fl_lines(
 
 	s_ctrl->func_tbl->sensor_group_hold_off(s_ctrl);
 }
+
 static void s5k6a3yx_write_gain(
 	struct msm_sensor_ctrl_t *s_ctrl,
 	uint32_t gain,
@@ -429,7 +431,6 @@ static void s5k6a3yx_write_gain(
 
 	s_ctrl->func_tbl->sensor_group_hold_off(s_ctrl);
 }
-
 #endif
 static int32_t s5k6a3yx_write_exp_gain(
 	struct msm_sensor_ctrl_t *s_ctrl,

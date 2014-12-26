@@ -20,6 +20,7 @@
 #include <linux/i2c.h>
 #include <linux/videodev2.h>
 #include <linux/pm_qos.h>
+#include <linux/wakelock.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-device.h>
@@ -228,10 +229,9 @@ struct msm_cam_media_controller {
 	struct v4l2_subdev *ispif_sdev; /* ispif sub device */
 	struct v4l2_subdev *act_sdev; /* actuator sub device */
 
-	struct pm_qos_request *pm_qos_req_list;
+	struct pm_qos_request pm_qos_req_list;
 	struct msm_mctl_pp_info pp_info;
 	struct ion_client *client;
-	struct kref refcount;
 };
 
 /* abstract camera device represents a VFE and connected sensor */
@@ -385,8 +385,13 @@ struct msm_cam_server_dev {
 	int use_count;
 	/* all the registered ISP subdevice*/
 	struct msm_isp_ops *isp_subdev[MSM_MAX_CAMERA_CONFIGS];
+	/* info of MCTL nodes successfully probed*/
+	struct msm_mctl_node_info mctl_node_info;
 	struct mutex server_lock;
 	uint32_t server_evt_id;
+
+	int domain_num;
+	struct iommu_domain *domain;
 };
 
 /* camera server related functions */
@@ -420,9 +425,9 @@ int msm_mctl_release_free_buf(struct msm_cam_media_controller *pmctl,
 				int path, struct msm_free_buf *free_buf);
 /*Memory(PMEM) functions*/
 int msm_register_pmem(struct hlist_head *ptype, void __user *arg,
-				struct ion_client *client);
+				struct ion_client *client, int domain_num);
 int msm_pmem_table_del(struct hlist_head *ptype, void __user *arg,
-				struct ion_client *client);
+				struct ion_client *client, int domain_num);
 int msm_pmem_region_get_phy_addr(struct hlist_head *ptype,
 	struct msm_mem_map_info *mem_map, int32_t *phyaddr);
 uint8_t msm_pmem_region_lookup(struct hlist_head *ptype,
@@ -496,7 +501,6 @@ int msm_mctl_pp_divert_done(
 
 extern void sensor_native_control(void __user *arg);
 
-void msm_release_ion_client(struct kref *ref);
 #endif /* __KERNEL__ */
 
 #endif /* _MSM_H */

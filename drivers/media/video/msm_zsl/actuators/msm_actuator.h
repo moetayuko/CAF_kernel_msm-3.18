@@ -16,7 +16,7 @@
 #include <mach/camera.h>
 #include <media/v4l2-subdev.h>
 #include <media/msm_camera.h>
-#include "msm_camera_i2c.h"
+#include "../io/msm_camera_i2c.h"
 
 #ifdef LERROR
 #undef LERROR
