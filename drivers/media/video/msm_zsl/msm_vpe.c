@@ -16,6 +16,7 @@
 #include <mach/irqs.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/pm_qos.h>
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>

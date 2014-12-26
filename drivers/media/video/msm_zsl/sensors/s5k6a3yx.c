@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/module.h>
 #include "msm_sensor.h"
 #define SENSOR_NAME "s5k6a3yx"
 #define PLATFORM_DRIVER_NAME "msm_camera_s5k6a3yx"

@@ -216,20 +216,47 @@ struct ioctl_native_cmd {
 	_IOW(MSM_CAM_IOCTL_MAGIC, 51, uint32_t *)
 
 #define MSM_CAM_IOCTL_GET_MCTL_INFO \
-	_IOR(MSM_CAM_IOCTL_MAGIC, 52, struct msm_mctl_node_info *)
+	_IOR(MSM_CAM_IOCTL_MAGIC, 51, struct msm_mctl_node_info *)
 
 #define MSM_CAM_IOCTL_MCTL_DIVERT_DONE \
-	_IOR(MSM_CAM_IOCTL_MAGIC, 53, struct msm_cam_evt_divert_frame *)
+	_IOR(MSM_CAM_IOCTL_MAGIC, 52, struct msm_cam_evt_divert_frame *)
 
-#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_CMD \
-	_IOWR(MSM_CAM_IOCTL_MAGIC, 54, struct ioctl_native_cmd *)
-
-#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_FRONT_CMD \
-	_IOWR(MSM_CAM_IOCTL_MAGIC, 55, struct ioctl_native_cmd *)
-
+#define MCTL_CAM_IOCTL_SET_FOCUS \
 #define MCTL_CAM_IOCTL_SET_FOCUS \
 	_IOW(MSM_CAM_IOCTL_MAGIC, 53, uint32_t)
 
+#define MSM_CAM_IOCTL_STATS_UNREG_BUF \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 61, struct msm_stats_flush_bufq *)
+
+#define MSM_CAM_IOCTL_CSIC_IO_CFG \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 62, struct csic_cfg_data *)
+
+#define MSM_CAM_IOCTL_CSID_IO_CFG \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 63, struct csid_cfg_data *)
+
+#define MSM_CAM_IOCTL_CSIPHY_IO_CFG \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 64, struct csiphy_cfg_data *)
+
+#define MSM_CAM_IOCTL_OEM \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 65, struct sensor_cfg_data *)
+
+#define MSM_CAM_IOCTL_AXI_INIT \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 66, uint8_t *)
+
+#define MSM_CAM_IOCTL_AXI_RELEASE \
+	_IO(MSM_CAM_IOCTL_MAGIC, 67)
+
+#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_CMD \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 68, struct msm_camera_v4l2_ioctl_t)
+
+#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_FRONT_CMD \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 69, struct msm_camera_v4l2_ioctl_t)
+
+#define MSM_CAM_IOCTL_AXI_LOW_POWER_MODE \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 70, uint8_t *)
+
+#define MSM_CAM_IOCTL_INTF_MCTL_MAPPING_CFG \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 71, struct intf_mctl_mapping_cfg *)
 struct msm_mctl_pp_cmd {
 	int32_t  id;
 	uint16_t length;
@@ -944,7 +971,8 @@ struct msm_snapshot_pp_status {
 #define CAMERA_EFFECT_POINT_COLOR_2	16
 #define CAMERA_EFFECT_POINT_COLOR_3	17
 #define CAMERA_EFFECT_POINT_COLOR_4	18
-#define CAMERA_EFFECT_MAX		19
+#define CAMERA_EFFECT_CARTOONIZE        19
+#define CAMERA_EFFECT_MAX		20
 
 #define CAMERA_WHITE_BALANCE_AUTO				1
 #define CAMERA_WHITE_BALANCE_INCANDESCENT		3
@@ -1630,4 +1658,10 @@ struct img_plane_info {
 	uint8_t vpe_can_use;
 };
 
+struct msm_camera_v4l2_ioctl_t {
+	uint32_t id;
+	uint32_t len;
+	uint32_t trans_code;
+	void __user *ioctl_ptr;
+};
 #endif /* __LINUX_MSM_CAMERA_H */

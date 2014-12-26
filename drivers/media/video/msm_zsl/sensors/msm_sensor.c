@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/module.h>
 #include "msm_sensor.h"
 #include "../msm.h"
 #include "../csi/msm_ispif.h"

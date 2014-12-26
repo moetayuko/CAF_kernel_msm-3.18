@@ -14,6 +14,7 @@
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/io.h>
+#include <linux/module.h>
 #include <linux/atomic.h>
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>
@@ -4107,23 +4108,10 @@ static const struct v4l2_subdev_ops msm_vfe_subdev_ops = {
 	.video = &msm_vfe_subdev_video_ops,
 };
 
-#if defined(CONFIG_MSM_IOMMU) && defined(VFE_IOMMU_FAULT_HANDLER)
-static int vfe_iommu_fault_handler(struct iommu_domain *domain,
-                struct device *dev, unsigned long iova, int flags)
-{
-        pr_err("iommu page fault has happened\n");
-        atomic_set(&fault_recovery, 1);
-        return -ENOSYS;
-}
-#endif
-
 int msm_vfe_subdev_init(struct v4l2_subdev *sd, void *data,
 			struct platform_device *pdev)
 {
 	int rc = 0;
-#ifdef CONFIG_MSM_IOMMU
-	struct msm_sync *sync = data;
-#endif
 	v4l2_set_subdev_hostdata(sd, data);
 	vfe_syncdata = data;
 
@@ -4177,29 +4165,6 @@ int msm_vfe_subdev_init(struct v4l2_subdev *sd, void *data,
 
 	rc = request_irq(vfe32_ctrl->vfeirq->start, vfe32_parse_irq,
 			 IRQF_TRIGGER_RISING, "vfe", 0);
-#ifdef CONFIG_MSM_IOMMU
-        if (sync->domain == NULL) {
-                pr_err("%s: iommu domain not initialized\n", __func__);
-                rc = -EINVAL;
-                goto device_imgwr_attach_failed;
-        }
-        rc = iommu_attach_device(sync->domain, vfe32_ctrl->iommu_ctx_imgwr);
-        if (rc < 0) {
-                pr_err("%s: imgwr attach failed rc = %d\n", __func__, rc);
-                rc = -ENODEV;
-                goto device_imgwr_attach_failed;
-        }
-        rc = iommu_attach_device(sync->domain, vfe32_ctrl->iommu_ctx_misc);
-        if (rc < 0) {
-                pr_err("%s: misc attach failed rc = %d\n", __func__, rc);
-                rc = -ENODEV;
-                goto device_misc_attach_failed;
-        }
-#ifdef VFE_IOMMU_FAULT_HANDLER
-        iommu_set_fault_handler(sync->domain,
-                        vfe_iommu_fault_handler);
-#endif
-#endif
 	if (rc < 0) {
 		pr_err("%s: irq request fail\n", __func__);
 		rc = -EBUSY;
@@ -4217,11 +4182,6 @@ int msm_vfe_subdev_init(struct v4l2_subdev *sd, void *data,
 
 	return rc;
 
-#ifdef CONFIG_MSM_IOMMU
-device_misc_attach_failed:
-        iommu_detach_device(sync->domain, vfe32_ctrl->iommu_ctx_imgwr);
-device_imgwr_attach_failed:
-#endif
 request_irq_failed:
 	msm_cam_clk_enable(&vfe32_ctrl->pdev->dev, vfe32_clk_info,
 			vfe32_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info),
@@ -4238,11 +4198,6 @@ vfe_remap_failed:
 
 void msm_vfe_subdev_release(struct platform_device *pdev)
 {
-#ifdef CONFIG_MSM_IOMMU
-	struct msm_sync *sync = vfe_syncdata;
-        iommu_detach_device(sync->domain, vfe32_ctrl->iommu_ctx_misc);
-        iommu_detach_device(sync->domain, vfe32_ctrl->iommu_ctx_imgwr);
-#endif
 	msm_cam_clk_enable(&vfe32_ctrl->pdev->dev, vfe32_clk_info,
 			   vfe32_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info), 0);
 	if (vfe32_ctrl->fs_vfe) {
@@ -4304,21 +4259,6 @@ static int __devinit vfe32_probe(struct platform_device *pdev)
 		rc = -EBUSY;
 		goto vfe32_no_resource;
 	}
-
-#ifdef CONFIG_MSM_IOMMU
-        /*get device context for IOMMU*/
-        vfe32_ctrl->iommu_ctx_imgwr =
-                msm_iommu_get_ctx("vfe_imgwr"); /*re-confirm*/
-        vfe32_ctrl->iommu_ctx_misc =
-                msm_iommu_get_ctx("vfe_misc"); /*re-confirm*/
-        if (!vfe32_ctrl->iommu_ctx_imgwr || !vfe32_ctrl->iommu_ctx_misc) {
-                release_mem_region(vfe32_ctrl->vfemem->start,
-                        resource_size(vfe32_ctrl->vfemem));
-                pr_err("%s: No iommu fw context found\n", __func__);
-                rc = -ENODEV;
-		goto vfe32_no_resource;
-        }
-#endif
 
 	vfe32_ctrl->pdev = pdev;
 	return 0;

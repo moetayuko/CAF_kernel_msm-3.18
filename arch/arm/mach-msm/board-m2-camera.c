@@ -638,6 +638,36 @@ static bool cam_is_vdd_core_set(void)
 	return isVddCoreSet;
 }
 
+void power_on_flash(void)
+{
+	int temp = 0;
+	int ret = 0;
+
+	if(!isFlashCntlEn) {
+		temp = gpio_get_value(GPIO_MSM_FLASH_NOW);
+		if (isFlashCntlEn == 0 && temp == 0) {
+			/* FLASH_LED_UNLOCK*/
+			gpio_set_value_cansleep(PM8921_MPP_PM_TO_SYS
+				(PMIC_MPP_FLASH_LED_UNLOCK), 1);
+			/* GPIO_CAM_FLASH_SW : tourch */
+			gpio_set_value_cansleep(gpio_cam_flash_sw, 1);
+			temp = gpio_get_value(gpio_cam_flash_sw);
+			printk("[s5c73m3] check GPIO_CAM_FLASH_SW : %d\n", temp);
+			usleep(1*1000);
+		}
+
+		/* flash power 1.8V */
+		l28 = regulator_get(NULL, "8921_lvs4");
+		ret = regulator_enable(l28);
+
+		if (ret)
+			printk("error enabling regulator\n");
+
+		usleep(1*1000);
+		isFlashCntlEn = true;
+	}
+}
+
 static void cam_ldo_power_on(int mode, int num)
 {
 	int ret = 0;

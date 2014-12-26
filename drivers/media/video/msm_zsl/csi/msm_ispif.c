@@ -13,6 +13,7 @@
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/module.h>
 /*[[ aswoogi_zsl*/
 #include <linux/atomic.h>
 #include <mach/irqs.h>

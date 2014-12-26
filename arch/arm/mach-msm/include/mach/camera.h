@@ -461,6 +461,10 @@ struct msm_sync {
 	int thumb_count;
 
 	uint32_t focus_state;
+#ifdef CONFIG_S5C73M3
+	int domain_num;
+	struct iommu_domain *domain;
+#endif
 };
 
 #define MSM_APPS_ID_V4L2 "msm_v4l2"
