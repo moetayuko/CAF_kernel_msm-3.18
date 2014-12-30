@@ -350,7 +350,7 @@ static ssize_t led_##_c##_store(struct device *dev, \
 	if (sscanf(buf, "%hhx\n", &v) != 1) \
 		return -EINVAL; \
 	mutex_lock(&info->led_work_lock); \
-	info->color2 = (info->color2 & ~(0xff << _s)) | v; \
+	info->color2 = (info->color2 & ~(0xff << _s)) | (v << _s); \
 	if (!work_busy(&info->pattern_work)) \
 		schedule_work(&info->pattern_work); \
 	mutex_unlock(&info->led_work_lock); \
