@@ -1888,7 +1888,7 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(batt_current_adc),
 	SEC_BATTERY_ATTR(batt_esus_test),
 	SEC_BATTERY_ATTR(sys_rev),
-	SEC_BATTERY_ATTR(fg_psoc),
+	SEC_BATTERY_ATTR(batt_read_raw_soc),
 	SEC_BATTERY_ATTR(batt_reset_soc),
 #ifdef CONFIG_WIRELESS_CHARGING
 	SEC_BATTERY_ATTR(wc_status),
@@ -1940,7 +1940,7 @@ enum {
 	BATT_CURRENT_ADC,
 	BATT_ESUS_TEST,
 	BATT_SYSTEM_REV,
-	BATT_FG_PSOC,
+	BATT_READ_RAW_SOC,
 	BATT_RESET_SOC,
 #ifdef CONFIG_WIRELESS_CHARGING
 	BATT_WC_STATUS,
@@ -2153,7 +2153,7 @@ static ssize_t sec_bat_show_property(struct device *dev,
 	case BATT_SYSTEM_REV:
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", info->hw_rev);
 		break;
-	case BATT_FG_PSOC:
+	case BATT_READ_RAW_SOC:
 		val = sec_bat_get_fuelgauge_data(info, FG_T_PSOC);
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", val);
 		break;

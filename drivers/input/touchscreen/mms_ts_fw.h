@@ -19,7 +19,7 @@
 #include "gogh_fw.h"
 #elif defined(CONFIG_MACH_ESPRESSO_ATT) || defined(CONFIG_MACH_ESPRESSO_VZW) \
 	|| defined(CONFIG_MACH_ESPRESSO_SPR)
-#define FW_VERSION 0x16
+#define FW_VERSION 0x17
 #include "espresso_fw.h"
 #else
 #define FW_VERSION 0x0

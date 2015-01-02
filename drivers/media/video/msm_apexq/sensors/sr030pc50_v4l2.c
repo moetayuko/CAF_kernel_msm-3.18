@@ -22,8 +22,10 @@
 #include <media/v4l2-subdev.h>
 #include <mach/gpio.h>
 #include <mach/camera.h>
+#include <linux/module.h>
 
 #include <asm/mach-types.h>
+#include <asm/gpio.h>
 #include <mach/vreg.h>
 #include <linux/io.h>
 
@@ -729,7 +731,7 @@ static int sr030pc50_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	CAM_DEBUG("CAM_3M_ISP_INIT : %d", temp);
 
 	/*Power on the LDOs */
-	data->sensor_platform_info->sensor_power_on(1);
+	data->sensor_platform_info->sensor_power_on(1,1);
 	usleep(1000); /*msleep(1);*/
 
 	/*Set Main clock */
@@ -815,7 +817,7 @@ static int sr030pc50_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	CAM_DEBUG("CAM_3M_ISP_INIT : %d", temp);
 
 	/*Power on the LDOs */
-	data->sensor_platform_info->sensor_power_on(1);
+	data->sensor_platform_info->sensor_power_on(1,1);
 	usleep(1000); /*msleep(1);*/
 
 	/*Set Main clock */

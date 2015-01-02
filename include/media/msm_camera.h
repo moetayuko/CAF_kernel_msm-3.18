@@ -547,7 +547,7 @@ struct msm_camera_cfg_cmd {
 #define CMD_VFE_PIX_SOF_COUNT_UPDATE 59
 #define CMD_VFE_COUNT_PIX_SOF_ENABLE 60
 
-#if defined(CONFIG_ISX012)
+#if defined(CONFIG_ISX012) || defined(CONFIG_S5K5CCGX)
 #define CMD_AXI_CFG_PRIM    0xF1
 #define CMD_AXI_CFG_PRIM_ALL_CHNLS  0xF2
 #define CMD_AXI_CFG_SEC      0xF4

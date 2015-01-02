@@ -157,6 +157,8 @@ struct mms_ts_info {
 
 	bool				invert_x;
 	bool				invert_y;
+	bool				flip_xy;
+
 	const u8			*config_fw_version;
 	int				irq;
 
@@ -477,6 +479,11 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			y = info->max_y - y;
 			if (y < 0)
 				y = 0;
+		}
+		if (info->flip_xy) {
+			int t = x;
+			x = y;
+			y = t;
 		}
 
 		if (id >= MAX_FINGERS) {
@@ -2239,6 +2246,7 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 		info->max_y = info->pdata->max_y;
 		info->invert_x = info->pdata->invert_x;
 		info->invert_y = info->pdata->invert_y;
+		info->flip_xy = info->pdata->flip_xy;
 		info->config_fw_version = info->pdata->config_fw_version;
 	} else {
 		info->max_x = 1024;
@@ -2257,10 +2265,20 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	__set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, MAX_WIDTH, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, MAX_PRESSURE, 0, 0);
+
+	if(info->flip_xy){
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
+			     0, info->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+			     0, info->max_x, 0, 0);
+	}
+	else{
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
 			     0, info->max_x, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
 			     0, info->max_y, 0, 0);
+	}
+
 	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0,
 			9, 0, 0);
 

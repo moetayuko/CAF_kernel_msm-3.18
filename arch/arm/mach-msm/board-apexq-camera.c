@@ -577,6 +577,67 @@ static struct regulator *l8,*l11, *l12,*l16, *l18, *l29,*l30, *l28, *isp_core;
 	CAM_DVDD_1.5		: VREG_L18		: l18
 */
 
+#if defined(CONFIG_S5K5CCGX) && defined(CONFIG_SR030PC50) /* Espresso */
+static void cam_ldo_power_on(int mode)
+{
+	int ret = 0;
+
+	printk(KERN_DEBUG "[%s : %d] %s CAMERA POWER ON!!\n",
+	       __func__, __LINE__, mode ? "FRONT" : "REAR");
+
+/*3M Core 1.2V - CAM_ISP_CORE_1P2*/
+	gpio_set_value_cansleep(GPIO_CAM_CORE_EN, 1);
+	ret = gpio_get_value(GPIO_CAM_CORE_EN);
+	printk(KERN_DEBUG "check CAM_CORE_EN : %d\n", ret);
+	usleep(10);
+
+/*Sensor AVDD 2.8V - CAM_SENSOR_A2P8 */
+	gpio_set_value_cansleep(GPIO_CAM_A_EN, 1);
+	ret = gpio_get_value(GPIO_CAM_A_EN);
+	printk(KERN_DEBUG "check GPIO_CAM_A_EN : %d\n", ret);
+	usleep(20);
+
+/*VT core 1.8V - VTCAM_CORE_1.8V*/
+	gpio_set_value_cansleep(GPIO_CAM_VTCORE_EN, 1);
+	ret = gpio_get_value(GPIO_CAM_VTCORE_EN);
+	printk(KERN_DEBUG "check GPIO_CAM_VTCORE_EN : %d\n", ret);
+	usleep(15);
+
+/*Sensor IO 1.8V -CAM_SENSOR_IO_1P8  */
+		l29 = regulator_get(NULL, "8921_lvs5");
+		ret = regulator_enable(l29);
+		if (ret)
+			cam_err("error enabling regulator 8921_lvs6\n");
+
+}
+
+static void cam_ldo_power_off(int mode)
+{
+	int ret = 0;
+
+	printk(KERN_DEBUG "[%s : %d] %s CAMERA POWER OFF!!\n",
+	       __func__, __LINE__, mode ? "FRONT" : "REAR");
+
+
+
+/*Sensor IO 1.8V -CAM_SENSOR_IO_1P8  */
+	if (l29) {
+		ret = regulator_disable(l29);
+		if (ret)
+			cam_err("error disabling regulator\n");
+	}
+
+/*VT core 1.8V - VTCAM_CORE_1.8V*/
+	gpio_set_value_cansleep(GPIO_CAM_VTCORE_EN, 0);
+
+/*Sensor AVDD 2.8V - CAM_SENSOR_A2P8 */
+	gpio_set_value_cansleep(GPIO_CAM_A_EN, 0);
+
+/*3M Core 1.2V - CAM_ISP_CORE_1P2*/
+	gpio_set_value_cansleep(GPIO_CAM_CORE_EN, 0);
+
+}
+#elif defined(CONFIG_ISX012) && defined(CONFIG_DB8131M)
 u8 torchonoff;
 static void cam_ldo_power_on(int mode)
 {
@@ -696,7 +757,9 @@ static void cam_ldo_power_off(int mode)
 	gpio_set_value_cansleep(GPIO_CAM_CORE_EN, 0);
 
 }
+#endif
 
+#ifdef CONFIG_ISX012
 static struct msm_camera_sensor_flash_data flash_isx012 = {
 	.flash_type = MSM_CAMERA_FLASH_LED,
 };
@@ -729,6 +792,72 @@ static struct msm_camera_sensor_info msm_camera_sensor_isx012_data = {
 	.csi_if	= 1,
 	.camera_type = BACK_CAMERA_2D,
 };
+#endif
+#ifdef CONFIG_S5K5CCGX
+static struct msm_camera_sensor_flash_data flash_s5k5ccgx = {
+	.flash_type	= MSM_CAMERA_FLASH_NONE,
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_s5k5ccgx = {
+	.sensor_reset	= GPIO_CAM1_RST_N,
+	.mount_angle	= 90,
+	.sensor_stby	= GPIO_MAIN_CAM_STBY,
+	.vt_sensor_reset	= GPIO_CAM2_RST_N,
+	.vt_sensor_stby	= GPIO_VT_STBY,
+	.flash_en	= GPIO_MSM_FLASH_CNTL_EN,
+	.flash_set	= GPIO_MSM_FLASH_NOW,
+	.mclk	= GPIO_CAM_MCLK,
+	.sensor_pwd	= GPIO_CAM_CORE_EN,
+	.vcm_pwd	= 0,
+	.vcm_enable	= 1,
+	.sensor_power_on = cam_ldo_power_on,
+	.sensor_power_off = cam_ldo_power_off,
+	.cam_vreg = msm_8960_back_cam_vreg,
+	.num_vreg = ARRAY_SIZE(msm_8960_back_cam_vreg),
+	.gpio_conf = &msm_8960_back_cam_gpio_conf,
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_s5k5ccgx_data = {
+	.sensor_name	= "s5k5ccgx",
+	.pdata	= &msm_camera_csi_device_data[0],
+	.flash_data	= &flash_s5k5ccgx,
+	.sensor_platform_info = &sensor_board_info_s5k5ccgx,
+	.csi_if	= 1,
+	.camera_type = BACK_CAMERA_2D,
+};
+#endif
+#ifdef CONFIG_SR030PC50
+static struct msm_camera_sensor_flash_data flash_sr030pc50 = {
+	.flash_type	= MSM_CAMERA_FLASH_NONE,
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_sr030pc50 = {
+	.mount_angle	= 270,
+	.sensor_reset	= GPIO_CAM1_RST_N,
+	.sensor_pwd	= GPIO_CAM_CORE_EN,
+	.sensor_stby	= GPIO_MAIN_CAM_STBY,
+	.vt_sensor_reset	= GPIO_CAM2_RST_N,
+	.vt_sensor_stby	= GPIO_VT_STBY,
+	.mclk	= GPIO_CAM_MCLK,
+	.vcm_pwd	= 0,
+	.vcm_enable	= 1,
+	.sensor_power_on = cam_ldo_power_on,
+	.sensor_power_off = cam_ldo_power_off,
+	.cam_vreg = msm_8960_front_cam_vreg,
+	.num_vreg = ARRAY_SIZE(msm_8960_front_cam_vreg),
+	.gpio_conf = &msm_8960_front_cam_gpio_conf,
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_sr030pc50_data = {
+	.sensor_name	= "sr030pc50",
+	.pdata	= &msm_camera_csi_device_data[1],
+	.flash_data	= &flash_sr030pc50,
+	.sensor_platform_info = &sensor_board_info_sr030pc50,
+	.csi_if	= 1,
+	.camera_type = FRONT_CAMERA_2D,
+};
+#endif
+#ifdef CONFIG_DB8131M
 
 static struct msm_camera_sensor_flash_data flash_db8131m = {
 	.flash_type     = MSM_CAMERA_FLASH_NONE,
@@ -760,6 +889,7 @@ static struct msm_camera_sensor_info msm_camera_sensor_db8131m_data = {
 	.csi_if = 1,
 	.camera_type = FRONT_CAMERA_2D,
 };
+#endif
 
 static struct platform_device *cam_dev[] = {
 };
@@ -767,14 +897,26 @@ static struct platform_device *cam_dev[] = {
 static ssize_t back_camera_type_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
+#if defined(CONFIG_ISX012)
 	char cam_type[] = "SONY_ISX012\n";
+#elif defined(CONFIG_S5K5CCGX)
+	char cam_type[] = "SLSI_S5K5CCGX\n";
+#else
+	char cam_type[] = "Rear default camera\n";
+#endif
 	return snprintf(buf, sizeof(cam_type), "%s", cam_type);
 }
 
 static ssize_t front_camera_type_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
+#if defined(CONFIG_DB8131M)
 	char cam_type[] = "DUB_DB8131M\n";
+#elif defined(CONFIG_SR030PC50)
+	char cam_type[] = "SILICON_SR030PC50\n";
+#else
+	char cam_type[] = "Front default camera\n";
+#endif
 	return snprintf(buf, sizeof(cam_type), "%s", cam_type);
 }
 
@@ -784,14 +926,26 @@ static DEVICE_ATTR(front_camtype, S_IRUGO, front_camera_type_show, NULL);
 static ssize_t back_camera_firmware_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
+#if defined(CONFIG_ISX012)
 	char cam_fw[] = "ISX012\n";
+#elif defined(CONFIG_S5K5CCGX)
+	char cam_fw[] = "S5K5CCGX\n";
+#else
+	char cam_fw[] = "Rear default camera\n";
+#endif
 	return snprintf(buf, sizeof(cam_fw), "%s", cam_fw);
 }
 
 static ssize_t front_camera_firmware_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
+#if defined(CONFIG_DB8131M)
 	char cam_fw[] = "DB8131M\n";
+#elif defined(CONFIG_SR030PC50)
+	char cam_fw[] = "SR030PC50\n";
+#else
+	char cam_fw[] = "Front default camera\n";
+#endif
 	return snprintf(buf, sizeof(cam_fw), "%s", cam_fw);
 }
 
@@ -828,10 +982,12 @@ static ssize_t cameraflash_file_cmd_store(struct device *dev,
 	} else
 		return -err;
 
+#if defined(CONFIG_MACH_APEXQ) || defined(CONFIG_MACH_EXPRESS)
 	if (flash_rev) {
 		gpio_set_value_cansleep(PM8921_MPP_PM_TO_SYS
 			(PMIC_MPP_FLASH_LED_UNLOCK), value ? 1 : 0);
 	}
+#endif
 
 	if (value == 0) {
 		pr_err("[Torch flash]OFF\n");
@@ -975,6 +1131,8 @@ void __init msm8960_init_cam(void)
 
 	rev = get_mclk_rev();
 
+#if defined(CONFIG_MACH_APEXQ) || defined(CONFIG_MACH_EXPRESS)
+
 	if (rev) {
 		int rc;
 
@@ -1001,6 +1159,8 @@ void __init msm8960_init_cam(void)
 		pmic_gpio_msm_flash_cntl_en = 0;
 	}
 	isFlashCntlEn = false;
+#endif
+
 
 	msm8960_cam_create_node();
 
@@ -1011,7 +1171,11 @@ void __init msm8960_init_cam(void)
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
 	gpio_tlmm_config(GPIO_CFG(GPIO_CAM_A_EN, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
-#ifndef CONFIG_MACH_EXPRESS
+#if defined(CONFIG_MACH_ESPRESSO_VZW)
+	gpio_tlmm_config(GPIO_CFG(GPIO_CAM_VTCORE_EN, 0, GPIO_CFG_OUTPUT,
+		GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+#endif
+#if defined(CONFIG_MACH_APEXQ)
 	if (system_rev >= BOARD_REV02) {
 		gpio_tlmm_config(GPIO_CFG(GPIO_CAM_SENSOR_IO_EN, 0,
 			GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA),
@@ -1030,6 +1194,7 @@ void __init msm8960_init_cam(void)
 	/*Front cam stby*/
 	gpio_tlmm_config(GPIO_CFG(GPIO_VT_STBY, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+#if !(defined(CONFIG_MACH_ESPRESSO_VZW))
 	/*Falsh Enable*/
 	if (!pmic_gpio_msm_flash_cntl_en) {
 		gpio_tlmm_config(GPIO_CFG(GPIO_MSM_FLASH_CNTL_EN, 0,
@@ -1039,11 +1204,13 @@ void __init msm8960_init_cam(void)
 	/*Flash Set*/
 	gpio_tlmm_config(GPIO_CFG(GPIO_MSM_FLASH_NOW, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+#endif
 
 	/*CAM_MCLK0*/
 	gpio_tlmm_config(GPIO_CFG(GPIO_CAM_MCLK, 1, GPIO_CFG_OUTPUT,
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 
+#if defined(CONFIG_ISX012)
 	s_info = &msm_camera_sensor_isx012_data;
 	if (rev) {
 #if defined(CONFIG_MACH_EXPRESS)
@@ -1060,7 +1227,11 @@ void __init msm8960_init_cam(void)
 	}
 	gpio_flash_en = s_info->sensor_platform_info->flash_en;
 	gpio_flash_set = s_info->sensor_platform_info->flash_set;
-
+#endif
+#if defined(CONFIG_S5K5CCGX)
+	s_info = &msm_camera_sensor_s5k5ccgx_data;
+#endif
+#if defined(CONFIG_DB8131M)
 	s_info = &msm_camera_sensor_db8131m_data;
 
 	if (rev) {
@@ -1076,7 +1247,10 @@ void __init msm8960_init_cam(void)
 		gpio_tlmm_config(GPIO_CFG(GPIO_CAM_MCLK2, 1, GPIO_CFG_OUTPUT,
 			GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 	}
-
+#endif
+#if defined(CONFIG_SR030PC50)
+	s_info = &msm_camera_sensor_sr030pc50_data;
+#endif
 	pr_err("[%s:%d]setting done!!\n", __func__, __LINE__);
 
 	platform_device_register(&msm8960_device_csiphy0);
@@ -1089,14 +1263,34 @@ void __init msm8960_init_cam(void)
 }
 
 static struct i2c_board_info msm8960_camera_i2c_boardinfo[] = {
+#ifdef CONFIG_S5K5CCGX
+	{
+#if defined(CONFIG_MACH_ESPRESSO_VZW)
+		I2C_BOARD_INFO("s5k5ccgx", 0x5A>>1),
+#else
+		I2C_BOARD_INFO("s5k5ccgx", 0x78>>1),
+#endif
+		.platform_data = &msm_camera_sensor_s5k5ccgx_data,
+	},
+#endif
+#ifdef CONFIG_DB8131M
 	{
 		I2C_BOARD_INFO("db8131m", 0x45),
 		.platform_data = &msm_camera_sensor_db8131m_data,
 	},
+#endif
+#ifdef CONFIG_ISX012
 	{
 		I2C_BOARD_INFO("isx012", 0x3D),
 		.platform_data = &msm_camera_sensor_isx012_data,
 	},
+#endif
+#ifdef CONFIG_SR030PC50
+	{
+		I2C_BOARD_INFO("sr030pc50", 0x30),
+		.platform_data = &msm_camera_sensor_sr030pc50_data,
+	},
+#endif
 };
 
 struct msm_camera_board_info msm8960_camera_board_info = {

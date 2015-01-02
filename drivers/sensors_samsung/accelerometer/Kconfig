@@ -21,6 +21,10 @@ config INPUT_YAS_ACCELEROMETER
          tristate "YAS Acceleration Sensor"
          depends on I2C
 
+config YAS_ACC_DRIVER_LIS3DH
+         tristate "YAS Acceleration Sensor- LIS3DH(K3dh)"
+         depends on I2C
+
 config YAS_ACC_DRIVER_BMA250
          tristate "YAS Acceleration Sensor- BMA250"
          depends on I2C

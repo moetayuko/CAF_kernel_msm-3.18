@@ -17,9 +17,7 @@
 #include <linux/types.h>
 #include <mach/board.h>
 
-#define S5K5CCGX_DEBUG
-
-#ifdef S5K5CCGX_DEBUG
+#ifdef CONFIG_MSM_CAMERA_DEBUG
 #define CAM_DEBUG(fmt, arg...)	\
 		do { printk(KERN_DEBUG "[%s:%d] " fmt "\033[0m\n",\
 				__func__, __LINE__, ##arg); } \
@@ -54,8 +52,8 @@
 #define PREVIEW_SIZE_HD   4    /* 1280x720*/
 #define PREVIEW_SIZE_FHD   5    /* 1920x1080*/
 #define PREVIEW_SIZE_MMS 6        /* 176x144 */
-#define PREVIEW_SIZE_1024x552 9   /* 1024x552*/
-#define PREVIEW_SIZE_1024x576 10   /* 1024x552*/
+#define PREVIEW_SIZE_1024x552 10   /* 1024x552*/
+#define PREVIEW_SIZE_1024x576 11   /* 1024x552*/
 
 #define INNER_WINDOW_WIDTH_640_480	143
 #define INNER_WINDOW_HEIGHT_640_480	143

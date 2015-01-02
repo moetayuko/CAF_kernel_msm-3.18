@@ -85,6 +85,8 @@ else ifdef CONFIG_MACH_STRETTO
 snd-soc-msm8960-objs := msm8960-d2.o
 else ifdef CONFIG_MACH_APEXQ
 snd-soc-msm8960-objs := msm8960-apexq.o
+else ifdef CONFIG_MACH_ESPRESSO_VZW
+snd-soc-msm8960-objs := msm8960-apexq.o
 else ifdef CONFIG_MACH_SUPERIORLTE_SKT
 snd-soc-msm8960-objs := msm8960-d2.o
 else ifdef CONFIG_MACH_JAGUAR

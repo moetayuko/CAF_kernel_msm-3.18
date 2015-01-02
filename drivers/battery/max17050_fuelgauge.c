@@ -158,7 +158,7 @@ static int max17050_get_temperature(struct i2c_client *client)
 	return temperature;
 }
 
-/* soc should be 0.1% unit */
+/* soc should be 0.01% unit */
 static int max17050_get_soc(struct i2c_client *client)
 {
 	u8 data[2];
@@ -167,11 +167,11 @@ static int max17050_get_soc(struct i2c_client *client)
 	if (max17050_read_reg(client, MAX17050_REG_SOC_VF, data) < 0)
 		return -EINVAL;
 
-	soc = ((data[1] * 100) + (data[0] * 100 / 256)) / 10;
+	soc = ((data[1] * 100) + (data[0] * 100 / 256));
 
 	dev_dbg(&client->dev, "%s: raw capacity (%d)\n", __func__, soc);
 
-	return min(soc, 1000);
+	return min(soc, 10000);
 }
 
 static int max17050_get_vfocv(struct i2c_client *client)
@@ -424,7 +424,10 @@ bool sec_hal_fg_get_property(struct i2c_client *client,
 		break;
 		/* SOC (%) */
 	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = max17050_get_soc(client);
+		if (val->intval == SEC_FUELGAUGE_CAPACITY_TYPE_RAW)
+			val->intval = max17050_get_soc(client);
+		else
+			val->intval = max17050_get_soc(client) / 10;
 		break;
 		/* Battery Temperature */
 	case POWER_SUPPLY_PROP_TEMP:
@@ -930,6 +933,30 @@ static int fg_read_soc(struct i2c_client *client)
 	return min(soc, 1000);
 }
 
+/* soc should be 0.01% unit */
+static int fg_read_rawsoc(struct i2c_client *client)
+{
+	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
+	u8 data[2];
+	int soc;
+
+	if (fg_i2c_read(client, SOCREP_REG, data, 2) < 0) {
+		dev_err(&client->dev, "%s: Failed to read SOCREP\n", __func__);
+		return -1;
+	}
+
+	soc = (data[1] * 100) + (data[0] * 100 / 256);
+
+	dev_dbg(&client->dev, "%s: raw capacity (0.01%%) (%d)\n",
+		__func__, soc);
+
+	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
+		dev_dbg(&client->dev, "%s: raw capacity (%d), data(0x%04x)\n",
+			__func__, soc, (data[1]<<8) | data[0]);
+
+	return min(soc, 10000);
+}
+
 static int fg_read_fullcap(struct i2c_client *client)
 {
 	u8 data[2];
@@ -1318,6 +1345,10 @@ int get_fuelgauge_value(struct i2c_client *client, int data)
 
 	case FG_CHECK_STATUS:
 		ret = fg_check_status_reg(client);
+		break;
+
+	case FG_RAW_SOC:
+		ret = fg_read_rawsoc(client);
 		break;
 
 	case FG_VF_SOC:
@@ -1877,7 +1908,7 @@ static int get_fuelgauge_soc(struct i2c_client *client)
 	int fg_vcell;
 	int fg_current;
 	int avg_current;
-	ktime_t	current_time;
+	//ktime_t	current_time;
 	struct timespec ts;
 	int fullcap_check_interval;
 
@@ -1885,8 +1916,7 @@ static int get_fuelgauge_soc(struct i2c_client *client)
 		if (fuelgauge_recovery_handler(client))
 			goto return_soc;
 
-	current_time = alarm_get_elapsed_realtime();
-	ts = ktime_to_timespec(current_time);
+	get_monotonic_boottime(&ts);
 
 	/* check fullcap range */
 	fullcap_check_interval =
@@ -2004,15 +2034,26 @@ static void full_comp_work_handler(struct work_struct *work)
 	}
 }
 
+static irqreturn_t sec_jig_irq_thread(int irq, void *irq_data)
+{
+	struct sec_fuelgauge_info *fuelgauge = irq_data;
+
+	if (fuelgauge->pdata->check_jig_status())
+		fg_reset_capacity_by_jig_connection(fuelgauge->client);
+	else
+		dev_info(&fuelgauge->client->dev,
+				"%s: jig removed\n", __func__);
+	return IRQ_HANDLED;
+}
+
 bool sec_hal_fg_init(struct i2c_client *client)
 {
 	struct sec_fuelgauge_info *fuelgauge =
 				i2c_get_clientdata(client);
-	ktime_t	current_time;
+	//ktime_t	current_time;
 	struct timespec ts;
 
-	current_time = alarm_get_elapsed_realtime();
-	ts = ktime_to_timespec(current_time);
+	get_monotonic_boottime(&ts);
 
 	fuelgauge->info.fullcap_check_interval = ts.tv_sec;
 
@@ -2035,6 +2076,21 @@ bool sec_hal_fg_init(struct i2c_client *client)
 
 	if (fuelgauge->pdata->check_jig_status())
 		fg_reset_capacity_by_jig_connection(client);
+	else {
+		if (fuelgauge->pdata->jig_irq) {
+			int ret;
+			ret = request_threaded_irq(fuelgauge->pdata->jig_irq,
+					NULL, sec_jig_irq_thread,
+					fuelgauge->pdata->jig_irq_attr,
+					"jig-irq", fuelgauge);
+			if (ret) {
+				dev_info(&fuelgauge->client->dev,
+					"%s: Failed to Reqeust IRQ\n",
+					__func__);
+			}
+		}
+
+	}
 
 	INIT_DELAYED_WORK(&fuelgauge->info.full_comp_work,
 		full_comp_work_handler);
@@ -2189,7 +2245,10 @@ bool sec_hal_fg_get_property(struct i2c_client *client,
 		break;
 		/* SOC (%) */
 	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = get_fuelgauge_soc(client);
+		if (val->intval == SEC_FUELGAUGE_CAPACITY_TYPE_RAW)
+			val->intval = get_fuelgauge_value(client, FG_RAW_SOC);
+		else
+			val->intval = get_fuelgauge_soc(client);
 		break;
 		/* Battery Temperature */
 	case POWER_SUPPLY_PROP_TEMP:

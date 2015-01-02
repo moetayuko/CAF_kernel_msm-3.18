@@ -132,6 +132,7 @@ obj-$(CONFIG_VIBETONZ)		+= motor/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_NFC)		+= nfc/
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
+obj-$(CONFIG_IRDA_MC96)		+= irda/
 obj-$(CONFIG_REMOTEPROC)	+= remoteproc/
 obj-$(CONFIG_RPMSG)		+= rpmsg/
 

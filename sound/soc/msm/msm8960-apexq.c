@@ -62,7 +62,11 @@
 #define JACK_DETECT_GPIO 38
 #define JACK_DETECT_INT PM8921_GPIO_IRQ(PM8921_IRQ_BASE, JACK_DETECT_GPIO)
 
+#if defined(CONFIG_MACH_APEXQ)
 static u32 top_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(PMIC_GPIO_SPK_EN_BOARD_01);
+#else
+static u32 top_spk_pamp_gpio  = PM8921_GPIO_PM_TO_SYS(PMIC_GPIO_SPK_EN);
+#endif
 static u32 bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(PMIC_GPIO_VPS_EN);
 static int msm8960_spk_control;
 static int msm8960_ext_bottom_spk_pamp;

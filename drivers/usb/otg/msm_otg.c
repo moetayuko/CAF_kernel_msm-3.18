@@ -3214,6 +3214,41 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 
 	return ret;
 }
+void msm_otg_set_cable_state(int type)
+{
+	struct msm_otg *motg = the_msm_otg;
+
+	switch (type) {
+	case POWER_SUPPLY_TYPE_USB:
+		pr_info("%s, POWER_SUPPLY_TYPE_USB\n", __func__);
+		if (motg->chg_state != USB_CHG_STATE_DETECTED) {
+			cancel_delayed_work_sync(&motg->chg_work);
+			motg->chg_type = USB_SDP_CHARGER;
+			motg->chg_state = USB_CHG_STATE_DETECTED;
+			if (!test_bit(B_SESS_VLD, &motg->inputs))
+				set_bit(B_SESS_VLD, &motg->inputs);
+			schedule_work(&motg->sm_work);
+		}
+		break;
+	case POWER_SUPPLY_TYPE_MAINS:
+		pr_info("%s, POWER_SUPPLY_TYPE_MAINS\n", __func__);
+		if (motg->chg_state != USB_CHG_STATE_DETECTED) {
+			cancel_delayed_work_sync(&motg->chg_work);
+			motg->chg_type = USB_DCP_CHARGER;
+			motg->chg_state = USB_CHG_STATE_DETECTED;
+			if (!test_bit(B_SESS_VLD, &motg->inputs))
+				set_bit(B_SESS_VLD, &motg->inputs);
+			schedule_work(&motg->sm_work);
+		}
+		break;
+	case POWER_SUPPLY_TYPE_BATTERY:
+		pr_info("%s, POWER_SUPPLY_TYPE_BATTERY\n", __func__);
+		motg->chg_state = USB_CHG_STATE_UNDEFINED;
+		motg->chg_type = USB_INVALID_CHARGER;
+		break;
+	}
+}
+EXPORT_SYMBOL_GPL(msm_otg_set_cable_state);
 
 #ifdef CONFIG_PM8921_CHARGER_CALLBACK
 void msm_otg_set_vbus_state(int online)
@@ -3371,6 +3406,27 @@ static void msm_pmic_id_status_w(struct work_struct *w)
 	}
 
 }
+
+#ifdef CONFIG_CAMERON_HEALTH
+void msm_otg_set_cameronhealth_state(bool enable)
+{
+	struct msm_otg *motg = the_msm_otg;
+
+	if (!enable) {
+		pr_info("CAMERON_HEALTH : ID set\n");
+		set_bit(ID, &motg->inputs);
+	} else {
+		pr_info("CAMERON_HEALTH : ID clear\n");
+		clear_bit(ID, &motg->inputs);
+	}
+
+	if (test_bit(B_SESS_VLD, &motg->inputs))
+		clear_bit(B_SESS_VLD, &motg->inputs);
+
+	schedule_work(&motg->sm_work);
+}
+EXPORT_SYMBOL_GPL(msm_otg_set_cameronhealth_state);
+#endif
 
 #define MSM_PMIC_ID_STATUS_DELAY	5 /* 5msec */
 static irqreturn_t msm_pmic_id_irq(int irq, void *data)

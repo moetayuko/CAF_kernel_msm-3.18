@@ -149,6 +149,8 @@ source "drivers/clocksource/Kconfig"
 
 source "drivers/iommu/Kconfig"
 
+source "drivers/irda/Kconfig"
+
 source "drivers/remoteproc/Kconfig"
 
 source "drivers/rpmsg/Kconfig"

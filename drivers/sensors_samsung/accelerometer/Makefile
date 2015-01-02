@@ -19,5 +19,6 @@
 
 obj-$(CONFIG_INPUT_YAS_ACCELEROMETER) += yas_acc_kernel_driver.o
 ifdef CONFIG_YAS_ACC_MULTI_SUPPORT
+obj-$(CONFIG_YAS_ACC_DRIVER_LIS3DH) += yas_acc_driver-lis3dh.o
 obj-$(CONFIG_YAS_ACC_DRIVER_BMA250) += yas_acc_driver-bma25x.o
 endif

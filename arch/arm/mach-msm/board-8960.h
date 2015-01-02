@@ -55,6 +55,10 @@ extern struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata;
 extern void __init mms_tsp_input_init(void);
 #endif
 
+#if defined(CONFIG_MACH_ESPRESSO_VZW)
+extern void __init usb_switch_init(void);
+#endif
+
 #define PLATFORM_IS_CHARM25() \
 	(machine_is_msm8960_cdp() && \
 		(socinfo_get_platform_subtype() == 1) \
@@ -84,8 +88,10 @@ enum {
 	SX150X_LIQUID,
 };
 
-
-
+#ifdef CONFIG_CAMERON_HEALTH
+extern bool is_cameron_health_connected;
+extern void msm_otg_set_cameronhealth_state(bool enable);
+#endif
 extern struct sx150x_platform_data msm8960_sx150x_data[];
 extern struct msm_camera_board_info msm8960_camera_board_info;
 

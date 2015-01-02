@@ -25,6 +25,7 @@ struct mms_ts_platform_data {
 
 	bool	invert_x;
 	bool	invert_y;
+	bool	flip_xy;
 
 	int	gpio_sda;
 	int	gpio_scl;

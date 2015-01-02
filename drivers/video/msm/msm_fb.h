@@ -249,7 +249,7 @@ void msm_fb_release_busy(struct msm_fb_data_type *mfd);
 #ifdef CONFIG_FB_BACKLIGHT
 void msm_fb_config_backlight(struct msm_fb_data_type *mfd);
 #endif
-
+extern int poweroff_charging;
 void fill_black_screen(bool on, uint8 pipe_num, uint8 mixer_num);
 int msm_fb_check_frame_rate(struct msm_fb_data_type *mfd,
 				struct fb_info *info);

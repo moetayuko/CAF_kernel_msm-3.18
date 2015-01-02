@@ -482,6 +482,9 @@ struct mddi_platform_data {
 struct mipi_dsi_platform_data {
 	int vsync_gpio;
 	int (*dsi_power_save)(int on);
+#ifdef CONFIG_FB_MSM_MIPI_PANEL_POWERON_LP11
+	int (*dsi_client_power_save)(int on);
+#endif /* CONFIG_FB_MSM_MIPI_PANEL_POWERON_LP11 */
 	int (*dsi_client_reset)(void);
 	int (*get_lane_config)(void);
 	char (*splash_is_enabled)(void);

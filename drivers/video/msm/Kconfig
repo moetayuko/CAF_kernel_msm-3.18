@@ -445,6 +445,12 @@ config FB_MSM_MIPI_CHIMEI_WUXGA
 	  The panel is connected to the host
 	  via Toshiba DSI-to-LVDS bridge.
 
+
+config FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
+	default n
+
 config FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT
 	bool
 	select FB_MSM_MIPI_DSI_TRULY
@@ -462,6 +468,10 @@ config FB_MSM_NO_MDP_PIPE_CTRL
 	  which was used to control mdp-related clocks. MDP4 vsync-driven
 	  screen updates will use a different clock control mechanism if
 	  this is selected.
+
+config FB_MSM_MIPI_PANEL_POWERON_LP11
+	default n
+	bool "LP11 assertion during panel power on"
 
 config FB_MSM_OVERLAY0_WRITEBACK
 	depends on FB_MSM_OVERLAY
@@ -611,6 +621,7 @@ config FB_MSM_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
 	select FB_MSM_MIPI_CHIMEI_WXGA
 	select FB_MSM_MIPI_CHIMEI_WUXGA
+	select FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT
 	---help---
 	  Support for MIPI panel auto detect
 
@@ -651,6 +662,7 @@ config FB_MSM_LCDC_MIPI_PANEL_AUTO_DETECT
 	select FM_MSM_MIPI_NT35590_CMD_720P_PT
 	select FM_MSM_MIPI_NT35590_VIDEO_720P_PT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
+	select FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT
 	---help---
 	  Support for LCDC + MIPI panel auto detect
 
@@ -673,6 +685,7 @@ config FB_MSM_LVDS_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_ORISE_VIDEO_720P_PT
 	select FB_MSM_MIPI_ORISE_CMD_720P_PT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
+	select FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT
 	select FB_MSM_MIPI_CHIMEI_WXGA
 	select FB_MSM_MIPI_CHIMEI_WUXGA
 	---help---
@@ -771,6 +784,10 @@ config FB_MSM_MIPI_CHIMEI_WXGA_PANEL
 config FB_MSM_MIPI_CHIMEI_WUXGA_PANEL
 	bool "MIPI Chimei WUXGA Panel"
 	select FB_MSM_MIPI_CHIMEI_WUXGA
+
+config FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT_PANEL
+	bool "BEOT MIPI+LVDS WSVGA Panel"
+	select FB_MSM_MIPI_BOEOT_TFT_VIDEO_WSVGA_PT
 
 config FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT_PANEL
 	bool "MIPI Truly Video WVGA PT Panel"

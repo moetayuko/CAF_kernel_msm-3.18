@@ -42,8 +42,19 @@
 #if defined(CONFIG_KEYBOARD_ADP5588) || defined(CONFIG_KEYBOARD_ADP5588_MODULE)
 #define MSM_ADP5588_KEYS_BUS_ID	20
 #endif
-
-
+#ifdef CONFIG_IRDA_MC96
+#define MSM_MC96_I2C_BUS_ID   21
+#endif
+#ifdef CONFIG_ADC_STMPE811
+#define MSM_STMPE811_I2C_BUS_ID 22
+#endif
+#define MSM_CHARGER_I2C_BUS_ID  	23
+#ifdef CONFIG_WACOM_W9001
+#define MSM_8960_GSBI11_QUP_I2C_BUS_ID	24
+#endif
+#ifdef CONFIG_BACKLIGHT_LP8556
+#define MSM_BL_I2C_BUS_ID   25
+#endif
 #ifdef CONFIG_SND_SOC_MSM8660_APQ
 extern struct platform_device msm_pcm;
 extern struct platform_device msm_pcm_routing;

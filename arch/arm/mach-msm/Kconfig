@@ -947,6 +947,13 @@ config MACH_EXPRESS
         bool "MSM8960 Samsung EXPRESS"
         help
           Support for the Samsung EXPRESS(AT&T) device.
+
+config MACH_ESPRESSO_VZW
+        depends on ARCH_MSM8960
+        default n
+        bool "MSM8960 Samsung ESPRESSO_VZW"
+        help
+          Support for the Samsung Espresso(Verizon) device.
 endmenu
 
 source "arch/arm/mach-msm/lge/Kconfig"

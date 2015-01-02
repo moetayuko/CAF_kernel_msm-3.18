@@ -227,6 +227,9 @@ struct msm_otg_platform_data {
 #endif
 	const char *mhl_dev_name;
 	bool smb347s;
+	unsigned int vbus_gpio;
+	int vbus_irq;
+	bool enable_dcd;
 };
 
 /* Timeout (in msec) values (min - max) associated with OTG timers */
@@ -397,6 +400,7 @@ struct msm_hsic_host_platform_data {
 	struct msm_bus_scale_pdata *bus_scale_table;
 	unsigned log2_irq_thresh;
 	u32 swfi_latency;
+	unsigned hub_reset;
 };
 
 struct msm_usb_host_platform_data {
