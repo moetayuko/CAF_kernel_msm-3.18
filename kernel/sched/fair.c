@@ -4476,6 +4476,18 @@ static long effective_load(struct task_group *tg, int cpu, long wl, long wg)
 
 #endif
 
+#ifdef CONFIG_FAIR_GROUP_SCHED
+static inline bool energy_aware(void)
+{
+	return sched_feat(ENERGY_AWARE);
+}
+#else
+static inline bool energy_aware(void)
+{
+	return false;
+}
+#endif
+
 /*
  * Detect M:N waker/wakee relationships via a switching-frequency heuristic.
  * A waker of many should wake a different task than the one last awakened
