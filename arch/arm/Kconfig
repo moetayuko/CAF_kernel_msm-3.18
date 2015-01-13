@@ -314,7 +314,7 @@ config MMU
 #
 choice
 	prompt "ARM system type"
-	default ARCH_VERSATILE if !MMU
+	default ARCH_EFM32 if !MMU
 	default ARCH_MULTIPLATFORM if MMU
 
 config ARCH_MULTIPLATFORM
