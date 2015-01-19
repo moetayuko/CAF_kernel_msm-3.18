@@ -1250,6 +1250,8 @@ static int omap_iommu_domain_init(struct iommu_domain *domain)
 	domain->geometry.aperture_end   = (1ULL << 32) - 1;
 	domain->geometry.force_aperture = true;
 
+	domain->pgsize_bitmap = OMAP_IOMMU_PGSIZES;
+
 	return 0;
 
 fail_nomem:
@@ -1368,7 +1370,6 @@ static const struct iommu_ops omap_iommu_ops = {
 	.iova_to_phys	= omap_iommu_iova_to_phys,
 	.add_device	= omap_iommu_add_device,
 	.remove_device	= omap_iommu_remove_device,
-	.pgsize_bitmap	= OMAP_IOMMU_PGSIZES,
 };
 
 static int __init omap_iommu_init(void)

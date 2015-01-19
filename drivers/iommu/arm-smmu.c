@@ -287,6 +287,7 @@ struct arm_smmu_device {
 	void __iomem			*base;
 	unsigned long			size;
 	unsigned long			pgshift;
+	unsigned long			pgsize_bitmap;
 
 #define ARM_SMMU_FEAT_COHERENT_WALK	(1 << 0)
 #define ARM_SMMU_FEAT_STREAM_MATCH	(1 << 1)
@@ -344,8 +345,6 @@ struct arm_smmu_domain {
 	enum arm_smmu_domain_stage	stage;
 	struct mutex			init_mutex; /* Protects smmu pointer */
 };
-
-static struct iommu_ops arm_smmu_ops;
 
 static DEFINE_SPINLOCK(arm_smmu_devices_lock);
 static LIST_HEAD(arm_smmu_devices);
@@ -911,7 +910,7 @@ static int arm_smmu_init_domain_context(struct iommu_domain *domain,
 	}
 
 	pgtbl_cfg = (struct io_pgtable_cfg) {
-		.pgsize_bitmap	= arm_smmu_ops.pgsize_bitmap,
+		.pgsize_bitmap	= smmu->pgsize_bitmap,
 		.ias		= ias,
 		.oas		= oas,
 		.tlb		= &arm_smmu_gather_ops,
@@ -925,7 +924,7 @@ static int arm_smmu_init_domain_context(struct iommu_domain *domain,
 	}
 
 	/* Update our support page sizes to reflect the page table format */
-	arm_smmu_ops.pgsize_bitmap = pgtbl_cfg.pgsize_bitmap;
+	domain->pgsize_bitmap = pgtbl_cfg.pgsize_bitmap;
 
 	/* Initialise the context bank with our page table cfg */
 	arm_smmu_init_context_bank(smmu_domain, &pgtbl_cfg);
@@ -1430,7 +1429,7 @@ out_unlock:
 	return ret;
 }
 
-static struct iommu_ops arm_smmu_ops = {
+static const struct iommu_ops arm_smmu_ops = {
 	.capable		= arm_smmu_capable,
 	.domain_init		= arm_smmu_domain_init,
 	.domain_destroy		= arm_smmu_domain_destroy,
@@ -1444,7 +1443,6 @@ static struct iommu_ops arm_smmu_ops = {
 	.remove_device		= arm_smmu_remove_device,
 	.domain_get_attr	= arm_smmu_domain_get_attr,
 	.domain_set_attr	= arm_smmu_domain_set_attr,
-	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 };
 
 static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
@@ -1648,7 +1646,7 @@ static int arm_smmu_device_cfg_probe(struct arm_smmu_device *smmu)
 			size |= SZ_64K | SZ_512M;
 	}
 
-	arm_smmu_ops.pgsize_bitmap &= size;
+	smmu->pgsize_bitmap = size;
 	dev_notice(smmu->dev, "\tSupported page sizes: 0x%08lx\n", size);
 
 	if (smmu->features & ARM_SMMU_FEAT_TRANS_S1)

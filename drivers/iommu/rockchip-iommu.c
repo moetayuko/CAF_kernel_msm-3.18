@@ -828,6 +828,7 @@ static int rk_iommu_domain_init(struct iommu_domain *domain)
 	INIT_LIST_HEAD(&rk_domain->iommus);
 
 	domain->priv = rk_domain;
+	domain->pgsize_bitmap = RK_IOMMU_PGSIZE_BITMAP;
 
 	return 0;
 err_dt:
@@ -961,7 +962,6 @@ static const struct iommu_ops rk_iommu_ops = {
 	.add_device = rk_iommu_add_device,
 	.remove_device = rk_iommu_remove_device,
 	.iova_to_phys = rk_iommu_iova_to_phys,
-	.pgsize_bitmap = RK_IOMMU_PGSIZE_BITMAP,
 };
 
 static int rk_iommu_probe(struct platform_device *pdev)

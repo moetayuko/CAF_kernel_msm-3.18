@@ -4363,6 +4363,7 @@ static int intel_iommu_domain_init(struct iommu_domain *domain)
 	domain->geometry.aperture_end   = __DOMAIN_MAX_ADDR(dmar_domain->gaw);
 	domain->geometry.force_aperture = true;
 
+	domain->pgsize_bitmap = INTEL_IOMMU_PGSIZES;
 	return 0;
 }
 
@@ -4605,7 +4606,6 @@ static const struct iommu_ops intel_iommu_ops = {
 	.iova_to_phys	= intel_iommu_iova_to_phys,
 	.add_device	= intel_iommu_add_device,
 	.remove_device	= intel_iommu_remove_device,
-	.pgsize_bitmap	= INTEL_IOMMU_PGSIZES,
 };
 
 static void quirk_iommu_g4x_gfx(struct pci_dev *dev)

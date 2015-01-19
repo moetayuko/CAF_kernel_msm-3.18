@@ -230,6 +230,8 @@ static int msm_iommu_domain_init(struct iommu_domain *domain)
 	domain->geometry.aperture_end   = (1ULL << 32) - 1;
 	domain->geometry.force_aperture = true;
 
+	domain->pgsize_bitmap = MSM_IOMMU_PGSIZES;
+
 	return 0;
 
 fail_nomem:
@@ -682,7 +684,6 @@ static const struct iommu_ops msm_iommu_ops = {
 	.unmap = msm_iommu_unmap,
 	.map_sg = default_iommu_map_sg,
 	.iova_to_phys = msm_iommu_iova_to_phys,
-	.pgsize_bitmap = MSM_IOMMU_PGSIZES,
 };
 
 static int __init get_tex_class(int icp, int ocp, int mt, int nos)

@@ -265,6 +265,7 @@ static int tegra_smmu_domain_init(struct iommu_domain *domain)
 		pd[i] = 0;
 
 	domain->priv = as;
+	domain->pgsize_bitmap = SZ_4K;
 
 	return 0;
 }
@@ -643,8 +644,6 @@ static const struct iommu_ops tegra_smmu_ops = {
 	.unmap = tegra_smmu_unmap,
 	.map_sg = default_iommu_map_sg,
 	.iova_to_phys = tegra_smmu_iova_to_phys,
-
-	.pgsize_bitmap = SZ_4K,
 };
 
 static void tegra_smmu_ahb_enable(void)

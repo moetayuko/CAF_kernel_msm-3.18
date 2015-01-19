@@ -469,6 +469,7 @@ static int ipmmu_domain_init(struct iommu_domain *io_domain)
 
 	io_domain->priv = domain;
 	domain->io_domain = io_domain;
+	domain->pgsize_bitmap = SZ_1G | SZ_2M | SZ_4K;
 
 	return 0;
 }
@@ -747,7 +748,6 @@ static const struct iommu_ops ipmmu_ops = {
 	.iova_to_phys = ipmmu_iova_to_phys,
 	.add_device = ipmmu_add_device,
 	.remove_device = ipmmu_remove_device,
-	.pgsize_bitmap = SZ_1G | SZ_2M | SZ_4K,
 };
 
 /* -----------------------------------------------------------------------------

@@ -53,6 +53,7 @@ struct iommu_domain_geometry {
 
 struct iommu_domain {
 	const struct iommu_ops *ops;
+	unsigned long pgsize_bitmap;	/* Bitmap of supported page sizes */
 	void *priv;
 	iommu_fault_handler_t handler;
 	void *handler_token;
@@ -108,7 +109,6 @@ enum iommu_attr {
  * @domain_get_attr: Query domain attributes
  * @domain_set_attr: Change domain attributes
  * @of_xlate: add OF master IDs to iommu grouping
- * @pgsize_bitmap: bitmap of supported page sizes
  */
 struct iommu_ops {
 	bool (*capable)(enum iommu_cap);
@@ -143,8 +143,6 @@ struct iommu_ops {
 #ifdef CONFIG_OF_IOMMU
 	int (*of_xlate)(struct device *dev, struct of_phandle_args *args);
 #endif
-
-	unsigned long pgsize_bitmap;
 };
 
 #define IOMMU_GROUP_NOTIFY_ADD_DEVICE		1 /* Device added */

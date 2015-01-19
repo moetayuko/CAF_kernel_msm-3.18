@@ -101,6 +101,7 @@ static int shmobile_iommu_domain_init(struct iommu_domain *domain)
 	spin_lock_init(&sh_domain->attached_list_lock);
 	INIT_LIST_HEAD(&sh_domain->attached_list);
 	domain->priv = sh_domain;
+	domain->pgsize_bitmap = SZ_1M | SZ_64K | SZ_4K;
 	return 0;
 }
 
@@ -364,7 +365,6 @@ static const struct iommu_ops shmobile_iommu_ops = {
 	.map_sg = default_iommu_map_sg,
 	.iova_to_phys = shmobile_iommu_iova_to_phys,
 	.add_device = shmobile_iommu_add_device,
-	.pgsize_bitmap = SZ_1M | SZ_64K | SZ_4K,
 };
 
 int ipmmu_iommu_init(struct shmobile_ipmmu *ipmmu)

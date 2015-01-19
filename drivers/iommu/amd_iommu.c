@@ -3257,6 +3257,7 @@ static int amd_iommu_domain_init(struct iommu_domain *dom)
 	dom->geometry.aperture_end   = ~0ULL;
 	dom->geometry.force_aperture = true;
 
+	dom->pgsize_bitmap = AMD_IOMMU_PGSIZES;
 	return 0;
 
 out_free:
@@ -3428,7 +3429,6 @@ static const struct iommu_ops amd_iommu_ops = {
 	.unmap = amd_iommu_unmap,
 	.map_sg = default_iommu_map_sg,
 	.iova_to_phys = amd_iommu_iova_to_phys,
-	.pgsize_bitmap	= AMD_IOMMU_PGSIZES,
 };
 
 /*****************************************************************************

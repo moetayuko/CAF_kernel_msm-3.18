@@ -735,6 +735,8 @@ static int exynos_iommu_domain_init(struct iommu_domain *domain)
 	domain->geometry.aperture_end   = ~0UL;
 	domain->geometry.force_aperture = true;
 
+	domain->pgsize_bitmap = SECT_SIZE | LPAGE_SIZE | SPAGE_SIZE;
+
 	domain->priv = priv;
 	return 0;
 
@@ -1181,7 +1183,6 @@ static const struct iommu_ops exynos_iommu_ops = {
 	.iova_to_phys = exynos_iommu_iova_to_phys,
 	.add_device = exynos_iommu_add_device,
 	.remove_device = exynos_iommu_remove_device,
-	.pgsize_bitmap = SECT_SIZE | LPAGE_SIZE | SPAGE_SIZE,
 };
 
 static int __init exynos_iommu_init(void)

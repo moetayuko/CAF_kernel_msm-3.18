@@ -218,6 +218,7 @@ out:
 
 static int gart_iommu_domain_init(struct iommu_domain *domain)
 {
+	domain->pgsize_bitmap = GART_IOMMU_PGSIZES;
 	return 0;
 }
 
@@ -318,7 +319,6 @@ static const struct iommu_ops gart_iommu_ops = {
 	.map_sg		= default_iommu_map_sg,
 	.unmap		= gart_iommu_unmap,
 	.iova_to_phys	= gart_iommu_iova_to_phys,
-	.pgsize_bitmap	= GART_IOMMU_PGSIZES,
 };
 
 static int tegra_gart_suspend(struct device *dev)
