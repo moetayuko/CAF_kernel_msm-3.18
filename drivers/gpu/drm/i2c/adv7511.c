@@ -383,7 +383,7 @@ static irqreturn_t adv7511_irq_handler(int irq, void *devid)
 {
 	struct adv7511 *adv7511 = devid;
 
-	if (adv7511_hpd(adv7511))
+	if (adv7511->encoder && adv7511_hpd(adv7511))
 		drm_helper_hpd_irq_event(adv7511->encoder->dev);
 
 	wake_up_all(&adv7511->wq);
