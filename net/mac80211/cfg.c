@@ -3702,8 +3702,10 @@ static void ieee80211_ratestats(struct wiphy *wiphy,
 	switch (op) {
 	case CFG80211_RATESTATS_START:
 		local->ratestats_active = true;
-		list_for_each_entry(sta, &local->sta_list, list)
+		list_for_each_entry(sta, &local->sta_list, list) {
 			ieee80211_sta_start_ratestats(sta);
+			rate_control_tx_ratestats(sta, op);
+		}
 		/* list stays empty */
 		break;
 	case CFG80211_RATESTATS_DUMP:
@@ -3711,6 +3713,7 @@ static void ieee80211_ratestats(struct wiphy *wiphy,
 			stats = ieee80211_sta_reset_ratestats(sta);
 			if (stats)
 				list_add_tail(&stats->list, &list);
+			rate_control_tx_ratestats(sta, op);
 		}
 		break;
 	case CFG80211_RATESTATS_STOP:
@@ -3719,6 +3722,7 @@ static void ieee80211_ratestats(struct wiphy *wiphy,
 			stats = ieee80211_sta_stop_ratestats(sta);
 			if (stats)
 				list_add_tail(&stats->list, &list);
+			rate_control_tx_ratestats(sta, op);
 		}
 		break;
 	}

@@ -157,6 +157,15 @@ static inline void rate_control_remove_sta_debugfs(struct sta_info *sta)
 #endif
 }
 
+static inline void rate_control_tx_ratestats(struct sta_info *sta,
+					     enum cfg80211_ratestats_ops op)
+{
+	struct rate_control_ref *ref = sta->rate_ctrl;
+
+	if (ref && ref->ops->tx_ratestats)
+		ref->ops->tx_ratestats(ref->priv, sta->rate_ctrl_priv, op);
+}
+
 /* Get a reference to the rate control algorithm. If `name' is NULL, get the
  * first available algorithm. */
 int ieee80211_init_rate_ctrl_alg(struct ieee80211_local *local,

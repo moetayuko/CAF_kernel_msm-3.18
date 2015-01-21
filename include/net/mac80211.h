@@ -4886,6 +4886,9 @@ struct rate_control_ops {
 	void (*remove_sta_debugfs)(void *priv, void *priv_sta);
 
 	u32 (*get_expected_throughput)(void *priv_sta);
+
+	void (*tx_ratestats)(void *priv, void *priv_sta,
+			     enum cfg80211_ratestats_ops op);
 };
 
 static inline int rate_supported(struct ieee80211_sta *sta,
@@ -4965,6 +4968,23 @@ int rate_control_set_rates(struct ieee80211_hw *hw,
 
 int ieee80211_rate_control_register(const struct rate_control_ops *ops);
 void ieee80211_rate_control_unregister(const struct rate_control_ops *ops);
+
+/**
+ * ieee80211_report_ratestats - report (TX) rate statistics for a station
+ * @hw: the hardware pointer
+ * @pubsta: the station
+ * @n_stats: number of statistics entries in array
+ * @stats: statistics array
+ * @gfp: allocation flags
+ *
+ * Note that RX statistics are implemented by mac80211 directly, not by the
+ * rate control algorithm, so this must only be used by the latter to report
+ * TX statistics.
+ */
+void ieee80211_report_ratestats(struct ieee80211_hw *hw,
+				struct ieee80211_sta *pubsta,
+				unsigned int n_stats,
+				struct cfg80211_ratestats *stats, gfp_t gfp);
 
 static inline bool
 conf_is_ht20(struct ieee80211_conf *conf)

@@ -1025,13 +1025,16 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		goto fail_rate;
 	}
 
-	/* if the HW has more than 12 legacy rates, some assumptions in the
-	 * data structures break - in this case don't allow the rate-stats
-	 * feature flag.
+	/* Automatically support NL80211_EXT_FEATURE_RATESTATS if the rate
+	 * control supports it and at most 12 legacy rates exists. Some
+	 * assumptions in the data structures break if there are more, so
+	 * in this case don't allow the rate-stats feature flag.
 	 */
-	if (WARN_ON(wiphy_ext_feature_isset(hw->wiphy,
-					    NL80211_EXT_FEATURE_RATESTATS) &&
-		    max_bitrates > 12))
+	if (local->rate_ctrl && local->rate_ctrl->ops->tx_ratestats &&
+	    max_bitrates <= 12)
+		wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_RATESTATS);
+	else if (WARN_ON(wiphy_ext_feature_isset(hw->wiphy,
+						 NL80211_EXT_FEATURE_RATESTATS)))
 		hw->wiphy->ext_features[NL80211_EXT_FEATURE_RATESTATS / 8] &=
 			~BIT(NL80211_EXT_FEATURE_RATESTATS % 8);
 

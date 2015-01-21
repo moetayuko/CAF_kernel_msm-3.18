@@ -762,3 +762,22 @@ void rate_control_deinitialize(struct ieee80211_local *local)
 	rate_control_free(ref);
 }
 
+void ieee80211_report_ratestats(struct ieee80211_hw *hw,
+				struct ieee80211_sta *pubsta,
+				unsigned int n_stats,
+				struct cfg80211_ratestats *stats, gfp_t gfp)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+	int i;
+
+	for (i = 0; i < n_stats; i++) {
+		struct cfg80211_tid_stats *s = &stats[i].stats;
+
+		if (WARN_ON(s->filled & BIT(NL80211_TID_STATS_RX_MSDU)))
+			s->filled &= ~BIT(NL80211_TID_STATS_RX_MSDU);
+	}
+
+	cfg80211_report_ratestats(hw->wiphy, &sta->sdata->wdev, sta->sta.addr,
+				  n_stats, stats, gfp);
+}
+EXPORT_SYMBOL_GPL(ieee80211_report_ratestats);
