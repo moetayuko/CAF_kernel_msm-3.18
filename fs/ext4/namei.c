@@ -34,9 +34,10 @@
 #include <linux/quotaops.h>
 #include <linux/buffer_head.h>
 #include <linux/bio.h>
+
 #include "ext4.h"
 #include "ext4_jbd2.h"
-
+#include "ext4_crypto.h"
 #include "xattr.h"
 #include "acl.h"
 
@@ -47,6 +48,8 @@
 #define NAMEI_RA_CHUNKS  2
 #define NAMEI_RA_BLOCKS  4
 #define NAMEI_RA_SIZE	     (NAMEI_RA_CHUNKS * NAMEI_RA_BLOCKS)
+
+static int ext4_unlink(struct inode *dir, struct dentry *dentry);
 
 static struct buffer_head *ext4_append(handle_t *handle,
 					struct inode *inode,
@@ -2238,6 +2241,19 @@ retry:
 		inode->i_fop = &ext4_file_operations;
 		ext4_set_aops(inode);
 		err = ext4_add_nondir(handle, dentry, inode);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		if (!err && ext4_is_encryption_policy_set(dir)) {
+			err = ext4_inherit_policy(dir, inode);
+			if (err) {
+				ext4_unlink(dir, dentry);
+				if (IS_DIRSYNC(dir))
+					ext4_handle_sync(handle);
+				if (handle)
+					ext4_journal_stop(handle);
+				return err;
+			}
+		}
+#endif
 		if (!err && IS_DIRSYNC(dir))
 			ext4_handle_sync(handle);
 	}
@@ -2436,6 +2452,19 @@ out_clear_inode:
 		goto out_clear_inode;
 	unlock_new_inode(inode);
 	d_instantiate(dentry, inode);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	if (ext4_is_encryption_policy_set(dir)) {
+		err = ext4_inherit_policy(dir, inode);
+		if (err) {
+			ext4_unlink(dir, dentry);
+			if (IS_DIRSYNC(dir))
+				ext4_handle_sync(handle);
+			if (handle)
+				ext4_journal_stop(handle);
+			return err;
+		}
+	}
+#endif
 	if (IS_DIRSYNC(dir))
 		ext4_handle_sync(handle);
 
