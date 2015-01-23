@@ -26,7 +26,11 @@
 #include <linux/buffer_head.h>
 #include <linux/slab.h>
 #include <linux/rbtree.h>
+
 #include "ext4.h"
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+#include "ext4_crypto.h"
+#endif
 #include "xattr.h"
 
 static int ext4_dx_readdir(struct file *, struct dir_context *);
@@ -385,9 +389,16 @@ void ext4_htree_free_dir_info(struct dir_private_info *p)
 /*
  * Given a directory entry, enter it into the fname rb tree.
  */
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
 int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
 			     __u32 minor_hash,
-			     struct ext4_dir_entry_2 *dirent)
+			    struct ext4_dir_entry_2 *dirent,
+			    struct ext4_cstr *ent_name)
+#else
+int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
+			     __u32 minor_hash,
+			    struct ext4_dir_entry_2 *dirent)
+#endif
 {
 	struct rb_node **p, *parent = NULL;
 	struct fname *fname, *new_fn;
@@ -398,6 +409,19 @@ int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
 	p = &info->root.rb_node;
 
 	/* Create and allocate the fname structure */
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	len = sizeof(struct fname) + ent_name->len + 1;
+	new_fn = kzalloc(len, GFP_KERNEL);
+	if (!new_fn)
+		return -ENOMEM;
+	new_fn->hash = hash;
+	new_fn->minor_hash = minor_hash;
+	new_fn->inode = le32_to_cpu(dirent->inode);
+	new_fn->name_len = ent_name->len;
+	new_fn->file_type = dirent->file_type;
+	memcpy(new_fn->name, ent_name->name, ent_name->len);
+	new_fn->name[ent_name->len] = 0;
+#else
 	len = sizeof(struct fname) + dirent->name_len + 1;
 	new_fn = kzalloc(len, GFP_KERNEL);
 	if (!new_fn)
@@ -409,6 +433,7 @@ int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
 	new_fn->file_type = dirent->file_type;
 	memcpy(new_fn->name, dirent->name, dirent->name_len);
 	new_fn->name[dirent->name_len] = 0;
+#endif
 
 	while (*p) {
 		parent = *p;

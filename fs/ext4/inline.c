@@ -11,11 +11,16 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+
+#include <linux/fiemap.h>
+
 #include "ext4_jbd2.h"
 #include "ext4.h"
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+#include "ext4_crypto.h"
+#endif
 #include "xattr.h"
 #include "truncate.h"
-#include <linux/fiemap.h>
 
 #define EXT4_XATTR_SYSTEM_DATA	"data"
 #define EXT4_MIN_INLINE_DATA_SIZE	((sizeof(__le32) * EXT4_N_BLOCKS))
@@ -1010,7 +1015,11 @@ static int ext4_add_dirent_to_inline(handle_t *handle,
 	err = ext4_journal_get_write_access(handle, iloc->bh);
 	if (err)
 		return err;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	ext4_insert_dentry(dir, inode, de, inline_size, name, namelen);
+#else
 	ext4_insert_dentry(inode, de, inline_size, name, namelen);
+#endif
 
 	ext4_show_inline_dir(dir, iloc->bh, inline_start, inline_size);
 
@@ -1323,6 +1332,9 @@ int htree_inlinedir_to_tree(struct file *dir_file,
 	struct ext4_iloc iloc;
 	void *dir_buf = NULL;
 	struct ext4_dir_entry_2 fake;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_cstr tmp_str;
+#endif
 
 	ret = ext4_get_inode_loc(inode, &iloc);
 	if (ret)
@@ -1394,8 +1406,15 @@ int htree_inlinedir_to_tree(struct file *dir_file,
 			continue;
 		if (de->inode == 0)
 			continue;
-		err = ext4_htree_store_dirent(dir_file,
-				   hinfo->hash, hinfo->minor_hash, de);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		tmp_str.name = de->name;
+		tmp_str.len = de->name_len;
+		err = ext4_htree_store_dirent(dir_file, hinfo->hash,
+					      hinfo->minor_hash, de, &tmp_str);
+#else
+		err = ext4_htree_store_dirent(dir_file, hinfo->hash,
+					      hinfo->minor_hash, de);
+#endif
 		if (err) {
 			count = err;
 			goto out;

@@ -881,6 +881,9 @@ static int htree_dirblock_to_tree(struct file *dir_file,
 	struct buffer_head *bh;
 	struct ext4_dir_entry_2 *de, *top;
 	int err = 0, count = 0;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_cstr tmp_str;
+#endif
 
 	dxtrace(printk(KERN_INFO "In htree dirblock_to_tree: block %lu\n",
 							(unsigned long)block));
@@ -907,8 +910,15 @@ static int htree_dirblock_to_tree(struct file *dir_file,
 			continue;
 		if (de->inode == 0)
 			continue;
-		if ((err = ext4_htree_store_dirent(dir_file,
-				   hinfo->hash, hinfo->minor_hash, de)) != 0) {
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		tmp_str.name = de->name;
+		tmp_str.len = de->name_len;
+		err = ext4_htree_store_dirent(dir_file,
+			   hinfo->hash, hinfo->minor_hash, de, &tmp_str);
+#else
+		err = ext4_htree_store_dirent(dir_file, 0, 0, de);
+#endif
+		if (err != 0) {
 			brelse(bh);
 			return err;
 		}
@@ -938,6 +948,9 @@ int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 	int count = 0;
 	int ret, err;
 	__u32 hashval;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_cstr tmp_str;
+#endif
 
 	dxtrace(printk(KERN_DEBUG "In htree_fill_tree, start hash: %x:%x\n",
 		       start_hash, start_minor_hash));
@@ -973,14 +986,30 @@ int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 	/* Add '.' and '..' from the htree header */
 	if (!start_hash && !start_minor_hash) {
 		de = (struct ext4_dir_entry_2 *) frames[0].bh->b_data;
-		if ((err = ext4_htree_store_dirent(dir_file, 0, 0, de)) != 0)
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		tmp_str.name = de->name;
+		tmp_str.len = de->name_len;
+		err = ext4_htree_store_dirent(dir_file, 0, 0,
+					      de, &tmp_str);
+#else
+		err = ext4_htree_store_dirent(dir_file, 0, 0, de);
+#endif
+		if (err != 0)
 			goto errout;
 		count++;
 	}
 	if (start_hash < 2 || (start_hash ==2 && start_minor_hash==0)) {
 		de = (struct ext4_dir_entry_2 *) frames[0].bh->b_data;
 		de = ext4_next_entry(de, dir->i_sb->s_blocksize);
-		if ((err = ext4_htree_store_dirent(dir_file, 2, 0, de)) != 0)
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		tmp_str.name = de->name;
+		tmp_str.len = de->name_len;
+		err = ext4_htree_store_dirent(dir_file, 2, 0,
+					      de, &tmp_str);
+#else
+		err = ext4_htree_store_dirent(dir_file, 2, 0, de);
+#endif
+		if (err != 0)
 			goto errout;
 		count++;
 	}
@@ -1644,10 +1673,18 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
 	return 0;
 }
 
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+void ext4_insert_dentry(struct inode *dir,
+			struct inode *inode,
+			struct ext4_dir_entry_2 *de,
+			int buf_size,
+			const char *name, int namelen)
+#else
 void ext4_insert_dentry(struct inode *inode,
 			struct ext4_dir_entry_2 *de,
 			int buf_size,
 			const char *name, int namelen)
+#endif
 {
 
 	int nlen, rlen;
@@ -1704,7 +1741,11 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 	}
 
 	/* By now the buffer is marked for journaling */
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	ext4_insert_dentry(dir, inode, de, blocksize, name, namelen);
+#else
 	ext4_insert_dentry(inode, de, blocksize, name, namelen);
+#endif
 
 	/*
 	 * XXX shouldn't update any times until successful

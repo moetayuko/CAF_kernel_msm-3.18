@@ -2022,19 +2022,35 @@ extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
 #define ext4_check_dir_entry(dir, filp, de, bh, buf, size, offset)	\
 	unlikely(__ext4_check_dir_entry(__func__, __LINE__, (dir), (filp), \
 					(de), (bh), (buf), (size), (offset)))
+struct ext4_cstr;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
 extern int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
-				    __u32 minor_hash,
-				    struct ext4_dir_entry_2 *dirent);
+				__u32 minor_hash,
+				struct ext4_dir_entry_2 *dirent,
+				struct ext4_cstr *ent_name);
+#else
+extern int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
+				   __u32 minor_hash,
+				   struct ext4_dir_entry_2 *dirent);
+#endif
 extern void ext4_htree_free_dir_info(struct dir_private_info *p);
 extern int ext4_find_dest_de(struct inode *dir, struct inode *inode,
 			     struct buffer_head *bh,
 			     void *buf, int buf_size,
 			     const char *name, int namelen,
 			     struct ext4_dir_entry_2 **dest_de);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+void ext4_insert_dentry(struct inode *dir,
+			struct inode *inode,
+			struct ext4_dir_entry_2 *de,
+			int buf_size,
+			const char *name, int namelen);
+#else
 void ext4_insert_dentry(struct inode *inode,
 			struct ext4_dir_entry_2 *de,
 			int buf_size,
 			const char *name, int namelen);
+#endif
 static inline void ext4_update_dx_flag(struct inode *inode)
 {
 	if (!EXT4_HAS_COMPAT_FEATURE(inode->i_sb,
