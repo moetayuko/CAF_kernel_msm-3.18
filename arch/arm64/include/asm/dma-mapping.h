@@ -46,7 +46,8 @@ static inline struct dma_map_ops *get_dma_ops(struct device *dev)
 }
 
 static inline void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
-				      struct iommu_ops *iommu, bool coherent)
+				      const struct iommu_ops *iommu,
+				      bool coherent)
 {
 	dev->archdata.dma_coherent = coherent;
 }
