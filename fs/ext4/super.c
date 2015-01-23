@@ -3440,7 +3440,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	/* Modes of operations for file and directory encryption. */
 	/* TODO(ildarm): Make it so that this info comes from SB. */
 	sbi->s_file_encryption_mode = EXT4_ENCRYPTION_MODE_AES_256_XTS;
-	sbi->s_dir_encryption_mode = EXT4_ENCRYPTION_MODE_INVALID;
+	sbi->s_dir_encryption_mode = EXT4_ENCRYPTION_MODE_AES_256_CBC;
 #endif
 
 	/* Cleanup superblock name */

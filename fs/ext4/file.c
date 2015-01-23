@@ -28,6 +28,9 @@
 #include <linux/pagevec.h>
 #include "ext4.h"
 #include "ext4_jbd2.h"
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+#include "ext4_crypto.h"
+#endif
 #include "xattr.h"
 #include "acl.h"
 
@@ -200,9 +203,16 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
 
 static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	int res = 0;
+
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	if (ext4_is_encryption_policy_set(file->f_path.dentry->d_inode))
+		res = ext4_get_crypto_key(file);
+#endif
 	file_accessed(file);
-	vma->vm_ops = &ext4_file_vm_ops;
-	return 0;
+	if (!res)
+		vma->vm_ops = &ext4_file_vm_ops;
+	return res;
 }
 
 static int ext4_file_open(struct inode * inode, struct file * filp)
@@ -212,6 +222,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 	struct vfsmount *mnt = filp->f_path.mnt;
 	struct path path;
 	char buf[64], *cp;
+	int ret;
 
 	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
 		     !(sb->s_flags & MS_RDONLY))) {
@@ -250,11 +261,19 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 	 * writing and the journal is present
 	 */
 	if (filp->f_mode & FMODE_WRITE) {
-		int ret = ext4_inode_attach_jinode(inode);
+		ret = ext4_inode_attach_jinode(inode);
 		if (ret < 0)
 			return ret;
 	}
-	return dquot_file_open(inode, filp);
+	ret = dquot_file_open(inode, filp);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	if (!ret && ext4_is_encryption_policy_set(inode)) {
+		ret = ext4_get_crypto_key(filp);
+		if (ret)
+			ret = -EACCES;
+	}
+#endif
+	return ret;
 }
 
 /*
