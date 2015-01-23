@@ -237,4 +237,53 @@ int ext4_decrypt(struct ext4_crypto_ctx *ctx, struct page *page);
 int ext4_get_crypto_key(const struct file *file);
 int ext4_set_crypto_key(struct dentry *dentry);
 
+#define EXT4_FNAME_NUM_SCATTER_ENTRIES	4
+#define EXT4_CRYPTO_BLOCK_SIZE		16
+#define EXT4_FNAME_CRYPTO_DIGEST_SIZE	32
+
+struct ext4_cstr {
+	unsigned char *name;
+	u32 len;
+};
+
+struct ext4_fname_crypto_buf_desc {
+	unsigned char *buf;
+	u32 size;
+};
+
+struct ext4_fname_crypto_ctx {
+	u32 lim;
+	char tmp_buf[EXT4_CRYPTO_BLOCK_SIZE];
+	struct crypto_ablkcipher *ctfm;
+	struct crypto_hash *htfm;
+	struct page *workpage;
+	struct ext4_encryption_key key;
+	unsigned has_valid_key : 1;
+	unsigned ctfm_key_is_ready : 1;
+};
+
+void ext4_init_fname_crypto(void);
+void ext4_put_fname_crypto_ctx(struct ext4_fname_crypto_ctx **ctx);
+struct ext4_fname_crypto_ctx *ext4_get_fname_crypto_ctx(struct inode *inode,
+							u32 max_len);
+u32 ext4_fname_crypto_round_up(u32 size, u32 blksize);
+int ext4_fname_crypto_alloc_buffer(struct ext4_fname_crypto_ctx *ctx,
+				   unsigned char **obuf,
+				   u32 *olen, u32 ilen);
+void ext4_fname_crypto_free_buffer(void **buf);
+int ext4_fname_disk_to_usr(struct ext4_fname_crypto_ctx *ctx,
+			   struct ext4_cstr *oname,
+			   const struct ext4_cstr *iname);
+int ext4_fname_usr_to_disk(struct ext4_fname_crypto_ctx *ctx,
+			   struct ext4_cstr *oname,
+			   const struct ext4_cstr *iname);
+int ext4_fname_usr_to_htree(struct ext4_fname_crypto_ctx *ctx,
+			    struct ext4_cstr *oname,
+			    const struct ext4_cstr *iname);
+int ext4_fname_disk_to_htree(struct ext4_fname_crypto_ctx *ctx,
+			     struct ext4_cstr *oname,
+			     const struct ext4_cstr *iname);
+int ext4_fname_crypto_namelen_on_disk(struct ext4_fname_crypto_ctx *ctx,
+				      u32 namelen);
+
 #endif	/* _EXT4_CRYPTO_H */

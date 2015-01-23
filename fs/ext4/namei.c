@@ -103,13 +103,13 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
 	if (IS_ERR(bh)) {
 		__ext4_warning(inode->i_sb, __func__, line,
 			       "error %ld reading directory block "
-			       "(ino %lu, block %lu)", PTR_ERR(bh), inode->i_ino,
-			       (unsigned long) block);
-
+			       "(ino %lu, block %lu)", PTR_ERR(bh),
+			       inode->i_ino, (unsigned long) block);
 		return bh;
 	}
 	if (!bh) {
-		ext4_error_inode(inode, __func__, line, block, "Directory hole found");
+		ext4_error_inode(inode, __func__, line, block,
+				 "Directory hole found");
 		return ERR_PTR(-EIO);
 	}
 	dirent = (struct ext4_dir_entry *) bh->b_data;
@@ -1063,7 +1063,7 @@ static int dx_make_map(struct ext4_dir_entry_2 *de, unsigned blocksize,
 }
 
 /* Sort map by hash value */
-static void dx_sort_map (struct dx_map_entry *map, unsigned count)
+static void dx_sort_map(struct dx_map_entry *map, unsigned count)
 {
 	struct dx_map_entry *p, *q, *top = map + count - 1;
 	int more;
