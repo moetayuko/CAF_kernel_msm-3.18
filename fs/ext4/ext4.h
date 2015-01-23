@@ -809,6 +809,8 @@ do {									       \
 
 #endif /* defined(__KERNEL__) || defined(__linux__) */
 
+#include "ext4_crypto.h"
+
 #include "extents_status.h"
 
 /*
@@ -944,6 +946,11 @@ struct ext4_inode_info {
 
 	/* Precomputed uuid+inum+igen checksum for seeding inode checksums */
 	__u32 i_csum_seed;
+
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	/* Encryption params */
+	struct ext4_encryption_key i_encryption_key;
+#endif
 };
 
 /*
@@ -1350,6 +1357,13 @@ struct ext4_sb_info {
 	struct ratelimit_state s_err_ratelimit_state;
 	struct ratelimit_state s_warning_ratelimit_state;
 	struct ratelimit_state s_msg_ratelimit_state;
+
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	/* Encryption */
+	uint32_t s_file_encryption_mode;
+	uint32_t s_dir_encryption_mode;
+	struct ext4_encryption_wrapper_desc s_default_encryption_wrapper_desc;
+#endif
 };
 
 static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)

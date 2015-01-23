@@ -901,6 +901,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 	atomic_set(&ei->i_ioend_count, 0);
 	atomic_set(&ei->i_unwritten, 0);
 	INIT_WORK(&ei->i_rsv_conversion_work, ext4_end_io_rsv_work);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	ei->i_encryption_key.mode = EXT4_ENCRYPTION_MODE_INVALID;
+#endif
 
 	return &ei->vfs_inode;
 }
@@ -3433,6 +3436,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	if (sb->s_bdev->bd_part)
 		sbi->s_sectors_written_start =
 			part_stat_read(sb->s_bdev->bd_part, sectors[1]);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	/* Modes of operations for file and directory encryption. */
+	/* TODO(ildarm): Make it so that this info comes from SB. */
+	sbi->s_file_encryption_mode = EXT4_ENCRYPTION_MODE_AES_256_XTS;
+	sbi->s_dir_encryption_mode = EXT4_ENCRYPTION_MODE_INVALID;
+#endif
 
 	/* Cleanup superblock name */
 	for (cp = sb->s_id; (cp = strchr(cp, '/'));)
@@ -5536,6 +5545,10 @@ struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 static int __init ext4_init_fs(void)
 {
 	int i, err;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	static size_t num_prealloc_crypto_pages = 32;
+	static size_t num_prealloc_crypto_ctxs = 128;
+#endif
 
 	ext4_li_info = NULL;
 	mutex_init(&ext4_li_mtx);
@@ -5548,9 +5561,16 @@ static int __init ext4_init_fs(void)
 		init_waitqueue_head(&ext4__ioend_wq[i]);
 	}
 
-	err = ext4_init_es();
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	err = ext4_allocate_crypto(num_prealloc_crypto_pages,
+				   num_prealloc_crypto_ctxs);
 	if (err)
 		return err;
+#endif
+
+	err = ext4_init_es();
+	if (err)
+		goto out8;
 
 	err = ext4_init_pageio();
 	if (err)
@@ -5604,6 +5624,10 @@ out6:
 	ext4_exit_pageio();
 out7:
 	ext4_exit_es();
+out8:
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	ext4_delete_crypto();
+#endif
 
 	return err;
 }
