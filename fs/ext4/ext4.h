@@ -2040,7 +2040,7 @@ extern int ext4_find_dest_de(struct inode *dir, struct inode *inode,
 			     const char *name, int namelen,
 			     struct ext4_dir_entry_2 **dest_de);
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
-void ext4_insert_dentry(struct inode *dir,
+int ext4_insert_dentry(struct inode *dir,
 			struct inode *inode,
 			struct ext4_dir_entry_2 *de,
 			int buf_size,

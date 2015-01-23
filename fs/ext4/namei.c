@@ -2184,11 +2184,11 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
 }
 
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
-void ext4_insert_dentry(struct inode *dir,
-			struct inode *inode,
-			struct ext4_dir_entry_2 *de,
-			int buf_size,
-			const char *name, int namelen)
+int ext4_insert_dentry(struct inode *dir,
+		       struct inode *inode,
+		       struct ext4_dir_entry_2 *de,
+		       int buf_size,
+		       const char *name, int namelen)
 #else
 void ext4_insert_dentry(struct inode *inode,
 			struct ext4_dir_entry_2 *de,
@@ -2198,12 +2198,45 @@ void ext4_insert_dentry(struct inode *inode,
 {
 
 	int nlen, rlen;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_fname_crypto_ctx *ctx = NULL;
+	struct ext4_cstr fname_crypto_str = {.name = NULL, .len = 0};
+	struct ext4_cstr tmp_str;
+	int res;
+
+	ctx = ext4_get_fname_crypto_ctx(dir, EXT4_NAME_LEN);
+	if (IS_ERR(ctx))
+		return -EIO;
+	/* By default, the input name would be written to the disk */
+	tmp_str.name = (unsigned char *)name;
+	tmp_str.len = namelen;
+	if (ctx != NULL) {
+		/* Directory is encrypted */
+		res = ext4_fname_crypto_alloc_buffer(ctx,
+			&fname_crypto_str.name, &fname_crypto_str.len,
+			EXT4_NAME_LEN);
+		if (res < 0) {
+			ext4_put_fname_crypto_ctx(&ctx);
+			return -ENOMEM;
+		}
+		res = ext4_fname_usr_to_disk(ctx, &fname_crypto_str,
+				&tmp_str);
+		if (res < 0) {
+			ext4_put_fname_crypto_ctx(&ctx);
+			ext4_fname_crypto_free_buffer(
+			    (void **)&fname_crypto_str.name);
+			return res;
+		}
+		tmp_str.name = fname_crypto_str.name;
+		tmp_str.len = fname_crypto_str.len;
+	}
+#endif
 
 	nlen = EXT4_DIR_REC_LEN(de->name_len);
 	rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
 	if (de->inode) {
 		struct ext4_dir_entry_2 *de1 =
-				(struct ext4_dir_entry_2 *)((char *)de + nlen);
+			(struct ext4_dir_entry_2 *)((char *)de + nlen);
 		de1->rec_len = ext4_rec_len_to_disk(rlen - nlen, buf_size);
 		de->rec_len = ext4_rec_len_to_disk(nlen, buf_size);
 		de = de1;
@@ -2211,9 +2244,19 @@ void ext4_insert_dentry(struct inode *inode,
 	de->file_type = EXT4_FT_UNKNOWN;
 	de->inode = cpu_to_le32(inode->i_ino);
 	ext4_set_de_type(inode->i_sb, de, inode->i_mode);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	de->name_len = tmp_str.len;
+
+	memcpy(de->name, tmp_str.name, tmp_str.len);
+	ext4_put_fname_crypto_ctx(&ctx);
+	ext4_fname_crypto_free_buffer((void **)&fname_crypto_str.name);
+	return 0;
+#else
 	de->name_len = namelen;
 	memcpy(de->name, name, namelen);
+#endif
 }
+
 /*
  * Add a new entry into a directory (leaf) block.  If de is non-NULL,
  * it points to a directory entry which is guaranteed to be large
@@ -2250,9 +2293,12 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 		return err;
 	}
 
-	/* By now the buffer is marked for journaling */
+	/* By now the buffer is marked for journaling. Due to crypto operations,
+	 * the following function call may fail */
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
-	ext4_insert_dentry(dir, inode, de, blocksize, name, namelen);
+	err = ext4_insert_dentry(dir, inode, de, blocksize, name, namelen);
+	if (err < 0)
+		return err;
 #else
 	ext4_insert_dentry(inode, de, blocksize, name, namelen);
 #endif
@@ -2302,7 +2348,26 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
 	struct dx_hash_info hinfo;
 	ext4_lblk_t  block;
 	struct fake_dirent *fde;
-	int		csum_size = 0;
+	int csum_size = 0;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_fname_crypto_ctx *ctx = NULL;
+	struct ext4_cstr fname_crypto_str = {.name = NULL, .len = 0}, tmp_str;
+	int res;
+
+	ctx = ext4_get_fname_crypto_ctx(dir, EXT4_NAME_LEN);
+	if (IS_ERR(ctx))
+		return -1;
+	if (ctx != NULL) {
+		/* Allocate buffer to hold maximum name length */
+		res = ext4_fname_crypto_alloc_buffer(ctx,
+			&fname_crypto_str.name, &fname_crypto_str.len,
+			EXT4_NAME_LEN);
+		if (res < 0) {
+			ext4_put_fname_crypto_ctx(&ctx);
+			return -1;
+		}
+	}
+#endif
 
 	if (ext4_has_metadata_csum(inode->i_sb))
 		csum_size = sizeof(struct ext4_dir_entry_tail);
@@ -2369,7 +2434,34 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
 	if (hinfo.hash_version <= DX_HASH_TEA)
 		hinfo.hash_version += EXT4_SB(dir->i_sb)->s_hash_unsigned;
 	hinfo.seed = EXT4_SB(dir->i_sb)->s_hash_seed;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	if (ctx == NULL) {
+		/* Directory is not encrypted */
+		ext4fs_dirhash(name, namelen, &hinfo);
+	} else {
+		/* Directory is encrypted */
+		tmp_str.name = (unsigned char *)name;
+		tmp_str.len = namelen;
+		res = ext4_fname_usr_to_htree(ctx,
+					      &fname_crypto_str,
+					      &tmp_str);
+		if (res < 0) {
+			ext4_put_fname_crypto_ctx(&ctx);
+			ext4_fname_crypto_free_buffer(
+			    (void **)&fname_crypto_str.name);
+			ext4_mark_inode_dirty(handle, dir);
+			brelse(bh);
+			return res;
+		}
+		ext4fs_dirhash(fname_crypto_str.name,
+			       fname_crypto_str.len,
+			       &hinfo);
+		ext4_put_fname_crypto_ctx(&ctx);
+		ext4_fname_crypto_free_buffer((void **)&fname_crypto_str.name);
+	}
+#else
 	ext4fs_dirhash(name, namelen, &hinfo);
+#endif
 	memset(frames, 0, sizeof(frames));
 	frame = frames;
 	frame->entries = entries;
@@ -2379,10 +2471,10 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
 
 	retval = ext4_handle_dirty_dx_node(handle, dir, frame->bh);
 	if (retval)
-		goto out_frames;	
+		goto out_frames;
 	retval = ext4_handle_dirty_dirent_node(handle, dir, bh);
 	if (retval)
-		goto out_frames;	
+		goto out_frames;
 
 	de = do_split(handle,dir, &bh, frame, &hinfo);
 	if (IS_ERR(de)) {
