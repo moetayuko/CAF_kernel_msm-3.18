@@ -2252,6 +2252,8 @@ retry:
 					ext4_journal_stop(handle);
 				return err;
 			}
+			/* open/mmap will deal with failure to set key */
+			ext4_set_crypto_key(dentry);
 		}
 #endif
 		if (!err && IS_DIRSYNC(dir))
@@ -2269,6 +2271,9 @@ static int ext4_mknod(struct inode *dir, struct dentry *dentry,
 {
 	handle_t *handle;
 	struct inode *inode;
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	struct ext4_sb_info *sbi = EXT4_SB(dir->i_sb);
+#endif
 	int err, credits, retries = 0;
 
 	if (!new_valid_dev(rdev))
@@ -2287,8 +2292,19 @@ retry:
 		init_special_inode(inode, inode->i_mode, rdev);
 		inode->i_op = &ext4_special_inode_operations;
 		err = ext4_add_nondir(handle, dentry, inode);
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		if (!err) {
+			if (sbi->s_file_encryption_mode !=
+			    EXT4_ENCRYPTION_MODE_INVALID) {
+				ext4_set_crypto_key(dentry);
+			}
+			if (IS_DIRSYNC(dir))
+				ext4_handle_sync(handle);
+		}
+#else
 		if (!err && IS_DIRSYNC(dir))
 			ext4_handle_sync(handle);
+#endif
 	}
 	if (handle)
 		ext4_journal_stop(handle);
@@ -2463,6 +2479,8 @@ out_clear_inode:
 				ext4_journal_stop(handle);
 			return err;
 		}
+		/* open/mmap will deal with failure to set key */
+		ext4_set_crypto_key(dentry);
 	}
 #endif
 	if (IS_DIRSYNC(dir))

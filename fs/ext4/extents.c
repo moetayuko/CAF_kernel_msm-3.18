@@ -40,6 +40,9 @@
 #include <asm/uaccess.h>
 #include <linux/fiemap.h>
 #include "ext4_jbd2.h"
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+#include "ext4_crypto.h"
+#endif
 #include "ext4_extents.h"
 #include "xattr.h"
 
@@ -4913,7 +4916,12 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 
 	/* Return error if mode is not supported */
 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
-		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
+		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE) ||
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	    ext4_is_encryption_policy_set(inode))
+#else
+	    false)
+#endif
 		return -EOPNOTSUPP;
 
 	if (mode & FALLOC_FL_PUNCH_HOLE)
