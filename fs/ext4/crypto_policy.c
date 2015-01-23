@@ -13,11 +13,12 @@
  * A key reference is a tuple of (keyringid, keyname).
  */
 
-#include <asm-generic/bug.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
+#include "ext4.h"
 #include "ext4_crypto.h"
+#include "xattr.h"
 
 /**
  * ext4_is_keydesc_str_valid() - Validates the key descriptor string
@@ -113,3 +114,53 @@ int ext4_is_encryption_policy_valid(const char *policy, size_t policy_len)
 	return 1;
 }
 
+/**
+ * ext4_is_encryption_policy_set() - Checks if inode has encryption policy
+ * @inode: The inode to check.
+ *
+ * Return: Zero if not set, non-zero otherwise.
+ */
+int ext4_is_encryption_policy_set(struct inode *inode)
+{
+	/* TODO(ildarm): Replace EXT4_XATTR_INDEX_USER to
+	 * EXT4_XATTR_INDEX_ENCRYPTION, once user space tools are ready. */
+	return ext4_xattr_get(inode, EXT4_XATTR_INDEX_USER,
+			      EXT4_XATTR_NAME_ENCRYPTION_POLICY, NULL, 0) > 0;
+}
+
+/**
+ * ext4_inherit_policy() - Sets a child policy from its parent
+ * @parent: Parent inode from which the policy is inherited.
+ * @child:  Child inode that inherits the policy from @parent.
+ *
+ * Return: Zero on success, non-zero otherwise
+ */
+int ext4_inherit_policy(struct inode *parent, struct inode *child)
+{
+	/* TODO(ildarm): Replace EXT4_XATTR_INDEX_USER to
+	 * EXT4_XATTR_INDEX_ENCRYPTION, once user space tools are ready. */
+	int res = 0;
+	char *buf = NULL;
+	int buf_len = ext4_xattr_get(parent, EXT4_XATTR_INDEX_USER,
+				     EXT4_XATTR_NAME_ENCRYPTION_POLICY, NULL,
+				     0);
+
+	if (buf_len <= 0)
+		return -ENOENT;
+	buf = kmalloc(buf_len, GFP_NOFS);
+	if (!buf)
+		return -ENOMEM;
+	res = ext4_xattr_get(parent, EXT4_XATTR_INDEX_USER,
+			     EXT4_XATTR_NAME_ENCRYPTION_POLICY, buf, buf_len);
+	if (res != buf_len) {
+		res = -EINVAL;
+		goto out;
+	}
+	res = ext4_xattr_set(child, EXT4_XATTR_INDEX_USER,
+			     EXT4_XATTR_NAME_ENCRYPTION_POLICY, buf, buf_len,
+			     0);
+
+out:
+	kfree(buf);
+	return res;
+}

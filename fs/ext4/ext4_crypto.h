@@ -30,5 +30,8 @@
 #define EXT4_KEY_DESCRIPTOR_MIN_SIZE 4
 
 int ext4_is_encryption_policy_valid(const char *policy, size_t policy_len);
+int ext4_is_encryption_policy_set(struct inode *inode);
+int ext4_is_key_reference_valid(const char *keyref, size_t keyref_len);
+int ext4_inherit_policy(struct inode *parent, struct inode *child);
 
 #endif	/* _EXT4_CRYPTO_H */
