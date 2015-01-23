@@ -52,15 +52,22 @@ struct ec_i2c_device {
 static int ec_i2c_forward_msg(struct ec_i2c_device *bus, int cmd,
 			      struct i2c_msg *outmsg, struct i2c_msg *inmsg)
 {
-	struct cros_ec_command msg;
+	struct cros_ec_command *msg;
+	int ret;
 
-	msg.version = 0;
-	msg.command = cmd;
-	msg.outdata = outmsg ? outmsg->buf : NULL;
-	msg.outsize = outmsg ? outmsg->len : 0;
-	msg.indata = inmsg ? inmsg->buf : NULL;
-	msg.insize = inmsg ? inmsg->len : 0;
-	return bus->ec->cmd_xfer(bus->ec, &msg);
+	msg = kzalloc(sizeof(*msg) + max(inmsg->len, outmsg->len), GFP_KERNEL);
+
+	msg->command = cmd;
+	msg->outsize = outmsg ? outmsg->len : 0;
+	msg->insize = inmsg ? inmsg->len : 0;
+
+	if (outmsg)
+		memcpy(msg->data, outmsg->buf, outmsg->len);
+
+	ret = cros_ec_cmd_xfer_status(bus->ec, msg);
+	if (ret >= 0 && inmsg)
+		memcpy(inmsg->buf, msg->data, inmsg->len);
+	return ret;
 }
 
 static int ec_i2c_limited_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
