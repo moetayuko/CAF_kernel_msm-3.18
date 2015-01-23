@@ -77,7 +77,7 @@ static void mhl_tx_destroy_timer_support(struct mhl_dev_context *dev_context);
 
 #ifdef DEBUG
 #define SYS_ATTR_NAME_TX_POWER			tx_power
-#define SYS_ATTR_NAME_STARK_CTL			set_stark_ctl
+#define SYS_ATTR_NAME_SII6031_CTL			set_sii6031_ctl
 #endif
 
 /* define SysFs object names */
@@ -1657,7 +1657,7 @@ ssize_t set_tx_power(struct device *dev, struct device_attribute *attr,
 }
 
 /*
- * set_stark_ctl() - Handle write request to the tx_power attribute file.
+ * set_sii6031_ctl() - Handle write request to the tx_power attribute file.
  *
  * Write the string "on" or "off" to this file to power on or off the
  * MHL transmitter.
@@ -1665,7 +1665,7 @@ ssize_t set_tx_power(struct device *dev, struct device_attribute *attr,
  * The return value is the number of characters in buf if successful or an
  * error code if not successful.
  */
-ssize_t set_stark_ctl(struct device *dev, struct device_attribute *attr,
+ssize_t set_sii6031_ctl(struct device *dev, struct device_attribute *attr,
 		      const char *buf, size_t count)
 {
 	struct mhl_dev_context *dev_context = dev_get_drvdata(dev);
@@ -2804,7 +2804,18 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 		mdt_destroy(dev_context);
 #endif
 #if (INCLUDE_SII6031 == 1)
-		mhl_tx_notify_otg(dev_context, false);
+		/*
+			This notification steers USB-MHL switch towards USB.
+			But for CBUS_MODE_DOWN situation we do not want to
+			go to USB yet. So skip the notification to OTG driver.
+		*/
+		if (dev_context->notify_disconnection)
+			/* mhl_tx_notify_otg(dev_context, false); */
+			;
+		else
+			MHL_TX_DBG_ERR(
+			"CBUS_MODE_DOWN or BIST, skip notification to"
+			" OTG driver.\n");
 #endif
 		destroy_rcp_input_dev(dev_context);
 		sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
@@ -3207,7 +3218,7 @@ struct device_attribute driver_attribs[] = {
 	__ATTR(SYS_ATTR_NAME_HEV_3D_DATA, 0444, show_hev_3d, NULL),
 #ifdef DEBUG
 	__ATTR(SYS_ATTR_NAME_TX_POWER, 0222, NULL, set_tx_power),
-	__ATTR(SYS_ATTR_NAME_STARK_CTL, 0222, NULL, set_stark_ctl),
+	__ATTR(SYS_ATTR_NAME_SII6031_CTL, 0222, NULL, set_sii6031_ctl),
 #endif
 
 	__ATTR_NULL
@@ -4990,7 +5001,8 @@ static void si_mhl_tx_emsc_received(struct mhl_dev_context *context)
 					MHL_TX_DBG_ERR(
 						"Bad ADOPTER_ID: %04X\n",
 						burst_id);
-					index += p_adopter_id->remaining_length;
+					index += (p_adopter_id->
+						remaining_length + 1);
 				} else {
 					MHL_TX_DBG_ERR(
 						"Bad BURST ID: %04X\n",
@@ -5074,8 +5086,10 @@ static void check_drv_intr_flags(struct mhl_dev_context *dev_context)
 				;
 			else if (dev_context->misc_flags.flags.bist_role_TE)
 				start_bist_initiator_test(dev_context);
-			else
+			else {
+				MHL_TX_DBG_ERR("[%x]\n", cbus_mode);
 				initiate_bist_test(dev_context);
+			}
 			break;
 		default:
 			;
@@ -5097,7 +5111,7 @@ static void check_drv_intr_flags(struct mhl_dev_context *dev_context)
 					MHL_TX_DBG_ERR("\n")
 					start_bist_initiator_test(dev_context);
 				} else {
-					MHL_TX_DBG_ERR("\n")
+					MHL_TX_DBG_ERR("[%x]\n", cbus_mode);
 					initiate_bist_test(dev_context);
 				}
 			} else {
@@ -5373,22 +5387,24 @@ int mhl_tx_init(struct mhl_drv_info const *drv_info, struct device *parent_dev)
 	if (status)
 		MHL_TX_DBG_ERR("sysfs_create_group failed:%d\n", status);
 
+	ret = down_interruptible(&dev_context->isr_lock);
+	if (ret) {
+		dev_err(parent_dev,
+			"Failed to acquire ISR semaphore, status: %d\n", ret);
+		goto free_device;
+	}
+
 	ret = request_threaded_irq(drv_info->irq, NULL,
 		mhl_irq_handler, IRQF_TRIGGER_LOW | IRQF_ONESHOT,
 		MHL_DEVICE_NAME, dev_context);
 	if (ret < 0) {
 		dev_err(parent_dev,
 			"request_threaded_irq failed, status: %d\n", ret);
+		up(&dev_context->isr_lock);
 		goto free_device;
 	}
 
 	/* Initialize the MHL transmitter hardware. */
-	ret = down_interruptible(&dev_context->isr_lock);
-	if (ret) {
-		dev_err(parent_dev,
-			"Failed to acquire ISR semaphore, status: %d\n", ret);
-		goto free_irq_handler;
-	}
 
 	/* Initialize EDID parser module */
 	dev_context->edid_parser_context = si_edid_create_context(dev_context,
@@ -5402,14 +5418,15 @@ int mhl_tx_init(struct mhl_drv_info const *drv_info, struct device *parent_dev)
 	else
 		ret = si_mhl_tx_initialize(dev_context);
 
+#if (INCLUDE_SII6031 == 1)
+	mhl_tx_register_mhl_discovery(dev_context);
+#endif
+	/* make initialization not interruptible by discovery logic */
 	up(&dev_context->isr_lock);
 
 	if (ret)
 		goto free_edid_context;
 
-#if (INCLUDE_SII6031 == 1)
-	mhl_tx_register_mhl_discovery(dev_context);
-#endif
 	MHL_TX_DBG_INFO("MHL transmitter successfully initialized\n");
 	dev_set_drvdata(parent_dev, dev_context);
 

@@ -277,7 +277,8 @@ struct cbus_req *get_next_cbus_transaction(struct mhl_dev_context *dev_context)
 	case CM_eCBUS_S_BIST:
 	case CM_eCBUS_D_BIST:
 	case CM_BIST_DONE_PENDING_DISCONNECT:
-		MHL_TX_DBG_INFO("CBUS not available\n");
+		MHL_TX_DBG_ERR("CBUS not available: %x\n",
+			cbus_mode);
 		return NULL;
 	default:
 		break;
@@ -426,7 +427,7 @@ void si_mhl_tx_push_block_transactions(struct mhl_dev_context *dev_context)
 	ack_byte_count = hw_context->block_protocol.received_byte_count;
 	req = dev_context->block_protocol.marshalling_req;
 	if (NULL == req) {
-		MHL_TX_DBG_ERR("%s wayward pointer%s\n", ANSI_ESC_RED_TEXT,
+		MHL_TX_DBG_WARN("%s wayward pointer%s\n", ANSI_ESC_RED_TEXT,
 			       ANSI_ESC_RESET_TEXT);
 		return;
 	}
@@ -987,6 +988,9 @@ int si_mhl_tx_initialize(struct mhl_dev_context *dev_context)
 
 	si_mhl_tx_reset_states(dev_context);
 
+	/* initialize CBUS_MODE_DOWN or BIST was not received */
+	dev_context->notify_disconnection = true;
+
 	dev_context->bist_setup.t_bist_mode_down = T_BIST_MODE_DOWN_MAX;
 
 	return dev_context->drv_info->mhl_device_initialize(
@@ -1223,6 +1227,8 @@ void si_mhl_tx_drive_states(struct mhl_dev_context *dev_context)
 	}
 	switch (si_mhl_tx_drv_get_cbus_mode(dev_context)) {
 	case CM_NO_CONNECTION:
+	case CM_NO_CONNECTION_BIST_SETUP:
+	case CM_NO_CONNECTION_BIST_STAT:
 	case CM_TRANSITIONAL_TO_eCBUS_S_BIST:
 	case CM_TRANSITIONAL_TO_eCBUS_S:
 	case CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST:
@@ -1455,6 +1461,8 @@ struct cbus_req *rapk_done(struct mhl_dev_context *dev_context,
 		si_mhl_tx_drv_switch_cbus_mode(
 			(struct drv_hw_context *)&dev_context->drv_context,
 			CM_eCBUS_S);
+			/* forget state that we had CBUS_MODE_DOWN */
+			/* dev_context->notify_disconnection = true; */
 	}
 	return req;
 }
@@ -1599,7 +1607,7 @@ static bool determine_bist_timeout_value(struct mhl_dev_context *dev_context)
 	uint32_t av_link_timeout = 0;
 	uint8_t test_sel;
 
-	MHL_TX_DBG_INFO("\n");
+	/* MHL_TX_DBG_INFO("\n"); */
 
 	test_sel = dev_context->bist_trigger_info;
 	dev_context->bist_timeout_value = 0;
@@ -1641,7 +1649,7 @@ static bool determine_bist_timeout_value(struct mhl_dev_context *dev_context)
 			}
 			if (!(test_sel & BIST_TRIGGER_ECBUS_TX_RX_MASK)) {
 				if (0 == av_link_timeout) {
-					MHL_TX_DBG_ERR("indefinite\n")
+					/* MHL_TX_DBG_ERR("indefinite\n") */
 					dev_context->bist_timeout_value = 0;
 				}
 			}
@@ -1649,7 +1657,7 @@ static bool determine_bist_timeout_value(struct mhl_dev_context *dev_context)
 		dev_context->bist_setup.t_bist_mode_down =
 			(dev_context->bist_timeout_value * 10)/100
 			+ T_BIST_MODE_DOWN_MIN;
-		MHL_TX_DBG_ERR("%d\n", dev_context->bist_timeout_value)
+		/* MHL_TX_DBG_ERR("%d\n", dev_context->bist_timeout_value) */
 	}
 	if (!dev_context->bist_timeout_value)
 		MHL_TX_DBG_ERR("No BIST timeout - wait for BIST_STOP\n");
@@ -1967,7 +1975,6 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 	uint8_t test_sel;
 	enum cbus_mode_e cbus_mode;
 	bool e_cbus_d_sel = false;
-
 	MHL_TX_DBG_ERR("\n")
 
 	if (invalid_bist_dut_parms(dev_context, &dev_context->bist_setup)) {
@@ -1979,6 +1986,7 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 	e_cbus_d_sel = test_sel & BIST_TRIGGER_TEST_E_CBUS_D ? true : false;
 	test_sel &= ~BIST_TRIGGER_E_CBUS_TYPE_MASK;
 	cbus_mode = si_mhl_tx_drv_get_cbus_mode(dev_context);
+	MHL_TX_DBG_ERR("cbus mode:[%x]\n", cbus_mode);
 	if (test_sel == 0) {
 		MHL_TX_DBG_ERR("%sNo test selected%s\n",
 				ANSI_ESC_RED_TEXT,
@@ -2025,7 +2033,6 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 			&dev_context->drv_context,
 			&dev_context->bist_setup)) {
 			MHL_TX_DBG_ERR("\n")
-
 		}
 	} else {
 		if (cbus_mode < CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST) {
@@ -2329,6 +2336,12 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 			} else if (MHL_RAP_CBUS_MODE_DOWN ==
 				   dev_context->msc_msg_data) {
 				MHL_TX_DBG_ERR("Got RAP{CBUS_MODE_DOWN}\n");
+
+				/* remember that we got CBUS_MODE_DOWN
+				so that we can skip notification to OTG
+				driver
+				*/
+				dev_context->notify_disconnection = false;
 			} else if (MHL_RAP_CBUS_MODE_UP ==
 				   dev_context->msc_msg_data) {
 				MHL_TX_DBG_ERR("Got RAP{CBUS_MODE_UP}\n");
@@ -2448,6 +2461,7 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 				     rapk_error_code_string[dev_context->
 							    msc_msg_data &
 							    0x03]);
+
 				si_mhl_tx_drv_switch_cbus_mode(
 					(struct drv_hw_context *)
 					&dev_context->drv_context,
@@ -2562,12 +2576,20 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 			    dev_context->msc_msg_data;
 			if (dev_context->msc_msg_data ==
 			    BIST_TRIGGER_IMPEDANCE_TEST) {
-				initiate_bist_test(dev_context);
+				MHL_TX_DBG_ERR("BIST_TRIGGER_IMPEDANCE_TEST"
+					"\n");
+				si_mhl_tx_drv_start_impedance_bist(
+					(struct drv_hw_context *)
+					&dev_context->
+					drv_context,
+					&dev_context->
+					bist_setup);
+				/* initiate_bist_test(dev_context); */
 			} else if (dev_context->msc_msg_data != 0) {
 				cbus_mode = dev_context->msc_msg_data &
 					BIST_TRIGGER_TEST_E_CBUS_D ?
 					CM_eCBUS_D_BIST : CM_eCBUS_S_BIST;
-				MHL_TX_DBG_ERR("\n")
+				MHL_TX_DBG_WARN("\n")
 				determine_bist_timeout_value(dev_context);
 				if (1 == si_mhl_tx_drv_switch_cbus_mode(
 					(struct drv_hw_context *)
@@ -2585,7 +2607,7 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 				break;
 			}
 
-			MHL_TX_DBG_INFO("Got BIST_STOP\n");
+			MHL_TX_DBG_ERR("Got BIST_STOP\n");
 
 			mhl_tx_stop_timer(dev_context,
 					  dev_context->bist_timer);
@@ -2614,7 +2636,7 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 			break;
 
 		default:
-			MHL_TX_DBG_WARN("Unexpected MSC message "
+			MHL_TX_DBG_ERR("Unexpected MSC message "
 					"sub-command code: 0x%02x received!\n",
 					dev_context->msc_msg_sub_command);
 			break;
@@ -2845,7 +2867,9 @@ static void si_mhl_tx_ecbus_speeds_done(struct mhl_dev_context *dev_context)
 					setup_sans_cbus1(dev_context);
 				}
 			}
-			if (send_bist_setup) {
+			if (send_bist_setup &&
+				dev_context->
+				misc_flags.flags.bist_role_TE) {
 				MHL_TX_DBG_ERR(
 				    "%sissuing BIST_SETUP%s\n",
 					ANSI_ESC_GREEN_TEXT,
@@ -2899,7 +2923,7 @@ static void si_mhl_tx_ecbus_speeds_done(struct mhl_dev_context *dev_context)
 			 * RAP support is required for MHL3 and
 			 * later devices
 			 */
-			MHL_TX_DBG_ERR(
+			MHL_TX_DBG_WARN(
 				"%sissuing CBUS_MODE_UP%s\n",
 				ANSI_ESC_GREEN_TEXT,
 				ANSI_ESC_RESET_TEXT)
@@ -3174,7 +3198,7 @@ static struct cbus_req *write_burst_done(struct mhl_dev_context *dev_context,
 		 * RAP support is required for MHL3 and
 		 * later devices
 		 */
-		MHL_TX_DBG_ERR(
+		MHL_TX_DBG_WARN(
 			"%sissuing CBUS_MODE_UP%s\n",
 			ANSI_ESC_GREEN_TEXT,
 			ANSI_ESC_RESET_TEXT)
@@ -3625,6 +3649,17 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	if (!(setup_status & BIST_READY_TERM_ERROR))
 		setup_status |= BIST_READY_TERM_READY;
 
+	if (bist_setup->avlink_pattern == BIST_AVLINK_PATTERN_FIXED_10
+		&& bist_setup->avlink_duration == 0
+		&& bist_setup->e_cbus_duration > 10) {
+
+		struct drv_hw_context *hw_context =
+			(struct drv_hw_context *)(&dev_context->drv_context);
+
+		si_mhl_tx_drv_start_infinite_av_bist(hw_context,
+			&dev_context->bist_setup);
+	}
+
 	cbus_mode = si_mhl_tx_drv_get_cbus_mode(dev_context);
 	if (CM_oCBUS_PEER_IS_MHL3_BIST_SETUP_PEER_READY == cbus_mode) {
 		mhl_tx_stop_timer(dev_context, dev_context->cbus_mode_up_timer);
@@ -3770,7 +3805,7 @@ void si_mhl_tx_process_write_burst_data(struct mhl_dev_context *dev_context)
 					(struct drv_hw_context *)
 					&dev_context->drv_context,
 					CM_oCBUS_PEER_IS_MHL3);
-				MHL_TX_DBG_ERR(
+				MHL_TX_DBG_WARN(
 					"%sissuing CBUS_MODE_UP%s\n",
 					ANSI_ESC_GREEN_TEXT,
 					ANSI_ESC_RESET_TEXT)
@@ -4477,7 +4512,7 @@ char *rap_strings_low[4][2] = {
 struct cbus_req *rap_done(struct mhl_dev_context *dev_context,
 				struct cbus_req *req, uint8_t data1)
 {
-	MHL_TX_DBG_ERR("\n")
+	MHL_TX_DBG_WARN("\n")
 	/* the only RAP commands that we send are
 	 * CBUS_MODE_UP AND CBUS_MODE_DOWN.
 	 */

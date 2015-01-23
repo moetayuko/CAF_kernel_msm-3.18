@@ -1023,13 +1023,38 @@ uint8_t qualify_pixel_clock_for_mhl(struct edid_3d_data_t *mhl_edid_3d_data,
 			break;
 		}
 	} else {
+		struct mhl_dev_context *dev_context =
+			mhl_edid_3d_data->dev_context;
+		uint32_t max_bandwidth;
+		max_bandwidth =
+			dev_context->dev_cap_cache.mdc.bandWidth;
+
+		if (0 == max_bandwidth) {
+			/* this subroutine gets called for parsing standard
+			modes, prior to parsing the range limits descriptor.
+			So assume 75MHz.
+			*/
+			max_bandwidth = 0x0F;
+		}
+		/* 5s of MHz */
+		max_bandwidth *= 5000000;
+
 		if (si_peer_supports_packed_pixel
-		    (mhl_edid_3d_data->dev_context)) {
+			(mhl_edid_3d_data->dev_context)) {
 			max_link_clock_frequency = 300000000;
+			/* twice the pixel clock and two bytes per pixel */
+			max_bandwidth *= 4;
 		} else {
 			max_link_clock_frequency = 225000000;
+			/* once the pixel clock and three bytes per pixel */
+			max_bandwidth *= 3;
 		}
+		max_link_clock_frequency =
+			(max_link_clock_frequency < max_bandwidth) ?
+		max_link_clock_frequency : max_bandwidth;
 	}
+	MHL_TX_DBG_WARN("max_link_clock_frequency = %d\n",
+		max_link_clock_frequency)
 
 	if (link_clock_frequency < max_link_clock_frequency)
 		ret_val = 1;
@@ -1113,7 +1138,7 @@ static void tx_prune_dtd_list(struct edid_3d_data_t *mhl_edid_3d_data,
 	union _18_byte_descriptor_u *p_start = p_desc;
 	MHL_TX_EDID_INFO("limit: %d\n", (uint16_t) limit);
 	if (limit) {
-		for (i = 0; i < limit - 1; ++i) {
+		for (i = 0; i < limit - number_that_we_pruned - 1; ++i) {
 			MHL_TX_EDID_INFO("i: %d\n", (uint16_t) i);
 			if ((0 != p_desc->dtd.pixel_clock_low) ||
 				(0 != p_desc->dtd.pixel_clock_high)) {
@@ -1148,18 +1173,66 @@ static void tx_prune_dtd_list(struct edid_3d_data_t *mhl_edid_3d_data,
 				}
 			}
 		}
+		MHL_TX_EDID_INFO("\n");
 
 		p_desc = p_start + (limit - number_that_we_pruned);
 		for (; number_that_we_pruned > 0;
-		     --number_that_we_pruned, --p_desc) {
+		     --number_that_we_pruned, ++p_desc) {
 			uint8_t *pu8_temp = (uint8_t *) p_desc;
 			uint8_t size;
 
 			for (size = sizeof(*p_desc); size > 0; --size)
 				*pu8_temp++ = 0;
 		}
+		MHL_TX_EDID_INFO("\n");
 	}
+	MHL_TX_EDID_INFO("\n");
 }
+
+static uint8_t calc_max_px_clk_in_MHz_div_5(struct mhl_dev_context *dev_context)
+{
+	int peer_is_mhl3;
+	uint8_t max_pixel_clock_in_MHz_div_5;
+	uint8_t max_bandwidth = dev_context->dev_cap_cache.mdc.bandWidth;
+	uint8_t tmds_speeds = dev_context->xdev_cap_cache.mxdc.tmds_speeds;
+	peer_is_mhl3 = si_mhl_tx_drv_connection_is_mhl3(dev_context);
+	if (peer_is_mhl3) {
+		if (MHL_XDC_TMDS_600 & tmds_speeds) {
+			if (_16_BPP_AVAILABLE(dev_context))
+				max_pixel_clock_in_MHz_div_5 = 60;
+			else
+				max_pixel_clock_in_MHz_div_5 = 40;
+		} else if (MHL_XDC_TMDS_300 & tmds_speeds) {
+			if (_16_BPP_AVAILABLE(dev_context))
+				max_pixel_clock_in_MHz_div_5 = 30;
+			else
+				max_pixel_clock_in_MHz_div_5 = 20;
+		} else if (MHL_XDC_TMDS_150 & tmds_speeds) {
+			if (_16_BPP_AVAILABLE(dev_context))
+				max_pixel_clock_in_MHz_div_5 = 15;
+			else
+				max_pixel_clock_in_MHz_div_5 = 8;
+		} else {
+			/* no TMDS capability at all */
+			if (_16_BPP_AVAILABLE(dev_context))
+				max_pixel_clock_in_MHz_div_5 = 0;
+			else
+				max_pixel_clock_in_MHz_div_5 = 0;
+		}
+	} else if (max_bandwidth) {
+		if (PACKED_PIXEL_AVAILABLE(dev_context))
+			max_pixel_clock_in_MHz_div_5 = max_bandwidth * 2;
+		else
+			max_pixel_clock_in_MHz_div_5 = max_bandwidth;
+	} else {
+		if (PACKED_PIXEL_AVAILABLE(dev_context))
+			max_pixel_clock_in_MHz_div_5 = 30;
+		else
+			max_pixel_clock_in_MHz_div_5 = 15;
+	}
+	return max_pixel_clock_in_MHz_div_5;
+}
+
 
 /*
  FUNCTION     :   si_mhl_tx_parse_detailed_timing_descriptor()
@@ -1228,11 +1301,24 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 					"Max Horizontal Rate in KHz: %d\n",
 					(int)p_desc->range_limits.
 					max_horizontal_rate_in_KHz);
-				MHL_TX_EDID_INFO(
-					"Max Supported pixel clock rate in "
-					"MHz/10: %d\n",
-					(int)p_desc->range_limits.
-					max_pixel_clock_in_MHz_div_10);
+				{
+					uint8_t max_pixel_clock_in_MHz_div_10;
+					max_pixel_clock_in_MHz_div_10 =
+						(calc_max_px_clk_in_MHz_div_5(
+						mhl_edid_3d_data->dev_context)
+						+ 1) / 2;
+					if (p_desc->range_limits.
+						max_pixel_clock_in_MHz_div_10 >
+						max_pixel_clock_in_MHz_div_10)
+						p_desc->range_limits.
+						max_pixel_clock_in_MHz_div_10 =
+						max_pixel_clock_in_MHz_div_10;
+					MHL_TX_EDID_INFO(
+						"Max Supported pixel clock"
+						"rate in MHz/10: %d\n",
+						(int)p_desc->range_limits.
+						max_pixel_clock_in_MHz_div_10);
+				}
 				MHL_TX_EDID_INFO(
 					"Tag for secondary timing formula "
 					"(00h=not used): %d\n",
@@ -1446,7 +1532,7 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 			 * Mark this mode for pruning by setting
 			 * horizontal active to zero
 			 */
-			MHL_TX_DBG_ERR("%smark for pruning%s %p\n",
+			MHL_TX_DBG_WARN("%smark for pruning%s %p\n",
 				ANSI_ESC_YELLOW_TEXT,
 				ANSI_ESC_RESET_TEXT,
 				p_desc);
@@ -1805,20 +1891,33 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 	/* Is there an HDMI VSDB? */
 	if (mhl_edid_3d_data->parse_data.p_HDMI_vsdb) {
 		struct HDMI_LLC_vsdb_payload_t *p_HDMI_vendor_specific_payload =
-		    &mhl_edid_3d_data->parse_data.p_HDMI_vsdb->payload_u.
-		    HDMI_LLC;
+			&mhl_edid_3d_data->parse_data.p_HDMI_vsdb->payload_u.
+			HDMI_LLC;
 		uint8_t *p_next_db =
-		    (uint8_t *) p_HDMI_vendor_specific_payload +
-		    mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
-		    length_following_header;
+			(uint8_t *)p_HDMI_vendor_specific_payload +
+			mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
+			length_following_header;
 
 		/* if deep color information is provided... */
-		if (((uint8_t *) &p_HDMI_vendor_specific_payload->byte6) <
-		    p_next_db) {
+		if (((uint8_t *)&p_HDMI_vendor_specific_payload->byte6) <
+			p_next_db) {
 			p_HDMI_vendor_specific_payload->byte6.DC_Y444 = 0;
 			p_HDMI_vendor_specific_payload->byte6.DC_30bit = 0;
 			p_HDMI_vendor_specific_payload->byte6.DC_36bit = 0;
 			p_HDMI_vendor_specific_payload->byte6.DC_48bit = 0;
+		}
+		if (((uint8_t *)
+			&p_HDMI_vendor_specific_payload->maxTMDSclock) <
+			p_next_db) {
+			uint8_t max_pixel_clock_in_MHz_div_5;
+			max_pixel_clock_in_MHz_div_5 =
+				calc_max_px_clk_in_MHz_div_5(
+				mhl_edid_3d_data->dev_context);
+			if (p_HDMI_vendor_specific_payload->maxTMDSclock
+			> max_pixel_clock_in_MHz_div_5) {
+				p_HDMI_vendor_specific_payload->maxTMDSclock =
+					max_pixel_clock_in_MHz_div_5;
+			}
 		}
 	}
 	/* prune the DTDs in block 0 */
@@ -1832,20 +1931,18 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 	DUMP_EDID_BLOCK(0, p_CEA_extension, sizeof(*p_CEA_extension));
 
 	/* prune the DTDs in the CEA-861D extension */
-#if 0
-	dtd_limit = (uint8_t) p_CEA_extension->version_u.version3.misc_support.
-		total_number_native_dtds_in_entire_EDID;
-#else
 
 	dtd_limit = (EDID_BLOCK_SIZE
 			- p_CEA_extension->byte_offset_to_18_byte_descriptors)
 		/ sizeof(p_data_u.p_long_descriptors[0]) ;
-#endif
 	tx_prune_dtd_list(mhl_edid_3d_data,
 				 &p_data_u.p_long_descriptors[0], dtd_limit);
 	DUMP_EDID_BLOCK(0, p_CEA_extension, sizeof(*p_CEA_extension));
 	/* adjust the mask according to which 2D VICs were set to zero */
-	if (mhl_edid_3d_data->parse_data.p_3d_mask) {
+	if (0 == mhl_edid_3d_data->parse_data.num_video_data_blocks) {
+		MHL_TX_DBG_ERR("VDB count is %d\n",
+		(int)mhl_edid_3d_data->parse_data.num_video_data_blocks);
+	} else if (mhl_edid_3d_data->parse_data.p_3d_mask) {
 		uint8_t lower_mask;
 		uint32_t mask32;
 		int8_t index =
@@ -1923,7 +2020,11 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 		}
 	}
 
-	if (mhl_edid_3d_data->parse_data.p_three_d) {
+	MHL_TX_EDID_INFO("\n");
+	if (0 == mhl_edid_3d_data->parse_data.num_video_data_blocks) {
+		MHL_TX_DBG_ERR("VDB count is %d\n",
+		(int)mhl_edid_3d_data->parse_data.num_video_data_blocks);
+	} else if (mhl_edid_3d_data->parse_data.p_three_d) {
 		uint8_t num_3D_structure_bytes_pruned = 0;
 		union {
 			union _3D_structure_and_detail_entry_u *p_3D;
@@ -2057,6 +2158,7 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 				   p_HDMI_vsdb->header)
 		    );
 	}
+	MHL_TX_EDID_INFO("\n");
 	/* Prune the HDMI VSDB VIC list */
 	if (mhl_edid_3d_data->parse_data.p_byte_13_through_byte_15) {
 		uint8_t length_VIC =
@@ -2071,10 +2173,12 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 				p_CEA_extension, length_VIC);
 		}
 	}
+	MHL_TX_EDID_INFO("\n");
 
 	/* Prune the SVD list and move the CEA 861-D data blocks and DTDs up */
 	prune_svd_list(mhl_edid_3d_data, p_CEA_extension);
 
+	MHL_TX_EDID_INFO("\n");
 	/* re-compute the checksum(s) */
 	SII_ASSERT(EDID_BLOCK_SIZE == sizeof(*p_EDID_block_0),
 		("\n\n unexpected size for block 0\n\n"));
@@ -2276,6 +2380,7 @@ void si_mhl_tx_enumerate_hdmi_vsdb(struct edid_3d_data_t *mhl_edid_3d_data)
 		p_next_db)
 		return;
 
+	MHL_TX_EDID_INFO("\n");
 	/*  HDMI_VIC_len is present... */
 	length_VIC = mhl_edid_3d_data->
 		parse_data.p_byte_13_through_byte_15->byte14.HDMI_VIC_len;
@@ -2292,6 +2397,7 @@ void si_mhl_tx_enumerate_hdmi_vsdb(struct edid_3d_data_t *mhl_edid_3d_data)
 				p_byte_13_through_byte_15->vicList[index] = 0;
 		}
 	}
+	MHL_TX_EDID_INFO("\n");
 	if (hdmi3D_present == 0)
 		return;
 
@@ -2301,10 +2407,19 @@ void si_mhl_tx_enumerate_hdmi_vsdb(struct edid_3d_data_t *mhl_edid_3d_data)
 	p_3D_u.p_3D = NULL;
 	length_3D = mhl_edid_3d_data->
 		parse_data.p_byte_13_through_byte_15->byte14.HDMI_3D_len;
-	limit = mhl_edid_3d_data->
-		parse_data.p_video_data_blocks_2d[vdb_index]->
-		header.fields.length_following_header;
+	MHL_TX_EDID_INFO("\n");
+	if (0 == mhl_edid_3d_data->parse_data.num_video_data_blocks) {
+		MHL_TX_DBG_ERR("VDB count is %d\n",
+		(int)mhl_edid_3d_data->parse_data.num_video_data_blocks);
+		limit = 0;
+	} else {
+		MHL_TX_EDID_INFO("\n");
+		limit = mhl_edid_3d_data->
+			parse_data.p_video_data_blocks_2d[vdb_index]->
+			header.fields.length_following_header;
+	}
 
+	MHL_TX_EDID_INFO("\n");
 	limit = (limit > 16) ? 16 : limit;
 	switch (hdmi_3D_multi_present) {
 	case 0x00:
@@ -2475,11 +2590,16 @@ void si_mhl_tx_enumerate_hdmi_vsdb(struct edid_3d_data_t *mhl_edid_3d_data)
 		break;
 	}
 
+	MHL_TX_EDID_INFO("\n");
 	mhl_edid_3d_data->parse_data.p_three_d = p_3D_u.p_3D;
 	mhl_edid_3d_data->parse_data.p_3d_limit = &p_3D_u.p_bytes[length_3D];
 	DUMP_EDID_BLOCK(0,
 		(struct CEA_extension_t *)&mhl_edid_3d_data->
 		EDID_block_data[EDID_BLOCK_SIZE], EDID_BLOCK_SIZE);
+	if (0 == mhl_edid_3d_data->parse_data.num_video_data_blocks) {
+		MHL_TX_DBG_ERR("EDID contains HDMI VSDB, but VDB count is %d\n",
+		(int)mhl_edid_3d_data->parse_data.num_video_data_blocks);
+	} else
 	while (p_3D_u.p_bytes < mhl_edid_3d_data->parse_data.p_3d_limit) {
 		uint8_t _2D_VIC_order;
 		enum _3D_structure_e _3D_structure;
@@ -2529,6 +2649,7 @@ void si_mhl_tx_enumerate_hdmi_vsdb(struct edid_3d_data_t *mhl_edid_3d_data)
 		else
 			p_3D_u.pwith_byte1++;
 	}
+	MHL_TX_EDID_INFO("\n");
 	DUMP_EDID_BLOCK(0,
 		(struct CEA_extension_t *)&mhl_edid_3d_data->
 		EDID_block_data[EDID_BLOCK_SIZE], EDID_BLOCK_SIZE);
@@ -2581,6 +2702,14 @@ void si_mhl_tx_process_3d_vic_burst(void *context,
 
 	MHL_TX_EDID_INFO("burstEntryCount3D_VIC: %d\n",
 			 mhl_edid_3d_data->parse_data.burst_entry_count_3d_vic);
+	if (0 == mhl_edid_3d_data->parse_data.num_video_data_blocks) {
+		SET_3D_FLAG(mhl_edid_3d_data,
+			    FLAGS_BURST_3D_VIC_DONE);
+		    CheckForAll3DBurstDone(mhl_edid_3d_data);
+		return;
+	}
+	MHL_TX_EDID_INFO("num VDBs:%d\n",
+		mhl_edid_3d_data->parse_data.num_video_data_blocks);
 	if (1 == p_write_burst_data->header.sequence_index) {
 		size_t _3d_vic_size;
 		_3d_vic_size =
@@ -4161,7 +4290,7 @@ static void handle_emsc_edid_complete(
 		MHL_TX_DBG_ERR("%soops!%s\n",
 			ANSI_ESC_RED_TEXT,
 			ANSI_ESC_RESET_TEXT)
-		MHL_TX_DBG_ERR("normative EDID\n")
+		MHL_TX_DBG_WARN("normative EDID\n")
 		si_edid_reset(mhl_edid_3d_data);
 		si_mhl_tx_request_first_edid_block(mhl_edid_3d_data->
 					dev_context->edid_parser_context);
@@ -4189,7 +4318,7 @@ void si_mhl_tx_initiate_edid_sequence(struct edid_3d_data_t *mhl_edid_3d_data)
 			MHL_TX_DBG_ERR("vendor specific EDID\n")
 			handle_emsc_edid_complete(mhl_edid_3d_data);
 		} else {
-			MHL_TX_DBG_ERR("normative EDID\n")
+			MHL_TX_DBG_WARN("normative EDID\n")
 			/*
 			   Initiate the EDID reading sequence see
 			   SiiMhlTxMscCommandDone for additional processing.

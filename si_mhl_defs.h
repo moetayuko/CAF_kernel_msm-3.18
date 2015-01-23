@@ -190,6 +190,8 @@ enum BurstId_e {
 	burst_id_HID_PAYLOAD = 0x0062,
 	burst_id_BLK_RCV_BUFFER_INFO = 0x0063,
 	burst_id_BITS_PER_PIXEL_FMT = 0x0064,
+	burst_id_SCP = 0x0071,
+	burst_id_DCDB = 0x0072,
 	adopter_id_RANGE_START = 0x0080,
 	LOCAL_ADOPTER_ID = SILICON_IMAGE_ADOPTER_ID,
 	/* add new burst ID's above here */

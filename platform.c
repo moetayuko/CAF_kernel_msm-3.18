@@ -128,8 +128,12 @@ u8 gpio_exp_bank2_output;
 u8 gpio_exp_bank3_output;
 u8 gpio_exp_bank4_output;
 
+#ifndef	BUILD_NUM_STRING
+#define	BUILD_NUM_STRING	"1.03.20"
+#endif
+
 static char *buildTime = "Built " __DATE__ "-" __TIME__;
-static char *buildVersion = "1.03." BUILD_NUM_STRING;
+static char *buildVersion = BUILD_NUM_STRING;
 
 struct semaphore platform_lock;
 static uint32_t platform_flags;
@@ -1429,13 +1433,13 @@ static int si_8620_parse_dt(struct device *dev)
 		i2c_adapter_num = value;
 
 	MHL_TX_DBG_INFO("Resources assigned to driver...\n");
-	MHL_TX_DBG_ERR("    Reset GPIO = %d\n",
+	MHL_TX_DBG_WARN("    Reset GPIO = %d\n",
 			starter_kit_control_gpios[MHL_RESET_INDEX].gpio);
-	MHL_TX_DBG_ERR("    Interrupt GPIO = %d\n",
+	MHL_TX_DBG_WARN("    Interrupt GPIO = %d\n",
 			starter_kit_control_gpios[MHL_INT_INDEX].gpio);
-	MHL_TX_DBG_ERR("    I2C adapter = %d\n", i2c_adapter_num);
+	MHL_TX_DBG_WARN("    I2C adapter = %d\n", i2c_adapter_num);
 	if (use_spi)
-		MHL_TX_DBG_ERR("    SPI adapter = %d\n", spi_bus_num);
+		MHL_TX_DBG_WARN("    SPI adapter = %d\n", spi_bus_num);
 
 	return 0;
 }
@@ -1450,7 +1454,7 @@ static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
 {
 	int ret;
 
-	pr_info("%s(), i2c_device_id = %p\n", __func__, id);
+	MHL_TX_DBG_WARN("%s(), i2c_device_id = %p\n", __func__, id);
 
 #if defined(SIMG_USE_DTS)
 	/*
@@ -1944,7 +1948,7 @@ static int __init si_8620_init(void)
 		buildVersion);
 	pr_info("mhl: %s\n", buildTime);
 #if (INCLUDE_HID == 1)
-	pr_info("mhl: Supports MHL3 HID\n");
+	MHL_TX_DBG_WARN("mhl: Supports MHL3 HID\n");
 #endif
 
 	sema_init(&platform_lock, 1);

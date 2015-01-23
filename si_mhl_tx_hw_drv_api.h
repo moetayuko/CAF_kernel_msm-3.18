@@ -127,7 +127,10 @@ void si_mhl_tx_read_devcap_fifo(struct drv_hw_context *hw_context,
 void si_mhl_tx_read_xdevcap_fifo(struct drv_hw_context *hw_context,
 	union MHLXDevCap_u *xdev_cap_buf);
 int si_mhl_tx_drv_get_aksv(struct drv_hw_context *hw_context, uint8_t *buffer);
-
+void si_mhl_tx_drv_bist_pattern_mapping(struct drv_hw_context *hw_context,
+	struct bist_setup_info *test_info);
+void si_mhl_tx_drv_start_infinite_av_bist(struct drv_hw_context *hw_context,
+	struct bist_setup_info *test_info);
 void si_mhl_tx_drv_start_avlink_bist(struct mhl_dev_context *dev_context,
 	struct bist_setup_info *test_info);
 void si_mhl_tx_drv_stop_avlink_bist(struct drv_hw_context *hw_context);
@@ -193,6 +196,7 @@ enum cbus_mode_e {
 	NUM_CM_MODES
 };
 
+bool si_mhl_tx_drv_cbus_mode_bist(struct drv_hw_context *hw_context);
 enum cbus_mode_e si_mhl_tx_drv_get_cbus_mode(
 	struct mhl_dev_context *dev_context);
 char *si_mhl_tx_drv_get_cbus_mode_str(enum cbus_mode_e cbus_mode);

@@ -207,6 +207,7 @@ struct mhl_dev_context {
 	void	(*notify_mhl)(int mhl_detected);
 	void *usb_ctxt;
 #endif
+	bool	notify_disconnection;	/* state var:no CBUS_MODE_DOWN/BIST */
 	struct i2c_client *client;
 	struct cdev mhl_cdev;
 	struct device *mhl_dev;

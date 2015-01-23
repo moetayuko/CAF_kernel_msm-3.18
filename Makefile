@@ -26,6 +26,14 @@
 #	make ARCH=arm KERNELPATH=~/Linaro-13.04/android/kernel/linaro/pandaboard CROSS_COMPILE=arm-eabi- clean clean
 #	
 
+ifeq ($(MHL_PRODUCT_NUM),)
+MHL_PRODUCT_NUM=8620
+endif
+
+ifeq ($(MHL_BUILD_NUM),)
+MHL_BUILD_NUM=0
+endif
+
 # Silicon Image uses DEVELOPER_BUILD_ID for sandbox build to be identified during testing.
 ifneq ($(DEVELOPER_BUILD_ID),)
 DEVELOPER_BUILD_COPY=cp sii$(MHL_PRODUCT_NUM)drv.ko sii$(MHL_PRODUCT_NUM)drv$(DEVELOPER_BUILD_ID).ko
@@ -88,7 +96,11 @@ ccflags-y += -DMANUAL_EDID_FETCH
 
 # CoC_FSM_MONITORING exports CoC state machine to GPIO pins
 # Enable only if you must for debugging. 
-ccflags-y += -DCoC_FSM_MONITORING -DBIST_MONITORING
+#ccflags-y += -DCoC_FSM_MONITORING
+#ccflags-y += -DGPIO_OSCILLOSCOPE_DEBUG
+
+# Enable only if you must for debugging. 
+#ccflags-y += -DBIST_MONITORING
 
 #BIST_DONE_DEBUG adds register dump prior to RAP{CBUS_MODE_UP}
 #ccflags-y += -DBIST_DONE_DEBUG

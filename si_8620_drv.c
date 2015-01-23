@@ -44,6 +44,7 @@
 
 #define MHL_STREAM_ID		0
 #define CONTENT_TYPE_DEFAULT	0
+#define	redo_hdcp	start_hdcp
 
 /* Local functions */
 #ifdef USE_HW_TIMER
@@ -280,6 +281,8 @@ enum intr_nums_t {
 		BIT_HDCP2X_INTR0_HDCP2X_INTR0_STAT1
 #define BIT_HDCP2_INTR_RPTR_RCVID_CHANGE \
 		BIT_HDCP2X_INTR0_HDCP2X_INTR0_STAT4
+#define BIT_HDCP2_INTR_REAUTH_REQ \
+		BIT_HDCP2X_INTR0_HDCP2X_INTR0_STAT6
 
 #define BIT_TMDS_CSTAT_P3_DISABLE_AUTO_AVIF_CLEAR	0x04
 #define BIT_TMDS_CSTAT_P3_AVIF_MANUAL_CLEAR_STROBE	0x08
@@ -425,40 +428,6 @@ uint8_t si_mhl_tx_drv_ecbus_connected(struct mhl_dev_context *dev_context)
 
 	return cbus_status & BIT_CBUS_STATUS_CBUS_CONNECTED;
 }
-#if 0
-static void enable_heartbeat(struct drv_hw_context *hw_context)
-{
-	/*
-	 * turn on disconnection based on heartbeat (as well as RSEN) -
-	 * This is no longer the default behavior.
-	 * use_heartbeat=2 is required to enable disconnection.
-	 */
-	switch (platform_get_flags() & PLATFORM_FLAG_HEARTBEAT_MASK) {
-	case PLATFORM_VALUE_DISCONN_HEARTBEAT:
-		MHL_TX_DBG_INFO
-		    ("Disconnection on heartbeat failure is enabled\n");
-		mhl_tx_modify_reg(hw_context, REG_DISC_CTRL1,
-				  BIT_DISC_CTRL1_HB_ONLY,
-				  BIT_DISC_CTRL1_HB_ONLY);
-		/* intentionally fall through */
-	case PLATFORM_VALUE_ISSUE_HEARTBEAT:
-		/* Turn on heartbeat polling */
-		MHL_TX_DBG_WARN("Heartbeat polling is enabled\n");
-		mhl_tx_write_reg(hw_context, REG_MSC_HEARTBEAT_CONTROL,
-				 0xA7);
-		break;
-	default:
-		MHL_TX_DBG_INFO
-		    ("Disconnection on heartbeat failure is disabled\n");
-		MHL_TX_DBG_INFO("heartbeat entirely disabled for compliance\n");
-		mhl_tx_modify_reg(hw_context, REG_DISC_CTRL1,
-				  BIT_DISC_CTRL1_HB_ONLY, 0x00);
-		mhl_tx_write_reg(hw_context, REG_MSC_HEARTBEAT_CONTROL,
-				 0x27);
-		break;
-	}
-}
-#endif
 
 static void disable_heartbeat(struct drv_hw_context *hw_context)
 {
@@ -962,18 +931,22 @@ static int tdm_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 			if ((tdm_status & MSK_TDM_SYNCHRONIZED) ==
 				VAL_TDM_SYNCHRONIZED) {
 
-				MHL_TX_DBG_ERR("TDM is synchronized %s\n",
+				MHL_TX_DBG_WARN("TDM is synchronized %s\n",
 					si_mhl_tx_drv_get_cbus_mode_str(
 						hw_context->cbus_mode));
 
 				if (hw_context->cbus_mode < CM_eCBUS_S) {
+					MHL_TX_DBG_WARN("DRV_INTR_TDM_SYNC"
+						" set %s\n",
+						si_mhl_tx_drv_get_cbus_mode_str(
+						hw_context->cbus_mode));
 					hw_context->intr_info->flags |=
 						DRV_INTR_TDM_SYNC;
 					hw_context->block_protocol.
 						received_byte_count = 0;
 
-					si_mhl_tx_send_blk_rcv_buf_info(
-						dev_context);
+				/* bz35994 */
+				si_mhl_tx_send_blk_rcv_buf_info(dev_context);
 #ifdef EARLY_HSIC
 					/*
 					 * todo hsic_init configures the
@@ -1054,6 +1027,7 @@ static int int_link_trn_isr(struct drv_hw_context *hw_context,
 			MHL_TX_DBG_ERR("%sTraining comma "
 				"error COC_STAT_0:0x%02x%s\n",
 				ANSI_ESC_RED_TEXT,
+				mhl_tx_read_reg(hw_context, REG_COC_STAT_0),
 				ANSI_ESC_RESET_TEXT);
 
 		} else {
@@ -1062,10 +1036,8 @@ static int int_link_trn_isr(struct drv_hw_context *hw_context,
 				mhl_tx_read_reg(hw_context, REG_COC_STAT_0),
 				ANSI_ESC_RESET_TEXT);
 		}
-		return 0;
-	} else {
-		return 0;
 	}
+	return 0;
 }
 
 static char *cbus_mode_strings[NUM_CM_MODES] = {
@@ -1164,6 +1136,7 @@ static void leave_ecbus_s_mode(struct drv_hw_context *hw_context)
 	/* bugzilla 33456 */
 	mhl_tx_write_reg(hw_context, REG_COC_CTL7, 0x06);
 }
+
 static void force_cbus_high_z(struct drv_hw_context *hw_context)
 {
 	int disc_ctrl5;
@@ -1174,6 +1147,29 @@ static void force_cbus_high_z(struct drv_hw_context *hw_context)
 	mhl_tx_write_reg(hw_context, REG_DISC_CTRL5, disc_ctrl5);
 
 }
+
+/* Used sample code for reset cbus discovery state machine
+ * Keep the code here for future use possibly
+ */
+#ifdef UNUSED_SAMPLE_CODE
+static void reset_cbus_discovery_sm(struct drv_hw_context *hw_context)
+{
+	int disc_ctrl5;
+	force_cbus_high_z(hw_context);
+
+	/* Reset state machine's state to idle */
+	mhl_tx_write_reg(hw_context, REG_DISC_STAT1, 0);
+
+	/* Trigger state machine's state change */
+	disc_ctrl5 = mhl_tx_read_reg(hw_context, REG_DISC_CTRL5);
+	mhl_tx_write_reg(hw_context, REG_DISC_CTRL5,
+		disc_ctrl5 | BIT_DISC_CTRL5_DSM_OVRIDE);
+	msleep(20);
+	mhl_tx_write_reg(hw_context, REG_DISC_CTRL5, disc_ctrl5);
+	MHL_TX_DBG_ERR("Perform discovery again![%x]\n",
+		hw_context->cbus_mode);
+}
+#endif
 
 static void ecbus_s_bist_prep(struct drv_hw_context *hw_context,
 				   struct bist_setup_info *test_info)
@@ -1421,9 +1417,6 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 				BIT_CTRL1_GPIO_I_6, BIT_CTRL1_GPIO_I_6);
 #endif
 #endif
-		si_mhl_tx_initialize_block_transport(dev_context);
-		si_mhl_tx_drv_enable_emsc_block(hw_context);
-
 		MHL_TX_DBG_WARN("hpd status: 0x%02x\n",
 				mhl_tx_read_reg(hw_context,
 						REG_CBUS_STATUS));
@@ -1513,8 +1506,9 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 
 			if (!(BITS_ES1_0_COC_STAT_0_PLL_LOCKED & coc_stat_0)) {
 				MHL_TX_DBG_ERR(
-					"%slost PLL_LOCK coc_stat_0:0x%02x%s\n",
+					"%s[%d]lost PLL_LOCK coc_stat_0:0x%02x%s\n",
 					ANSI_ESC_RED_TEXT,
+					i,
 					coc_stat_0,
 					ANSI_ESC_RESET_TEXT);
 				i = STATE_3_TRAP_LIMIT;
@@ -1545,15 +1539,16 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 			BIT_CTRL1_GPIO_I_7 | BIT_CTRL1_GPIO_I_6, 0);
 	#endif
 #endif
+		/* bz35994 */
+		msleep(50);
+		si_mhl_tx_initialize_block_transport(dev_context);
+		si_mhl_tx_drv_enable_emsc_block(hw_context);
 
 		break;
 
 	case CM_eCBUS_D_BIST:
 	case CM_eCBUS_D:
 		hw_context->cbus_mode = CM_TRANSITIONAL_TO_eCBUS_D;
-
-		si_mhl_tx_initialize_block_transport(dev_context);
-		si_mhl_tx_drv_enable_emsc_block(hw_context);
 
 		switch (mode_sel) {
 		case CM_eCBUS_D_BIST:
@@ -1588,6 +1583,11 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 		mhl_tx_write_reg(hw_context, REG_TTXTOTNUMS, 199);
 		mhl_tx_write_reg(hw_context, REG_TRXTOTNUMS, 199);
 
+		/* bz35994 */
+		msleep(50);
+		si_mhl_tx_initialize_block_transport(dev_context);
+		si_mhl_tx_drv_enable_emsc_block(hw_context);
+
 		break;
 
 	default:
@@ -1595,7 +1595,41 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 		status = -EINVAL;
 		break;
 	}
+
+	/* when cbus in BIST mode, we want to skip the notification to
+	host that an MHL disconnection happened */
+	if (si_mhl_tx_drv_cbus_mode_bist(hw_context))
+		dev_context->notify_disconnection = false;
+
 	return status;
+}
+
+bool si_mhl_tx_drv_cbus_mode_bist(struct drv_hw_context *hw_context)
+{
+	switch (hw_context->cbus_mode) {
+	case CM_NO_CONNECTION_BIST_SETUP:
+	case CM_NO_CONNECTION_BIST_STAT:
+	case CM_oCBUS_PEER_VERSION_PENDING_BIST_SETUP:
+	case CM_oCBUS_PEER_VERSION_PENDING_BIST_STAT:
+	case CM_oCBUS_PEER_IS_MHL3_BIST_SETUP:
+	case CM_oCBUS_PEER_IS_MHL3_BIST_SETUP_SENT:
+	case CM_oCBUS_PEER_IS_MHL3_BIST_SETUP_PEER_READY:
+	case CM_oCBUS_PEER_IS_MHL3_BIST_STAT:
+	case CM_TRANSITIONAL_TO_eCBUS_S_BIST:
+	case CM_TRANSITIONAL_TO_eCBUS_D_BIST:
+	case CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST:
+	case CM_TRANSITIONAL_TO_eCBUS_D_CAL_BIST:
+	case CM_eCBUS_S_BIST:
+	case CM_eCBUS_D_BIST:
+	case CM_BIST_DONE_PENDING_DISCONNECT:
+	case CM_eCBUS_S_AV_BIST:
+	case CM_eCBUS_D_AV_BIST:
+		MHL_TX_DBG_ERR("CBUS in BIST mode: %x\n",
+			hw_context->cbus_mode);
+		return true;
+	default:
+		return false;
+	}
 }
 
 enum cbus_mode_e si_mhl_tx_drv_get_cbus_mode(struct mhl_dev_context
@@ -1708,13 +1742,13 @@ void si_mhl_tx_drv_shut_down_HDCP2(struct drv_hw_context *hw_context)
 		if (++count > 256)
 			break;
 
-		MHL_TX_DBG_WARN("shutting down HDCP\n");
+		MHL_TX_DBG_INFO("shutting down HDCP\n");
 	}
 
 	/* disable encryption */
 	mhl_tx_write_reg(hw_context, REG_HDCP2X_CTRL_0, 0x82);
 
-	MHL_TX_DBG_WARN("HDCP2 Off; Last HDCP2X_DDCM Status %02X;\n",
+	MHL_TX_DBG_INFO("HDCP2 Off; Last HDCP2X_DDCM Status %02X;\n",
 			ddcm_status);
 
 	mhl_tx_modify_reg(hw_context, REG_M3_P0CTRL,
@@ -1745,7 +1779,7 @@ static bool issue_edid_read_request(struct drv_hw_context *hw_context,
 			/* restore TPI mode state */
 			mhl_tx_write_reg(hw_context, REG_LM_DDC, lm_ddc);
 		}
-		MHL_TX_DBG_INFO("\n\tRequesting EDID block:%d\n"
+		MHL_TX_DBG_WARN("\n\tRequesting EDID block:%d\n"
 				"\tcurrentEdidRequestBlock:%d\n"
 				"\tedidFifoBlockNumber:%d"
 				"ddc_status:0x%02x\n",
@@ -2124,8 +2158,7 @@ uint8_t si_mhl_tx_drv_send_cbus_command(struct drv_hw_context *hw_context,
 				 BIT_TPI_CBUS_START_GET_DEVCAP_START);
 		break;
 	case MHL_READ_DEVCAP_REG:
-		MHL_TX_DBG_INFO("Trigger DEVCAP_REG Read\n");
-		MHL_TX_DBG_INFO("Read DEVCAP (0x%02x)\n", req->reg);
+		MHL_TX_DBG_WARN("Read DEVCAP (0x%02x)\n", req->reg);
 		mhl_tx_write_reg(hw_context, REG_MSC_CMD_OR_OFFSET,
 			req->reg);
 		mhl_tx_write_reg(hw_context, REG_MSC_COMMAND_START,
@@ -2133,7 +2166,7 @@ uint8_t si_mhl_tx_drv_send_cbus_command(struct drv_hw_context *hw_context,
 		break;
 
 	case MHL_READ_XDEVCAP:
-		MHL_TX_DBG_INFO("Trigger XDEVCAP Read\n");
+		MHL_TX_DBG_WARN("Trigger XDEVCAP Read\n");
 		/* Enable DEVCAP_DONE interrupt */
 		enable_intr(hw_context, INTR_EDID, BIT_INTR9_DEVCAP_DONE);
 
@@ -2148,7 +2181,7 @@ uint8_t si_mhl_tx_drv_send_cbus_command(struct drv_hw_context *hw_context,
 				 BIT_TPI_CBUS_START_GET_DEVCAP_START);
 		break;
 	case MHL_READ_XDEVCAP_REG:
-		MHL_TX_DBG_INFO("Read XDEVCAP_REG (0x%02x)\n", req->reg);
+		MHL_TX_DBG_WARN("Read XDEVCAP_REG (0x%02x)\n", req->reg);
 		mhl_tx_write_reg(hw_context, REG_MSC_CMD_OR_OFFSET,
 				 req->reg);
 		mhl_tx_write_reg(hw_context, REG_MSC_COMMAND_START,
@@ -2253,7 +2286,7 @@ uint8_t si_mhl_tx_drv_send_cbus_command(struct drv_hw_context *hw_context,
 		break;
 
 	case MHL_WRITE_BURST:
-		MHL_TX_DBG_INFO
+		MHL_TX_DBG_WARN
 		    ("MHL_WRITE_BURST offset: 0x%02x length: 0x%02x\n",
 		     req->burst_offset, req->length);
 		hw_context->hawb_write_pending = true;
@@ -2282,18 +2315,18 @@ void si_mhl_tx_drv_set_3d_mode(struct drv_hw_context *hw_context, bool do_3D,
 {
 	if (do_3D) {
 		if (tdsFramePacking == three_d_mode) {
-			MHL_TX_DBG_INFO("using frame packing\n");
+			MHL_TX_DBG_WARN("using frame packing\n");
 
 			mhl_tx_write_reg(hw_context, REG_VID_OVRRD,
 				BIT_VID_OVRRD_PP_AUTO_DISABLE |
 				VAL_VID_OVRRD_3DCONV_EN_FRAME_PACK);
 		} else {
-			MHL_TX_DBG_INFO("NOT using frame packing\n");
+			MHL_TX_DBG_WARN("NOT using frame packing\n");
 			mhl_tx_write_reg(hw_context, REG_VID_OVRRD,
 					 BIT_VID_OVRRD_PP_AUTO_DISABLE);
 		}
 	} else {
-		MHL_TX_DBG_INFO("NOT using frame packing\n");
+		MHL_TX_DBG_WARN("NOT using frame packing\n");
 		mhl_tx_write_reg(hw_context, REG_VID_OVRRD,
 				 BIT_VID_OVRRD_PP_AUTO_DISABLE);
 	}
@@ -2374,10 +2407,10 @@ int si_mhl_tx_drv_get_edid_fifo_partial_block(struct drv_hw_context *hw_context,
 
 	ret_val = ok_to_proceed_with_ddc(hw_context);
 	if (!ret_val) {
-		MHL_TX_DBG_INFO("No HPD ret_val:0x%02x\n", ret_val);
+		MHL_TX_DBG_WARN("No HPD ret_val:0x%02x\n", ret_val);
 		return ne_NO_HPD;
 	} else {
-		MHL_TX_DBG_INFO("EDID block read complete. ret_val:0x%02x\n",
+		MHL_TX_DBG_WARN("EDID block read complete. ret_val:0x%02x\n",
 			ret_val);
 		return ne_SUCCESS;
 	}
@@ -2391,7 +2424,7 @@ int si_mhl_tx_drv_get_edid_fifo_next_block(struct drv_hw_context *hw_context,
 
 	offset = EDID_BLOCK_SIZE * (hw_context->edid_fifo_block_number & 0x01);
 
-	MHL_TX_DBG_INFO("%x %x\n", (unsigned int)hw_context,
+	MHL_TX_DBG_WARN("%x %x\n", (unsigned int)hw_context,
 			(unsigned int)edid_buf);
 	hw_context->edid_fifo_block_number++;
 
@@ -2408,11 +2441,10 @@ int si_mhl_tx_drv_get_edid_fifo_next_block(struct drv_hw_context *hw_context,
 
 	ret_val = ok_to_proceed_with_ddc(hw_context);
 	if (!ret_val) {
-		MHL_TX_DBG_INFO("No HPD ret_val:0x%02x\n", ret_val);
+		MHL_TX_DBG_WARN("No HPD ret_val:0x%02x\n", ret_val);
 		return ne_NO_HPD;
 	} else {
-		MHL_TX_DBG_ERR("EDID block read complete. ret_val:0x%02x\n",
-			ret_val);
+		MHL_TX_DBG_ERR("EDID read complete.(%02x)\n", ret_val);
 		return ne_SUCCESS;
 	}
 }
@@ -3181,27 +3213,16 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context)
 			output_clr_spc = BIT_EDID_FIELD_FORMAT_YCbCr422;
 
 /* begin BZ 32674 ( */
-#if 1
-			if (aqr_default != input_quant_range) {
-				/* do nothing */
-			} else if (acsRGB == input_clr_spc) {
+			if (aqr_default != input_quant_range)
+				;
+			else if (acsRGB == input_clr_spc)
 				input_quant_range = aqr_limited_range;
-#if 0
-				output_quant_range = aqr_full_range;
-				hw_context->outgoingAviPayLoad.namedIfData.
-					ifData_u.bitFields.pb3.
-					RGBQuantizationRange = aqr_full_range;
-#endif
-			}
-#endif
-#if 1
 			tpi_output |= BIT_TPI_OUTPUT_CSCMODE709;
 
 			/* indicate ITU BT709 */
 			hw_context->outgoingAviPayLoad.namedIfData.
 				ifData_u.bitFields.
 				colorimetryAspectRatio.Colorimetry = 2;
-#endif
 /* end BZ 32674 ) */
 
 			if (IN_MHL3_MODE(hw_context)) {
@@ -3593,9 +3614,13 @@ static void do_hpd_driven_high_callback(struct drv_hw_context *hw_context,
 #define BIT_1_DISABLED	0x04
 #define BIT_1_HIGH	0x08
 
+#ifdef GPIO_OSCILLOSCOPE_DEBUG
 #define BITS_GPIO_01_HPD_HIGH	(BIT_0_HIGH | BIT_1_HIGH)
 #define BITS_GPIO_01_HPD_LOW	0
-
+#else
+#define BITS_GPIO_01_HPD_HIGH	(BIT_1_DISABLED | BIT_0_DISABLED)
+#define BITS_GPIO_01_HPD_LOW	0
+#endif
 #define BITS_HPD_CTRL_OPEN_DRAIN_HIGH (BITS_GPIO_01_HPD_HIGH | 0x70)
 #define BITS_HPD_CTRL_PUSH_PULL_HIGH (BITS_GPIO_01_HPD_HIGH | 0x30)
 
@@ -3774,7 +3799,7 @@ int si_mhl_tx_drv_set_upstream_edid(struct drv_hw_context *hw_context,
 
 	/* If SCDT is already high, then we will not get an interrupt */
 	if (BIT_TMDS_CSTAT_P3_SCDT & reg_val) {
-		MHL_TX_DBG_INFO("SCDT status is already HIGH. "
+		MHL_TX_DBG_WARN("SCDT status is already HIGH. "
 		     "Simulate int_5: %s0x%02x%s\n",
 		     ANSI_ESC_YELLOW_TEXT,
 		     mhl_tx_read_reg(hw_context, REG_RX_HDMI_CTRL0),
@@ -3882,7 +3907,10 @@ uint8_t xdev_cap_values[4] = {
 	XDEVCAP_VAL_DEV_ROLES,
 	XDEVCAP_VAL_LOG_DEV_MAPX
 };
-
+/*
+ * todo: break up this routine so that MHL1/2 does not interfere with MHL3
+ * speculative settings.
+ */
 static void mhl3_specific_init(struct drv_hw_context *hw_context)
 {
 	/* Even in MHL3 mode, TPI:1A[0] controls DVI vs. HDMI */
@@ -3922,7 +3950,10 @@ static int init_regs(struct drv_hw_context *hw_context)
 	 * DO NOT enable wake pulses or discovery pulses until RGND == 1K
 	 * No OTG,
 	 */
-	/* this is extraneous here, this register is properly set elsewhere */
+	/*
+	 * todo: this is extraneous here, this register is properly
+	 * set elsewhere
+	 */
 	mhl_tx_write_reg(hw_context, REG_DISC_CTRL9,
 			 BIT_DISC_CTRL9_WAKE_DRVFLT |
 			 BIT_DISC_CTRL9_WAKE_PULSE_BYPASS);
@@ -4030,8 +4061,6 @@ static int init_regs(struct drv_hw_context *hw_context)
 	disable_heartbeat(hw_context);
 	disable_gen2_write_burst_rcv(hw_context);
 	disable_gen2_write_burst_xmit(hw_context);
-
-	return ret_val;
 }
 
 static void si_mhl_tx_drv_start_gen2_write_burst(struct drv_hw_context
@@ -4105,20 +4134,23 @@ void si_mhl_tx_drv_content_off(struct drv_hw_context *hw_context)
 
 void si_mhl_tx_drv_content_on(struct drv_hw_context *hw_context)
 {
-	uint8_t mask =
-	    (BIT_TPI_SC_REG_TMDS_OE | BIT_TPI_SC_TPI_AV_MUTE);
-	uint8_t reg;
-
 	/* if a path_en = 0 had stopped the video,
 	 * restart it unless done already.
 	 */
-	if (hw_context->video_ready) {
-
-		reg = mhl_tx_read_reg(hw_context, REG_TPI_SC);
-
-		if (mask == (mask & reg))
+	if (IN_MHL3_MODE(hw_context)) {
+		if (hw_context->video_ready)
 			start_video(hw_context);
+	} else {
+		uint8_t mask =
+			(BIT_TPI_SC_REG_TMDS_OE | BIT_TPI_SC_TPI_AV_MUTE);
+		uint8_t reg;
+		if (hw_context->video_ready) {
+			reg = mhl_tx_read_reg(hw_context, REG_TPI_SC);
+			if (mask == (mask & reg))
+				start_video(hw_context);
+		}
 	}
+
 }
 
 static void unmute_video(struct drv_hw_context *hw_context)
@@ -4261,8 +4293,9 @@ static void start_hdcp(struct drv_hw_context *hw_context)
 
 		mhl_tx_write_reg(hw_context, REG_HDCP2X_RPT_SMNG_K, 1);
 
-		mhl_tx_write_reg(hw_context, REG_HDCP2X_CTRL_1, 0x01);
-		mhl_tx_write_reg(hw_context, REG_HDCP2X_CTRL_1, 0x00);
+		/* bz36753: mask bit 5 for Reauth REQ */
+		mhl_tx_write_reg(hw_context, REG_HDCP2X_CTRL_1, 0x21);
+		mhl_tx_write_reg(hw_context, REG_HDCP2X_CTRL_1, 0x20);
 	} else {
 		/* First stop hdcp and video */
 		stop_video(hw_context);
@@ -4408,10 +4441,10 @@ static void video_sans_cbus1(struct mhl_dev_context *dev_context)
 
 	case BIST_AVLINK_PATTERN_FIXED_10:
 		MHL_TX_DBG_ERR("Start Fixed 10!\n");
-		mhl_tx_write_reg(hw_context,
+		mhl_tx_modify_reg(hw_context,
 			REG_TX_IP_BIST_CNTLSTA,
-			BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN |
-			BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL);
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN,
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN);
 		break;
 
 	default:
@@ -4695,7 +4728,7 @@ static int hdcp_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 
 		case VAL_TPI_COPP_LINK_STATUS_LINK_LOST:
 			MHL_TX_DBG_ERR("LINK LOST - Start HDCP\n");
-			start_hdcp(hw_context);
+			redo_hdcp(hw_context);
 			break;
 		case VAL_TPI_COPP_LINK_STATUS_RENEGOTIATION_REQ:
 			MHL_TX_DBG_INFO("tpi BSTATUS2: 0x%x\n",
@@ -4762,6 +4795,9 @@ static int hdcp2_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 		MHL_TX_DBG_ERR("HDCP2.2 Authentication Done.\n");
 
 		/* Enable high-value content / disable mute */
+
+		/* Now we entertain PATH_EN */
+		hw_context->video_ready = 1;
 	}
 
 	if (intr_status & BIT_HDCP2_INTR_AUTH_FAIL) {
@@ -4790,6 +4826,9 @@ static int hdcp2_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 				      REG_HDCP2X_RPT_RCVR_ID0,
 				      sizeof(rcvr_id_list), rcvr_id_list);
 	}
+	/* bz36753 */
+	if (intr_status & BIT_HDCP2_INTR_REAUTH_REQ)
+		MHL_TX_DBG_ERR("HDCP2.2 Reauthentication Requested.\n");
 
 	mhl_tx_write_reg(hw_context, REG_HDCP2X_INTR0, intr_status);
 
@@ -5215,7 +5254,7 @@ static void process_mhl3_dcap_rdy(struct drv_hw_context *hw_context)
 		break;
 	}
 	if (peer_is_mhl3) {
-		MHL_TX_DBG_ERR("%sdownstream device supports MHL3.0+%s\n",
+		MHL_TX_DBG_WARN("%sdownstream device supports MHL3.0+%s\n",
 		     ANSI_ESC_GREEN_TEXT, ANSI_ESC_RESET_TEXT);
 
 		mhl_tx_write_reg(hw_context,
@@ -5228,8 +5267,10 @@ static void process_mhl3_dcap_rdy(struct drv_hw_context *hw_context)
 		 * our settings.
 		 */
 		mhl3_specific_init(hw_context);
-	}
-
+	} else
+		MHL_TX_DBG_WARN("%sdownstream device doesn't"
+			"supports MHL3.0+%s\n",
+			ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT);
 }
 /*
  * mhl_cbus_isr
@@ -5372,7 +5413,9 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 			/* if DS sent CLR_HPD ensure video is not there */
 			stop_video(hw_context);
 		} else {
-			MHL_TX_DBG_ERR("%sGot SET_HPD%s\n", ANSI_ESC_GREEN_TEXT,
+			MHL_TX_DBG_ERR("%sGot SET_HPD.[%x]%s\n",
+				ANSI_ESC_GREEN_TEXT,
+				hw_context->cbus_mode,
 				ANSI_ESC_RESET_TEXT);
 		}
 
@@ -5629,7 +5672,6 @@ static int int_5_isr(struct drv_hw_context *hw_context, uint8_t int_5_status)
 			case CM_oCBUS_PEER_IS_MHL3_BIST_SETUP:
 			case CM_oCBUS_PEER_IS_MHL3_BIST_SETUP_PEER_READY:
 
-				MHL_TX_DBG_ERR("\n")
 				if (dev_context->
 					misc_flags.flags.bist_role_TE) {
 					MHL_TX_DBG_ERR(
@@ -5676,7 +5718,7 @@ static int int_5_isr(struct drv_hw_context *hw_context, uint8_t int_5_status)
 					mhl_tx_read_reg(hw_context,
 						 REG_RX_HDMI_CTRL0);
 					if (src_signal_hdmi) {
-						MHL_TX_DBG_ERR(
+						MHL_TX_DBG_WARN(
 						"source signal HDMI\n");
 #endif
 						/*
@@ -5739,8 +5781,8 @@ static int int_5_isr(struct drv_hw_context *hw_context, uint8_t int_5_status)
 			memset(&hw_context->current_avi_info_frame, 0,
 				sizeof(hw_context->current_avi_info_frame));
 #endif
-
-			stop_video(hw_context);
+			if (!si_mhl_tx_drv_cbus_mode_bist(hw_context))
+				stop_video(hw_context);
 			/* Disable infoframe interrupt */
 			enable_intr(hw_context, INTR_INFR, 0);
 		}
@@ -6054,14 +6096,20 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 {
 	int ret_val = 0;
 
+	struct mhl_dev_context *dev_context;
+	dev_context = container_of((void *)hw_context,
+	struct mhl_dev_context, drv_context);
+
 	MHL_TX_DBG_WARN("cbus_mode: %s\n",
 		si_mhl_tx_drv_get_cbus_mode_str(hw_context->cbus_mode))
 	if ((BIT_CBUS_MHL12_DISCON_INT & int_4_status) ||
 		(BIT_CBUS_MHL3_DISCON_INT & int_4_status) ||
 		(BIT_NOT_MHL_EST_INT & int_4_status)) {
 
-		MHL_TX_DBG_ERR("%sGot CBUS_DIS. MHL disconnection%s\n",
-			ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT);
+		MHL_TX_DBG_ERR("%sGot CBUS_DIS. MHL disconnection[%x]%s\n",
+			ANSI_ESC_RED_TEXT,
+			hw_context->cbus_mode,
+			ANSI_ESC_RESET_TEXT);
 		switch (hw_context->cbus_mode) {
 		case CM_TRANSITIONAL_TO_eCBUS_S_BIST:
 		case CM_TRANSITIONAL_TO_eCBUS_D_BIST:
@@ -6107,7 +6155,11 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 			hw_context->intr_info->flags |= DRV_INTR_MSC_DONE;
 			hw_context->intr_info->msc_done_data = 0;
 		}
-
+/*
+#if (INCLUDE_SII6031 == 1)
+		mhl_tx_notify_otg(dev_context, false);
+#endif
+*/
 	} else if (int_4_status & BIT_RGND_READY_INT) {
 		int disc_stat2;
 
@@ -6115,12 +6167,15 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 		    mhl_tx_read_reg(hw_context,
 				 REG_DISC_STAT2)	&
 				 MSK_DISC_STAT2_RGND;
-		MHL_TX_DBG_ERR("Cable (RGND) impedance measured (%s)\n",
-			       rgnd_value_string[disc_stat2]);
+		MHL_TX_DBG_ERR("Cable (RGND) impedance measured (%s)[%x]\n",
+			       rgnd_value_string[disc_stat2],
+			       hw_context->cbus_mode);
 
 		if (VAL_RGND_1K == disc_stat2) {
 			MHL_TX_DBG_WARN("Cable impedance = 1k (MHL Device)\n");
-
+#if (INCLUDE_SII6031 == 1)
+			mhl_tx_notify_otg(dev_context, true);
+#endif
 			mhl_tx_write_reg(hw_context, REG_DISC_CTRL9,
 				 BIT_DISC_CTRL9_WAKE_DRVFLT |
 				 BIT_DISC_CTRL9_DISC_PULSE_PROCEED);
@@ -6220,9 +6275,6 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 			/* enable remaining discovery INTRs, except MHL_EST */
 #if (INCLUDE_SII6031 == 1)
 			{
-				struct mhl_dev_context *dev_context;
-				dev_context = container_of((void *)hw_context,
-					struct mhl_dev_context, drv_context);
 				mhl_tx_notify_otg(dev_context, false);
 			}
 #endif
@@ -6241,6 +6293,8 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 		 * 8620: ENABLE_DISCOVERY is always set. On successful
 		 *               discovery, 8620 will assert MHL_EST.
 		 */
+		MHL_TX_DBG_ERR("MHL_EST asserted[%x]\n",
+			hw_context->cbus_mode);
 
 		switch (hw_context->cbus_mode) {
 		case CM_NO_CONNECTION:
@@ -6478,7 +6532,7 @@ static void enable_intr(struct drv_hw_context *hw_context,
 static void si_mhl_tx_drv_enable_emsc_block(struct drv_hw_context *hw_context)
 {
 	uint8_t intStatus;
-	MHL_TX_DBG_INFO("Enabling EMSC and EMSC interrupts\n");
+	MHL_TX_DBG_ERR("Enabling EMSC and EMSC interrupts\n");
 
 	mhl_tx_modify_reg(hw_context, REG_SPIBURSTSTAT,
 		BIT_SPIBURSTSTAT_SPI_SRST, BIT_SPIBURSTSTAT_SPI_SRST);
@@ -6499,6 +6553,7 @@ static void si_mhl_tx_drv_enable_emsc_block(struct drv_hw_context *hw_context)
 	mhl_tx_write_reg(hw_context, REG_EMSCINTR, intStatus);
 	enable_intr(hw_context, INTR_BLOCK, BIT_EMSCINTR_SPI_DVLD);
 }
+
 
 void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 	struct interrupt_info *intr_info)
@@ -6687,9 +6742,6 @@ int si_mhl_tx_chip_initialize(struct drv_hw_context *hw_context)
 	mhl_tx_write_reg(hw_context, REG_DDC_MANUAL, 0x03);
 	mhl_tx_write_reg(hw_context, REG_HDCP1X_LB_BIST, 0x00);
 
-
-	MHL_TX_DBG_ERR("72:06 -- 0x%02x\n",
-			mhl_tx_read_reg(hw_context, REG_OTP_DBYTE510))
 	si_set_cbus_mode_leds(CM_NO_CONNECTION);
 
 	ret_val = get_device_id(hw_context);
@@ -6700,12 +6752,13 @@ int si_mhl_tx_chip_initialize(struct drv_hw_context *hw_context)
 
 		hw_context->chip_device_id = (uint16_t) ret_val;
 
-		MHL_TX_DBG_ERR("%x%s: Found SiI%04X rev: %01X.%01X%s\n",
+		MHL_TX_DBG_ERR("%x%s: Found SiI%04X rev: %01X.%01X (%02X)%s\n",
 			hw_context,
 			ANSI_ESC_GREEN_TEXT,
 			hw_context->chip_device_id,
 			hw_context->chip_rev_id >> 4,
 			(hw_context->chip_rev_id & 0x0F),
+			mhl_tx_read_reg(hw_context, REG_OTP_DBYTE510),
 			ANSI_ESC_RESET_TEXT);
 #ifndef SWWA_BZ30759
 		/* Based on module parameter "crystal_khz=xxxxx". */
@@ -6923,14 +6976,14 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 	MHL_TX_DBG_WARN("lcf = %d, tcf = %d\n", link_clock_frequency,
 			top_clock_frequency);
 	if (link_clock_frequency >= top_clock_frequency) {
-		MHL_TX_DBG_ERR("3E1[3] <- 1 UNLIMITED MODE ON\n");
+		MHL_TX_DBG_WARN("3E1[3] <- 1 UNLIMITED MODE ON\n");
 		mhl_tx_modify_reg(hw_context, REG_M3_P0CTRL,
 				  BIT_M3_P0CTRL_MHL3_P0_PORT_EN |
 				  BIT_M3_P0CTRL_MHL3_P0_UNLIMIT_EN,
 				  BIT_M3_P0CTRL_MHL3_P0_PORT_EN |
 				  BIT_M3_P0CTRL_MHL3_P0_UNLIMIT_EN_ON);
 	} else {
-		MHL_TX_DBG_ERR("3E1[3] <- 0 UNLIMITED MODE OFF\n");
+		MHL_TX_DBG_WARN("3E1[3] <- 0 UNLIMITED MODE OFF\n");
 		mhl_tx_modify_reg(hw_context, REG_M3_P0CTRL,
 				  BIT_M3_P0CTRL_MHL3_P0_PORT_EN |
 				  BIT_M3_P0CTRL_MHL3_P0_UNLIMIT_EN,
@@ -7044,6 +7097,7 @@ void setup_sans_cbus1(struct mhl_dev_context *dev_context)
 	};
 	uint16_t length = sizeof(dummy_edid);
 
+	uint8_t reg_val;
 	int cstat_p3;
 
 	enable_intr(hw_context, INTR_EDID, 0);
@@ -7104,6 +7158,36 @@ void setup_sans_cbus1(struct mhl_dev_context *dev_context)
 	/* Enable SCDT interrupt to detect stable incoming clock */
 	enable_intr(hw_context, INTR_SCDT, BIT_INTR_SCDT_CHANGE);
 	do_hpd_driven_high_callback(hw_context, dummy_edid, length);
+
+	/* If SCDT is already high, then we will not get an interrupt */
+	reg_val = drive_hpd_high(hw_context, dummy_edid, length);
+	if (BIT_TMDS_CSTAT_P3_SCDT & reg_val) {
+		MHL_TX_DBG_WARN("BIST:: SCDT status is already HIGH. "
+			"Simulate int_5: %s0x%02x%s\n",
+			ANSI_ESC_YELLOW_TEXT,
+			mhl_tx_read_reg(hw_context, REG_RX_HDMI_CTRL0),
+			ANSI_ESC_RESET_TEXT);
+		int_5_isr(hw_context, BIT_INTR_SCDT_CHANGE);
+	}
+}
+
+void si_mhl_tx_drv_start_infinite_av_bist(struct drv_hw_context *hw_context,
+	struct bist_setup_info *test_info)
+{
+	MHL_TX_DBG_ERR("Start infinite AVLink: %sFixed10%s\n",
+		ANSI_ESC_GREEN_TEXT, ANSI_ESC_RESET_TEXT);
+
+	mhl_tx_write_reg(hw_context, REG_BIST_TEST_SEL, 0x0A);
+	mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL0, 0xF0);
+	mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_LOW, 0x01);
+	mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_HIGH, 0x07);
+
+	si_mhl_tx_drv_bist_pattern_mapping(hw_context, test_info);
+
+	mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA, 0x03);
+	mhl_tx_write_reg(hw_context, REG_BIST_CTRL, BIT_BIST_EN |
+				BIT_BIST_ALWAYS_ON |
+				BIT_BIST_TRANS);
 }
 
 void si_mhl_tx_drv_start_avlink_bist(struct mhl_dev_context *dev_context,
@@ -7177,38 +7261,100 @@ void si_mhl_tx_drv_start_avlink_bist(struct mhl_dev_context *dev_context,
 		MHL_TX_DBG_ERR("AV LINK_PATTERN %sFixed10%s\n",
 			ANSI_ESC_GREEN_TEXT, ANSI_ESC_RESET_TEXT);
 		mhl_tx_write_reg(hw_context, REG_BIST_TEST_SEL, 0x0A);
-		if (test_info->avlink_fixed_pat & 0x8000) {
-			/* alternate with bitwise inverse */
-			mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_LOW,
-				0x8B);
-		} else{
-			/* same 10-bit pattern every cycle */
-			mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_LOW,
-				0x81);
-		}
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_HIGH,
-			0x07);
 
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_PAT_LOW,
-				(uint8_t) test_info->avlink_fixed_pat);
-		{
-			uint8_t STX_1, STX_0, STX, E98_pre, pat_lsb, pat_msb;
-			pat_lsb = (uint8_t) test_info->avlink_fixed_pat;
-			pat_msb = (uint8_t) (test_info->avlink_fixed_pat >> 8);
-			STX_1 =
-			    ((pat_lsb >> 1) ^ (pat_lsb >> 3) ^ (pat_lsb >> 4) ^
-			     (pat_lsb >> 5) ^ (pat_lsb >> 7)) & 0x01;
-			STX_0 =
-			    ((pat_lsb >> 0) ^ (pat_lsb >> 2) ^ (pat_lsb >> 4) ^
-			     (pat_lsb >> 6)) & 0x01;
-			STX = (STX_1 << 1) | STX_0;
-			E98_pre = ((pat_msb) ^ STX) & 0x3;
-			mhl_tx_write_reg(hw_context,
-				REG_TX_IP_BIST_PAT_HIGH, E98_pre);
-		}
+		switch (test_info->avlink_data_rate) {
+		case 1:		/* 1.5 Gbps workaround*/
+			if (test_info->avlink_fixed_pat == 0x03FF) {
+				/* AVLink setting 10H/0L pattern */
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x01);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_HIGH,
+					0x07);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_PAT_LOW,
+					0xFF);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_PAT_HIGH,
+					0x01);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_CNTLSTA,
+					0x01);
+			} else {
+				/* AVLink setting 5H/5L pattern */
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x81);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_HIGH,
+					0x04);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_CNTLSTA,
+					0x41);
+			}
+			break;
+		case 2:		/* 3.0 Gbps workaround*/
+			if (test_info->avlink_fixed_pat == 0x03FF) {
+				/* AVLink setting 10H/0L pattern */
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x01);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_HIGH,
+					0x07);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_PAT_LOW,
+					0xFF);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_PAT_HIGH,
+					0x01);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_CNTLSTA,
+					0x01);
+			} else {
+				/* AVLink setting 5H/5L pattern */
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x81);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_HIGH,
+					0x01);
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_CNTLSTA,
+					0x01);
+			}
+			break;
+		case 3:		/* 6.0 Gbps */
+			if (test_info->avlink_fixed_pat & 0x8000) {
+				/* alternate with bitwise inverse - it was 8B
+				caveat, this may not work but no tests exist */
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x0B);
+			} else {
+				/* same 10-bit pattern every cycle
+				Nov 5, 2014:
+				bit 7 = 0 as per new documentation
+				bit 0 = 1 means run forever
+				*/
+				mhl_tx_write_reg(hw_context,
+					REG_TX_IP_BIST_INST_LOW,
+					0x01);
+			}
+			mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_HIGH,
+				0x07);
 
-		/* Turn on TX BIST SEL, don't enable TX BIST */
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA, 0x01);
+			si_mhl_tx_drv_bist_pattern_mapping(hw_context,
+				test_info);
+
+			/* Turn on TX BIST SEL, don't enable TX BIST */
+			mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
+				0x01);
+			break;
+		default:
+			break;
+		}
 		break;
 
 	/* remaining cases are pre-checked in invalid_bist_parms() */
@@ -7239,10 +7385,42 @@ void si_mhl_tx_drv_start_avlink_bist(struct mhl_dev_context *dev_context,
 	video_sans_cbus1(dev_context);
 }
 
+/* According to Niu:
+ * Mapping AVLINK_FIXED_H/L to XBIST register pattern.
+ * XBIST Low 8bit is same as AVLINK_FIXED_L,
+ * but XBIST High10 bit will be changed in RTL.
+ */
+void si_mhl_tx_drv_bist_pattern_mapping(struct drv_hw_context *hw_context,
+				       struct bist_setup_info *test_info)
+{
+	uint8_t STX_1, STX_0, STX, E98_pre;
+	uint8_t pat_lsb, pat_msb;
+
+	pat_lsb = (uint8_t)test_info->avlink_fixed_pat;
+	pat_msb = (uint8_t)(test_info->avlink_fixed_pat >> 8);
+	STX_1 = ((pat_lsb >> 1) ^ (pat_lsb >> 3) ^ (pat_lsb >> 4) ^
+		(pat_lsb >> 5) ^ (pat_lsb >> 7)) & 0x01;
+	STX_0 = ((pat_lsb >> 0) ^ (pat_lsb >> 2) ^ (pat_lsb >> 4) ^
+		(pat_lsb >> 6)) & 0x01;
+	STX = (STX_1 << 1) | STX_0;
+	E98_pre = ((pat_msb) ^ STX) & 0x3;
+
+	mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_PAT_LOW,
+		(uint8_t)test_info->avlink_fixed_pat);
+	mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_PAT_HIGH, E98_pre);
+}
+
 void si_mhl_tx_drv_stop_avlink_bist(struct drv_hw_context *hw_context)
 {
-	MHL_TX_DBG_ERR("AV_LINK BIST stop\n")
-	mhl_tx_write_reg(hw_context, REG_BIST_CTRL, 0x00);
+	struct mhl_dev_context *dev_context;
+	dev_context = container_of((void *)hw_context,
+		struct mhl_dev_context, drv_context);
+
+	MHL_TX_DBG_ERR("AV_LINK BIST stop[%x]\n",
+		hw_context->cbus_mode)
+
+	if (dev_context->bist_setup.avlink_duration)
+		mhl_tx_write_reg(hw_context, REG_BIST_CTRL, 0x00);
 	/* Stop IPBIST Fix10. */
 	mhl_tx_modify_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
 			  BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
@@ -7378,96 +7556,74 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 				       struct bist_setup_info *test_info)
 {
 	int status = 0;
-
+	MHL_TX_DBG_ERR("\n");
 	switch (test_info->impedance_mode) {
 	case BIST_IMPEDANCE_MODE_AVLINK_TX_LOW:
 	case BIST_IMPEDANCE_MODE_AVLINK_TX_HIGH:
 		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_LOW,
-				 0x01);
+			0x01);
 		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_HIGH,
-				 0x07);
+			0x07);
+		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL0, 0xF0);
 		if (test_info->impedance_mode ==
-		    BIST_IMPEDANCE_MODE_AVLINK_TX_LOW) {
+			BIST_IMPEDANCE_MODE_AVLINK_TX_LOW) {
 			mhl_tx_write_reg(hw_context,
-					 REG_TX_IP_BIST_PAT_LOW, 0x00);
+				REG_TX_IP_BIST_PAT_LOW, 0x00);
 			mhl_tx_write_reg(hw_context,
-					 REG_TX_IP_BIST_PAT_HIGH, 0x00);
+				REG_TX_IP_BIST_PAT_HIGH, 0x00);
 		} else {
 			mhl_tx_write_reg(hw_context,
-					 REG_TX_IP_BIST_PAT_LOW, 0xFF);
+				REG_TX_IP_BIST_PAT_LOW, 0xFF);
 			mhl_tx_write_reg(hw_context,
-					 REG_TX_IP_BIST_PAT_HIGH, 0x01);
-
+				REG_TX_IP_BIST_PAT_HIGH, 0x01);
 		}
 		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN);
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN);
 		break;
 
 	case BIST_IMPEDANCE_MODE_ECBUS_S_TX_LOW:
 	case BIST_IMPEDANCE_MODE_ECBUS_S_TX_HIGH:
-		mhl_tx_write_reg(hw_context, REG_TEST_TXCTRL, 0x81);
-		mhl_tx_write_reg(hw_context, REG_MHL_PLL_CTL2, 0x00);
-		mhl_tx_write_reg(hw_context, REG_M3_CTRL, 0x0E);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL2, 0x0B);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL5, 0x3D);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL0, 0xF0);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL0, 0xC5);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL0, 0x18);
+	case BIST_IMPEDANCE_MODE_ECBUS_S_RX:
+		/* Niu changed and clear up the setting */
+		mhl_tx_write_reg(hw_context, REG_TTXNUMB, 0x05);
+		/* disable eCBUS-S auto FSM */
+		mhl_tx_write_reg(hw_context, REG_COC_CTL0, 0x58);
+		/* CoC BIST_Length-->Infinite */
+		mhl_tx_write_reg(hw_context, REG_COC_CTL11, 0xF0);
+		/* BIST pattern */
+		mhl_tx_write_reg(hw_context, REG_COC_CTL7, 0x01);
+		/* Force FSM to 2 */
+		mhl_tx_write_reg(hw_context, REG_COC_CTL14, 0x02);
+		/* FSM write pulse */
+		mhl_tx_write_reg(hw_context, REG_COC_CTL15, 0x80);
+		/* ENABLE COC OUTPUT, [3:0] swing control */
+		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0xCD);
 
 		if (test_info->impedance_mode ==
-		    BIST_IMPEDANCE_MODE_ECBUS_S_TX_LOW) {
+			BIST_IMPEDANCE_MODE_ECBUS_S_TX_LOW ||
+			test_info->impedance_mode ==
+			BIST_IMPEDANCE_MODE_ECBUS_S_RX) {
 			mhl_tx_write_reg(hw_context, REG_COC_CTL1, 0x00);
 			mhl_tx_write_reg(hw_context, REG_COC_CTL2, 0x00);
 		} else {
 			mhl_tx_write_reg(hw_context, REG_COC_CTL1, 0x28);
 			mhl_tx_write_reg(hw_context, REG_COC_CTL2, 0x28);
 		}
-
-		mhl_tx_write_reg(hw_context, REG_TTXNUMB, 0x05);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLB, 0xFF);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLC, 0xFF);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLD, 0x00);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLE, 0x18);
-		mhl_tx_write_reg(hw_context, REG_ALICE0_ZONE_CTRL, 0xE8);
-		mhl_tx_write_reg(hw_context, REG_BGR_BIAS, 0x87);
-		mhl_tx_write_reg(hw_context, REG_ALICE0_ZONE_CTRL, 0xD0);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL3, 0x3F);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL6, 0x10);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0xCD);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL4, 0x2A);
-		mhl_tx_write_reg(hw_context, REG_MHL_PLL_CTL2, 0x80);
-		mhl_tx_write_reg(hw_context, REG_M3_SCTRL, 0x40);
-		mhl_tx_write_reg(hw_context, REG_M3_P0CTRL,
-				 BIT_M3_P0CTRL_MHL3_P0_PORT_EN);
-
+		/* TIE AVLINK low */
 		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_LOW,
-				 0x01);
+			0x01);
 		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_INST_HIGH,
-				 0x03);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_PAT_LOW,
-				 0xFF);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_PAT_HIGH,
-				 0x03);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CONF_LOW,
-				 0x08);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CONF_HIGH,
-				 0x00);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN);
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN |
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_RUN |
-				 BIT_TX_IP_BIST_CNTLSTA_TXBIST_ON);
+			0x07);
 
-		mhl_tx_write_reg(hw_context, REG_COC_CTL11, 0xF0);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL7, 0x01);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL14, 0x0C);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL15, 0x80);
+		mhl_tx_write_reg(hw_context,
+			REG_TX_IP_BIST_PAT_LOW, 0x00);
+		mhl_tx_write_reg(hw_context,
+			REG_TX_IP_BIST_PAT_HIGH, 0x00);
+		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_SEL |
+			BIT_TX_IP_BIST_CNTLSTA_TXBIST_EN);
 		break;
-
 	case BIST_IMPEDANCE_MODE_ECBUS_D_TX_LOW:
 	case BIST_IMPEDANCE_MODE_ECBUS_D_TX_HIGH:
 		mhl_tx_write_reg(hw_context, REG_TEST_TXCTRL, 0x01);
@@ -7479,7 +7635,7 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 		mhl_tx_write_reg(hw_context, REG_MHL_DOC_CTL0, 0x81);
 		mhl_tx_write_reg(hw_context, REG_MHL3_TX_ZONE_CTL, 0x00);
 		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL2, 0x0B);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL5, 0x3B);
+		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL5, 0x3D);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTL0, 0x02);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTL7, 0x06);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTLE, 0x0F);
@@ -7497,7 +7653,7 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 		mhl_tx_write_reg(hw_context, REG_DOC_CFG4, 0x02);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTL6, 0x80);
 		if (test_info->impedance_mode ==
-		    BIST_IMPEDANCE_MODE_ECBUS_D_TX_HIGH)
+			BIST_IMPEDANCE_MODE_ECBUS_D_TX_HIGH)
 			mhl_tx_write_reg(hw_context, REG_DOC_CTL6, 0x60);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTL7, 0x1E);
 		mhl_tx_write_reg(hw_context, REG_DOC_CTLE, 0x0F);
@@ -7506,8 +7662,8 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 
 	default:
 		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "IMPEDANCE_MODE field\n",
-			       test_info->impedance_mode);
+			"IMPEDANCE_MODE field\n",
+			test_info->impedance_mode);
 		status = -EINVAL;
 	}
 	return status;
@@ -7516,6 +7672,7 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 void si_mhl_tx_drv_stop_impedance_bist(struct drv_hw_context *hw_context,
 				       struct bist_setup_info *test_info)
 {
+	MHL_TX_DBG_ERR("\n");
 	switch (test_info->impedance_mode) {
 	case BIST_IMPEDANCE_MODE_AVLINK_TX_LOW:
 	case BIST_IMPEDANCE_MODE_AVLINK_TX_HIGH:
@@ -7525,38 +7682,15 @@ void si_mhl_tx_drv_stop_impedance_bist(struct drv_hw_context *hw_context,
 	case BIST_IMPEDANCE_MODE_ECBUS_S_TX_LOW:
 	case BIST_IMPEDANCE_MODE_ECBUS_S_TX_HIGH:
 		/* Restore previous values */
-		mhl_tx_write_reg(hw_context, REG_TEST_TXCTRL, 0x80);
-		mhl_tx_write_reg(hw_context, REG_MHL_PLL_CTL2, 0x00);
-		mhl_tx_write_reg(hw_context, REG_M3_CTRL, 0x07);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL2, 0x2F);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL5, 0x3F);
-		mhl_tx_write_reg(hw_context, REG_MHL_DP_CTL0, 0xBC);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL0, 0xC3);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL0, 0x5C);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL1, 0x0A);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL2, 0x14);
-
-		mhl_tx_write_reg(hw_context, REG_TTXNUMB, 0x04);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLB, 0xFF);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLC, 0xFF);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLD, 0x21);
-		mhl_tx_write_reg(hw_context, REG_COC_CTLE, 0x18);
-
-		mhl_tx_write_reg(hw_context, REG_ALICE0_ZONE_CTRL, 0xE8);
-		mhl_tx_write_reg(hw_context, REG_BGR_BIAS, 0x87);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL3, 0x40);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL6, 0x00);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0xC7);
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL4, 0x2A);
-		mhl_tx_write_reg(hw_context, REG_MHL_PLL_CTL2, 0x80);
-		mhl_tx_write_reg(hw_context, REG_M3_SCTRL, 0x41);
-		mhl_tx_write_reg(hw_context, REG_M3_P0CTRL,
-				 BIT_M3_P0CTRL_MHL3_P0_HDCP_EN);
-
-		mhl_tx_write_reg(hw_context, REG_TX_IP_BIST_CNTLSTA,
-				 0x00);
-		mhl_tx_write_reg(hw_context, REG_COC_CTL7, 0x00);
+		mhl_tx_write_reg(hw_context, REG_TTXNUMB, 0x0C);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL0, 0x40);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL11, 0xF8);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL7, 0x06);
 		mhl_tx_write_reg(hw_context, REG_COC_CTL14, 0x00);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL15, 0x80);
+		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0x07);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL1, 0x10);
+		mhl_tx_write_reg(hw_context, REG_COC_CTL2, 0x18);
 		break;
 
 	case BIST_IMPEDANCE_MODE_ECBUS_D_TX_LOW:
@@ -7575,10 +7709,10 @@ void si_mhl_tx_drv_stop_impedance_bist(struct drv_hw_context *hw_context,
 	}
 }
 
-
 int si_mhl_tx_drv_sample_edid_buffer(struct drv_hw_context *hw_context,
 				     uint8_t *edid_buf)
 {
+	/* todo: use symbolic values for register bits here */
 	mhl_tx_write_reg(hw_context, REG_EDID_FIFO_ADDR, 0);
 	mhl_tx_read_reg_block(hw_context, REG_EDID_FIFO_RD_DATA, 256,
 			      edid_buf);

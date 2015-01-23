@@ -212,7 +212,7 @@ void otg_mhl_notify(void *ctxt, int on)
 		dev_info(phy->dev,
 			"SIMG: found USB, clear bit and steer stark to USB.\n");
 		sii_switch_to_mhl(false);
-		clear_bit(MHL,&motg->inputs);
+		clear_bit(MHL, &motg->inputs);
 		queue = true;
 	}
 	if (queue && phy->state != OTG_STATE_UNDEFINED)
