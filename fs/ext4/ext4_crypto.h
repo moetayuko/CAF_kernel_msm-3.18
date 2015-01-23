@@ -223,6 +223,7 @@ int ext4_crypt_wrapper_virt(const char *enc_key, const char *iv,
 uint32_t ext4_validate_encryption_mode(uint32_t mode);
 uint32_t ext4_validate_encryption_key_size(uint32_t mode, uint32_t size);
 int ext4_is_encryption_key_set(struct inode *inode);
+int ext4_get_crypto_key_inode(struct inode *inode);
 extern struct workqueue_struct *mpage_read_workqueue;
 int ext4_allocate_crypto(size_t num_crypto_pages, size_t num_crypto_ctxs);
 void ext4_delete_crypto(void);

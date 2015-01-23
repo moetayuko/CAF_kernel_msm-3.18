@@ -122,9 +122,7 @@ int ext4_is_encryption_policy_valid(const char *policy, size_t policy_len)
  */
 int ext4_is_encryption_policy_set(struct inode *inode)
 {
-	/* TODO(ildarm): Replace EXT4_XATTR_INDEX_USER to
-	 * EXT4_XATTR_INDEX_ENCRYPTION, once user space tools are ready. */
-	return ext4_xattr_get(inode, EXT4_XATTR_INDEX_USER,
+	return ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
 			      EXT4_XATTR_NAME_ENCRYPTION_POLICY, NULL, 0) > 0;
 }
 
@@ -137,11 +135,9 @@ int ext4_is_encryption_policy_set(struct inode *inode)
  */
 int ext4_inherit_policy(struct inode *parent, struct inode *child)
 {
-	/* TODO(ildarm): Replace EXT4_XATTR_INDEX_USER to
-	 * EXT4_XATTR_INDEX_ENCRYPTION, once user space tools are ready. */
 	int res = 0;
 	char *buf = NULL;
-	int buf_len = ext4_xattr_get(parent, EXT4_XATTR_INDEX_USER,
+	int buf_len = ext4_xattr_get(parent, EXT4_XATTR_INDEX_ENCRYPTION,
 				     EXT4_XATTR_NAME_ENCRYPTION_POLICY, NULL,
 				     0);
 
@@ -150,13 +146,13 @@ int ext4_inherit_policy(struct inode *parent, struct inode *child)
 	buf = kmalloc(buf_len, GFP_NOFS);
 	if (!buf)
 		return -ENOMEM;
-	res = ext4_xattr_get(parent, EXT4_XATTR_INDEX_USER,
+	res = ext4_xattr_get(parent, EXT4_XATTR_INDEX_ENCRYPTION,
 			     EXT4_XATTR_NAME_ENCRYPTION_POLICY, buf, buf_len);
 	if (res != buf_len) {
 		res = -EINVAL;
 		goto out;
 	}
-	res = ext4_xattr_set(child, EXT4_XATTR_INDEX_USER,
+	res = ext4_xattr_set(child, EXT4_XATTR_INDEX_ENCRYPTION,
 			     EXT4_XATTR_NAME_ENCRYPTION_POLICY, buf, buf_len,
 			     0);
 
