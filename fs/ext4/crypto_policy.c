@@ -112,3 +112,4 @@ int ext4_is_encryption_policy_valid(const char *policy, size_t policy_len)
 
 	return 1;
 }
+
