@@ -3122,8 +3122,11 @@ out_clear_inode:
 				ext4_journal_stop(handle);
 			return err;
 		}
-		/* open/mmap will deal with failure to set key */
-		ext4_set_crypto_key(dentry);
+		if (EXT4_SB(dir->i_sb)->s_dir_encryption_mode !=
+		    EXT4_ENCRYPTION_MODE_INVALID) {
+			/* open/mmap will deal with failure to set key */
+			ext4_set_crypto_key(dentry);
+		}
 	}
 #endif
 	if (IS_DIRSYNC(dir))
