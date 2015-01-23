@@ -231,10 +231,13 @@ int cros_ec_check_result(struct cros_ec_device *ec_dev,
  * cros_ec_cmd_xfer - Send a command to the ChromeOS EC
  *
  * Call this to send a command to the ChromeOS EC.  This should be used
- * instead of calling the EC's cmd_xfer() callback directly.
+ * instead of calling the EC's cmd_xfer() callback directly. Note that
+ * msg->result should be checked before assuming that the command ran
+ * successfully on the EC.
  *
  * @ec_dev: EC device
  * @msg: Message to write
+ * @return: Num. of bytes transferred on success, <0 on failure
  */
 int cros_ec_cmd_xfer(struct cros_ec_device *ec_dev,
 		     struct cros_ec_command *msg);
