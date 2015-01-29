@@ -133,6 +133,16 @@ static int __clockevents_set_mode(struct clock_event_device *dev,
 			return -ENOSYS;
 		return dev->set_mode_oneshot(dev);
 
+	case CLOCK_EVT_MODE_ONESHOT_STOPPED:
+		/* Core internal bug */
+		WARN_ONCE(dev->mode != CLOCK_EVT_MODE_ONESHOT,
+			  "Current mode: %d\n", dev->mode);
+
+		if (dev->set_mode_stop_oneshot)
+			return dev->set_mode_stop_oneshot(dev);
+		else
+			return -ENOSYS;
+
 	case CLOCK_EVT_MODE_RESUME:
 		/* Optional callback */
 		if (dev->set_mode_resume)
@@ -433,7 +443,8 @@ static int clockevents_sanity_check(struct clock_event_device *dev)
 	if (dev->set_mode) {
 		/* We shouldn't be supporting new modes now */
 		WARN_ON(dev->set_mode_periodic || dev->set_mode_oneshot ||
-			dev->set_mode_shutdown || dev->set_mode_resume);
+			dev->set_mode_shutdown || dev->set_mode_resume ||
+			dev->set_mode_stop_oneshot);
 		return 0;
 	}
 

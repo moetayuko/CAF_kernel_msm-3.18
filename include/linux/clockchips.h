@@ -41,6 +41,7 @@ enum clock_event_mode {
 	CLOCK_EVT_MODE_RESUME,
 
 	/* Legacy ->set_mode() callback doesn't support below modes */
+	CLOCK_EVT_MODE_ONESHOT_STOPPED,
 };
 
 /*
@@ -86,6 +87,7 @@ enum clock_event_mode {
  * @set_mode:		legacy set mode function, only for modes <= CLOCK_EVT_MODE_RESUME.
  * @set_mode_periodic:	switch mode to periodic, if !set_mode
  * @set_mode_oneshot:	switch mode to oneshot, if !set_mode
+ * @set_mode_stop_oneshot: stop oneshot mode, if !set_mode
  * @set_mode_shutdown:	switch mode to shutdown, if !set_mode
  * @set_mode_resume:	resume clkevt device, if !set_mode
  * @broadcast:		function to broadcast events
@@ -118,12 +120,13 @@ struct clock_event_device {
 	 * Mode transition callback(s): Only one of the two groups should be
 	 * defined:
 	 * - set_mode(), only for modes <= CLOCK_EVT_MODE_RESUME.
-	 * - set_mode_{shutdown|periodic|oneshot|resume}().
+	 * - set_mode_{shutdown|periodic|oneshot|stop_oneshot|resume}().
 	 */
 	void			(*set_mode)(enum clock_event_mode mode,
 					    struct clock_event_device *);
 	int			(*set_mode_periodic)(struct clock_event_device *);
 	int			(*set_mode_oneshot)(struct clock_event_device *);
+	int			(*set_mode_stop_oneshot)(struct clock_event_device *);
 	int			(*set_mode_shutdown)(struct clock_event_device *);
 	int			(*set_mode_resume)(struct clock_event_device *);
 
