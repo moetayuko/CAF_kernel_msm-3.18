@@ -515,6 +515,7 @@ static void lapic_timer_setup(enum clock_event_mode mode,
 		break;
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
+	case CLOCK_EVT_MODE_ONESHOT_STOPPED:
 		v = apic_read(APIC_LVTT);
 		v |= (APIC_LVT_MASKED | LOCAL_TIMER_VECTOR);
 		apic_write(APIC_LVTT, v);
@@ -528,6 +529,36 @@ static void lapic_timer_setup(enum clock_event_mode mode,
 	}
 
 	local_irq_restore(flags);
+}
+
+static int lapic_set_mode_shutdown(struct clock_event_device *evt)
+{
+	lapic_timer_setup(CLOCK_EVT_MODE_SHUTDOWN, evt);
+	return 0;
+}
+
+static int lapic_set_mode_periodic(struct clock_event_device *evt)
+{
+	lapic_timer_setup(CLOCK_EVT_MODE_PERIODIC, evt);
+	return 0;
+}
+
+static int lapic_set_mode_oneshot(struct clock_event_device *evt)
+{
+	lapic_timer_setup(CLOCK_EVT_MODE_ONESHOT, evt);
+	return 0;
+}
+
+static int lapic_set_mode_stop_oneshot(struct clock_event_device *evt)
+{
+	lapic_timer_setup(CLOCK_EVT_MODE_ONESHOT_STOPPED, evt);
+	return 0;
+}
+
+static int lapic_set_mode_resume(struct clock_event_device *evt)
+{
+	lapic_timer_setup(CLOCK_EVT_MODE_RESUME, evt);
+	return 0;
 }
 
 /*
@@ -549,7 +580,11 @@ static struct clock_event_device lapic_clockevent = {
 	.features	= CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT
 			| CLOCK_EVT_FEAT_C3STOP | CLOCK_EVT_FEAT_DUMMY,
 	.shift		= 32,
-	.set_mode	= lapic_timer_setup,
+	.set_mode_shutdown	= lapic_set_mode_shutdown,
+	.set_mode_periodic	= lapic_set_mode_periodic,
+	.set_mode_oneshot	= lapic_set_mode_oneshot,
+	.set_mode_stop_oneshot	= lapic_set_mode_stop_oneshot,
+	.set_mode_resume	= lapic_set_mode_resume,
 	.set_next_event	= lapic_next_event,
 	.broadcast	= lapic_timer_broadcast,
 	.rating		= 100,
