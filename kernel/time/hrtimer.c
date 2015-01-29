@@ -559,6 +559,7 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 {
 	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
 	ktime_t expires = ktime_sub(hrtimer_get_expires(timer), base->offset);
+	struct clock_event_device *dev = __this_cpu_read(tick_cpu_device.evtdev);
 	int res;
 
 	WARN_ON_ONCE(hrtimer_get_expires_tv64(timer) < 0);
@@ -593,6 +594,10 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 	 */
 	if (cpu_base->hang_detected)
 		return 0;
+
+	/* Switchback to ONESHOT mode */
+	if (unlikely(dev->mode == CLOCK_EVT_MODE_ONESHOT_STOPPED))
+		clockevents_set_mode(dev, CLOCK_EVT_MODE_ONESHOT);
 
 	/*
 	 * Clockevents returns -ETIME, when the event was in the past.
