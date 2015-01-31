@@ -84,6 +84,11 @@
 #ifdef FEATURE_WLAN_CCX
 #include "csrCcx.h"
 #endif /* FEATURE_WLAN_CCX */
+
+#ifdef DEBUG_ROAM_DELAY
+#include "vos_utils.h"
+#endif
+
 #define CSR_NUM_IBSS_START_CHANNELS_50      4
 #define CSR_NUM_IBSS_START_CHANNELS_24      3
 #define CSR_DEF_IBSS_START_CHANNEL_50       36
@@ -4267,7 +4272,7 @@ eHalStatus csrRoamProcessCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand )
         smsLog(pMac, LOGE, FL("  session %d not found "), sessionId);
         return eHAL_STATUS_FAILURE;
     }
-    
+
     switch ( pCommand->u.roamCmd.roamReason )
     {
     case eCsrForcedDisassoc:
@@ -6413,7 +6418,14 @@ eHalStatus csrRoamProcessDisassocDeauth( tpAniSirGlobal pMac, tSmeCmd *pCommand,
     tANI_BOOLEAN fComplete = eANI_BOOLEAN_FALSE;
     eCsrRoamSubState NewSubstate;
     tANI_U32 sessionId = pCommand->sessionId;
-    
+
+    if( CSR_IS_WAIT_FOR_KEY( pMac, sessionId ) )
+    {
+        smsLog(pMac, LOG1, FL(" Stop Wait for key timer and change substate to"
+                              " eCSR_ROAM_SUBSTATE_NONE"));
+        csrRoamStopWaitForKeyTimer( pMac );
+        csrRoamSubstateChange( pMac, eCSR_ROAM_SUBSTATE_NONE, sessionId);
+    }
     // change state to 'Roaming'...
     csrRoamStateChange( pMac, eCSR_ROAMING_STATE_JOINING, sessionId );
 
@@ -6438,6 +6450,9 @@ eHalStatus csrRoamProcessDisassocDeauth( tpAniSirGlobal pMac, tSmeCmd *pCommand,
         if( fDisassoc )
         {
             status = csrRoamIssueDisassociate( pMac, sessionId, NewSubstate, fMICFailure );
+#ifdef DEBUG_ROAM_DELAY
+            vos_record_roam_event(e_SME_DISASSOC_ISSUE, NULL, 0);
+#endif /* DEBUG_ROAM_DELAY */
         }
         else
         {
@@ -6616,6 +6631,13 @@ eHalStatus csrRoamDisconnectInternal(tpAniSirGlobal pMac, tANI_U32 sessionId, eC
     {
         smsLog(pMac, LOG2, FL("called"));
         status = csrRoamIssueDisassociateCmd(pMac, sessionId, reason);
+    }
+    else
+    {
+        csrScanAbortScanForSSID(pMac, sessionId);
+        status = eHAL_STATUS_CMD_NOT_QUEUED;
+        smsLog( pMac, LOG1, FL(" Disconnect cmd not queued, Roam command is not present"
+                               " return with status %d"), status);
     }
     return (status);
 }
@@ -6861,7 +6883,11 @@ static eHalStatus csrRoamIssueReassociate( tpAniSirGlobal pMac, tANI_U32 session
 
     VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
                 FL(" calling csrSendJoinReqMsg (eWNI_SME_REASSOC_REQ)"));
-    
+#ifdef DEBUG_ROAM_DELAY
+    //HACK usign buff len as Auth type
+    vos_record_roam_event(e_SME_ISSUE_REASSOC_REQ, NULL, pProfile->negotiatedAuthType);
+    vos_record_roam_event(e_CACHE_ROAM_PEER_MAC, (void *)pSirBssDesc->bssId, 6);
+#endif
     // attempt to Join this BSS...
     return csrSendJoinReqMsg( pMac, sessionId, pSirBssDesc, pProfile, pIes, eWNI_SME_REASSOC_REQ);
 }
@@ -7333,7 +7359,8 @@ static void csrRoamRoamingStateReassocRspProcessor( tpAniSirGlobal pMac, tpSirSm
         result = eCsrReassocFailure;
 #ifdef WLAN_FEATURE_VOWIFI_11R
         if ((eSIR_SME_FT_REASSOC_TIMEOUT_FAILURE == pSmeJoinRsp->statusCode) ||
-                        (eSIR_SME_FT_REASSOC_FAILURE == pSmeJoinRsp->statusCode))
+            (eSIR_SME_FT_REASSOC_FAILURE == pSmeJoinRsp->statusCode) ||
+            (eSIR_SME_JOIN_DEAUTH_FROM_AP_DURING_ADD_STA == pSmeJoinRsp->statusCode))
         {
                 // Inform HDD to turn off FT flag in HDD 
                 if (pNeighborRoamInfo)
@@ -7736,6 +7763,9 @@ void csrRoamingStateMsgProcessor( tpAniSirGlobal pMac, void *pMsgBuf )
             {
                 smsLog(pMac, LOG1, FL("eWNI_SME_DISASSOC_RSP subState = %d"), pMac->roam.curSubState[pSmeRsp->sessionId]);
                 csrRoamRoamingStateDisassocRspProcessor( pMac, (tSirSmeDisassocRsp *)pSmeRsp );
+#ifdef DEBUG_ROAM_DELAY
+                vos_record_roam_event(e_SME_DISASSOC_COMPLETE, NULL, 0);
+#endif
             }
             break;
                    
@@ -15626,6 +15656,16 @@ eHalStatus csrQueueSmeCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOL
         return eHAL_STATUS_CSR_WRONG_STATE;
     }
 
+    if ((pMac->fScanOffload) && (pCommand->command == eSmeCommandScan))
+    {
+        csrLLInsertTail(&pMac->sme.smeScanCmdPendingList,
+                        &pCommand->Link, LL_ACCESS_LOCK);
+        // process the command queue...
+        smeProcessPendingQueue(pMac);
+        status = eHAL_STATUS_SUCCESS;
+        goto end;
+    }
+
     //We can call request full power first before putting the command into pending Q
     //because we are holding SME lock at this point.
     status = csrRequestFullPower( pMac, pCommand );
@@ -15640,7 +15680,7 @@ eHalStatus csrQueueSmeCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOL
         }
         else
         {
-             //Other commands are waiting for PMC callback, queue the new command to the pending Q
+            //Other commands are waiting for PMC callback, queue the new command to the pending Q
             //no list lock is needed since SME lock is held
             if( !fHighPriority )
             {
@@ -15649,7 +15689,7 @@ eHalStatus csrQueueSmeCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOL
             else {
                 csrLLInsertHead( &pMac->roam.roamCmdPendingList, &pCommand->Link, eANI_BOOLEAN_FALSE );
             }
-       }
+        }
     }
     else if( eHAL_STATUS_PMC_PENDING == status )
     {
@@ -15666,10 +15706,11 @@ eHalStatus csrQueueSmeCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOL
     }
     else
     {
-        //Not to decrease pMac->roam.sPendingCommands here. Caller will decrease it when it 
+        //Not to decrease pMac->roam.sPendingCommands here. Caller will decrease it when it
         //release the command.
         smsLog( pMac, LOGE, FL( "  cannot queue command %d" ), pCommand->command );
     }
+end:
     return ( status );
 }
 eHalStatus csrRoamUpdateAPWPSIE( tpAniSirGlobal pMac, tANI_U32 sessionId, tSirAPWPSIEs* pAPWPSIES )
@@ -15839,9 +15880,15 @@ void csrRoamFTPreAuthRspProcessor( tHalHandle hHal, tpSirFTPreAuthRsp pFTPreAuth
     }
     /* Start the pre-auth reassoc interval timer with a period of 400ms. When this expires, 
      * actual transition from the current to handoff AP is triggered */
+#ifdef DEBUG_ROAM_DELAY
+    vos_record_roam_event(e_CACHE_ROAM_DELAY_DATA, NULL, 0);
+#endif
     status = palTimerStart(pMac->hHdd, pMac->ft.ftSmeContext.preAuthReassocIntvlTimer,
                                                             60 * PAL_TIMER_TO_MS_UNIT,
                                                             eANI_BOOLEAN_FALSE);
+#ifdef DEBUG_ROAM_DELAY
+    vos_record_roam_event(e_SME_PREAUTH_REASSOC_START, NULL, 0);
+#endif
     if (eHAL_STATUS_SUCCESS != status)
     {
         smsLog(pMac, LOGE, FL("Preauth reassoc interval timer start failed to start with status %d"), status);
