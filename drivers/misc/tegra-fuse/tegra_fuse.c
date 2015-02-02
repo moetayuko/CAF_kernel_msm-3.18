@@ -1,3 +1,4 @@
+#if !defined(__i386__) && !defined(__arm64__)
 /*
  * Copyright (C) 2010 Google, Inc.
  * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
@@ -1352,3 +1353,4 @@ static void __exit tegra_fuse_exit(void)
 module_exit(tegra_fuse_exit);
 
 MODULE_DESCRIPTION("Fuse driver for tegra SOCs");
+#endif

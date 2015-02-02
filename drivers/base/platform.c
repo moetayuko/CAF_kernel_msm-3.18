@@ -23,7 +23,9 @@
 #include <linux/idr.h>
 #include <linux/acpi.h>
 
+#ifdef CONFIG_PLATFORM_ENABLE_IOMMU
 #include <asm/dma-iommu.h>
+#endif
 
 #include "base.h"
 #include "power/power.h"

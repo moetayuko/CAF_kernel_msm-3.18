@@ -59,8 +59,10 @@ static unsigned long change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			if (!prot_numa) {
 				pte_t old_ptent = ptent;
 				ptent = pte_modify(ptent, newprot);
+#if !defined(__i386__)		/* pte_t is a union on i386 */
 				if (ptent != old_ptent)
 					updated = true;
+#endif
 			} else {
 				struct page *page;
 

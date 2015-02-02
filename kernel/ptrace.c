@@ -27,8 +27,38 @@
 #include <linux/cn_proc.h>
 #include <linux/compat.h>
 
+#if defined(__i386__) || defined(__amd64__)
+#include <linux/tracepoint.h>
+
+void trace_sys_enter(struct pt_regs *regs, long id)
+{
+}
+	
+void trace_sys_exit(struct pt_regs *regs, long ret)
+{
+}
+
+#if 0
+
+static const char __tpstrtab_sys_enter[]
+    __attribute__((section("__tracepoints_strings"))) = "sys_enter";
+
+struct tracepoint __tracepoint_sys_enter
+      __attribute__((section("__tracepoints"))) =  
+	{ __tpstrtab_sys_enter, STATIC_KEY_INIT_FALSE, NULL, NULL, NULL };
+
+static const char __tpstrtab_sys_exit[]
+    __attribute__((section("__tracepoints_strings"))) = "sys_exit";
+
+struct tracepoint __tracepoint_sys_exit
+      __attribute__((section("__tracepoints"))) =  
+	{ __tpstrtab_sys_exit, STATIC_KEY_INIT_FALSE, NULL, NULL, NULL };
+#endif
+
+#else
 #define CREATE_TRACE_POINTS
 #include <trace/events/sys_calls.h>
+#endif
 
 static int ptrace_trapping_sleep_fn(void *flags)
 {
