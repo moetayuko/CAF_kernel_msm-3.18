@@ -323,9 +323,9 @@ static void __init qcom_smp_prepare_cpus(unsigned int max_cpus)
 	unsigned int flags = 0;
 	static const int cold_boot_flags[] = {
 		0,
-		SCM_FLAG_COLDBOOT_CPU1,
-		SCM_FLAG_COLDBOOT_CPU2,
-		SCM_FLAG_COLDBOOT_CPU3,
+		QCOM_SCM_FLAG_COLDBOOT_CPU1,
+		QCOM_SCM_FLAG_COLDBOOT_CPU2,
+		QCOM_SCM_FLAG_COLDBOOT_CPU3,
 	};
 
 	for_each_present_cpu(cpu) {
