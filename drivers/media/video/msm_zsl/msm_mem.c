@@ -136,7 +136,7 @@ static int msm_pmem_table_add(struct hlist_head *ptype,
 	region->handle = ion_import_dma_buf(client, info->fd);
 	if (IS_ERR_OR_NULL(region->handle))
 		goto out1;
-	if (ion_map_iommu(client, region->handle, domain_num, 0,
+	if (ion_map_iommu(client, region->handle, CAMERA_DOMAIN, GEN_POOL,
 				  SZ_4K, 0, &paddr, &len, 0, 0) < 0)
 		goto out2;
 #elif CONFIG_ANDROID_PMEM
@@ -181,7 +181,7 @@ static int msm_pmem_table_add(struct hlist_head *ptype,
 	return 0;
 out3:
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-	ion_unmap_iommu(client, region->handle, domain_num, 0);
+	ion_unmap_iommu(client, region->handle, CAMERA_DOMAIN, GEN_POOL);
 #endif
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 out2:
@@ -246,7 +246,7 @@ static int __msm_pmem_table_del(struct hlist_head *ptype,
 				hlist_del(node);
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 				ion_unmap_iommu(client, region->handle,
-					domain_num, 0);
+					CAMERA_DOMAIN, GEN_POOL);
 				ion_free(client, region->handle);
 #else
 				put_pmem_file(region->file);
