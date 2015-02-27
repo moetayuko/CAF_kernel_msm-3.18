@@ -3888,7 +3888,9 @@ int sdhci_add_host(struct sdhci_host *host)
 	}
 	if (caps[0] & SDHCI_CAN_VDD_180) {
 		ocr_avail |= MMC_VDD_165_195;
-
+		if(!strcmp("mmc2",mmc_hostname(host->mmc))) {
+                       ocr_avail |= MMC_VDD_29_30 | MMC_VDD_30_31;
+               }
 		mmc->max_current_180 = ((max_current_caps &
 				   SDHCI_MAX_CURRENT_180_MASK) >>
 				   SDHCI_MAX_CURRENT_180_SHIFT) *
