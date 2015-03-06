@@ -835,6 +835,7 @@
 		qcom,pull = <4>;
 		qcom,vin-sel = <2>;
 		qcom,src-sel = <0>;
+		qcom,out-strength = <3>;
 		qcom,master-en = <1>;
 		status = "okay";
 	};
