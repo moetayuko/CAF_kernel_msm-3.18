@@ -2272,6 +2272,19 @@ static struct i2c_board_info sns_i2c_borad_info[] = {
 
 #if defined(CONFIG_MPU_SENSORS_MPU6050B1) || \
 	defined(CONFIG_MPU_SENSORS_MPU6050B1_411)
+/* Hack: L710T needs I535 sensor data, but identifies as BOARD_REV14 (L710).
+ * Use samsung.hardware param to handle this.
+ */
+static int is_l710t __initdata = 0;
+static int __init detect_l710t(char *str)
+{
+	if (!strcmp(str, "SPH-L710T"))
+		is_l710t = 1;
+
+	return 0;
+}
+early_param("samsung.hardware", detect_l710t);
+
 static void mpl_init(void)
 {
 	int ret = 0;
@@ -2288,7 +2301,10 @@ static void mpl_init(void)
 		mpu_data = mpu_data_00;
 	mpu_data.reset = gpio_rev(GPIO_MAG_RST);
 #elif defined(CONFIG_MPU_SENSORS_MPU6050B1_411)
-	if (system_rev == BOARD_REV14) {
+	if (system_rev == BOARD_REV14 && is_l710t) {
+		mpu6050_data = mpu6050_data_vzw;
+		inv_mpu_ak8963_data = inv_mpu_ak8963_data_vzw;
+	} else if (system_rev == BOARD_REV14) {
 		mpu6050_data = mpu6050_data_spr;
 		inv_mpu_ak8963_data = inv_mpu_ak8963_data_spr;
 	} else if (system_rev == BOARD_REV15) {
