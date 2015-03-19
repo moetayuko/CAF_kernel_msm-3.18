@@ -247,6 +247,16 @@ static inline void __kvm_flush_dcache_pud(pud_t pud)
 
 void stage2_flush_vm(struct kvm *kvm);
 
+static inline bool __kvm_cpu_uses_extended_idmap(void)
+{
+	return false;
+}
+
+static inline void __kvm_extend_hypmap(pgd_t *boot_hyp_pgd,
+				       pgd_t *hyp_pgd,
+				       pgd_t *merged_hyp_pgd,
+				       unsigned long hyp_idmap_start) { }
+
 #endif	/* !__ASSEMBLY__ */
 
 #endif /* __ARM_KVM_MMU_H__ */
