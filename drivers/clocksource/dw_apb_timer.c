@@ -173,6 +173,8 @@ static void apbt_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		apbt_enable_int(&dw_ced->timer);
 		break;
+	default:
+		break;
 	}
 }
 

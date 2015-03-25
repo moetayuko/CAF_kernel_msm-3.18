@@ -140,6 +140,8 @@ static void nmdk_clkevt_mode(enum clock_event_mode mode,
 		break;
 	case CLOCK_EVT_MODE_RESUME:
 		break;
+	default:
+		break;
 	}
 }
 

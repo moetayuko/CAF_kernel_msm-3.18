@@ -364,6 +364,8 @@ static void hpet_set_mode(enum clock_event_mode mode,
 		}
 		hpet_print_config();
 		break;
+	default:
+		break;
 	}
 }
 

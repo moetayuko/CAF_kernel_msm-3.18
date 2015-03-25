@@ -138,6 +138,8 @@ clkevt32k_mode(enum clock_event_mode mode, struct clock_event_device *dev)
 	case CLOCK_EVT_MODE_RESUME:
 		irqmask = 0;
 		break;
+	default:
+		break;
 	}
 	at91_st_write(AT91_ST_IER, irqmask);
 }

@@ -306,6 +306,8 @@ static void exynos4_comp_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_SHUTDOWN:
 	case CLOCK_EVT_MODE_RESUME:
 		break;
+	default:
+		break;
 	}
 }
 
@@ -409,6 +411,8 @@ static inline void exynos4_tick_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
 	case CLOCK_EVT_MODE_RESUME:
+		break;
+	default:
 		break;
 	}
 }

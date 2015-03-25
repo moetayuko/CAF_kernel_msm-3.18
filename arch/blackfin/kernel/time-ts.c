@@ -173,6 +173,8 @@ static void bfin_gptmr0_set_mode(enum clock_event_mode mode,
 		break;
 	case CLOCK_EVT_MODE_RESUME:
 		break;
+	default:
+		break;
 	}
 }
 
@@ -278,6 +280,8 @@ static void bfin_coretmr_set_mode(enum clock_event_mode mode,
 		CSYNC();
 		break;
 	case CLOCK_EVT_MODE_RESUME:
+		break;
+	default:
 		break;
 	}
 }

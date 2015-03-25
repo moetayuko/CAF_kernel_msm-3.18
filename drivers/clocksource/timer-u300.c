@@ -265,6 +265,8 @@ static void u300_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		/* Ignore this call */
 		break;
+	default:
+		break;
 	}
 }
 

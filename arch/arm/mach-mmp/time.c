@@ -140,6 +140,8 @@ static void timer_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 	case CLOCK_EVT_MODE_PERIODIC:
 		break;
+	default:
+		break;
 	}
 	local_irq_restore(flags);
 }

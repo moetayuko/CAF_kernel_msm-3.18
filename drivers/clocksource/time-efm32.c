@@ -81,6 +81,8 @@ static void efm32_clock_event_set_mode(enum clock_event_mode mode,
 
 	case CLOCK_EVT_MODE_RESUME:
 		break;
+	default:
+		break;
 	}
 }
 

@@ -102,6 +102,8 @@ static void vt8500_timer_set_mode(enum clock_event_mode mode,
 			regbase + TIMER_CTRL_VAL);
 		writel(0, regbase + TIMER_IER_VAL);
 		break;
+	default:
+		break;
 	}
 }
 

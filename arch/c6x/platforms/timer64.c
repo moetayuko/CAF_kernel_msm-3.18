@@ -146,6 +146,8 @@ static void set_clock_mode(enum clock_event_mode mode,
 		break;
 	case CLOCK_EVT_MODE_RESUME:
 		break;
+	default:
+		break;
 	}
 }
 

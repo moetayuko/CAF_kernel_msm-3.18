@@ -142,6 +142,8 @@ static void xilinx_timer_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		pr_info("%s: resume\n", __func__);
 		break;
+	default:
+		break;
 	}
 }
 

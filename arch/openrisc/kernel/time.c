@@ -68,6 +68,8 @@ static void openrisc_timer_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		pr_debug(KERN_INFO "%s: resume\n", __func__);
 		break;
+	default:
+		break;
 	}
 }
 

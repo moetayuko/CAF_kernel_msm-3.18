@@ -190,6 +190,8 @@ static void mxs_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		/* Left event sources disabled, no more interrupts appear */
 		break;
+	default:
+		break;
 	}
 }
 

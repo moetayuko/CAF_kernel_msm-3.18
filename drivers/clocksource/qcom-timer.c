@@ -95,6 +95,8 @@ static void msm_timer_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
 		break;
+	default:
+		break;
 	}
 	writel_relaxed(ctrl, event_base + TIMER_ENABLE);
 }

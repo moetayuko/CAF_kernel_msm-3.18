@@ -74,6 +74,8 @@ static void ckevt_dc21285_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_SHUTDOWN:
 		*CSR_TIMER1_CNTL = 0;
 		break;
+	default:
+		break;
 	}
 }
 

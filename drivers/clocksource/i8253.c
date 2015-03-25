@@ -136,6 +136,8 @@ static void init_pit_timer(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_RESUME:
 		/* Nothing to do here */
 		break;
+	default:
+		break;
 	}
 	raw_spin_unlock(&i8253_lock);
 }

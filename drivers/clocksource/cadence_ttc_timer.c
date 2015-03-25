@@ -224,6 +224,8 @@ static void ttc_set_mode(enum clock_event_mode mode,
 		writel_relaxed(ctrl_reg,
 				timer->base_addr + TTC_CNT_CNTRL_OFFSET);
 		break;
+	default:
+		break;
 	}
 }
 

@@ -105,6 +105,8 @@ static void txx9tmr_set_mode(enum clock_event_mode mode,
 		__raw_writel(TIMER_CCD, &tmrptr->ccdr);
 		__raw_writel(0, &tmrptr->itmr);
 		break;
+	default:
+		break;
 	}
 }
 

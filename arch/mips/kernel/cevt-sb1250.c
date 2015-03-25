@@ -64,6 +64,8 @@ static void sibyte_set_mode(enum clock_event_mode mode,
 	case CLOCK_EVT_MODE_UNUSED:	/* shuddup gcc */
 	case CLOCK_EVT_MODE_RESUME:
 		;
+	default:
+		break;
 	}
 }
 
