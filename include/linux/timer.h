@@ -196,6 +196,9 @@ extern void set_timer_slack(struct timer_list *time, int slack_hz);
  */
 extern unsigned long get_next_timer_interrupt(unsigned long now);
 
+/* To be used from cpusets, only */
+extern void timer_quiesce_cpu(void *cpup);
+
 /*
  * Timer-statistics info:
  */

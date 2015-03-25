@@ -1604,50 +1604,80 @@ static int init_timers_cpu(int cpu)
 	return 0;
 }
 
-#ifdef CONFIG_HOTPLUG_CPU
-static void migrate_timer_list(struct tvec_base *new_base, struct list_head *head)
+#if defined(CONFIG_HOTPLUG_CPU) || defined(CONFIG_CPUSETS)
+static void migrate_timer_list(struct tvec_base *new_base,
+			       struct list_head *head, bool remove_pinned)
 {
 	struct timer_list *timer;
+	struct list_head pinned_list;
+	int is_pinned;
+
+	INIT_LIST_HEAD(&pinned_list);
 
 	while (!list_empty(head)) {
 		timer = list_first_entry(head, struct timer_list, entry);
+
+		is_pinned = tbase_get_pinned(timer->base);
+		if (!remove_pinned && is_pinned) {
+			list_move_tail(&timer->entry, &pinned_list);
+			continue;
+		}
+
 		/* We ignore the accounting on the dying cpu */
-		detach_timer(timer, false);
+		detach_if_pending(timer, tbase_get_base(timer->base), false);
+
 		timer_set_base(timer, new_base);
 		internal_add_timer(new_base, timer);
 	}
+
+	if (!list_empty(&pinned_list))
+		list_splice_tail(&pinned_list, head);
 }
 
-static void migrate_timers(int cpu)
+/* Migrate timers from 'cpu' to this_cpu */
+static void __migrate_timers(int cpu, bool remove_pinned)
 {
 	struct tvec_base *old_base;
 	struct tvec_base *new_base;
+	unsigned long flags;
 	int i;
 
-	BUG_ON(cpu_online(cpu));
 	old_base = per_cpu(tvec_bases, cpu);
 	new_base = get_cpu_var(tvec_bases);
 	/*
 	 * The caller is globally serialized and nobody else
 	 * takes two locks at once, deadlock is not possible.
 	 */
-	spin_lock_irq(&new_base->lock);
+	spin_lock_irqsave(&new_base->lock, flags);
 	spin_lock_nested(&old_base->lock, SINGLE_DEPTH_NESTING);
 
 	BUG_ON(old_base->running_timer);
 
 	for (i = 0; i < TVR_SIZE; i++)
-		migrate_timer_list(new_base, old_base->tv1.vec + i);
+		migrate_timer_list(new_base, old_base->tv1.vec + i,
+				   remove_pinned);
 	for (i = 0; i < TVN_SIZE; i++) {
-		migrate_timer_list(new_base, old_base->tv2.vec + i);
-		migrate_timer_list(new_base, old_base->tv3.vec + i);
-		migrate_timer_list(new_base, old_base->tv4.vec + i);
-		migrate_timer_list(new_base, old_base->tv5.vec + i);
+		migrate_timer_list(new_base, old_base->tv2.vec + i,
+				remove_pinned);
+		migrate_timer_list(new_base, old_base->tv3.vec + i,
+				remove_pinned);
+		migrate_timer_list(new_base, old_base->tv4.vec + i,
+				remove_pinned);
+		migrate_timer_list(new_base, old_base->tv5.vec + i,
+				remove_pinned);
 	}
 
 	spin_unlock(&old_base->lock);
-	spin_unlock_irq(&new_base->lock);
+	spin_unlock_irqrestore(&new_base->lock, flag);
 	put_cpu_var(tvec_bases);
+}
+#endif /* CONFIG_HOTPLUG_CPU || CONFIG_CPUSETS */
+
+#ifdef CONFIG_HOTPLUG_CPU
+static void migrate_timers(int cpu)
+{
+	BUG_ON(cpu_online(cpu));
+	__migrate_timers(cpu, true);
 }
 #endif /* CONFIG_HOTPLUG_CPU */
 
