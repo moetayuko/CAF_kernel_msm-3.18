@@ -692,6 +692,10 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 		 if (unlikely(expires.tv64 == KTIME_MAX)) {
 			if (ts->nohz_mode == NOHZ_MODE_HIGHRES)
 				hrtimer_cancel(&ts->sched_timer);
+			else
+				/* stop clock event device */
+				clockevents_set_mode(dev,
+						CLOCK_EVT_MODE_ONESHOT_STOPPED);
 			goto out;
 		}
 

@@ -537,7 +537,19 @@ hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
 	if (cpu_base->hang_detected)
 		return;
 
-	tick_program_event(cpu_base->expires_next, 1);
+	if (cpu_base->expires_next.tv64 != KTIME_MAX) {
+		tick_program_event(cpu_base->expires_next, 1);
+	} else {
+		struct clock_event_device *dev =
+			__this_cpu_read(tick_cpu_device.evtdev);
+		/*
+		* Don't need clockevent device anymore, stop it.
+		*
+		* We reach here only for NOHZ_MODE_HIGHRES mode and we are
+		* guaranteed that no timers/hrtimers are enqueued on this cpu.
+		*/
+		clockevents_set_mode(dev, CLOCK_EVT_MODE_ONESHOT_STOPPED);
+	}
 }
 
 /*
@@ -1328,9 +1340,36 @@ retry:
 	cpu_base->expires_next = expires_next;
 	raw_spin_unlock(&cpu_base->lock);
 
-	/* Reprogramming necessary ? */
-	if (expires_next.tv64 == KTIME_MAX ||
-	    !tick_program_event(expires_next, 0)) {
+	if (expires_next.tv64 == KTIME_MAX) {
+		struct clock_event_device *dev =
+			__this_cpu_read(tick_cpu_device.evtdev);
+
+		cpu_base->hang_detected = 0;
+
+		/*
+		 * Don't need clockevent device anymore, stop it.
+		 *
+		 * We reach here only for NOHZ_MODE_HIGHRES mode and we are
+		 * guaranteed that no timers/hrtimers are enqueued on this cpu.
+		 *
+		 * Most of the scenarios will be covered by similar code
+		 * present in hrtimer_force_reprogram(), as we always try to
+		 * evaluate tick requirement on idle/irq exit and cancel
+		 * tick-sched hrtimer when tick isn't required anymore.
+		 *
+		 * It is required here as well as a special case.
+		 *
+		 * Last hrtimer fires on a tickless CPU and doesn't rearm
+		 * itself. tick_nohz_irq_exit() reevaluates next event and it
+		 * gets expires == KTIME_MAX. Because tick was already stopped,
+		 * and last expires == new_expires, we return early. And the
+		 * clockevent device is never stopped.
+		 */
+		clockevents_set_mode(dev, CLOCK_EVT_MODE_ONESHOT_STOPPED);
+		return;
+	}
+
+	if (!tick_program_event(expires_next, 0)) {
 		cpu_base->hang_detected = 0;
 		return;
 	}
