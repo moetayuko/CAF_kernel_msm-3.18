@@ -55,6 +55,7 @@ enum hrtimer_restart {
  * 0x01		enqueued into rbtree
  * 0x02		callback function running
  * 0x04		timer is migrated to another cpu
+ * 0x08		timer is pinned to a cpu
  *
  * Special cases:
  * 0x03		callback function running and enqueued
@@ -81,6 +82,8 @@ enum hrtimer_restart {
 #define HRTIMER_STATE_ENQUEUED	0x01
 #define HRTIMER_STATE_CALLBACK	0x02
 #define HRTIMER_STATE_MIGRATE	0x04
+#define HRTIMER_PINNED_SHIFT	3
+#define HRTIMER_STATE_PINNED	(1 << HRTIMER_PINNED_SHIFT)
 
 /**
  * struct hrtimer - the basic hrtimer structure
