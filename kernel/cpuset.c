@@ -1288,8 +1288,8 @@ static int quiesce_cpuset(struct cpuset *cs, int turning_on)
 	for_each_cpu(from_cpu, cs->cpus_allowed) {
 		smp_call_function_any(&cpumask, hrtimer_quiesce_cpu, &from_cpu,
 				      1);
-	smp_call_function_any(&cpumask, timer_quiesce_cpu, &from_cpu,
-			      1);
+		smp_call_function_any(&cpumask, timer_quiesce_cpu, &from_cpu,
+				      1);
 	}
 
 	return 0;
