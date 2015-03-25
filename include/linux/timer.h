@@ -49,7 +49,7 @@ extern struct tvec_base boot_tvec_bases;
 #endif
 
 /*
- * Note that all tvec_bases are at least 4 byte aligned and lower two bits
+ * Note that all tvec_bases are at least 8 byte aligned and lower three bits
  * of base in timer_list is guaranteed to be zero. Use them for flags.
  *
  * A deferrable timer will work normally when the system is busy, but
@@ -61,14 +61,18 @@ extern struct tvec_base boot_tvec_bases;
  * the completion of the running instance from IRQ handlers, for example,
  * by calling del_timer_sync().
  *
+ * A pinned timer is allowed to run only on the cpu mentioned and shouldn't be
+ * migrated to any other CPU.
+ *
  * Note: The irq disabled callback execution is a special case for
  * workqueue locking issues. It's not meant for executing random crap
  * with interrupts disabled. Abuse is monitored!
  */
 #define TIMER_DEFERRABLE		0x1LU
 #define TIMER_IRQSAFE			0x2LU
+#define TIMER_PINNED			0x4LU
 
-#define TIMER_FLAG_MASK			0x3LU
+#define TIMER_FLAG_MASK			0x7LU
 
 #define __TIMER_INITIALIZER(_function, _expires, _data, _flags) { \
 		.entry = { .prev = TIMER_ENTRY_STATIC },	\
@@ -179,8 +183,6 @@ extern int mod_timer_pinned(struct timer_list *timer, unsigned long expires);
 
 extern void set_timer_slack(struct timer_list *time, int slack_hz);
 
-#define TIMER_NOT_PINNED	0
-#define TIMER_PINNED		1
 /*
  * The jiffies value which is added to now, when there is no timer
  * in the timer wheel:
