@@ -22,7 +22,8 @@ CONTENTS:
   1.6 What is memory spread ?
   1.7 What is sched_load_balance ?
   1.8 What is sched_relax_domain_level ?
-  1.9 How do I use cpusets ?
+  1.9 What is quiesce?
+  1.10 How do I use cpusets ?
 2. Usage Examples and Syntax
   2.1 Basic Usage
   2.2 Adding/removing cpus
@@ -581,7 +582,21 @@ If your situation is:
 then increasing 'sched_relax_domain_level' would benefit you.
 
 
-1.9 How do I use cpusets ?
+1.9 What is quiesce ?
+--------------------------------------
+We need to migrate away all the background kernel activities (Unbound) for
+systems requiring isolation of cores (HPC, Real time, networking, etc). After
+creating cpusets, you can write 1 or 0 to cpuset.quiesce file.
+
+Writing '1': on this file would migrate unbound/unpinned timers and hrtimers
+away from the CPUs of the cpuset in question. Also it would disallow addition of
+any new unpinned timers & hrtimers to isolated CPUs.
+
+Writing '0': will disable isolation of CPUs in current cpuset and unpinned
+timers/hrtimers would be allowed in future on these CPUs.
+
+
+1.10 How do I use cpusets ?
 --------------------------
 
 In order to minimize the impact of cpusets on critical kernel

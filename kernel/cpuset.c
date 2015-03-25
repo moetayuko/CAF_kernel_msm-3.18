@@ -43,10 +43,12 @@
 #include <linux/pagemap.h>
 #include <linux/proc_fs.h>
 #include <linux/rcupdate.h>
+#include <linux/tick.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/security.h>
 #include <linux/slab.h>
+#include <linux/smp.h>
 #include <linux/spinlock.h>
 #include <linux/stat.h>
 #include <linux/string.h>
@@ -171,6 +173,7 @@ typedef enum {
 	CS_SCHED_LOAD_BALANCE,
 	CS_SPREAD_PAGE,
 	CS_SPREAD_SLAB,
+	CS_QUIESCE,
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
@@ -213,6 +216,14 @@ static inline int is_spread_slab(const struct cpuset *cs)
 {
 	return test_bit(CS_SPREAD_SLAB, &cs->flags);
 }
+
+static inline int is_cpu_quiesced(const struct cpuset *cs)
+{
+	return test_bit(CS_QUIESCE, &cs->flags);
+}
+
+/* Mask of CPUs which have requested isolation */
+cpumask_var_t cpuset_quiesced_cpus_mask;
 
 static struct cpuset top_cpuset = {
 	.flags = ((1 << CS_ONLINE) | (1 << CS_CPU_EXCLUSIVE) |
@@ -1238,6 +1249,53 @@ static int update_relax_domain_level(struct cpuset *cs, s64 val)
 }
 
 /**
+ * quiesce_cpuset - Move unbound timers/hrtimers away from cpuset.cpus
+ * @cs: cpuset to be quiesced
+ *
+ * For isolating a core with cpusets we require all unbound timers/hrtimers to
+ * move away from isolated core. We migrate these to one of the CPUs which
+ * hasn't isolated itself yet. And the CPU is selected by
+ * smp_call_function_any() routine.
+ *
+ * Currently we are only migrating timers and hrtimers away.
+ */
+static int quiesce_cpuset(struct cpuset *cs, int turning_on)
+{
+	int from_cpu;
+	cpumask_t cpumask;
+
+	/* Fail if we are already in the requested state */
+	if (!(is_cpu_quiesced(cs) ^ turning_on))
+		return -EINVAL;
+
+	if (!turning_on) {
+		cpumask_andnot(cpuset_quiesced_cpus_mask,
+			       cpuset_quiesced_cpus_mask, cs->cpus_allowed);
+		return 0;
+	}
+
+	cpumask_andnot(&cpumask, cpu_online_mask, cs->cpus_allowed);
+	cpumask_andnot(&cpumask, &cpumask, cpuset_quiesced_cpus_mask);
+
+	if (cpumask_empty(&cpumask)) {
+		pr_err("%s: Couldn't find a CPU to migrate to\n", __func__);
+		return -EPERM;
+	}
+
+	cpumask_or(cpuset_quiesced_cpus_mask, cpuset_quiesced_cpus_mask,
+		   cs->cpus_allowed);
+
+	for_each_cpu(from_cpu, cs->cpus_allowed) {
+		smp_call_function_any(&cpumask, hrtimer_quiesce_cpu, &from_cpu,
+				      1);
+	smp_call_function_any(&cpumask, timer_quiesce_cpu, &from_cpu,
+			      1);
+	}
+
+	return 0;
+}
+
+/**
  * update_tasks_flags - update the spread flags of tasks in the cpuset.
  * @cs: the cpuset in which each task's spread flags needs to be changed
  *
@@ -1285,6 +1343,12 @@ static int update_flag(cpuset_flagbits_t bit, struct cpuset *cs,
 	err = validate_change(cs, trialcs);
 	if (err < 0)
 		goto out;
+
+	if (bit == CS_QUIESCE) {
+		err = quiesce_cpuset(cs, turning_on);
+		if (err)
+		       return err;
+	}
 
 	balance_flag_changed = (is_sched_load_balance(cs) !=
 				is_sched_load_balance(trialcs));
@@ -1550,6 +1614,7 @@ typedef enum {
 	FILE_MEMORY_PRESSURE,
 	FILE_SPREAD_PAGE,
 	FILE_SPREAD_SLAB,
+	FILE_CPU_QUIESCE,
 } cpuset_filetype_t;
 
 static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
@@ -1592,6 +1657,9 @@ static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
 		break;
 	case FILE_SPREAD_SLAB:
 		retval = update_flag(CS_SPREAD_SLAB, cs, val);
+		break;
+	case FILE_CPU_QUIESCE:
+		retval = update_flag(CS_QUIESCE, cs, val);
 		break;
 	default:
 		retval = -EINVAL;
@@ -1764,6 +1832,8 @@ static u64 cpuset_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
 		return is_spread_page(cs);
 	case FILE_SPREAD_SLAB:
 		return is_spread_slab(cs);
+	case FILE_CPU_QUIESCE:
+		return is_cpu_quiesced(cs);
 	default:
 		BUG();
 	}
@@ -1891,6 +1961,13 @@ static struct cftype files[] = {
 		.read_u64 = cpuset_read_u64,
 		.write_u64 = cpuset_write_u64,
 		.private = FILE_MEMORY_PRESSURE_ENABLED,
+	},
+
+	{
+		.name = "quiesce",
+		.read_u64 = cpuset_read_u64,
+		.write_u64 = cpuset_write_u64,
+		.private = FILE_CPU_QUIESCE,
 	},
 
 	{ }	/* terminate */
@@ -2088,6 +2165,8 @@ int __init cpuset_init(void)
 
 	if (!alloc_cpumask_var(&cpus_attach, GFP_KERNEL))
 		BUG();
+
+	BUG_ON(!zalloc_cpumask_var(&cpuset_quiesced_cpus_mask, GFP_KERNEL));
 
 	return 0;
 }
