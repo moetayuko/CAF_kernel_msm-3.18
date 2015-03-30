@@ -222,7 +222,6 @@ struct ioctl_native_cmd {
 	_IOR(MSM_CAM_IOCTL_MAGIC, 52, struct msm_cam_evt_divert_frame *)
 
 #define MCTL_CAM_IOCTL_SET_FOCUS \
-#define MCTL_CAM_IOCTL_SET_FOCUS \
 	_IOW(MSM_CAM_IOCTL_MAGIC, 53, uint32_t)
 
 #define MSM_CAM_IOCTL_STATS_UNREG_BUF \
