@@ -163,16 +163,6 @@ config AD5791
 	  module will be called ad5791.
 
 config AD7303
-	tristate "Analog Devices AD7303 DAC driver"
-	depends on SPI
-	help
-	  Say yes here to build support for Analog Devices AD7303 Digital to Analog
-	  Converters (DAC).
-
-	  To compile this driver as module choose M here: the module will be called
-	  ad7303.
-
-config AD7303
 	tristate "Analog Devices Analog Devices AD7303 DAC driver"
 	depends on SPI
 	select IIO_BUFFER
@@ -194,6 +184,14 @@ config MAX517
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called max517.
+
+config MAX5821
+	tristate "Maxim MAX5821 DAC driver"
+	depends on I2C
+	depends on OF
+	help
+	  Say yes here to build support for Maxim MAX5821
+	  10 bits DAC.
 
 config MCP4725
 	tristate "MCP4725 DAC driver"

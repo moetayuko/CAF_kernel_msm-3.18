@@ -37,6 +37,7 @@
 #include <linux/videodev2.h>
 #include <linux/workqueue.h>
 #include <linux/of_graph.h>
+#include <linux/interrupt.h>
 
 #include <media/adv7604.h>
 #include <media/v4l2-ctrls.h>
@@ -1594,7 +1595,7 @@ static int adv7604_query_dv_timings(struct v4l2_subdev *sd,
 			bt->height += hdmi_read16(sd, 0x0b, 0xfff);
 			bt->il_vfrontporch = hdmi_read16(sd, 0x2c, 0x1fff) / 2;
 			bt->il_vsync = hdmi_read16(sd, 0x30, 0x1fff) / 2;
-			bt->vbackporch = hdmi_read16(sd, 0x34, 0x1fff) / 2;
+			bt->il_vbackporch = hdmi_read16(sd, 0x34, 0x1fff) / 2;
 		}
 		adv7604_fill_optional_dv_timings_fields(sd, timings);
 	} else {
@@ -2735,13 +2736,22 @@ static int adv7604_parse_dt(struct adv7604_state *state)
 	/* Hardcode the remaining platform data fields. */
 	state->pdata.disable_pwrdnb = 0;
 	state->pdata.disable_cable_det_rst = 0;
-	state->pdata.default_input = -1;
+	state->pdata.default_input = 0;
 	state->pdata.blank_data = 1;
 	state->pdata.alt_data_sat = 1;
 	state->pdata.op_format_mode_sel = ADV7604_OP_FORMAT_MODE0;
 	state->pdata.bus_order = ADV7604_BUS_ORDER_RGB;
 
 	return 0;
+}
+
+static irqreturn_t adv7604_irq_handler(int irq, void *devid)
+{
+	struct adv7604_state *state = devid;
+
+	adv7604_isr(&state->sd, 0, NULL);
+
+	return IRQ_HANDLED;
 }
 
 static int adv7604_probe(struct i2c_client *client,
@@ -2793,6 +2803,17 @@ static int adv7604_probe(struct i2c_client *client,
 	} else {
 		v4l_err(client, "No platform data!\n");
 		return -ENODEV;
+	}
+
+	/* Request IRQ if available. */
+	if (client->irq) {
+		err = request_threaded_irq(client->irq, NULL, adv7604_irq_handler,
+					   IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
+					   KBUILD_MODNAME, state);
+		if (err < 0) {
+			v4l2_err(client, "Request interrupt error\n");
+			return err;
+		}
 	}
 
 	/* Request GPIOs. */
@@ -2961,6 +2982,9 @@ static int adv7604_remove(struct i2c_client *client)
 	media_entity_cleanup(&sd->entity);
 	adv7604_unregister_clients(to_state(sd));
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
+	if (client->irq)
+		free_irq(client->irq, state);
+
 	return 0;
 }
 

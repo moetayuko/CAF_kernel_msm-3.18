@@ -35,15 +35,12 @@
 
 #define ADI_ES_VSIZE		255
 
-#define JESD204B_GT_RX		0
-#define JESD204B_GT_TX		1
-
-
 struct child_clk {
 	struct device 		*dev;
 	struct clk_hw		hw;
 	unsigned long 		rate;
 	bool			enabled;
+	bool			tx;
 	unsigned			num;
 };
 
@@ -63,6 +60,7 @@ struct jesd204b_gt_state {
 	dma_addr_t		buf_phys;
 	struct bin_attribute 	bin;
 	unsigned			size;
+	unsigned			lanes;
 	int			lane;
 	int			prescale;
 	unsigned			vers_id;
@@ -78,6 +76,7 @@ struct jesd204b_gt_state {
 	unsigned			tx_sys_clk_sel;
 	unsigned			tx_out_clk_sel;
 	bool			use_cpll;
+	bool 			use_lpm;
 
 	struct delayed_work	sync_work;
 };
@@ -100,12 +99,86 @@ static inline unsigned int jesd204b_gt_read(struct jesd204b_gt_state *st,
 	return ioread32(st->regs + reg);
 }
 
+static void jesd204b_gt_drp_write(struct jesd204b_gt_state *st,
+				  unsigned reg, unsigned val)
+{
+	int timeout = 20;
+
+	jesd204b_gt_write(st, ADI_REG_DRP_CNTRL,
+			  ADI_DRP_ADDRESS(reg) | ADI_DRP_WDATA(val));
+
+	do {
+		if (!(jesd204b_gt_read(st, ADI_REG_DRP_STATUS) & ADI_DRP_STATUS))
+			return;
+
+		mdelay(1);
+	} while (timeout--);
+
+	dev_err(st->dev, "%s: Timeout!", __func__);
+}
+
+static unsigned int jesd204b_gt_drp_read(struct jesd204b_gt_state *st,
+					 unsigned reg)
+{
+	int timeout = 20;
+	unsigned val;
+
+	jesd204b_gt_write(st, ADI_REG_DRP_CNTRL,
+		ADI_DRP_RWN | ADI_DRP_ADDRESS(reg) | ADI_DRP_WDATA(0xFFFF));
+
+	do {
+		val = jesd204b_gt_read(st, ADI_REG_DRP_STATUS);
+
+		if (val & ADI_DRP_STATUS) {
+			mdelay(1);
+			continue;
+		}
+
+		return ADI_TO_DRP_RDATA(val);
+
+	} while (timeout--);
+
+	dev_err(st->dev, "%s: Timeout!", __func__);
+	return -ETIMEDOUT;
+}
+
 static int jesd204b_gt_set_lane(struct jesd204b_gt_state *st, unsigned lane)
 {
 	jesd204b_gt_write(st, ADI_REG_RX_LANESEL,
 		       ADI_RX_LANESEL(lane));
 
 	jesd204b_gt_read(st, ADI_REG_RX_LANESEL);
+
+	return 0;
+}
+
+static int jesd204b_gt_set_lpm_dfe_mode(struct jesd204b_gt_state *st,
+					unsigned lpm)
+{
+	u32 i, type;
+
+	type = jesd204b_gt_read(st, ADI_REG_TRANSCEIVER_TYPE);
+
+	for (i = 0; i < st->lanes; i++) {
+		jesd204b_gt_set_lane(st, i);
+		if (type == ADI_TRANSCEIVER_GTH) {
+			if (lpm) {
+				jesd204b_gt_drp_write(st, 0x036, 0x0032);
+				jesd204b_gt_drp_write(st, 0x039, 0x1000);
+				jesd204b_gt_drp_write(st, 0x062, 0x1980);
+			} else {
+				jesd204b_gt_drp_write(st, 0x036, 0x0002);
+				jesd204b_gt_drp_write(st, 0x039, 0x0000);
+				jesd204b_gt_drp_write(st, 0x062, 0x0000);
+			}
+		} else {
+			if (lpm) {
+				jesd204b_gt_drp_write(st, 0x029, 0x0104);
+			} else {
+				jesd204b_gt_drp_write(st, 0x029, 0x0954);
+			}
+		}
+	}
 
 	return 0;
 }
@@ -208,6 +281,7 @@ jesd204b_gt_bin_read(struct file *filp, struct kobject *kobj,
 	if (unlikely(!count))
 		return count;
 
+
 	wait_for_completion(&st->complete);
 
 	memcpy(buf, st->buf_virt + off, count);
@@ -281,7 +355,8 @@ static ssize_t jesd204b_gt_info_read(struct device *dev,
 {
 	struct jesd204b_gt_state *st = dev_get_drvdata(dev);
 
-	return sprintf(buf, "x%d,y%d CDRDW: %d\n", st->es_hsize, ADI_ES_VSIZE, 40);
+	return sprintf(buf, "x%d,y%d CDRDW: %d LPM: %d\n",
+		       st->es_hsize, ADI_ES_VSIZE, 40, st->use_lpm);
 }
 
 static DEVICE_ATTR(info, S_IRUSR, jesd204b_gt_info_read, NULL);
@@ -316,7 +391,7 @@ static int jesd204b_gt_status_error(struct device *dev,
 static void jesd204b_gt_clk_synchronize(struct child_clk *clk)
 {
 	struct jesd204b_gt_state *st = dev_get_drvdata(clk->dev);
-	unsigned offs = (clk->num == JESD204B_GT_TX ?
+	unsigned offs = (clk->tx ?
 		ADI_REG_TX_GT_RSTN - ADI_REG_RX_GT_RSTN : 0);
 	int ret;
 
@@ -340,7 +415,7 @@ static void jesd204b_gt_sync_work_func(struct work_struct *work)
 		container_of(work, struct jesd204b_gt_state, sync_work.work);
 	unsigned int i;
 
-	for (i = 0; i < 2; i++)
+	for (i = 0; i < st->clk_data.clk_num; i++)
 		jesd204b_gt_clk_synchronize(&st->output[i]);
 
 	queue_delayed_work(system_freezable_wq, &st->sync_work, HZ);
@@ -349,7 +424,7 @@ static void jesd204b_gt_sync_work_func(struct work_struct *work)
 static int jesd204b_gt_clk_enable(struct clk_hw *hw)
 {
 	struct jesd204b_gt_state *st = dev_get_drvdata(to_clk_priv(hw)->dev);
-	unsigned offs = (to_clk_priv(hw)->num == JESD204B_GT_TX ?
+	unsigned offs = (to_clk_priv(hw)->tx ?
 		ADI_REG_TX_GT_RSTN - ADI_REG_RX_GT_RSTN : 0);
 	int ret = 0;
 
@@ -403,22 +478,30 @@ static const struct clk_ops clkout_ops = {
 	.is_enabled = jesd204b_gt_clk_is_enabled,
 };
 
-static struct clk *jesd204b_gt_clk_register(struct device *dev, unsigned num,
-				char *name)
+static struct clk *jesd204b_gt_clk_register(struct device *dev, const char *parent_name, unsigned num, bool tx)
 {
 	struct jesd204b_gt_state *st = dev_get_drvdata(dev);
 	struct clk_init_data init;
 	struct child_clk *output = &st->output[num];
 	struct clk *clk;
+	const char *clk_name;
+	int ret;
 
-	init.name = name;
+	ret = of_property_read_string_index(dev->of_node, "clock-output-names",
+		num, &clk_name);
+	if (ret < 0)
+		return ERR_PTR(ret);
+
+	init.name = clk_name;
 	init.ops = &clkout_ops;
 
-	init.num_parents = 0;
-	init.flags = CLK_IS_ROOT;
+	init.parent_names = (parent_name ? &parent_name: NULL);
+	init.num_parents = (parent_name ? 1 : 0);
+
 	output->hw.init = &init;
 	output->dev = dev;
 	output->num = num;
+	output->tx = tx;
 	output->rate = st->rate;
 
 	/* register the clock */
@@ -498,8 +581,13 @@ static int jesd204b_gt_probe(struct platform_device *pdev)
 				   "adi,tx-out-clk-select", &st->tx_out_clk_sel);
 
 	st->use_cpll = of_property_read_bool(pdev->dev.of_node, "adi,use-cpll-enable");
+	st->use_lpm = of_property_read_bool(pdev->dev.of_node, "adi,use-lpm-enable");
 
-	jesd204b_gt_write(st, ADI_REG_CPLL_PD, st->use_cpll ? 0 : ADI_CPLL_PD);
+	of_property_read_u32(pdev->dev.of_node, "adi,lanes", &st->lanes);
+
+	jesd204b_gt_write(st, ADI_REG_CPLL_PD,
+			(st->use_cpll ? 0 : ADI_CPLL_PD) |
+			(st->use_lpm ? ADI_LPM_EN : 0));
 
 	if (st->rx_sys_clk_sel || st->rx_out_clk_sel)
 		jesd204b_gt_write(st, ADI_REG_RX_CLK_SEL,
@@ -513,12 +601,16 @@ static int jesd204b_gt_probe(struct platform_device *pdev)
 
 	jesd204b_gt_write(st, ADI_REG_RSTN_1, 0); /* resets (drp, pll) */
 
-
 	jesd204b_gt_write(st, ADI_REG_RX_GT_RSTN, 0);
 	jesd204b_gt_write(st, ADI_REG_RX_RSTN, 0);
 
 	jesd204b_gt_write(st, ADI_REG_TX_GT_RSTN, 0);
 	jesd204b_gt_write(st, ADI_REG_TX_RSTN, 0);
+
+	jesd204b_gt_write(st, ADI_REG_RSTN_1,
+			  ADI_DRP_RSTN); /* enable (drp) */
+
+	jesd204b_gt_set_lpm_dfe_mode(st, st->use_lpm);
 
 	jesd204b_gt_write(st, ADI_REG_RSTN_1,
 			  ADI_DRP_RSTN | ADI_GT_PLL_RSTN); /* enable (drp, pll) */
@@ -569,7 +661,7 @@ static int jesd204b_gt_probe(struct platform_device *pdev)
 	}
 
 	st->size = st->es_hsize * ADI_ES_VSIZE *
-		sizeof(unsigned long long);
+		(st->use_lpm ? sizeof(u32) : sizeof(u64));
 	st->prescale = 0;
 	st->buf_virt = dma_alloc_coherent(&pdev->dev, PAGE_ALIGN(st->size),
 					  &st->buf_phys, GFP_KERNEL);
@@ -611,18 +703,25 @@ static int jesd204b_gt_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "could not allocate memory\n");
 		return -ENOMEM;
 	}
-	st->clk_data.clk_num = 2;
+	st->clk_data.clk_num = 0;
 
-	schedule_delayed_work(&st->sync_work, HZ);
+	if ((st->rx_sys_clk_sel || st->rx_out_clk_sel) && !IS_ERR(st->adc_clk)) {
+		clk = jesd204b_gt_clk_register(&pdev->dev,
+					       __clk_get_name(st->adc_clk),
+					       st->clk_data.clk_num, false);
+		if (IS_ERR(clk))
+				return PTR_ERR(clk);
+		st->clk_data.clk_num++;
+	}
 
-	clk = jesd204b_gt_clk_register(&pdev->dev, JESD204B_GT_RX, "adc_gt_clk");
-	if (IS_ERR(clk))
-			return PTR_ERR(clk);
-
-	clk = jesd204b_gt_clk_register(&pdev->dev, JESD204B_GT_TX, "dac_gt_clk");
-	if (IS_ERR(clk))
-			return PTR_ERR(clk);
-
+	if ((st->tx_sys_clk_sel || st->tx_out_clk_sel) && !IS_ERR(st->dac_clk)) {
+		clk = jesd204b_gt_clk_register(&pdev->dev,
+					       __clk_get_name(st->dac_clk),
+					       st->clk_data.clk_num, true);
+		if (IS_ERR(clk))
+				return PTR_ERR(clk);
+		st->clk_data.clk_num++;
+	}
 	of_clk_add_provider(pdev->dev.of_node,
 			    of_clk_src_onecell_get, &st->clk_data);
 
@@ -633,6 +732,9 @@ static int jesd204b_gt_probe(struct platform_device *pdev)
 		PCORE_VERSION_MINOR(st->version),
 		PCORE_VERSION_LETTER(st->version),
 		(unsigned long long)mem->start, st->regs);
+
+	if (!of_property_read_bool(pdev->dev.of_node,"adi,no-auto-resync-enable"))
+		schedule_delayed_work(&st->sync_work, HZ);
 
 	return 0;
 
