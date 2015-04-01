@@ -6,10 +6,10 @@ menuconfig INPUT_YAS_SENSORS
 	  Sensors.
 
 if INPUT_YAS_SENSORS
-source "drivers/sensors/accelerometer/Kconfig"
-source "drivers/sensors/geomagnetic/Kconfig"
+source "drivers/sensors_samsung/accelerometer/Kconfig"
+source "drivers/sensors_samsung/geomagnetic/Kconfig"
 endif # INPUT_YAS_SENSORS
-source "drivers/sensors/optical/Kconfig"
+source "drivers/sensors_samsung/optical/Kconfig"
 
 menuconfig GRIP_SENSOR
 	bool "Sensors Support"
