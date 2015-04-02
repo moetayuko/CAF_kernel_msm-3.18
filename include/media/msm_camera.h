@@ -215,6 +215,7 @@ struct ioctl_native_cmd {
 #define MSM_CAM_IOCTL_SET_VFE_OUTPUT_TYPE \
 	_IOW(MSM_CAM_IOCTL_MAGIC, 51, uint32_t *)
 
+#ifdef CONFIG_S5K6A3YX
 #define MSM_CAM_IOCTL_GET_MCTL_INFO \
 	_IOR(MSM_CAM_IOCTL_MAGIC, 51, struct msm_mctl_node_info *)
 
@@ -256,6 +257,22 @@ struct ioctl_native_cmd {
 
 #define MSM_CAM_IOCTL_INTF_MCTL_MAPPING_CFG \
 	_IOR(MSM_CAM_IOCTL_MAGIC, 71, struct intf_mctl_mapping_cfg *)
+#else
+#define MSM_CAM_IOCTL_GET_MCTL_INFO \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 52, struct msm_mctl_node_info *)
+
+#define MSM_CAM_IOCTL_MCTL_DIVERT_DONE \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 53, struct msm_cam_evt_divert_frame *)
+
+#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_CMD \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 54, struct ioctl_native_cmd *)
+
+#define MSM_CAM_IOCTL_V4L2_EVT_NATIVE_FRONT_CMD \
+	_IOWR(MSM_CAM_IOCTL_MAGIC, 55, struct ioctl_native_cmd *)
+
+#define MCTL_CAM_IOCTL_SET_FOCUS \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 53, uint32_t)
+#endif
 struct msm_mctl_pp_cmd {
 	int32_t  id;
 	uint16_t length;
@@ -1657,10 +1674,12 @@ struct img_plane_info {
 	uint8_t vpe_can_use;
 };
 
+#ifnef CONFIG_S5K6A3YX
 struct msm_camera_v4l2_ioctl_t {
 	uint32_t id;
 	uint32_t len;
 	uint32_t trans_code;
 	void __user *ioctl_ptr;
 };
+#endif
 #endif /* __LINUX_MSM_CAMERA_H */
