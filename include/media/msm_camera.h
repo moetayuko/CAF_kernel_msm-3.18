@@ -1674,7 +1674,7 @@ struct img_plane_info {
 	uint8_t vpe_can_use;
 };
 
-#ifnef CONFIG_S5K6A3YX
+#ifndef CONFIG_S5K6A3YX
 struct msm_camera_v4l2_ioctl_t {
 	uint32_t id;
 	uint32_t len;
