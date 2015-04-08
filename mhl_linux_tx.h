@@ -119,7 +119,7 @@ struct timer_obj {
 #define TIMER_OBJ_FLAG_WORK_IP	0x01
 #define TIMER_OBJ_FLAG_DEL_REQ	0x02
 	void *callback_param;
-	void (*timer_callback_handler) (void *callback_param);
+	void (*timer_callback_handler)(void *callback_param);
 };
 
 union misc_flags_u {
@@ -399,12 +399,12 @@ struct mhl_drv_info {
 	int irq;
 
 	/* APIs required to be supported by the low level MHL TX driver */
-	int (*mhl_device_initialize) (struct drv_hw_context *hw_context);
-	void (*mhl_device_isr) (struct drv_hw_context *hw_context,
+	int (*mhl_device_initialize)(struct drv_hw_context *hw_context);
+	void (*mhl_device_isr)(struct drv_hw_context *hw_context,
 		struct interrupt_info *intr_info);
-	int (*mhl_device_dbg_i2c_reg_xfer) (void *dev_context, u8 page,
+	int (*mhl_device_dbg_i2c_reg_xfer)(void *dev_context, u8 page,
 		u8 offset, u16 count, bool rw_flag, u8 *buffer);
-	int (*mhl_device_get_aksv) (struct drv_hw_context *hw_context,
+	int (*mhl_device_get_aksv)(struct drv_hw_context *hw_context,
 		u8 *buffer);
 };
 
@@ -423,7 +423,7 @@ struct mhl_dev_context *get_mhl_device_context(void *context);
 void *si_mhl_tx_get_drv_context(void *dev_context);
 
 int mhl_tx_create_timer(void *context,
-	void (*callback_handler) (void *callback_param), void *callback_param,
+	void (*callback_handler)(void *callback_param), void *callback_param,
 	void **timer_handle);
 
 int mhl_tx_delete_timer(void *context, void **timer_handle);

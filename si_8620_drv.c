@@ -109,7 +109,7 @@ struct intr_tbl {
 	uint8_t mask;
 	uint16_t mask_addr;
 	uint16_t stat_addr;
-	int (*isr) (struct drv_hw_context *, uint8_t status);
+	int (*isr)(struct drv_hw_context *, uint8_t status);
 	char *name;
 };
 
@@ -540,7 +540,7 @@ static int alloc_block_input_buffer(struct drv_hw_context *hw_context,
 
 	if (!block_input_buffer_available(hw_context)) {
 		/* full case */
-		return -1;
+		return -EPERM;
 	}
 	index = tail;
 
@@ -574,7 +574,7 @@ int si_mhl_tx_drv_peek_block_input_buffer(struct mhl_dev_context *dev_context,
 	head = hw_context->block_protocol.head;
 	tail = hw_context->block_protocol.tail;
 	if (head == tail)
-		return -1;
+		return -EPERM;
 
 	index = head;
 
@@ -719,8 +719,8 @@ static int mhl3_block_isr(struct drv_hw_context *hw_context, uint8_t int_status)
 
 		/* Get the STD header if enough data, and go from there. */
 		if (req_size < 1) {
-			MHL_TX_DBG_ERR("%sHeader Error: Command size less than "
-				"STD Transaction Header Size: %d%s\n",
+			MHL_TX_DBG_ERR(
+				"%sHeader Error: Command size less than STD Transaction Header Size: %d%s\n",
 				ANSI_ESC_RED_TEXT,
 				req_size,
 				ANSI_ESC_RESET_TEXT);
@@ -742,8 +742,8 @@ static int mhl3_block_isr(struct drv_hw_context *hw_context, uint8_t int_status)
 
 		/* Validate STD header */
 		if (req_size < remaining) {
-			MHL_TX_DBG_ERR("%sHeader Error: "
-				"RFIFO_LEN: %d  REQ_LEN: %d REMAINING: %d%s\n",
+			MHL_TX_DBG_ERR(
+				"%sHeader Error: RFIFO_LEN: %d REQ_LEN: %d REMAINING: %d%s\n",
 				ANSI_ESC_YELLOW_TEXT,
 				data_len, req_size, remaining,
 				ANSI_ESC_RESET_TEXT);
@@ -752,8 +752,8 @@ static int mhl3_block_isr(struct drv_hw_context *hw_context, uint8_t int_status)
 			goto drain_req;
 		}
 		if ((unload_cnt + remaining) == 0) {
-			MHL_TX_DBG_ERR("%sHeader Error: Unload and Remaining "
-				"counts are 0!%s\n",
+			MHL_TX_DBG_ERR(
+				"%sHeader Error: Unload and Remaining counts are 0!%s\n",
 				ANSI_ESC_RED_TEXT,
 				ANSI_ESC_RESET_TEXT);
 			goto drain_req;
@@ -763,8 +763,7 @@ static int mhl3_block_isr(struct drv_hw_context *hw_context, uint8_t int_status)
 		if ((avail + unload_cnt) >
 			hw_context->block_protocol.peer_blk_rx_buf_max) {
 			MHL_TX_DBG_ERR(
-				"%seMSC Header Error: unload count too large:"
-				"%d + %d > %d%s\n",
+				"%seMSC Header Error: unload count too large: %d + %d > %d%s\n",
 				ANSI_ESC_YELLOW_TEXT,
 				unload_cnt, avail,
 				hw_context->block_protocol.peer_blk_rx_buf_max,
@@ -780,8 +779,8 @@ static int mhl3_block_isr(struct drv_hw_context *hw_context, uint8_t int_status)
 		 * for the current transport header remaining byte count.
 		 */
 		if (data_len < remaining) {
-			MHL_TX_DBG_WARN("eMSC FIFO data count < remaining "
-				"byte count: %d < %d\n",
+			MHL_TX_DBG_WARN(
+				"eMSC FIFO data count < remaining byte count: %d < %d\n",
 				data_len, remaining);
 			msleep(RFIFO_FILL_DELAY);
 			status = get_emsc_fifo_count(hw_context, &data_len);
@@ -898,7 +897,7 @@ static int coc_isr(struct drv_hw_context *hw_context, uint8_t coc_int_status)
 						hw_context->cbus_mode);
 					break;
 				default:
-					;
+					break;
 				}
 				hw_context->intr_info->flags |=
 				    DRV_INTR_COC_CAL;
@@ -936,8 +935,8 @@ static int tdm_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 						hw_context->cbus_mode));
 
 				if (hw_context->cbus_mode < CM_eCBUS_S) {
-					MHL_TX_DBG_WARN("DRV_INTR_TDM_SYNC"
-						" set %s\n",
+					MHL_TX_DBG_WARN(
+						"DRV_INTR_TDM_SYNC set %s\n",
 						si_mhl_tx_drv_get_cbus_mode_str(
 						hw_context->cbus_mode));
 					hw_context->intr_info->flags |=
@@ -986,28 +985,26 @@ static int tdm_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 			} else {
 				switch (hw_context->cbus_mode) {
 				case CM_eCBUS_S_BIST:
-					MHL_TX_DBG_ERR("TDM not "
-						"synchronized,"
-						"  NOT retrying\n");
+					MHL_TX_DBG_ERR(
+						"TDM not synchronized, NOT retrying\n");
 					break;
 				case CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST:
 					if (BIST_TRIGGER_ECBUS_TX_RX_MASK &
 					    dev_context->bist_trigger_info) {
-						MHL_TX_DBG_ERR("TDM not "
-							"synchronized,"
-							"  NOT retrying\n");
+						MHL_TX_DBG_ERR(
+							"TDM not synchronized, NOT retrying\n");
 						break;
 					}
 				case CM_TRANSITIONAL_TO_eCBUS_S_CALIBRATED:
-					MHL_TX_DBG_ERR("TDM not synchronized,"
-						" retrying\n");
+					MHL_TX_DBG_ERR(
+						"TDM not synchronized, retrying\n");
 					mhl_tx_write_reg(hw_context,
 						REG_MHL_PLL_CTL2, 0x00);
 					mhl_tx_write_reg(hw_context,
 						REG_MHL_PLL_CTL2, 0x80);
 					break;
 				default:
-					;
+					break;
 				}
 			}
 		}
@@ -1024,8 +1021,8 @@ static int int_link_trn_isr(struct drv_hw_context *hw_context,
 {
 	if (IN_MHL3_MODE(hw_context)) {
 		if (BIT_EMSCINTR1_EMSC_TRAINING_COMMA_ERR & intr_status) {
-			MHL_TX_DBG_ERR("%sTraining comma "
-				"error COC_STAT_0:0x%02x%s\n",
+			MHL_TX_DBG_ERR(
+				"%sTraining comma error COC_STAT_0:0x%02x%s\n",
 				ANSI_ESC_RED_TEXT,
 				mhl_tx_read_reg(hw_context, REG_COC_STAT_0),
 				ANSI_ESC_RESET_TEXT);
@@ -1290,7 +1287,7 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 		       hw_context->cbus_mode, mode_sel);
 
 	if (hw_context->cbus_mode < CM_oCBUS_PEER_VERSION_PENDING)
-		return -1;
+		return -EPERM;
 
 	switch (mode_sel) {
 	case CM_NO_CONNECTION:
@@ -1434,7 +1431,7 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 			hw_context->cbus_mode = CM_TRANSITIONAL_TO_eCBUS_S;
 			break;
 		default:
-			;
+			break;
 		}
 
 		mhl_tx_write_reg(hw_context, REG_TTXSPINUMS,
@@ -1564,7 +1561,7 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 			si_set_cbus_mode_leds(hw_context->cbus_mode);
 			break;
 		default:
-			;
+			break;
 		}
 		mhl_tx_write_reg(hw_context, REG_TTXSPINUMS,
 				 hw_context->
@@ -1779,13 +1776,13 @@ static bool issue_edid_read_request(struct drv_hw_context *hw_context,
 			/* restore TPI mode state */
 			mhl_tx_write_reg(hw_context, REG_LM_DDC, lm_ddc);
 		}
-		MHL_TX_DBG_WARN("\n\tRequesting EDID block:%d\n"
-				"\tcurrentEdidRequestBlock:%d\n"
-				"\tedidFifoBlockNumber:%d"
-				"ddc_status:0x%02x\n",
-				block_number,
-				hw_context->current_edid_req_blk,
-				hw_context->edid_fifo_block_number, ddc_status);
+		MHL_TX_DBG_WARN(
+			"\n\tRequesting EDID block:%d\n\tcurrentEdidRequestBlock:%d\n",
+			block_number,
+			hw_context->current_edid_req_blk);
+		MHL_TX_DBG_WARN(
+			"\tedidFifoBlockNumber:%d ddc_status:0x%02x\n",
+			hw_context->edid_fifo_block_number, ddc_status);
 		/* Setup auto increment and kick off read */
 		mhl_tx_write_reg(hw_context, REG_EDID_CTRL,
 				 VAL_EDID_CTRL_EDID_PRIME_VALID_DISABLE |
@@ -1811,21 +1808,21 @@ static bool issue_edid_read_request(struct drv_hw_context *hw_context,
 				BIT_TPI_CBUS_START_GET_EDID_START_0);
 		} else {
 			uint8_t param = (1 << (block_number - 1));
-			MHL_TX_DBG_INFO("EDID HW Assist: Programming "
-					"Reg %02X:%02X to %02X\n",
-					REG_EDID_START_EXT, param);
+			MHL_TX_DBG_INFO(
+				"EDID HW Assist: Programming Reg %02X:%02X to %02X\n",
+				REG_EDID_START_EXT, param);
 			mhl_tx_write_reg(hw_context, REG_EDID_START_EXT,
 					 param);
 		}
 
 		return true;
 	} else {
-		MHL_TX_DBG_INFO("\n\tNo HPD for EDID block request:%d\n"
-				"\tcurrentEdidRequestBlock:%d\n"
-				"\tedidFifoBlockNumber:%d\n",
-				block_number,
-				hw_context->current_edid_req_blk,
-				hw_context->edid_fifo_block_number);
+		MHL_TX_DBG_INFO("\n\tNo HPD for EDID block request:%d\n",
+				block_number);
+		MHL_TX_DBG_INFO(
+			"\tcurrentEdidRequestBlock:%d\n\tedidFifoBlockNumber:%d\n",
+			hw_context->current_edid_req_blk,
+			hw_context->edid_fifo_block_number);
 		return false;
 	}
 }
@@ -2002,8 +1999,8 @@ static uint8_t fetch_edid_block(struct drv_hw_context *hw_context,
 				int start = ddc_address % EDID_BLOCK_SIZE;
 #endif
 				/* back-up by one step  to retry */
-				MHL_TX_DBG_ERR("%02x %02x %02x %02x "
-				     "%02x %02x %02x %02x\n",
+				MHL_TX_DBG_ERR(
+				     "%02x %02x %02x %02x %02x %02x %02x %02x\n",
 				     buffer[start + 0], buffer[start + 1],
 				     buffer[start + 2], buffer[start + 3],
 				     buffer[start + 4], buffer[start + 5],
@@ -2369,7 +2366,7 @@ uint16_t si_mhl_tx_drv_get_incoming_timing(struct drv_hw_context *hw_context,
 	return ret_val;
 }
 
-int si_mhl_tx_drv_get_aksv(struct drv_hw_context *hw_context, uint8_t * buffer)
+int si_mhl_tx_drv_get_aksv(struct drv_hw_context *hw_context, uint8_t *buffer)
 {
 	memcpy(buffer, hw_context->aksv, 5);
 	return 0;
@@ -2454,7 +2451,7 @@ int si_mhl_tx_drv_get_scratch_pad(struct drv_hw_context *hw_context,
 				  uint8_t length)
 {
 	if ((start_reg + length) > (int)MHL_SCRATCHPAD_SIZE)
-		return -1;
+		return -EPERM;
 
 	memcpy(data, &hw_context->write_burst_data[start_reg], length);
 
@@ -2502,8 +2499,9 @@ static int is_valid_avi_info_frame(struct mhl_dev_context *dev_context,
 	checksum =
 	    calculate_generic_checksum((uint8_t *) avif, 0, sizeof(*avif));
 	if (0 != checksum) {
-		MHL_TX_DBG_ERR("AVI info frame checksum is: 0x%02x "
-			       "should be 0\n", checksum);
+		MHL_TX_DBG_ERR(
+			"AVI info frame checksum is: 0x%02x should be 0\n",
+			checksum);
 		return 0;
 
 	} else if (0x82 != avif->header.type_code) {
@@ -2537,8 +2535,9 @@ static int is_valid_vsif(struct mhl_dev_context *dev_context,
 					      sizeof(vsif->common.header) +
 					      vsif->common.header.length);
 	if (0 != checksum) {
-		MHL_TX_DBG_WARN("VSIF info frame checksum is: 0x%02x "
-				"should be 0\n", checksum);
+		MHL_TX_DBG_WARN(
+			"VSIF info frame checksum is: 0x%02x should be 0\n",
+			checksum);
 		/*
 		   Try again, assuming that the header includes the checksum.
 		 */
@@ -2547,9 +2546,9 @@ static int is_valid_vsif(struct mhl_dev_context *dev_context,
 					      vsif->common.header.length +
 					      sizeof(vsif->common.checksum));
 		if (0 != checksum) {
-			MHL_TX_DBG_ERR("VSIF info frame checksum (adjusted "
-				       "for checksum itself) is: 0x%02x "
-				       "should be 0\n", checksum);
+			MHL_TX_DBG_ERR(
+				"VSIF IF checksum (adjusted itself) is: 0x%02x should be 0\n",
+				checksum);
 			return 0;
 
 		}
@@ -2669,15 +2668,15 @@ static void dump_avif_vsif_impl(struct drv_hw_context *hw_context,
 		print_formatted_debug_msg(NULL, function, line_num, "VSIF:");
 		for (i = 0, c = (unsigned char *)&vsif; i < sizeof(vsif);
 			++i, ++c) {
-			printk(KERN_CONT " %02x", *c);
+			pr_debug(" %02x", *c);
 		}
-		printk("\n");
+		pr_debug("\n");
 		print_formatted_debug_msg(NULL, function, line_num, "AVIF:");
 		for (i = 0, c = (unsigned char *)&avif; i < sizeof(avif);
 			++i, ++c) {
-			printk(KERN_CONT " %02x", *c);
+			pr_debug(" %02x", *c);
 		}
-		printk(KERN_CONT "\n");
+		pr_debug("\n");
 	}
 }
 
@@ -2845,8 +2844,8 @@ static uint32_t find_pixel_clock_from_closest_match_timing(
 		hw_context->pixel_clock_history[idx] = pixels_per_second;
 
 		/* emphasize modes that are not in the table */
-		MHL_TX_DBG_ERR("%s{%4d,%4d,%5d,%4d,%3d,%9d,??,"
-			"{0,0},\"%dx%d-%2d\"}%s\n",
+		MHL_TX_DBG_ERR(
+			"%s{%4d,%4d,%5d,%4d,%3d,%9d,??,{0,0},\"%dx%d-%2d\"}%s\n",
 			(0 != pixel_clock_frequency) ?
 			ANSI_ESC_GREEN_TEXT : ANSI_ESC_YELLOW_TEXT,
 			p_timing->h_total, p_timing->v_total,
@@ -3039,13 +3038,12 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context)
 			     * the case for PC modes on HDMI (valid AVIF,
 			     * no VSIF, VIC==0);
 			     */
-			    MHL_TX_DBG_ERR
-			    ("no VSIF and AVI VIC (offset 0x%x) is zero!!! "
-			     "trying HTOTAL/VTOTAL\n",
-			     (size_t) &hw_context->current_avi_info_frame.
-			     payLoad.hwPayLoad.namedIfData.ifData_u.bitFields.
-			     VIC -
-			     (size_t) &hw_context->current_avi_info_frame);
+			    MHL_TX_DBG_ERR(
+				"no VSIF and AVI VIC (offset 0x%x) is zero!!! trying HTOTAL/VTOTAL\n",
+				(size_t) &hw_context->current_avi_info_frame.
+				payLoad.hwPayLoad.namedIfData.ifData_u.
+				bitFields.VIC -
+				(size_t) &hw_context->current_avi_info_frame);
 			/* Return error to avoid further processing. */
 			return false;
 #endif
@@ -3176,8 +3174,8 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context)
 				/* enough for packed pixel */
 				packedPixelNeeded = 1;
 			} else {
-				MHL_TX_DBG_ERR("unsupported video mode."
-					"pixel clock too high %s\n",
+				MHL_TX_DBG_ERR(
+					"unsupported video mode. pixel clock too high %s\n",
 					si_peer_supports_packed_pixel
 					(dev_context) ? "" :
 					"(peer does not support packed pixel)."
@@ -3185,8 +3183,8 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context)
 				return false;
 			}
 		} else {
-			MHL_TX_DBG_ERR("unsupported video mode."
-				"Sink doesn't support 4:2:2.\n");
+			MHL_TX_DBG_ERR(
+				"unsupported video mode. Sink doesn't support 4:2:2.\n");
 			return false;
 		}
 	}
@@ -3245,8 +3243,7 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context)
 
 		} else {
 			MHL_TX_DBG_ERR(
-				"Unsupported video mode. Packed Pixel not "
-				"available. Sink's link mode = 0x%02x\n",
+				"Unsupported video mode. Packed Pixel not available. Sink's link mode = 0x%02x\n",
 				dev_context->dev_cap_cache.mdc.vid_link_mode);
 			return false;
 		}
@@ -3744,7 +3741,7 @@ int si_mhl_tx_drv_set_upstream_edid(struct drv_hw_context *hw_context,
 	}
 
 	if (!ok_to_proceed_with_ddc(hw_context))
-		return -1;
+		return -EPERM;
 
 	MHL_TX_DBG_INFO("presenting EDID upstream\n");
 
@@ -3799,8 +3796,8 @@ int si_mhl_tx_drv_set_upstream_edid(struct drv_hw_context *hw_context,
 
 	/* If SCDT is already high, then we will not get an interrupt */
 	if (BIT_TMDS_CSTAT_P3_SCDT & reg_val) {
-		MHL_TX_DBG_WARN("SCDT status is already HIGH. "
-		     "Simulate int_5: %s0x%02x%s\n",
+		MHL_TX_DBG_WARN(
+		     "SCDT status is already HIGH. Simulate int_5: %s0x%02x%s\n",
 		     ANSI_ESC_YELLOW_TEXT,
 		     mhl_tx_read_reg(hw_context, REG_RX_HDMI_CTRL0),
 		     ANSI_ESC_RESET_TEXT);
@@ -4061,6 +4058,7 @@ static int init_regs(struct drv_hw_context *hw_context)
 	disable_heartbeat(hw_context);
 	disable_gen2_write_burst_rcv(hw_context);
 	disable_gen2_write_burst_xmit(hw_context);
+	return ret_val;
 }
 
 static void si_mhl_tx_drv_start_gen2_write_burst(struct drv_hw_context
@@ -4810,8 +4808,8 @@ static int hdcp2_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 		mhl_tx_read_reg_block(hw_context, REG_HDCP2X_AUTH_STAT,
 				      sizeof(ro_auth), ro_auth);
 
-		MHL_TX_DBG_ERR("HDCP2.2 Authentication Failed"
-			" - gp0 %02X, status %02X %02X\n",
+		MHL_TX_DBG_ERR(
+			"HDCP2.2 Authentication Failed - gp0 %02X, status %02X %02X\n",
 			ro_gp0, ro_auth[0], ro_auth[1]);
 	}
 
@@ -4936,6 +4934,52 @@ static int int_3_isr(struct drv_hw_context *hw_context, uint8_t int_3_status)
 	return 0;
 }
 
+static inline void edid_blk_read_complete(struct drv_hw_context *hw_context)
+{
+	int num_extensions;
+
+	num_extensions = si_mhl_tx_get_num_cea_861_extensions
+			(hw_context->intr_info->edid_parser_context,
+			 hw_context->current_edid_req_blk);
+	if (num_extensions < 0) {
+		MHL_TX_DBG_ERR("edid problem:%d\n", num_extensions);
+		if (ne_NO_HPD == num_extensions) {
+			/* no HPD, so start over */
+			hw_context->intr_info->flags |= DRV_INTR_MSC_DONE;
+			hw_context->intr_info->msc_done_data = 1;
+			MHL_TX_DBG_ERR("%shpd low%s\n", ANSI_ESC_RED_TEXT,
+					ANSI_ESC_RESET_TEXT);
+		} else {
+			/* Restart EDID read from block 0 */
+			hw_context->current_edid_req_blk = 0;
+			if (!issue_edid_read_request(hw_context, hw_context->
+						     current_edid_req_blk)) {
+				/* Notify the component layer with error */
+				hw_context->intr_info->flags |=
+					DRV_INTR_MSC_DONE;
+				hw_context->intr_info->msc_done_data = 1;
+				MHL_TX_DBG_ERR("%sedid request problem%s\n",
+					       ANSI_ESC_RED_TEXT,
+					       ANSI_ESC_RESET_TEXT);
+			}
+		}
+	} else if (hw_context->current_edid_req_blk < num_extensions) {
+		/* EDID read next block */
+		if (!issue_edid_read_request(hw_context, ++hw_context->
+					     current_edid_req_blk)) {
+			/* Notify the MHL module with error */
+			hw_context->intr_info->flags |= DRV_INTR_MSC_DONE;
+			hw_context->intr_info->msc_done_data = 1;
+			MHL_TX_DBG_ERR("%sedid request problem%s\n",
+				       ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT);
+		}
+	} else {
+		/* Inform MHL module of EDID read MSC command completion */
+		hw_context->intr_info->flags |= DRV_INTR_MSC_DONE;
+		hw_context->intr_info->msc_done_data = 0;
+	}
+
+}
 static int int_9_isr(struct drv_hw_context *hw_context, uint8_t int_9_status)
 {
 	if (int_9_status) {
@@ -4969,77 +5013,8 @@ static int int_9_isr(struct drv_hw_context *hw_context, uint8_t int_9_status)
 					     ANSI_ESC_RESET_TEXT);
 				}
 			} else {
-				int num_extensions;
-
 				MHL_TX_DBG_INFO("EDID block read complete\n");
-				num_extensions =
-				    si_mhl_tx_get_num_cea_861_extensions
-				    (hw_context->intr_info->edid_parser_context,
-				     hw_context->current_edid_req_blk);
-				if (num_extensions < 0) {
-					MHL_TX_DBG_ERR("edid problem:%d\n",
-						       num_extensions);
-					if (ne_NO_HPD == num_extensions) {
-						/* no HPD, so start over */
-						hw_context->intr_info->flags |=
-						    DRV_INTR_MSC_DONE;
-						hw_context->intr_info->
-						    msc_done_data = 1;
-						MHL_TX_DBG_ERR("%shpd low%s\n",
-							  ANSI_ESC_RED_TEXT,
-							  ANSI_ESC_RESET_TEXT);
-					} else {
-						/*
-						 * Restart EDID read
-						 * from block 0
-						 */
-						hw_context->
-						    current_edid_req_blk = 0;
-						if (!issue_edid_read_request(
-							hw_context,
-							hw_context->
-							current_edid_req_blk)) {
-							/* Notify the component
-							 * layer with error
-							 */
-							hw_context->intr_info->
-							    flags |=
-							    DRV_INTR_MSC_DONE;
-							hw_context->intr_info->
-							    msc_done_data = 1;
-							MHL_TX_DBG_ERR("%sedid"
-							 " request problem%s\n",
-							 ANSI_ESC_RED_TEXT,
-							 ANSI_ESC_RESET_TEXT);
-						}
-					}
-				} else if (hw_context->current_edid_req_blk <
-					   num_extensions) {
-					/* EDID read next block */
-					if (!issue_edid_read_request(
-						hw_context, ++hw_context->
-						current_edid_req_blk)) {
-						/* Notify the MHL module with
-						 * error
-						 */
-						hw_context->intr_info->flags |=
-						    DRV_INTR_MSC_DONE;
-						hw_context->intr_info->
-						    msc_done_data = 1;
-						MHL_TX_DBG_ERR("%sedid request"
-							" problem%s\n",
-							ANSI_ESC_RED_TEXT,
-							ANSI_ESC_RESET_TEXT);
-					}
-				} else {
-					/* Inform MHL module of EDID read MSC
-					 * command completion
-					 */
-					hw_context->intr_info->flags |=
-					    DRV_INTR_MSC_DONE;
-					hw_context->intr_info->msc_done_data =
-					    0;
-				}
+				edid_blk_read_complete(hw_context);
 			}
 		}
 
@@ -5268,8 +5243,8 @@ static void process_mhl3_dcap_rdy(struct drv_hw_context *hw_context)
 		 */
 		mhl3_specific_init(hw_context);
 	} else
-		MHL_TX_DBG_WARN("%sdownstream device doesn't"
-			"supports MHL3.0+%s\n",
+		MHL_TX_DBG_WARN(
+			"%sdownstream device doesn't supports MHL3.0+%s\n",
 			ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT);
 }
 /*
@@ -5311,13 +5286,13 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 	case CM_TRANSITIONAL_TO_eCBUS_D_CAL_BIST:
 	case CM_TRANSITIONAL_TO_eCBUS_S_CALIBRATED:
 	case CM_TRANSITIONAL_TO_eCBUS_D_CALIBRATED:
-		MHL_TX_DBG_ERR("%sCBUS1 message received cbus_int:0x%02x "
-			"hpd status: 0x%02x%s\n",
+		MHL_TX_DBG_ERR(
+			"%sCBUS1 message received cbus_int:0x%02x hpd status: 0x%02x%s\n",
 			ANSI_ESC_YELLOW_TEXT,
 			cbus_int,
 			mhl_tx_read_reg(hw_context, REG_CBUS_STATUS),
 			ANSI_ESC_RESET_TEXT);
-		return -1;
+		return -EPERM;
 	default:
 		break;
 	}
@@ -5325,7 +5300,7 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 	if (CBUS1_IDLE_RCV_PEND == hw_context->cbus1_state) {
 		/* don't process these interrupts until we exit
 		   the cbus1_idle_rcv_pending  state */
-		return -1;
+		return -EPERM;
 	}
 
 	if (cbus_int & ~BIT_CBUS_HPD_CHG) {
@@ -5440,8 +5415,7 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 				write_xstat),
 			hw_context->intr_info->dev_status.write_xstat);
 		MHL_TX_DBG_WARN(
-			"%sGot WRITE_STAT: "
-			"%02x %02x %02x : %02x %02x %02x %02x%s\n",
+			"%sGot WRITE_STAT: %02x %02x %02x : %02x %02x %02x %02x%s\n",
 			ANSI_ESC_GREEN_TEXT,
 			hw_context->intr_info->dev_status.write_stat[0],
 			hw_context->intr_info->dev_status.write_stat[1],
@@ -5589,8 +5563,7 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 			if (hw_context->gen2_write_burst_rcv) {
 				/* this is NOT expected */
 				MHL_TX_DBG_ERR(
-					"Ignored DSCR_CHG "
-					"since MDT is enabled\n");
+					"Ignored DSCR_CHG since MDT is enabled\n");
 			} else {
 				mhl_tx_read_reg_block(hw_context,
 					REG_MHL_SCRPAD_0,
@@ -5651,7 +5624,7 @@ static int mhl_cbus_isr(struct drv_hw_context *hw_context, uint8_t cbus_int)
 					REG_MSC_MT_RCVD_DATA0);
 		}
 	}
-	return -1;
+	return -EPERM;
 }
 
 static int int_5_isr(struct drv_hw_context *hw_context, uint8_t int_5_status)
@@ -6128,7 +6101,7 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 		}
 			break;
 		default:
-			;
+			break;
 		}
 		/* For proper MHL discovery and tolerance of impedance
 		 * measurement, set 5E3[7:4]=0x01 - this turns off the
@@ -6298,18 +6271,18 @@ static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
 
 		switch (hw_context->cbus_mode) {
 		case CM_NO_CONNECTION:
-		    hw_context->cbus_mode = CM_oCBUS_PEER_VERSION_PENDING;
-		    break;
+			hw_context->cbus_mode = CM_oCBUS_PEER_VERSION_PENDING;
+			break;
 		case CM_NO_CONNECTION_BIST_SETUP:
-		    hw_context->cbus_mode =
-			CM_oCBUS_PEER_VERSION_PENDING_BIST_SETUP;
-		    break;
+			hw_context->cbus_mode =
+				CM_oCBUS_PEER_VERSION_PENDING_BIST_SETUP;
+			break;
 		case CM_NO_CONNECTION_BIST_STAT:
-		    hw_context->cbus_mode =
-			CM_oCBUS_PEER_VERSION_PENDING_BIST_STAT;
-		    break;
+			hw_context->cbus_mode =
+				CM_oCBUS_PEER_VERSION_PENDING_BIST_STAT;
+			break;
 		default:
-			;
+			break;
 		}
 		si_set_cbus_mode_leds(hw_context->cbus_mode);
 		/* For proper MHL discovery and tolerance of impedance
@@ -6367,9 +6340,8 @@ static int g2wb_err_isr(struct drv_hw_context *hw_context, uint8_t intr_stat)
 		}
 
 		if (BIT_MDT_XMIT_SM_ABORT_PKT_RCVD & intr_stat) {
-			MHL_TX_DBG_ERR
-			    ("%sBIT_MDT_XMIT_SM_ABORT_PKT_RCVD "
-			       "- status: 0x%02x%s\n",
+			MHL_TX_DBG_ERR(
+			     "%sBIT_MDT_XMIT_SM_ABORT_PKT_RCVD - status: 0x%02x%s\n",
 			     ANSI_ESC_RED_TEXT,
 			     mhl_tx_read_reg(hw_context,
 			       REG_MDT_SM_STAT),
@@ -6554,6 +6526,26 @@ static void si_mhl_tx_drv_enable_emsc_block(struct drv_hw_context *hw_context)
 	enable_intr(hw_context, INTR_BLOCK, BIT_EMSCINTR_SPI_DVLD);
 }
 
+static inline void process_enabled_intr(struct drv_hw_context *hw_context,
+	uint8_t intr_stat, uint8_t intr_num)
+{
+	intr_stat = intr_stat & g_intr_tbl[intr_num].mask;
+	if (intr_stat) {
+		int already_cleared;
+
+		MHL_TX_DBG_INFO("INTR-%s = %02X\n", g_intr_tbl[intr_num].name,
+			intr_stat);
+		already_cleared = g_intr_tbl[intr_num].
+					isr(hw_context, intr_stat);
+		if (already_cleared >= 0) {
+			intr_stat &= ~already_cleared;
+			if (intr_stat) {
+				mhl_tx_write_reg(hw_context, g_intr_tbl
+					[intr_num].stat_addr, intr_stat);
+			}
+		}
+	}
+}
 
 void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 	struct interrupt_info *intr_info)
@@ -6577,8 +6569,8 @@ void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 	mhl_tx_read_reg_block(hw_context, REG_FAST_INTR_STAT,
 			      sizeof(aggregated_intr_status),
 			      aggregated_intr_status);
-	MHL_TX_DBG_INFO("%s aggr intr status:"
-			" %02x %02x %02x %02x %02x %02x %02x%s\n",
+	MHL_TX_DBG_INFO(
+			"%s aggr intr status: %02x %02x %02x %02x %02x %02x %02x%s\n",
 			ANSI_ESC_GREEN_TEXT,
 			aggregated_intr_status[FAST_INTR_STAT],
 			aggregated_intr_status[L1_INTR_STAT_0],
@@ -6615,33 +6607,13 @@ void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 				intr_stat = (uint8_t) reg_value;
 
 				/* Process enabled interrupts. Ignore others */
-				intr_stat =
-				    intr_stat & g_intr_tbl[intr_num].mask;
-				if (intr_stat) {
-					int already_cleared;
-
-					MHL_TX_DBG_INFO("INTR-%s = %02X\n",
-							g_intr_tbl[intr_num].
-							name, intr_stat);
-					already_cleared =
-					    g_intr_tbl[intr_num].isr(hw_context,
-								     intr_stat);
-					if (already_cleared >= 0) {
-						intr_stat &= ~already_cleared;
-						if (intr_stat) {
-							mhl_tx_write_reg
-							    (hw_context,
-							     g_intr_tbl
-							     [intr_num].
-							     stat_addr,
-							     intr_stat);
-						}
-					}
-				}
+				process_enabled_intr(hw_context, intr_stat,
+						     intr_num);
 			}
 		}
 	}
 }
+
 
 /* default callbacks */
 int cb_enum_begin(void *context)
@@ -6876,7 +6848,7 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 		default:
 			MHL_TX_DBG_ERR("Unsupported AVLINK_DATA_RATE %02X\n",
 				(dev_context->bist_setup.avlink_data_rate));
-			return ;
+			return;
 		}
 		break;
 	default:
@@ -6887,8 +6859,7 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 			if (dev_context->xdev_cap_cache.mxdc.tmds_speeds
 				& MHL_XDC_TMDS_600) {
 				MHL_TX_DBG_INFO(
-				    "XDEVCAP TMDS Link Speed = 6.0Gbps is "
-				    "supported\n");
+				    "XDEVCAP TMDS Link Speed = 6.0Gbps is supported\n");
 				found_fit = true;
 				fits_6_0 = true;
 				/* 6000000 * 98; */
@@ -6903,8 +6874,7 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 			if (dev_context->xdev_cap_cache.mxdc.tmds_speeds
 				& MHL_XDC_TMDS_300) {
 				MHL_TX_DBG_INFO(
-				    "XDEVCAP TMDS Link Speed = 3.0Gbps is "
-				    "supported\n");
+				    "XDEVCAP TMDS Link Speed = 3.0Gbps is supported\n");
 				found_fit = true;
 				fits_3_0 = true;
 				/* 3000000 * 98; */
@@ -6919,8 +6889,7 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 			if (dev_context->xdev_cap_cache.mxdc.tmds_speeds
 				& MHL_XDC_TMDS_150) {
 				MHL_TX_DBG_INFO(
-				    "XDEVCAP TMDS Link Speed = 1.5Gbps is "
-				    "supported\n");
+				    "XDEVCAP TMDS Link Speed = 1.5Gbps is supported\n");
 				found_fit = true;
 				fits_1_5 = true;
 				/* 1500000 * 98; */
@@ -6931,8 +6900,7 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 		}
 		if (!found_fit) {
 			MHL_TX_DBG_ERR(
-				"Cannot fit mode to any supported TMDS Link "
-				"Speeds\n");
+				"Cannot fit mode to any supported TMDS Link Speeds\n");
 			MHL_TX_DBG_INFO("Forcing TMDS Link Speed = 6.0Gbps\n");
 			/* 6000000 * 98; */
 			top_clock_frequency = 588000000;
@@ -6941,8 +6909,8 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 		switch (platform_get_flags() & PLATFORM_FLAG_LINK_SPEED) {
 		case PLATFORM_FLAG_1_5GBPS:
 			if (fits_1_5) {
-				MHL_TX_DBG_WARN("Module parameter forcing "
-					"TMDS Link Speed = 1.5Gbps\n");
+				MHL_TX_DBG_WARN(
+					"Module parameter forcing TMDS Link Speed = 1.5Gbps\n");
 				/* 1500000 * 98; */
 				top_clock_frequency = 147000000;
 				reg_val = VAL_TX_ZONE_CTL3_TX_ZONE_1_5GBPS;
@@ -6950,8 +6918,8 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 			break;
 		case PLATFORM_FLAG_3GBPS:
 			if (fits_3_0) {
-				MHL_TX_DBG_WARN("Module parameter forcing "
-				    "TMDS Link Speed = 3.0Gbps\n");
+				MHL_TX_DBG_WARN(
+					"Module parameter forcing TMDS Link Speed = 3.0Gbps\n");
 				/* 3000000 * 98; */
 				top_clock_frequency = 294000000;
 				reg_val = VAL_TX_ZONE_CTL3_TX_ZONE_3GBPS;
@@ -6959,8 +6927,8 @@ static void si_mhl_tx_drv_set_lowest_tmds_link_speed(struct mhl_dev_context
 			break;
 		case PLATFORM_FLAG_6GBPS:
 			if (fits_6_0) {
-				MHL_TX_DBG_WARN("Module parameter forcing "
-					"TMDS Link Speed = 6.0Gbps\n");
+				MHL_TX_DBG_WARN(
+					"Module parameter forcing TMDS Link Speed = 6.0Gbps\n");
 				/* 6000000 * 98; */
 				top_clock_frequency = 588000000;
 				reg_val = VAL_TX_ZONE_CTL3_TX_ZONE_6GBPS;
@@ -7162,8 +7130,8 @@ void setup_sans_cbus1(struct mhl_dev_context *dev_context)
 	/* If SCDT is already high, then we will not get an interrupt */
 	reg_val = drive_hpd_high(hw_context, dummy_edid, length);
 	if (BIT_TMDS_CSTAT_P3_SCDT & reg_val) {
-		MHL_TX_DBG_WARN("BIST:: SCDT status is already HIGH. "
-			"Simulate int_5: %s0x%02x%s\n",
+		MHL_TX_DBG_WARN(
+			"BIST:: SCDT status is already HIGH. Simulate int_5: %s0x%02x%s\n",
 			ANSI_ESC_YELLOW_TEXT,
 			mhl_tx_read_reg(hw_context, REG_RX_HDMI_CTRL0),
 			ANSI_ESC_RESET_TEXT);
@@ -7520,9 +7488,8 @@ void si_mhl_tx_drv_stop_ecbus_bist(struct drv_hw_context *hw_context,
 
 
 	if (dev_context->bist_trigger_info & BIST_TRIGGER_TEST_E_CBUS_D) {
-		MHL_TX_DBG_INFO
-		    ("eCBUS State Machine: "
-		     "0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
+		MHL_TX_DBG_INFO(
+		     "eCBUS State Machine: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_0),
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_1),
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_2),
@@ -7530,9 +7497,8 @@ void si_mhl_tx_drv_stop_ecbus_bist(struct drv_hw_context *hw_context,
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_4),
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_5));
 	} else {
-		MHL_TX_DBG_INFO
-		    ("eCBUS State Machine: "
-		     "0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
+		MHL_TX_DBG_INFO(
+		     "eCBUS State Machine: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_0),
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_1),
 		     mhl_tx_read_reg(hw_context, REG_COC_STAT_2),
@@ -7661,8 +7627,8 @@ int si_mhl_tx_drv_start_impedance_bist(struct drv_hw_context *hw_context,
 		break;
 
 	default:
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			"IMPEDANCE_MODE field\n",
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in IMPEDANCE_MODE field\n",
 			test_info->impedance_mode);
 		status = -EINVAL;
 	}

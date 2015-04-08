@@ -75,34 +75,58 @@ uint16_t plim_table[] = {
 #ifdef DEBUG
 static char *get_cbus_command_string(int command)
 {
-#define CBUS_COMMAND_CASE(command) case command: return #command;
 	switch (command) {
-		CBUS_COMMAND_CASE(MHL_ACK)
-		    CBUS_COMMAND_CASE(MHL_NACK)
-		    CBUS_COMMAND_CASE(MHL_ABORT)
-		    CBUS_COMMAND_CASE(MHL_WRITE_STAT)
-		    CBUS_COMMAND_CASE(MHL_SET_INT)
-		    CBUS_COMMAND_CASE(MHL_READ_DEVCAP_REG)
-		    CBUS_COMMAND_CASE(MHL_READ_XDEVCAP_REG)
-		    CBUS_COMMAND_CASE(MHL_GET_STATE)
-		    CBUS_COMMAND_CASE(MHL_GET_VENDOR_ID)
-		    CBUS_COMMAND_CASE(MHL_SET_HPD)
-		    CBUS_COMMAND_CASE(MHL_CLR_HPD)
-		    CBUS_COMMAND_CASE(MHL_SET_CAP_ID)
-		    CBUS_COMMAND_CASE(MHL_GET_CAP_ID)
-		    CBUS_COMMAND_CASE(MHL_MSC_MSG)
-		    CBUS_COMMAND_CASE(MHL_GET_SC1_ERRORCODE)
-		    CBUS_COMMAND_CASE(MHL_GET_DDC_ERRORCODE)
-		    CBUS_COMMAND_CASE(MHL_GET_MSC_ERRORCODE)
-		    CBUS_COMMAND_CASE(MHL_WRITE_BURST)
-		    CBUS_COMMAND_CASE(MHL_GET_SC3_ERRORCODE)
-		    CBUS_COMMAND_CASE(MHL_WRITE_XSTAT)
-		    CBUS_COMMAND_CASE(MHL_READ_DEVCAP)
-		    CBUS_COMMAND_CASE(MHL_READ_XDEVCAP)
-		    CBUS_COMMAND_CASE(MHL_READ_EDID_BLOCK)
-		    CBUS_COMMAND_CASE(MHL_SEND_3D_REQ_OR_FEAT_REQ)
+	case MHL_ACK:
+		return "MHL_ACK";
+	case MHL_NACK:
+		return "MHL_NACK";
+	case MHL_ABORT:
+		return "MHL_ABORT";
+	case MHL_WRITE_STAT:
+		return "MHL_WRITE_STAT";
+	case MHL_SET_INT:
+		return "MHL_SET_INT";
+	case MHL_READ_DEVCAP_REG:
+		return "MHL_READ_DEVCAP_REG";
+	case MHL_READ_XDEVCAP_REG:
+		return "MHL_READ_XDEVCAP_REG";
+	case MHL_GET_STATE:
+		return "MHL_GET_STATE";
+	case MHL_GET_VENDOR_ID:
+		return "MHL_GET_VENDOR_ID";
+	case MHL_SET_HPD:
+		return "MHL_SET_HPD";
+	case MHL_CLR_HPD:
+		return "MHL_CLR_HPD";
+	case MHL_SET_CAP_ID:
+		return "MHL_SET_CAP_ID";
+	case MHL_GET_CAP_ID:
+		return "MHL_GET_CAP_ID";
+	case MHL_MSC_MSG:
+		return "MHL_MSC_MSG";
+	case MHL_GET_SC1_ERRORCODE:
+		return "MHL_GET_SC1_ERRORCODE";
+	case MHL_GET_DDC_ERRORCODE:
+		return "MHL_GET_DDC_ERRORCODE";
+	case MHL_GET_MSC_ERRORCODE:
+		return "MHL_GET_MSC_ERRORCODE";
+	case MHL_WRITE_BURST:
+		return "MHL_WRITE_BURST";
+	case MHL_GET_SC3_ERRORCODE:
+		return "MHL_GET_SC3_ERRORCODE";
+	case MHL_WRITE_XSTAT:
+		return "MHL_WRITE_XSTAT";
+	case MHL_READ_DEVCAP:
+		return "MHL_READ_DEVCAP";
+	case MHL_READ_XDEVCAP:
+		return "MHL_READ_XDEVCAP";
+	case MHL_READ_EDID_BLOCK:
+		return "MHL_READ_EDID_BLOCK";
+	case MHL_SEND_3D_REQ_OR_FEAT_REQ:
+		return "MHL_SEND_3D_REQ_OR_FEAT_REQ";
+	default:
+		return "unknown";
 	}
-	return "unknown";
 }
 #else
 #define get_cbus_command_string(command) ""
@@ -158,8 +182,7 @@ static struct cbus_req *get_free_cbus_queue_entry_impl(
 		list_for_each(entry, &dev_context->cbus_queue) {
 			req = list_entry(entry, struct cbus_req, link);
 			MHL_TX_GENERIC_DBG_PRINT(-1,
-				"cbus_queue entry %d called from %s:%d\n\t%s "
-				"0x%02x 0x%02x\n",
+				"cbus_queue entry %d called from %s:%d\n\t%s 0x%02x 0x%02x\n",
 				req->sequence, req->function, req->line,
 				get_cbus_command_string(req->command),
 				req->reg, req->reg_data);
@@ -258,8 +281,8 @@ struct cbus_req *get_next_cbus_transaction(struct mhl_dev_context *dev_context)
 	}
 
 	if (dev_context->misc_flags.flags.cbus_abort_delay_active) {
-		MHL_TX_DBG_INFO("CBUS abort delay in progress "
-				"can't send any messages\n");
+		MHL_TX_DBG_INFO(
+			"CBUS abort delay in progress can't send any messages\n");
 		return NULL;
 	}
 
@@ -302,27 +325,44 @@ struct cbus_req *get_next_cbus_transaction(struct mhl_dev_context *dev_context)
 #ifdef DEBUG
 static char *get_block_id_string(int id)
 {
-#define BURST_ID_CASE(id) case id: return #id;
 	switch (id) {
-		BURST_ID_CASE(MHL_TEST_ADOPTER_ID)
-		BURST_ID_CASE(burst_id_3D_VIC)
-		BURST_ID_CASE(burst_id_3D_DTD)
-		BURST_ID_CASE(burst_id_HEV_VIC)
-		BURST_ID_CASE(burst_id_HEV_DTDA)
-		BURST_ID_CASE(burst_id_HEV_DTDB)
-		BURST_ID_CASE(burst_id_VC_ASSIGN)
-		BURST_ID_CASE(burst_id_VC_CONFIRM)
-		BURST_ID_CASE(burst_id_AUD_DELAY)
-		BURST_ID_CASE(burst_id_ADT_BURSTID)
-		BURST_ID_CASE(burst_id_BIST_SETUP)
-		BURST_ID_CASE(burst_id_BIST_RETURN_STAT)
-		BURST_ID_CASE(burst_id_EMSC_SUPPORT)
-		BURST_ID_CASE(burst_id_HID_PAYLOAD)
-		BURST_ID_CASE(burst_id_BLK_RCV_BUFFER_INFO)
-		BURST_ID_CASE(burst_id_BITS_PER_PIXEL_FMT)
-		BURST_ID_CASE(LOCAL_ADOPTER_ID)
+	case MHL_TEST_ADOPTER_ID:
+		return "MHL_TEST_ADOPTER_ID";
+	case burst_id_3D_VIC:
+		return "burst_id_3D_VIC";
+	case burst_id_3D_DTD:
+		return "burst_id_3D_DTD";
+	case burst_id_HEV_VIC:
+		return "burst_id_HEV_VIC";
+	case burst_id_HEV_DTDA:
+		return "burst_id_HEV_DTDA";
+	case burst_id_HEV_DTDB:
+		return "burst_id_HEV_DTDB";
+	case burst_id_VC_ASSIGN:
+		return "burst_id_VC_ASSIGN";
+	case burst_id_VC_CONFIRM:
+		return "burst_id_VC_CONFIRM";
+	case burst_id_AUD_DELAY:
+		return "burst_id_AUD_DELAY";
+	case burst_id_ADT_BURSTID:
+		return "burst_id_ADT_BURSTID";
+	case burst_id_BIST_SETUP:
+		return "burst_id_BIST_SETUP";
+	case burst_id_BIST_RETURN_STAT:
+		return "burst_id_BIST_RETURN_STAT";
+	case burst_id_EMSC_SUPPORT:
+		return "burst_id_EMSC_SUPPORT";
+	case burst_id_HID_PAYLOAD:
+		return "burst_id_HID_PAYLOAD";
+	case burst_id_BLK_RCV_BUFFER_INFO:
+		return "burst_id_BLK_RCV_BUFFER_INFO";
+	case burst_id_BITS_PER_PIXEL_FMT:
+		return "burst_id_BITS_PER_PIXEL_FMT";
+	case LOCAL_ADOPTER_ID:
+		return "LOCAL_ADOPTER_ID";
+	default:
+		return "unknown";
 	}
-	return "unknown";
 }
 #else
 #define get_block_id_string(command) ""
@@ -341,8 +381,8 @@ static struct block_req *start_new_block_marshalling_req_impl(
 			function, line);
 		list_for_each(entry, &dev_context->block_protocol.queue) {
 			req = list_entry(entry, struct block_req, link);
-			MHL_TX_DBG_ERR("block_protocol.queue entry %d called "
-				"from %s:%d\n\t%s 0x%04x\n",
+			MHL_TX_DBG_ERR(
+				"block_protocol.queue entry %d called from %s:%d\n\t%s 0x%04x\n",
 				req->sequence, req->function, req->line,
 				get_block_id_string(BURST_ID(req->payload->
 					hdr_and_burst_id.burst_id)),
@@ -353,9 +393,9 @@ static struct block_req *start_new_block_marshalling_req_impl(
 		     i < ARRAY_SIZE(dev_context->block_protocol.req_entries);
 		     ++i) {
 			req = &dev_context->block_protocol.req_entries[i];
-			MHL_TX_DBG_ERR("%d block_protocol.req_entries[%d] "
-				"called from %s:%d\n", req->sequence, i,
-				req->function, req->line);
+			MHL_TX_DBG_ERR(
+				"%d block_protocol.req_entries[%d] called from %s:%d\n",
+				req->sequence, i, req->function, req->line);
 		}
 		return NULL;
 	}
@@ -463,10 +503,10 @@ void si_mhl_tx_push_block_transactions(struct mhl_dev_context *dev_context)
 			/* not enough space in peer's receive buffer,
 			   so wait to send until later
 			 */
-			MHL_TX_DBG_ERR("==== not enough space in peer's "
-				"receive buffer, send later payload_size:0x%x,"
-				"blk_rx_buffer_avail:0x%x sub-payload size:"
-				"0x%x tport_hdr size:0x%x\n",
+			MHL_TX_DBG_ERR(
+				"==== not enough space in peer's receive buffer, send later.");
+			MHL_TX_DBG_ERR(
+				"payload_size:0x%x, blk_rx_buffer_avail:0x%x sub-payload size: 0x%x tport_hdr size:0x%x\n",
 				payload_size,
 				hw_context->block_protocol.
 				peer_blk_rx_buf_avail,
@@ -1065,9 +1105,9 @@ static void bist_timer_callback(void *callback_param)
 
 	MHL_TX_DBG_INFO("%s\n", si_mhl_tx_drv_get_cbus_mode_str(cbus_mode))
 	if (CM_BIST_DONE_PENDING_DISCONNECT == cbus_mode) {
-		MHL_TX_DBG_ERR("%s Peer disconnected before"
-				"T_BIST_MODE_DOWN expired%s\n",
-				ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT)
+		MHL_TX_DBG_ERR(
+			"%s Peer disconnected before T_BIST_MODE_DOWN expired%s\n",
+			ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT)
 		return;
 	} else if (dev_context->bist_timeout_total < bist_timeout_value) {
 		int32_t temp;
@@ -1092,10 +1132,10 @@ static void bist_timer_callback(void *callback_param)
 			}
 		}
 		if (CM_NO_CONNECTION_BIST_STAT == cbus_mode) {
-			MHL_TX_DBG_ERR("%s Peer disconnected before"
-					" bist timeout expired%s: %d\n",
-					ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT,
-					dev_context->bist_timeout_total);
+			MHL_TX_DBG_ERR(
+				"%s Peer disconnected before bist timeout expired%s: %d\n",
+				ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT,
+				dev_context->bist_timeout_total);
 			;
 		} else if (si_mhl_tx_drv_ecbus_connected(dev_context)) {
 			/* accept the error count
@@ -1240,9 +1280,9 @@ void si_mhl_tx_drive_states(struct mhl_dev_context *dev_context)
 	case CM_eCBUS_S_BIST:
 	case CM_eCBUS_D_BIST:
 	case CM_BIST_DONE_PENDING_DISCONNECT:
-		MHL_TX_DBG_ERR
-		    ("CBUS transactions forbidden in transitional state"
-		     " command:0x%x\n", peek->command);
+		MHL_TX_DBG_ERR(
+			"CBUS transactions forbidden in transitional state command:0x%x\n",
+			peek->command);
 		return;
 	default:
 		break;
@@ -1416,7 +1456,7 @@ enum scratch_pad_status si_mhl_tx_request_write_burst(struct mhl_dev_context
  */
 bool si_mhl_tx_send_msc_msg(struct mhl_dev_context *dev_context,
 			    uint8_t command, uint8_t cmdData,
-	struct cbus_req *(*completion)(struct mhl_dev_context *dev_context,
+	struct cbus_req * (*completion)(struct mhl_dev_context *dev_context,
 				struct cbus_req *req, uint8_t data1)
 			)
 {
@@ -1856,8 +1896,8 @@ bool invalid_bist_parms(struct mhl_dev_context *dev_context,
 	test_sel &= ~BIST_TRIGGER_E_CBUS_TYPE_MASK;
 
 	if (test_sel > BIST_TRIGGER_IMPEDANCE_TEST) {
-		MHL_TX_DBG_ERR("Impedance test cannot be run "
-			       "concurrently with other tests!\n");
+		MHL_TX_DBG_ERR(
+			"Impedance test cannot be run concurrently with other tests!\n");
 		return true;
 	}
 
@@ -1882,8 +1922,8 @@ bool invalid_bist_parms(struct mhl_dev_context *dev_context,
 			MHL_TX_DBG_ERR("AV LINK_DATA_RATE 6.0Gbps\n");
 			break;
 		default:
-			MHL_TX_DBG_ERR("%sUnsupported "
-				"AVLINK_DATA_RATE %02X%s\n",
+			MHL_TX_DBG_ERR(
+				"%sUnsupported AVLINK_DATA_RATE %02X%s\n",
 				ANSI_ESC_RED_TEXT,
 				setup_info->avlink_data_rate,
 				ANSI_ESC_RESET_TEXT);
@@ -1907,8 +1947,8 @@ bool invalid_bist_parms(struct mhl_dev_context *dev_context,
 			break;
 
 		default:
-			MHL_TX_DBG_ERR("%sUnrecognized test "
-				"pattern detected!%s\n",
+			MHL_TX_DBG_ERR(
+				"%sUnrecognized test pattern detected!%s\n",
 				ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT);
 			return true;
 		}
@@ -2012,8 +2052,8 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 		dev_context->bist_stat.e_cbus_next_local_stat = 0;
 		dev_context->bist_stat.e_cbus_remote_stat = 0;
 	} else {
-		MHL_TX_DBG_ERR("BIST test requested without prior "
-			       "valid BIST setup command\n");
+		MHL_TX_DBG_ERR(
+			"BIST test requested without prior valid BIST setup command\n");
 		dev_context->bist_stat.avlink_stat = 0xFFFF;
 		dev_context->bist_stat.e_cbus_prev_local_stat = 0xFFFF;
 		dev_context->bist_stat.e_cbus_local_stat = 0xFFFF;
@@ -2036,9 +2076,8 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 		}
 	} else {
 		if (cbus_mode < CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST) {
-			MHL_TX_DBG_ERR
-				("%sCannot initiate eCBUS-S BIST when "
-				"CBUS mode is%s %s\n",
+			MHL_TX_DBG_ERR(
+				"%sCannot initiate eCBUS-S BIST when CBUS mode is%s %s\n",
 				ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT,
 				si_mhl_tx_drv_get_cbus_mode_str(cbus_mode));
 			si_mhl_tx_bist_cleanup(dev_context);
@@ -2047,9 +2086,8 @@ void initiate_bist_test(struct mhl_dev_context *dev_context)
 
 		if (e_cbus_d_sel &&
 			cbus_mode < CM_TRANSITIONAL_TO_eCBUS_D_CAL_BIST) {
-			MHL_TX_DBG_ERR
-				("%sCannot initiate eCBUS-S BIST when "
-				"CBUS mode is%s %s\n",
+			MHL_TX_DBG_ERR(
+				"%sCannot initiate eCBUS-S BIST when CBUS mode is%s %s\n",
 				ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT,
 				si_mhl_tx_drv_get_cbus_mode_str(cbus_mode));
 			si_mhl_tx_bist_cleanup(dev_context);
@@ -2108,18 +2146,16 @@ void start_bist_initiator_test(struct mhl_dev_context *dev_context)
 	} else {
 		MHL_TX_DBG_ERR("\n")
 		if (cbus_mode < CM_TRANSITIONAL_TO_eCBUS_S_CAL_BIST) {
-			MHL_TX_DBG_ERR
-			    ("Cannot initiate eCBUS-S BIST when CBUS mode is"
-			     " %s\n",
+			MHL_TX_DBG_ERR(
+			    "Cannot initiate eCBUS-S BIST when CBUS mode is %s\n",
 			     si_mhl_tx_drv_get_cbus_mode_str(cbus_mode))
 			si_mhl_tx_bist_cleanup(dev_context);
 			return;
 		}
 		if (e_cbus_d_sel &&
 			cbus_mode < CM_TRANSITIONAL_TO_eCBUS_D_CAL_BIST) {
-			MHL_TX_DBG_ERR
-			    ("Cannot initiate eCBUS-D BIST when CBUS mode is"
-			     " %s\n",
+			MHL_TX_DBG_ERR(
+			    "Cannot initiate eCBUS-D BIST when CBUS mode is %s\n",
 			     si_mhl_tx_drv_get_cbus_mode_str(cbus_mode))
 			si_mhl_tx_bist_cleanup(dev_context);
 			return;
@@ -2226,8 +2262,9 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 				si_mhl_tx_set_int(dev_context, MHL_RCHANGE_INT,
 					MHL_INT_DCAP_CHG, 1);
 			} else {
-				MHL_TX_DBG_WARN("%sQueue VERSION_STAT,DCAP_RDY"
-					", DCAP_CHG%s\n", ANSI_ESC_GREEN_TEXT,
+				MHL_TX_DBG_WARN(
+					"%sQueue VERSION_STAT,DCAP_RDY, DCAP_CHG%s\n",
+					ANSI_ESC_GREEN_TEXT,
 					ANSI_ESC_RESET_TEXT);
 				si_mhl_tx_set_status(dev_context, false,
 					MHL_STATUS_REG_VERSION_STAT,
@@ -2244,8 +2281,8 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 						  MHL_INT_DCAP_CHG, 1);
 			}
 #else
-			MHL_TX_DBG_ERR
-			    ("%sQueue VERSION_STAT, DCAP_RDY, DCAP_CHG%s\n",
+			MHL_TX_DBG_ERR(
+			     "%sQueue VERSION_STAT, DCAP_RDY, DCAP_CHG%s\n",
 			     ANSI_ESC_GREEN_TEXT, ANSI_ESC_RESET_TEXT);
 			si_mhl_tx_set_status(dev_context, false,
 					     MHL_STATUS_REG_VERSION_STAT,
@@ -2349,8 +2386,8 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 						  dev_context->
 						  cbus_mode_up_timer);
 			} else {
-				MHL_TX_DBG_ERR("Unrecognized RAP code: 0x%02x "
-					       "received\n",
+				MHL_TX_DBG_ERR(
+					       "Unrecognized RAP code: 0x%02x received\n",
 					       dev_context->msc_msg_data);
 				rapk_status = MHL_RAPK_UNRECOGNIZED;
 			}
@@ -2492,8 +2529,7 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 					if (CM_oCBUS_PEER_IS_MHL3 ==
 						cbus_mode) {
 						MHL_TX_DBG_ERR(
-							"starting timer for "
-							"CBUS_MODE_UP\n")
+							"starting timer for CBUS_MODE_UP\n");
 						mhl_tx_start_timer(dev_context,
 							dev_context->
 							cbus_mode_up_timer,
@@ -2509,8 +2545,8 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 				}
 
 			} else {
-				MHL_TX_DBG_ERR("Got RAPK for RAP "
-					"cmd: %02x,err_code: %02x\n",
+				MHL_TX_DBG_ERR(
+					"Got RAPK for RAP cmd: %02x,err_code: %02x\n",
 					dev_context->msc_msg_last_data,
 					dev_context->msc_msg_data);
 					/* post status */
@@ -2576,8 +2612,7 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 			    dev_context->msc_msg_data;
 			if (dev_context->msc_msg_data ==
 			    BIST_TRIGGER_IMPEDANCE_TEST) {
-				MHL_TX_DBG_ERR("BIST_TRIGGER_IMPEDANCE_TEST"
-					"\n");
+				MHL_TX_DBG_ERR("BIST_TRIGGER_IMPEDANCE_TEST\n");
 				si_mhl_tx_drv_start_impedance_bist(
 					(struct drv_hw_context *)
 					&dev_context->
@@ -2620,8 +2655,8 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 
 		case MHL_MSC_MSG_BIST_REQUEST_STAT:
 			if (cbus_mode != CM_oCBUS_PEER_IS_MHL3_BIST_STAT) {
-				MHL_TX_DBG_ERR("Got BIST_REQUEST_STAT when "
-					"CBUS mode is %s\n",
+				MHL_TX_DBG_ERR(
+					"Got BIST_REQUEST_STAT when CBUS mode is %s\n",
 					si_mhl_tx_drv_get_cbus_mode_str
 					(cbus_mode));
 				break;
@@ -2636,9 +2671,9 @@ void si_mhl_tx_process_events(struct mhl_dev_context *dev_context)
 			break;
 
 		default:
-			MHL_TX_DBG_ERR("Unexpected MSC message "
-					"sub-command code: 0x%02x received!\n",
-					dev_context->msc_msg_sub_command);
+			MHL_TX_DBG_ERR(
+				"Unexpected MSC message sub-command code: 0x%02x received!\n",
+				dev_context->msc_msg_sub_command);
 			break;
 		}
 	}
@@ -2897,9 +2932,8 @@ static void si_mhl_tx_ecbus_speeds_done(struct mhl_dev_context *dev_context)
 					MHL_TX_DBG_ERR("status: %d\n", status);
 					break;
 				}
-				MHL_TX_DBG_ERR
-					("%sLocal BIST results%s"
-					" eCBUS TX:%s0x%06x%s\n",
+				MHL_TX_DBG_ERR(
+					"%sLocal BIST results%s eCBUS TX:%s0x%06x%s\n",
 					ANSI_ESC_GREEN_TEXT,
 					ANSI_ESC_RESET_TEXT,
 					ANSI_ESC_GREEN_TEXT,
@@ -2908,9 +2942,8 @@ static void si_mhl_tx_ecbus_speeds_done(struct mhl_dev_context *dev_context)
 					ANSI_ESC_RESET_TEXT)
 			} else if (BIST_TRIGGER_E_CBUS_RX &
 				    dev_context->bist_trigger_info) {
-				MHL_TX_DBG_ERR("%swaiting for "
-					"BIST_REQUEST_STAT "
-					"from sink TE%s\n",
+				MHL_TX_DBG_ERR(
+					"%swaiting for BIST_REQUEST_STAT from sink TE%s\n",
 					ANSI_ESC_GREEN_TEXT,
 					ANSI_ESC_RESET_TEXT)
 				break;
@@ -2978,8 +3011,9 @@ static struct cbus_req *read_xdevcap_done(struct mhl_dev_context *dev_context,
 		    = dev_context->xdev_cap_cache.xdevcap_cache[i]
 		    ^ old_xdevcap.xdevcap_cache[i];
 		if (xdevcap_changes.xdevcap_cache[i]) {
-			MHL_TX_DBG_INFO("XDEVCAP[%d] changed from "
-				"0x%02x to 0x%02x\n", i,
+			MHL_TX_DBG_INFO(
+				"XDEVCAP[%d] changed from 0x%02x to 0x%02x\n",
+				i,
 				old_xdevcap.xdevcap_cache[i],
 				dev_context->xdev_cap_cache.
 				xdevcap_cache[i]);
@@ -3002,8 +3036,8 @@ static struct cbus_req *read_xdevcap_done(struct mhl_dev_context *dev_context,
 		 */
 #if (INCLUDE_HID)
 		if (roles & MHL_XDC_HID_DEVICE) {
-			MHL_TX_DBG_INFO("mhl: calling "
-				"mhl_tx_hid_host_role_request()\n");
+			MHL_TX_DBG_INFO(
+				"mhl: calling mhl_tx_hid_host_role_request()\n");
 			mhl_tx_hid_host_role_request(dev_context,
 				MHL_RHID_REQUEST_HOST);
 		}
@@ -3133,9 +3167,8 @@ static struct cbus_req *read_edid_done(struct mhl_dev_context *dev_context,
 static struct cbus_req *write_stat_done(struct mhl_dev_context *dev_context,
 				struct cbus_req *req, uint8_t data1)
 {
-	MHL_TX_DBG_INFO("Sent WRITE_STAT[0x%02x]->0x%02x"
-			" miscFlags: %08X\n", req->reg, req->reg_data,
-			dev_context->misc_flags.as_uint32);
+	MHL_TX_DBG_INFO("Sent WRITE_STAT[0x%02x]->0x%02x miscFlags: %08X\n",
+		req->reg, req->reg_data, dev_context->misc_flags.as_uint32);
 	if (MHL_STATUS_REG_CONNECTED_RDY == req->reg) {
 		if (MHL_STATUS_DCAP_RDY & req->reg_data) {
 			dev_context->misc_flags.flags.sent_dcap_rdy =
@@ -3256,8 +3289,8 @@ void si_mhl_tx_msc_command_done(struct mhl_dev_context *dev_context,
 
 	req = dev_context->current_cbus_req;
 	if (req == NULL) {
-		MHL_TX_DBG_ERR("No message to associate with "
-			       "completion notification\n");
+		MHL_TX_DBG_ERR(
+			"No message to associate with completion notification\n");
 		return;
 	}
 	MHL_TX_DBG_INFO("current command:0x%02x\n", req->command);
@@ -3286,46 +3319,23 @@ void si_mhl_tx_msc_command_done(struct mhl_dev_context *dev_context,
 			     req->msg_data[0], req->msg_data[1]);
 			req = req->completion(dev_context, req, data1);
 		} else {
-			MHL_TX_DBG_INFO("default\n"
-					"\tcommand: 0x%02X\n"
-					"\tmsg_data: 0x%02X "
-					"msc_msg_last_data: 0x%02X\n",
-					req->command,
-					req->msg_data[0],
-					dev_context->msc_msg_last_data);
+			MHL_TX_DBG_INFO(
+				"default\n\tcommand: 0x%02X\n\tmsg_data: 0x%02X msc_msg_last_data: 0x%02X\n",
+				req->command,
+				req->msg_data[0],
+				dev_context->msc_msg_last_data);
 		}
 	} else if (req->completion) {
 		req = req->completion(dev_context, req, data1);
-#if 0
-	} else if (MHL_READ_XDEVCAP == req->command) {
-		req = read_xdevcap_done(dev_context, req, data1);
-
-	} else if (MHL_READ_XDEVCAP_REG == req->command) {
-		req = read_xdevcap_reg_done(dev_context, req, data1);
-	} else if (MHL_READ_DEVCAP == req->command) {
-		req = read_devcap_done(dev_context, req, data1);
-	} else if (MHL_READ_EDID_BLOCK == req->command) {
-		req = read_edid_done(dev_context, req, data1);
-	} else if (MHL_WRITE_STAT == req->command) {
-		req = write_stat_done(dev_context, req, data1);
-#endif
-#if 0
-	} else if (MHL_WRITE_BURST == req->command) {
-		req = write_burst_done(dev_context, req, data1);
-	} else if (MHL_SET_INT == req->command) {
-		req = set_int_done(dev_context, req, data1);
-#endif
 	} else if (MHL_SEND_3D_REQ_OR_FEAT_REQ == req->command) {
 		MHL_TX_DBG_ERR("3D_REQ or FEAT_REQ completed\n");
 	} else {
-		MHL_TX_DBG_INFO("default\n"
-				"\tcommand: 0x%02X reg: 0x%02x reg_data: "
-				"0x%02x burst_offset: 0x%02x msg_data[0]: "
-				"0x%02x msg_data[1]: 0x%02x\n",
-				req->command,
-				req->reg, req->reg_data,
-				req->burst_offset,
-				req->msg_data[0], req->msg_data[1]);
+		MHL_TX_DBG_INFO(
+			"default\n\tcommand: 0x%02X reg: 0x%02x reg_data: 0x%02x\n",
+			req->command, req->reg, req->reg_data);
+		MHL_TX_DBG_INFO(
+			"burst_offset: 0x%02x msg_data[0]: 0x%02x msg_data[1]: 0x%02x\n",
+			req->burst_offset, req->msg_data[0], req->msg_data[1]);
 	}
 
 	if (req != NULL)
@@ -3356,8 +3366,8 @@ void si_mhl_tx_process_vc_assign_burst(struct mhl_dev_context *dev_context,
 	 * two or three channel allocations
 	 */
 	if (tdm_burst->num_entries_this_burst > 3) {
-		MHL_TX_DBG_ERR("Bad number of assignment requests in "
-			"virtual channel assign\n");
+		MHL_TX_DBG_ERR(
+			"Bad number of assignment requests in virtual channel assign\n");
 		return;
 	}
 
@@ -3389,8 +3399,8 @@ void si_mhl_tx_process_vc_assign_burst(struct mhl_dev_context *dev_context,
 		((struct drv_hw_context *)&dev_context->drv_context,
 		dev_context->virt_chan_slot_counts, false)) {
 
-		MHL_TX_DBG_INFO("Source will reject request to assign "
-			"CBUS virtual channels\n");
+		MHL_TX_DBG_INFO(
+			"Source will reject request to assign CBUS virtual channels\n");
 
 		for (idx = 0; idx < VC_MAX; idx++)
 			dev_context->virt_chan_slot_counts[idx] =
@@ -3448,23 +3458,19 @@ void si_mhl_tx_process_vc_confirm_burst(struct mhl_dev_context *dev_context,
 
 	if (tdm_burst->vc_info[TDM_VC_E_MSC - 1].req_resp.response !=
 	    VC_RESPONSE_ACCEPT) {
-		MHL_TX_DBG_WARN("Sink rejected request to assign"
-				"%d slots to E_MSC virtual channel with status: 0x%02x\n",
-				dev_context->
-				virt_chan_slot_counts[TDM_VC_E_MSC],
-				tdm_burst->vc_info[TDM_VC_E_MSC -
-						   1].req_resp.response);
+		MHL_TX_DBG_WARN(
+			"Sink rejected request to assign %d slots to E_MSC virtual channel with status: 0x%02x\n",
+			dev_context->virt_chan_slot_counts[TDM_VC_E_MSC],
+			tdm_burst->vc_info[TDM_VC_E_MSC - 1].req_resp.response);
 		assign_ok = false;
 	}
 
 	if (tdm_burst->vc_info[TDM_VC_T_CBUS - 1].req_resp.response !=
 	    VC_RESPONSE_ACCEPT) {
-		MHL_TX_DBG_WARN("Sink rejected request to assign"
-				"%d slots to T_CBUS virtual channel with status: 0x%02x\n",
-				dev_context->
-				virt_chan_slot_counts[TDM_VC_T_CBUS],
-				tdm_burst->vc_info[TDM_VC_T_CBUS -
-						   1].req_resp.response);
+		MHL_TX_DBG_WARN(
+			"Sink rejected request to assign %d slots to T_CBUS virtual channel with status: 0x%02x\n",
+			dev_context->virt_chan_slot_counts[TDM_VC_T_CBUS],
+			tdm_burst->vc_info[TDM_VC_T_CBUS - 1].req_resp.response)
 		assign_ok = false;
 	}
 
@@ -3474,8 +3480,8 @@ void si_mhl_tx_process_vc_confirm_burst(struct mhl_dev_context *dev_context,
 						      dev_context->
 						      virt_chan_slot_counts,
 						      true);
-		MHL_TX_DBG_ERR
-		    ("Sink accepted requested virtual channel assignments\n");
+		MHL_TX_DBG_ERR(
+			"Sink accepted requested virtual channel assignments\n");
 	} else {
 		dev_context->virt_chan_slot_counts[TDM_VC_E_MSC] =
 		    dev_context->prev_virt_chan_slot_counts[TDM_VC_E_MSC];
@@ -3571,9 +3577,9 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 			break;
 		}
 	default:
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "IMPEDANCE_MODE field\n",
-			       bist_setup->impedance_mode);
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in IMPEDANCE_MODE field\n",
+			bist_setup->impedance_mode);
 		setup_status |= BIST_READY_TERM_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3582,8 +3588,8 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	}
 
 	if (bist_setup->e_cbus_duration == 0) {
-		MHL_TX_DBG_ERR("Invalid value 0x00 specified in "
-			       "eCBUS_DURATION field\n");
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x00 specified in eCBUS_DURATION field\n");
 		setup_status |= BIST_READY_E_CBUS_ERROR | BIST_READY_TERM_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3591,9 +3597,9 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	}
 
 	if (bist_setup->e_cbus_pattern > BIST_ECBUS_PATTERN_MAX) {
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "eCBUS_PATTERN field\n",
-			       bist_setup->e_cbus_pattern);
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in eCBUS_PATTERN field\n",
+			bist_setup->e_cbus_pattern);
 		setup_status |= BIST_READY_E_CBUS_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3601,9 +3607,9 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	}
 
 	if (bist_setup->avlink_pattern > BIST_AVLINK_PATTERN_MAX) {
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "AVLINK_PATTERN field\n",
-			       bist_setup->avlink_pattern);
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in AVLINK_PATTERN field\n",
+			bist_setup->avlink_pattern);
 		setup_status |= BIST_READY_AVLINK_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3612,8 +3618,8 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 
 	if (!(bist_setup->avlink_video_mode == 3 ||
 	      bist_setup->avlink_video_mode == 4)) {
-		MHL_TX_DBG_ERR("Invalid value specified in "
-			       "AVLINK_VIDEO_MODE field\n");
+		MHL_TX_DBG_ERR(
+			"Invalid value specified in AVLINK_VIDEO_MODE field\n");
 		setup_status |= BIST_READY_AVLINK_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3621,9 +3627,9 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	}
 
 	if (bist_setup->avlink_randomizer > 1) {
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "AVLINK_RANDOMIZER field\n",
-			       bist_setup->avlink_randomizer);
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in AVLINK_RANDOMIZER field\n",
+			bist_setup->avlink_randomizer);
 		setup_status |= BIST_READY_AVLINK_ERROR;
 		si_mhl_tx_drv_switch_cbus_mode((struct drv_hw_context *)
 			&dev_context->drv_context,
@@ -3636,9 +3642,9 @@ void si_mhl_tx_process_bist_setup_burst(struct mhl_dev_context *dev_context,
 	 */
 	if (bist_setup->avlink_data_rate == 0 ||
 	    bist_setup->avlink_data_rate > 3) {
-		MHL_TX_DBG_ERR("Invalid value 0x%02x specified in "
-			       "AVLINK_PATTERN field\n",
-			       bist_setup->avlink_data_rate);
+		MHL_TX_DBG_ERR(
+			"Invalid value 0x%02x specified in AVLINK_PATTERN field\n",
+			bist_setup->avlink_data_rate);
 		setup_status |= BIST_READY_AVLINK_ERROR;
 	}
 
@@ -3763,9 +3769,8 @@ void si_mhl_tx_process_write_burst_data(struct mhl_dev_context *dev_context)
 			if (0 != calculate_generic_checksum(
 				(uint8_t *)bist_status, 0,
 				sizeof(*bist_status))) {
-					MHL_TX_DBG_ERR
-					    ("BIST_RETURN_STAT received "
-					     "with bad checksum\n");
+					MHL_TX_DBG_ERR(
+						"BIST_RETURN_STAT received with bad checksum\n");
 			} else {
 				uint16_t e_cbus_remote_stat;
 				uint16_t av_link_stat;
@@ -3780,11 +3785,10 @@ void si_mhl_tx_process_write_burst_data(struct mhl_dev_context *dev_context)
 					e_cbus_remote_stat;
 				dev_context->bist_stat.avlink_stat =
 					av_link_stat;
-				MHL_TX_DBG_ERR
-					("BIST_RETURN_STAT received eCBUS_STAT"
-					" remote:%s0x%04x%s"
-					" local:%s0x%06x%s"
-					" AV_LINK_STAT %s0x%04x%s\n",
+				MHL_TX_DBG_ERR(
+					"BIST_RETURN_STAT received eCBUS_STAT");
+				MHL_TX_DBG_ERR(
+					"remote:%s0x%04x%s local:%s0x%06x%s AV_LINK_STAT %s0x%04x%s\n",
 					ANSI_ESC_GREEN_TEXT,
 					e_cbus_remote_stat,
 					ANSI_ESC_RESET_TEXT,
@@ -3904,9 +3908,9 @@ void si_mhl_tx_process_write_burst_data(struct mhl_dev_context *dev_context)
 			break;
 
 		default:
-			MHL_TX_DBG_ERR("Dropping write burst with "
-					"invalid adopter id: 0x%04x\n",
-					burst_id);
+			MHL_TX_DBG_ERR(
+				"Dropping write burst with invalid adopter id: 0x%04x\n",
+				burst_id);
 			break;
 		}
 	}
@@ -4048,13 +4052,6 @@ void si_mhl_tx_got_mhl_intr(struct mhl_dev_context *dev_context,
 			   0,	/* format flags */
 			   .descriptors = {
 				.short_descs = {0, 0, 0, 0, 0, 0, 0, 0, 0}
-#if 0
-				.spkr_alloc_db = {
-					.cea861f_spkr_alloc = {0, 0, 0},
-					.cea861f_spkr_alloc = {0, 0, 0},
-					.cea861f_spkr_alloc = {0, 0, 0}
-				}
-#endif
 			}
 		    }
 		};
@@ -4182,8 +4179,8 @@ void si_mhl_tx_got_mhl_status(struct mhl_dev_context *dev_context,
 		MHL_TX_DBG_WARN("DCAP_RDY changed\n");
 		if (MHL_STATUS_DCAP_RDY & dev_status->write_stat[0]) {
 			if (dev_context->peer_mhl3_version >= 0x30) {
-				MHL_TX_DBG_INFO("Assuming minimum MHL3.x"
-					" feature support\n");
+				MHL_TX_DBG_INFO(
+					"Assuming minimum MHL3.x feature support\n");
 				dev_context->dev_cap_cache.mdc.featureFlag |=
 					MHL_FEATURE_RCP_SUPPORT |
 					MHL_FEATURE_RAP_SUPPORT |
@@ -4223,9 +4220,9 @@ void si_mhl_tx_got_mhl_status(struct mhl_dev_context *dev_context,
 			mhl_tx_vbus_control(VBUS_OFF);
 			mhl_tx_vbus_current_ctl(plim_table[index]);
 		} else {
-			MHL_TX_DBG_WARN("%ssource drives VBUS"
-				" according to PLIM_STAT%s\n",
-			ANSI_ESC_YELLOW_TEXT, ANSI_ESC_RESET_TEXT);
+			MHL_TX_DBG_WARN(
+				"%ssource drives VBUS according to PLIM_STAT%s\n",
+				ANSI_ESC_YELLOW_TEXT, ANSI_ESC_RESET_TEXT);
 			/* limit outgoing current */
 			mhl_tx_vbus_control(VBUS_ON);
 		}
@@ -4690,13 +4687,13 @@ void DumpIncomingInfoFrameImpl(char *pszId, char *pszFile, int iLine,
 	uint8_t j;
 	uint8_t *pData = (uint8_t *) pInfoFrame;
 
-	printk(KERN_DEFAULT "mhl_tx: %s: length:0x%02x -- ", pszId, length);
+	pr_debug("mhl_tx: %s: length:0x%02x -- ", pszId, length);
 	for (j = 0; j < length; j++) {
-		printk(KERN_DEFAULT "%02X ", pData[j]);
+		pr_debug("%02X ", pData[j]);
 		if (AT_ROW_END(j, 32))
-			printk("\n");
+			pr_debug("\n");
 	}
-	printk(KERN_DEFAULT "\n");
+	pr_debug("\n");
 }
 #endif
 

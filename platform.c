@@ -415,7 +415,7 @@ static inline int platform_write_i2c_block(struct i2c_adapter *i2c_bus, u8 page,
 
 	buffer = kmalloc(count + 1, GFP_KERNEL);
 	if (!buffer) {
-		printk(KERN_ERR "%s:%d buffer allocation failed\n",
+		pr_debug("%s:%d buffer allocation failed\n",
 			__func__, __LINE__);
 		return -ENOMEM;
 	}
@@ -433,7 +433,7 @@ static inline int platform_write_i2c_block(struct i2c_adapter *i2c_bus, u8 page,
 	kfree(buffer);
 
 	if (ret != 1) {
-		printk(KERN_ERR "%s:%d I2c write failed 0x%02x:0x%02x\n",
+		pr_debug("%s:%d I2c write failed 0x%02x:0x%02x\n",
 			__func__, __LINE__, page, offset);
 		ret = -EIO;
 	} else {
@@ -453,7 +453,7 @@ static int platform_read_i2c_reg(struct i2c_adapter *bus_adapter_i2c, u8 page,
 		&byte_read);
 	MHL_TX_DBG_INFO("\tGI2C_R %2x:%2x = %2x\n", page, offset, ret);
 	if (ret != 2) {
-		printk(KERN_ERR "%s:%d I2c read failed, 0x%02x:0x%02x\n",
+		pr_debug("%s:%d I2c read failed, 0x%02x:0x%02x\n",
 			__func__, __LINE__, page, offset);
 		ret = -EIO;
 	} else {
@@ -957,9 +957,9 @@ static int mhl_tx_write_reg_block_spi(void *drv_context, u8 page, u8 offset,
 	ret = spi_write(spi_dev, spi_mem.tx_buf, length);
 
 	if (ret != 0) {
-		MHL_TX_DBG_ERR("SPI write block failed, "
-			       "page: 0x%02x, register: 0x%02x\n",
-			       page, offset);
+		MHL_TX_DBG_ERR(
+			"SPI write block failed, page: 0x%02x, register: 0x%02x\n",
+			page, offset);
 		ret = -EIO;
 	} else {
 		ret = 0;
@@ -1033,8 +1033,8 @@ static int mhl_tx_read_reg_block_spi(void *drv_context, u8 page, u8 offset,
 #endif
 
 	if (ret != 0) {
-		MHL_TX_DBG_ERR("SPI read block failed, "
-			"page: 0x%02x, register: 0x%02x\n",
+		MHL_TX_DBG_ERR(
+			"SPI read block failed, page: 0x%02x, register: 0x%02x\n",
 			page, offset);
 	} else {
 #ifdef USE_SPIOPTIMIZE
@@ -1283,7 +1283,7 @@ static int gpio_expander_transfer(u8 offset, u16 count, u8 *values, bool write)
 	int ret;
 
 	if ((count + 1) > ARRAY_SIZE(buf))
-		return -1;
+		return -EPERM;
 
 	if (write) {
 		buf[0] = offset;
@@ -1312,10 +1312,10 @@ static int gpio_expander_transfer(u8 offset, u16 count, u8 *values, bool write)
 
 	ret = i2c_transfer(i2c_bus_adapter, msg, msg_count);
 	if (ret != msg_count) {
-		MHL_TX_DBG_ERR("I2c %s failed ret:%d, page: 0x%02x, "
-			       "register: 0x%02x count:0x%x\n",
-			       write ? "write" : "read", ret, GPIO_EXP_ADDR,
-			       offset, count);
+		MHL_TX_DBG_ERR(
+			"I2c %s failed ret:%d, page: 0x%02x, register: 0x%02x count:0x%x\n",
+			write ? "write" : "read", ret, GPIO_EXP_ADDR,
+			offset, count);
 		ret = -EIO;
 	} else {
 		ret = 0;
@@ -1387,11 +1387,7 @@ static int gpio_expander_init(void)
 	return ret;
 }
 
-#if (LINUX_KERNEL_VER >= 308)
 static int starter_kit_init(void)
-#else
-static int __devinit starter_kit_init(void)
-#endif
 {
 	int ret;
 
@@ -1445,11 +1441,7 @@ static int si_8620_parse_dt(struct device *dev)
 }
 #endif
 
-#if (LINUX_KERNEL_VER >= 308)
 static int si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
-#else
-static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
-#endif
 	const struct i2c_device_id *id)
 {
 	int ret;
@@ -1504,11 +1496,7 @@ done:
 	return ret;
 }
 
-#if (LINUX_KERNEL_VER >= 308)
 static int si_8620_mhl_tx_remove(struct i2c_client *client)
-#else
-static int __devexit si_8620_mhl_tx_remove(struct i2c_client *client)
-#endif
 {
 	if (!use_spi)
 		kfree(i2c_mem.block_tx_buffers);
@@ -1682,29 +1670,21 @@ static struct i2c_driver si_8620_mhl_tx_i2c_driver = {
 	.id_table = si_8620_mhl_tx_id,
 	.probe = si_8620_mhl_tx_i2c_probe,
 
-#if (LINUX_KERNEL_VER >= 308)
 	.remove = si_8620_mhl_tx_remove,
-#else
-	.remove = __devexit_p(si_8620_mhl_tx_remove),
-#endif
 	.command = NULL,
 };
 
 #ifndef SIMG_USE_DTS
-static struct i2c_board_info __initdata si_8620_i2c_boardinfo[] = {
+static struct i2c_board_info si_8620_i2c_boardinfo[] __initdata = {
 	{
-	 I2C_BOARD_INFO(MHL_DEVICE_NAME, (SA_TX_PAGE_0 >> 1)),
-	 .flags = I2C_CLIENT_WAKE,
-	 .irq = -1
-	 }
+		I2C_BOARD_INFO(MHL_DEVICE_NAME, (SA_TX_PAGE_0 >> 1)),
+		.flags = I2C_CLIENT_WAKE,
+		.irq = -1
+	}
 };
 #endif
 
-#if (LINUX_KERNEL_VER >= 308)
 static int si_8620_mhl_tx_spi_probe(struct spi_device *spi)
-#else
-static int __devinit si_8620_mhl_tx_spi_probe(struct spi_device *spi)
-#endif
 {
 	int ret;
 
@@ -1787,11 +1767,7 @@ done:
 	return ret;
 }
 
-#if (LINUX_KERNEL_VER >= 308)
 static int si_8620_mhl_spi_remove(struct spi_device *spi_dev)
-#else
-static int __devexit si_8620_mhl_spi_remove(struct spi_device *spi_dev)
-#endif
 {
 	pr_info("%s() called\n", __func__);
 
@@ -1813,15 +1789,11 @@ static struct spi_driver si_86x0_mhl_tx_spi_driver = {
 		.pm = &si_8620_tx_pm_ops,
 		},
 	.probe = si_8620_mhl_tx_spi_probe,
-#if (LINUX_KERNEL_VER >= 308)
 	.remove = si_8620_mhl_spi_remove,
-#else
-	.remove = __devexit_p(si_8620_mhl_spi_remove),
-#endif
 };
 
 #ifndef SIMG_USE_DTS
-static struct spi_board_info __initdata si_86x0_spi_board_info = {
+static struct spi_board_info si_86x0_spi_board_info __initdata = {
 	.modalias = MHL_DRIVER_NAME,
 	.max_speed_hz = SPI_BUS_SPEED,
 	.bus_num = SPI_BUS_NUM,
@@ -1840,7 +1812,7 @@ static int __init add_spi_device_to_bus(void)
 	spi_master = spi_busnum_to_master(SPI_BUS_NUM);
 	if (spi_master == NULL) {
 		pr_err("spi_busnum_to_master(%d) returned NULL\n", SPI_BUS_NUM);
-		return -1;
+		return -ENXIO;
 	}
 
 	spi_dev = spi_new_device(spi_master, &si_86x0_spi_board_info);
@@ -1848,7 +1820,7 @@ static int __init add_spi_device_to_bus(void)
 		pr_err("spi_new_device() failed\n");
 		if (spi_dev)
 			spi_unregister_device(spi_dev);
-		status = -1;
+		status = -EIO;
 		goto exit;
 	}
 
@@ -1917,8 +1889,8 @@ static int __init i2c_init(void)
 	if (ret < 0 || probe_fail) {
 		if (ret == 0)
 			i2c_del_driver(&si_8620_mhl_tx_i2c_driver);
-		MHL_TX_DBG_INFO("failed !\n\nCHECK POWER AND CONNECTION "
-						"TO CP8620 Starter Kit.\n\n");
+		MHL_TX_DBG_INFO(
+			"failed !\n\nCHECK POWER AND CONNECTION TO CP8620 Starter Kit.\n\n");
 		goto err_exit;
 	}
 

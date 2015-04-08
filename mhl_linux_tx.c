@@ -331,7 +331,7 @@ ssize_t send_scratch_pad(struct device *dev, struct device_attribute *attr,
 	 * Parse the input string and extract the scratch pad register selection
 	 * parameters
 	 */
-	str = strstr(pinput, "offset=");
+	str = strnstr(pinput, "offset=", strlen(pinput));
 	if (str != NULL) {
 		str += 7;
 		status = si_strtoul(&str, 0, &offset);
@@ -345,7 +345,7 @@ ssize_t send_scratch_pad(struct device *dev, struct device_attribute *attr,
 		goto err_exit_2;
 	}
 
-	str = strstr(str, "length=");
+	str = strnstr(str, "length=", strlen(str));
 	if (str != NULL) {
 		str += 7;
 		status = si_strtoul(&str, 0, &length);
@@ -359,7 +359,7 @@ ssize_t send_scratch_pad(struct device *dev, struct device_attribute *attr,
 		goto err_exit_2;
 	}
 
-	str = strstr(str, "data=");
+	str = strnstr(str, "data=", strlen(str));
 	if (str != NULL) {
 		str += 5;
 		for (idx = 0; idx < length; idx++) {
@@ -390,8 +390,9 @@ ssize_t send_scratch_pad(struct device *dev, struct device_attribute *attr,
 	dev_context->spad_offset = offset;
 	dev_context->spad_xfer_length = length;
 	if (idx == 0) {
-		MHL_TX_DBG_INFO("No data specified, storing offset "
-				"and length for subsequent scratch pad read\n");
+		MHL_TX_DBG_INFO(
+			"No data specified, storing offset and length for subsequent scratch pad read\n"
+		);
 
 		goto err_exit_2;
 	}
@@ -505,8 +506,8 @@ ssize_t show_scratch_pad(struct device *dev, struct device_attribute *attr,
 
 		switch (scratch_pad_status) {
 		case SCRATCHPAD_SUCCESS:
-			status = scnprintf(buf, PAGE_SIZE, "offset:0x%02x "
-					   "length:0x%02x data:",
+			status = scnprintf(buf, PAGE_SIZE,
+					   "offset:0x%02x length:0x%02x data:",
 					   dev_context->spad_offset,
 					   dev_context->spad_xfer_length);
 
@@ -1455,9 +1456,7 @@ ssize_t show_hev_3d(struct device *dev, struct device_attribute *attr,
 		for (i = 0; i < (int)p_edid_data->hev_dtd_info.num_items; ++i) {
 
 			status += scnprintf(&buf[status], PAGE_SIZE,
-				"%s %s %s 0x%02x 0x%04x 0x%04x 0x%04x 0x%04x "
-				"0x%04x 0x%02x -- 0x%04x 0x%02x 0x%02x 0x%02x "
-				"0x%02x 0x%02x\n",
+				"%s %s %s 0x%02x 0x%04x 0x%04x 0x%04x 0x%04x 0x%04x 0x%02x -- 0x%04x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
 				p_edid_data->hev_dtd_list[i]._3d_info.vdi_l.
 					top_bottom ? "TB" : "--",
 				p_edid_data->hev_dtd_list[i]._3d_info.vdi_l.
@@ -1515,8 +1514,7 @@ ssize_t show_hev_3d(struct device *dev, struct device_attribute *attr,
 				/* vertical active and blanking */
 				"0x%02x 0x%02x {0x%1x 0x%1x} "
 				/* sync pulse width and offset */
-				"0x%02x 0x%02x {0x%1x 0x%1x} "
-				"{0x%1x 0x%1x 0x%1x 0x%1x} "
+				"0x%02x 0x%02x {0x%1x 0x%1x} {0x%1x 0x%1x 0x%1x 0x%1x} "
 				/* Image sizes */
 				"0x%02x 0x%02x {0x%1x 0x%1x} "
 				/* borders and flags */
@@ -2771,7 +2769,7 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 		sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 			__stringify(SYS_ATTR_NAME_CONN));
 
-		strncpy(event_string, "MHLEVENT=connected",
+		strlcpy(event_string, "MHLEVENT=connected",
 			MAX_EVENT_STRING_LEN);
 		kobject_uevent_env(&dev_context->mhl_dev->kobj, KOBJ_CHANGE,
 			envp);
@@ -2814,14 +2812,13 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 			;
 		else
 			MHL_TX_DBG_ERR(
-			"CBUS_MODE_DOWN or BIST, skip notification to"
-			" OTG driver.\n");
+			"CBUS_MODE_DOWN or BIST, skip notification to OTG driver.\n");
 #endif
 		destroy_rcp_input_dev(dev_context);
 		sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 			__stringify(SYS_ATTR_NAME_CONN));
 
-		strncpy(event_string, "MHLEVENT=disconnected",
+		strlcpy(event_string, "MHLEVENT=disconnected",
 			MAX_EVENT_STRING_LEN);
 		kobject_uevent_env(&dev_context->mhl_dev->kobj, KOBJ_CHANGE,
 			envp);
@@ -2893,8 +2890,8 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 					MHL_STATE_FLAG_RCP_NAK;
 
 				MHL_TX_DBG_INFO(
-					"Generating RCPE received event, "
-					"error code: 0x%02x\n", event_param);
+					"Generating RCPE received event, error code: 0x%02x\n",
+					event_param);
 
 				sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 					__stringify(SYS_ATTR_NAME_RCPK));
@@ -2906,8 +2903,7 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 					KOBJ_CHANGE, envp);
 			} else {
 				MHL_TX_DBG_ERR(
-					"Ignoring unexpected RCPE received "
-					"event, error code: 0x%02x\n",
+					"Ignoring unexpected RCPE received event, error code: 0x%02x\n",
 					event_param);
 			}
 		}
@@ -2942,8 +2938,9 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 
 			dev_context->mhl_flags |= MHL_STATE_FLAG_UCP_ACK;
 
-			MHL_TX_DBG_INFO("Generating UCPK received event, "
-				"keycode: 0x%02x\n", event_param);
+			MHL_TX_DBG_INFO(
+				"Generating UCPK received event, keycode: 0x%02x\n",
+				event_param);
 
 			sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 				__stringify(SYS_ATTR_NAME_UCPK));
@@ -2954,8 +2951,9 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 			kobject_uevent_env(&dev_context->mhl_dev->kobj,
 				KOBJ_CHANGE, envp);
 		} else {
-			MHL_TX_DBG_ERR("Ignoring unexpected UCPK received "
-				"event, keycode: 0x%02x\n", event_param);
+			MHL_TX_DBG_ERR(
+				"Ignoring unexpected UCPK received event, keycode: 0x%02x\n",
+				event_param);
 		}
 		break;
 
@@ -2965,8 +2963,9 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 			dev_context->ucp_err_code = event_param;
 			dev_context->mhl_flags |= MHL_STATE_FLAG_UCP_NAK;
 
-			MHL_TX_DBG_INFO("Generating UCPE received event, "
-				"error code: 0x%02x\n", event_param);
+			MHL_TX_DBG_INFO(
+				"Generating UCPE received event, error code: 0x%02x\n",
+				event_param);
 
 			sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 				__stringify(SYS_ATTR_NAME_UCPK));
@@ -2977,8 +2976,8 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 			kobject_uevent_env(&dev_context->mhl_dev->kobj,
 				KOBJ_CHANGE, envp);
 		} else {
-			MHL_TX_DBG_ERR("Ignoring unexpected UCPE received "
-				"event, error code: 0x%02x\n",
+			MHL_TX_DBG_ERR(
+				"Ignoring unexpected UCPE received event, error code: 0x%02x\n",
 				event_param);
 		}
 		break;
@@ -3047,8 +3046,8 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 					MHL_STATE_FLAG_RBP_NAK;
 
 				MHL_TX_DBG_INFO(
-					"Generating RBPE received event, "
-					"error code: 0x%02x\n", event_param);
+					"Generating RBPE received event, error code: 0x%02x\n",
+					event_param);
 
 				sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 					__stringify(SYS_ATTR_NAME_RBPK));
@@ -3060,8 +3059,7 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 					KOBJ_CHANGE, envp);
 			} else {
 				MHL_TX_DBG_ERR(
-					"Ignoring unexpected RBPE received "
-					"event, error code: 0x%02x\n",
+					"Ignoring unexpected RBPE received event, error code: 0x%02x\n",
 					event_param);
 			}
 		}
@@ -3098,9 +3096,9 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 		break;
 
 	case MHL_TX_EVENT_POW_BIT_CHG:
-		MHL_TX_DBG_INFO("Generating VBUS power bit change "
-				"event, POW bit is %s\n",
-				event_param ? "ON" : "OFF");
+		MHL_TX_DBG_INFO(
+			"Generating VBUS power bit change event, POW bit is %s\n",
+			event_param ? "ON" : "OFF");
 		snprintf(event_string, MAX_EVENT_STRING_LEN,
 			 "MHLEVENT=MHL VBUS power %s",
 			 event_param ? "ON" : "OFF");
@@ -3109,8 +3107,9 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 		break;
 
 	case MHL_TX_EVENT_RAP_RECEIVED:
-		MHL_TX_DBG_INFO("Generating RAP received event, "
-				"action code: 0x%02x\n", event_param);
+		MHL_TX_DBG_INFO(
+			"Generating RAP received event, action code: 0x%02x\n",
+			event_param);
 
 		sysfs_notify(&dev_context->mhl_dev->kobj, NULL,
 			     __stringify(SYS_ATTR_NAME_RAP_IN));
@@ -3146,18 +3145,13 @@ void mhl_event_notify(struct mhl_dev_context *dev_context, u32 event,
 			MHL_TX_DBG_INFO("Received BIST_RETURN_STAT\n",
 					event_param);
 			if (stat != NULL) {
-				MHL_TX_DBG_INFO
-				    ("eCBUS Rx: 0x%04X,"
-					" eCBUS Tx: 0x04X,"
-					" AV_LINK: 0x%04X\n",
+				MHL_TX_DBG_INFO(
+					"eCBUS Rx: 0x%04X, eCBUS Tx: 0x04X, AV_LINK: 0x%04X\n",
 					stat->e_cbus_local_stat,
 					stat->e_cbus_remote_stat,
 					stat->avlink_stat);
 				snprintf(event_string, MAX_EVENT_STRING_LEN,
-					"MHLEVENT=received_BIST_STATUS "\
-					"e_cbus_rx=0x%04x"
-					"e_cbus_tx=0x%04x"
-					" av_link=0x%04x",
+					"MHLEVENT=received_BIST_STATUS e_cbus_rx=0x%04x e_cbus_tx=0x%04x av_link=0x%04x",
 					stat->e_cbus_local_stat,
 					stat->e_cbus_remote_stat,
 					stat->avlink_stat);
@@ -4725,11 +4719,8 @@ void process_si_adopter_id(struct mhl_dev_context *dev_context,
 	total_size = SII_OFFSETOF(struct si_adopter_id_data, hdr.checksum)
 			+  p_burst->hdr.remaining_length;
 	checksum = calculate_generic_checksum(p_burst, 0, total_size);
-	MHL_TX_DBG_INFO("total_size: 0x%02X"
-		" id: %02X%02X"
-		" rem_len: 0x%02X"
-		" cksum: 0x%02X"
-		" opcode: 0x%02X\n",
+	MHL_TX_DBG_INFO(
+		"total_size: 0x%02X id: %02X%02X rem_len: 0x%02X cksum: 0x%02X opcode: 0x%02X\n",
 		total_size,
 		p_burst->hdr.burst_id.high,
 		p_burst->hdr.burst_id.low,
@@ -4746,8 +4737,8 @@ void process_si_adopter_id(struct mhl_dev_context *dev_context,
 	case EDID_BLOCK: {
 		struct edid_3d_data_t *edid_context;
 		edid_context = dev_context->edid_parser_context;
-		MHL_TX_DBG_INFO("EDID_BLOCK "
-			"blk_num: %02X\n",
+		MHL_TX_DBG_INFO(
+			"EDID_BLOCK blk_num: %02X\n",
 			p_burst->opcode_data.edid_blk.block_num)
 			process_emsc_edid_sub_payload(edid_context, p_burst);
 		}
@@ -4969,8 +4960,8 @@ static void si_mhl_tx_emsc_received(struct mhl_dev_context *context)
 					case burst_id_HID_PAYLOAD:
 						break;
 					default:
-						MHL_TX_DBG_ERR("%sunexpected"
-							" burst/adopter id:%04X%s\n",
+						MHL_TX_DBG_ERR(
+							"%sunexpected burst/adopter id:%04X%s\n",
 							ANSI_ESC_RED_TEXT,
 							burst_id,
 							ANSI_ESC_RESET_TEXT)
@@ -5092,7 +5083,7 @@ static void check_drv_intr_flags(struct mhl_dev_context *dev_context)
 			}
 			break;
 		default:
-			;
+			break;
 		}
 	}
 	if (DRV_INTR_TDM_SYNC & dev_context->intr_info.flags) {
@@ -5242,8 +5233,9 @@ int mhl_handle_power_change_request(struct device *parent_dev, bool power_up)
 	/* Power down the MHL transmitter hardware. */
 	status = down_interruptible(&dev_context->isr_lock);
 	if (status) {
-		MHL_TX_DBG_ERR("failed to acquire ISR semaphore,"
-			       "status: %d\n", status);
+		MHL_TX_DBG_ERR(
+			"failed to acquire ISR semaphore, status: %d\n",
+			status);
 		goto done;
 	}
 
@@ -5438,8 +5430,7 @@ free_edid_context:
 	status = down_interruptible(&dev_context->isr_lock);
 	if (status) {
 		dev_err(parent_dev,
-			"Failed to acquire ISR semaphore, "
-			"could not destroy EDID context. Status: %d\n",
+			"Failed to acquire ISR semaphore, could not destroy EDID context. Status: %d\n",
 			status);
 		goto free_irq_handler;
 	}
@@ -5624,7 +5615,7 @@ static int is_timer_handle_valid(struct mhl_dev_context *dev_context,
 }
 
 int mhl_tx_create_timer(void *context,
-			void (*callback_handler) (void *callback_param),
+			void (*callback_handler)(void *callback_param),
 			void *callback_param, void **timer_handle)
 {
 	struct mhl_dev_context *dev_context;

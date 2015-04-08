@@ -217,7 +217,7 @@ struct SI_PACK_THIS_STRUCT EMSC_BLK_ADOPT_ID_PAYLD_HDR {
 
 #define ENDIAN_CONVERT_16(a) \
 	((((uint16_t)((a).high))<<8)|((uint16_t)((a).low)))
-#define BURST_ID(bid) (enum BurstId_e)ENDIAN_CONVERT_16(bid)
+#define BURST_ID(bid) ((enum BurstId_e)ENDIAN_CONVERT_16(bid))
 
 #define HIGH_BYTE_16(x) (uint8_t)((x >> 8) & 0xFF)
 #define LOW_BYTE_16(x)  (uint8_t)(x & 0xFF)

@@ -216,8 +216,8 @@ void display_timing_enumeration_callback(
 			{
 				pMHL2_video_descriptor =
 				    &p_descriptor->mhl2_3d_descriptor;
-				MHL_TX_EDID_INFO("%4d x %4d, %2d bpp at %u Hz "
-				     "3D - %16s %16s %16s\n\n",
+				MHL_TX_EDID_INFO(
+				     "%4d x %4d, %2d bpp at %u Hz 3D - %16s %16s %16s\n\n",
 				     columns, rows, (uint16_t) bits_per_pixel,
 				     vertical_refresh_rate_in_milliHz,
 				     pMHL2_video_descriptor->left_right ?
@@ -242,22 +242,22 @@ void display_timing_enumeration_callback(
 		case burst_id_HEV_DTDB:
 			{
 				dtd_payload = &p_descriptor->mhl3_hev_dtd;
-				MHL_TX_EDID_INFO("seq: %d pclk: %9d h_active: "
-				     "%5d h_blank: %5d h_fp: %5d h_sw: %5d "
-				     "h_flags: 0x%02x\nv_tot: %5d v_blnk: %3d "
-				     "v_fp: %3d v_sw: %3d v_fields: %3d\n",
+				MHL_TX_EDID_INFO(
+				     "seq: %d pclk: %9d h_active: %5d h_blank: %5d h_fp: %5d h_sw: %5d h_flags: 0x%02x\n",
 				     p_descriptor->mhl3_hev_dtd.sequence_index,
 				     ENDIAN_CONVERT_16(dtd_payload->a.
-						       pixel_clock_in_MHz),
+							pixel_clock_in_MHz),
 				     ENDIAN_CONVERT_16(dtd_payload->a.
-						       h_active_in_pixels),
+							h_active_in_pixels),
 				     ENDIAN_CONVERT_16(dtd_payload->a.
-						       h_blank_in_pixels),
+							h_blank_in_pixels),
 				     ENDIAN_CONVERT_16(dtd_payload->a.
-						       h_front_porch_in_pixels),
+						      h_front_porch_in_pixels),
 				     ENDIAN_CONVERT_16(dtd_payload->a.
-						       h_sync_width_in_pixels),
-				     dtd_payload->a.h_flags,
+							h_sync_width_in_pixels),
+				     dtd_payload->a.h_flags);
+				MHL_TX_EDID_INFO(
+				     "v_tot: %5d v_blnk: %3d v_fp: %3d v_sw: %3d v_fields: %3d\n v_flags: 0x%02x\n",
 				     ENDIAN_CONVERT_16(dtd_payload->b.
 						       v_total_in_lines),
 				     dtd_payload->b.v_blank_in_lines,
@@ -862,9 +862,8 @@ uint32_t calculate_pixel_clock(struct edid_3d_data_t *mhl_edid_3d_data,
 
 	vertical_sync_period_in_microseconds =
 	    1000000000 / vertical_sync_frequency_in_milliHz;
-	MHL_TX_EDID_INFO
-	    ("vertical_sync_frequency_in_milliHz:%u "
-	    "vertical_sync_period_in_microseconds: %u\n",
+	MHL_TX_EDID_INFO(
+	     "vertical_sync_frequency_in_milliHz:%u vertical_sync_period_in_microseconds: %u\n",
 	     vertical_sync_frequency_in_milliHz,
 	     vertical_sync_period_in_microseconds);
 
@@ -888,9 +887,8 @@ uint32_t calculate_pixel_clock(struct edid_3d_data_t *mhl_edid_3d_data,
 			/* fix up these two values */
 			vertical_sync_frequency_in_milliHz /= 2;
 			vertical_sync_period_in_microseconds *= 2;
-			MHL_TX_EDID_INFO
-			    ("interlaced vertical_sync_frequency_in_milliHz:%u"
-			     " vertical_sync_period_in_microseconds: %u\n",
+			MHL_TX_EDID_INFO(
+			     "interlaced vertical_sync_frequency_in_milliHz:%u vertical_sync_period_in_microseconds: %u\n",
 			     vertical_sync_frequency_in_milliHz,
 			     vertical_sync_period_in_microseconds);
 
@@ -1053,7 +1051,7 @@ uint8_t qualify_pixel_clock_for_mhl(struct edid_3d_data_t *mhl_edid_3d_data,
 			(max_link_clock_frequency < max_bandwidth) ?
 		max_link_clock_frequency : max_bandwidth;
 	}
-	MHL_TX_DBG_WARN("max_link_clock_frequency = %d\n",
+	MHL_TX_DBG_INFO("max_link_clock_frequency = %d\n",
 		max_link_clock_frequency)
 
 	if (link_clock_frequency < max_link_clock_frequency)
@@ -1301,6 +1299,7 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 					"Max Horizontal Rate in KHz: %d\n",
 					(int)p_desc->range_limits.
 					max_horizontal_rate_in_KHz);
+				/* bz37062 - limit max_pixel_clock */
 				{
 					uint8_t max_pixel_clock_in_MHz_div_10;
 					max_pixel_clock_in_MHz_div_10 =
@@ -1314,14 +1313,12 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 						max_pixel_clock_in_MHz_div_10 =
 						max_pixel_clock_in_MHz_div_10;
 					MHL_TX_EDID_INFO(
-						"Max Supported pixel clock"
-						"rate in MHz/10: %d\n",
+						"Max Supported pixel clock rate in MHz/10: %d\n",
 						(int)p_desc->range_limits.
 						max_pixel_clock_in_MHz_div_10);
 				}
 				MHL_TX_EDID_INFO(
-					"Tag for secondary timing formula "
-					"(00h=not used): %d\n",
+					"Tag for secondary timing formula (00h=not used): %d\n",
 					(int)p_desc->range_limits.
 					tag_secondary_formula);
 				MHL_TX_EDID_INFO("\n");
@@ -1331,8 +1328,8 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 			 * 0x00 (padding) then this descriptor partition is not
 			 * used and parsing should be stopped
 			 */
-			MHL_TX_EDID_INFO
-			    ("No More Detailed descriptors in this block\n");
+			MHL_TX_EDID_INFO(
+				"No More Detailed descriptors in this block\n");
 			MHL_TX_EDID_INFO("\n");
 			return false;
 		}
@@ -1374,10 +1371,10 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 		horizontal_sync_frequency_in_Hz =
 		    pixel_clock_frequency / horizontal_sync_period_in_pixels;
 
-		MHL_TX_EDID_INFO("horizontal period %u pixels,  "
-				 "horizontal_sync_frequency_in_Hz: %u Hz\n",
-				 horizontal_sync_period_in_pixels,
-				 horizontal_sync_frequency_in_Hz);
+		MHL_TX_EDID_INFO(
+			"horizontal period %u pixels, horizontal_sync_frequency_in_Hz: %u Hz\n",
+			horizontal_sync_period_in_pixels,
+			horizontal_sync_frequency_in_Hz);
 
 		rows =
 		    p_desc->dtd.vert_active_7_0 +
@@ -1458,32 +1455,28 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 			break;
 		case 1:
 			if (0 == p_desc->dtd.flags.stereo_bit_0) {
-				MHL_TX_EDID_INFO
-				    ("Field sequential stereo, right image "
-				     "when stereo sync signal == 1\n");
+				MHL_TX_EDID_INFO(
+					"Field sequential stereo, right image when stereo sync signal == 1\n");
 			} else {
-				MHL_TX_EDID_INFO
-				    ("2-way interleaved stereo, right image "
-				     "on even lines\n");
+				MHL_TX_EDID_INFO(
+					"2-way interleaved stereo, right image on even lines\n");
 			}
 			break;
 		case 2:
 			if (0 == p_desc->dtd.flags.stereo_bit_0) {
-				MHL_TX_EDID_INFO
-				    ("field-sequential stereo, left image "
-				     "when stereo sync signal == 1\n");
+				MHL_TX_EDID_INFO(
+				    "field-sequential stereo, left image when stereo sync signal == 1\n");
 			} else {
-				MHL_TX_EDID_INFO
-				    ("2-way interleaved stereo, left image on "
-				     "even lines.\n");
+				MHL_TX_EDID_INFO(
+				    "2-way interleaved stereo, left image on even lines.\n");
 			}
 			break;
 		case 3:
 			if (0 == p_desc->dtd.flags.stereo_bit_0) {
 				MHL_TX_EDID_INFO("4-way interleaved stereo\n");
 			} else {
-				MHL_TX_EDID_INFO
-				    ("side-by-side interleaved stereo.\n");
+				MHL_TX_EDID_INFO(
+					"side-by-side interleaved stereo.\n");
 			}
 			break;
 		}
@@ -1629,8 +1622,7 @@ static void prune_hdmi_vsdb_vic_list(
 				    p_byte_13_through_byte_15->
 				    vicList[j];
 				MHL_TX_EDID_INFO(
-				    "replacing VIC: %3d at index: %3d"
-				     " with VIC:%3d from index: %3d\n",
+				    "replacing VIC: %3d at index: %3d with VIC:%3d from index: %3d\n",
 				     VIC0, (uint16_t) prev,
 				     VIC1, (uint16_t) j);
 				mhl_edid_3d_data->parse_data.
@@ -1714,8 +1706,7 @@ static void inner_loop(
 		    parse_data.p_video_data_blocks_2d[vdb_index]->
 		    short_descriptors[j].VIC;
 		MHL_TX_EDID_INFO(
-		    "Replacing SVD:%6s 0x%02x at index: 0x%02x with "
-		    "SVD:%6s 0x%02x from index: 0x%02x\n",
+		    "Replacing SVD:%6s 0x%02x at index: 0x%02x with SVD:%6s 0x%02x from index: 0x%02x\n",
 		    mhl_edid_3d_data->parse_data.
 		    p_video_data_blocks_2d[vdb_index]->
 		    short_descriptors[prev].native ? "Native" : "",
@@ -1808,8 +1799,7 @@ static void prune_svd_list(
 					   ("\n\nInvalid extension size\n\n"));
 				while (pb_src < pb_limit) {
 					MHL_TX_EDID_INFO(
-					    "moving data up %p(0x%02X) "
-					    "<- %p(0x%02X)\n",
+					    "moving data up %p(0x%02X) <- %p(0x%02X)\n",
 					    pb_dest, (uint16_t)*pb_dest,
 					    pb_src, (uint16_t)*pb_src);
 					*pb_dest++ = *pb_src++;
@@ -1823,9 +1813,8 @@ static void prune_svd_list(
 				}
 
 			}
-			MHL_TX_EDID_INFO
-			    ("CEA-861-D DTDs began at 0x%02x"
-			     "CEA-861-D SVD count: 0x%x\n",
+			MHL_TX_EDID_INFO(
+			     "CEA-861-D DTDs began at 0x%02x CEA-861-D SVD count: 0x%x\n",
 			     (uint16_t) p_CEA_extension->
 			     byte_offset_to_18_byte_descriptors,
 			     (uint16_t) mhl_edid_3d_data->parse_data.
@@ -1839,9 +1828,8 @@ static void prune_svd_list(
 			    fields.length_following_header =
 			    inner_loop_limit;
 
-			MHL_TX_EDID_INFO
-			    ("CEA-861-D DTDs now begin at 0x%02x"
-			     "CEA-861-D SVD count: 0x%x\n",
+			MHL_TX_EDID_INFO(
+			     "CEA-861-D DTDs now begin at 0x%02x CEA-861-D SVD count: 0x%x\n",
 			     (uint16_t) p_CEA_extension->
 			     byte_offset_to_18_byte_descriptors,
 			     (uint16_t) mhl_edid_3d_data->parse_data.
@@ -1906,6 +1894,7 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 			p_HDMI_vendor_specific_payload->byte6.DC_36bit = 0;
 			p_HDMI_vendor_specific_payload->byte6.DC_48bit = 0;
 		}
+		/* bz37062 - limit max_tmds_clock in vsdb */
 		if (((uint8_t *)
 			&p_HDMI_vendor_specific_payload->maxTMDSclock) <
 			p_next_db) {
@@ -1934,7 +1923,7 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 
 	dtd_limit = (EDID_BLOCK_SIZE
 			- p_CEA_extension->byte_offset_to_18_byte_descriptors)
-		/ sizeof(p_data_u.p_long_descriptors[0]) ;
+		/ sizeof(p_data_u.p_long_descriptors[0]);
 	tx_prune_dtd_list(mhl_edid_3d_data,
 				 &p_data_u.p_long_descriptors[0], dtd_limit);
 	DUMP_EDID_BLOCK(0, p_CEA_extension, sizeof(*p_CEA_extension));
@@ -2057,9 +2046,8 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 					 * VIC that was set to zero
 					 */
 					deletion_mask |= this_bit;
-					MHL_TX_EDID_INFO
-					    ("vic: 0x%02x deletion_mask:0x%08x"
-					    " this_bit:0x%08x\n",
+					MHL_TX_EDID_INFO(
+					    "vic: 0x%02x deletion_mask:0x%08x this_bit:0x%08x\n",
 					     VIC, deletion_mask, this_bit);
 				}
 			}
@@ -2087,12 +2075,16 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 							 1);
 					num_3D_structure_bytes_pruned +=
 					    sizeof(*p_3D_u.p_sans_byte_1);
+					mhl_edid_3d_data->
+						parse_data.p_3d_limit--;
 				} else {
 					pSrc =
 					    (uint8_t *) (p_3D_u.p_with_byte_1 +
 							 1);
 					num_3D_structure_bytes_pruned +=
 					    sizeof(*p_3D_u.p_with_byte_1);
+					mhl_edid_3d_data->parse_data.p_3d_limit
+					-= sizeof(*p_3D_u.p_with_byte_1);
 				}
 				while (pSrc < pb_limit)
 					*pDest++ = *pSrc++;
@@ -2103,9 +2095,8 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 				uint8_t i;
 				uint8_t limit = _2D_VIC_order;
 				uint32_t this_bit;
-				MHL_TX_EDID_INFO
-				    ("2D vic order: 0x%02x "
-				    "deletion_mask:0x%08x\n",
+				MHL_TX_EDID_INFO(
+				    "2D vic order: 0x%02x deletion_mask:0x%08x\n",
 				    _2D_VIC_order, deletion_mask);
 
 				for (i = 0, this_bit = 1; i < limit;
@@ -2125,17 +2116,15 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 					p_3D_u.p_with_byte_1++;
 			}
 		}
-		MHL_TX_EDID_INFO("num_3D_structure_bytes_pruned:0x%x "
-				 "byte14: 0x%02x "
-				 "offset to DTDs: 0x%x "
-				 "vsdb header: 0x%x\n",
-				 num_3D_structure_bytes_pruned,
-				 *((uint8_t *) &mhl_edid_3d_data->parse_data.
-				   p_byte_13_through_byte_15->byte14),
-				 p_CEA_extension->
-				 byte_offset_to_18_byte_descriptors,
-				 *((uint8_t *) &mhl_edid_3d_data->parse_data.
-				   p_HDMI_vsdb->header)
+		MHL_TX_EDID_INFO(
+			"num_3D_structure_bytes_pruned:0x%x byte14: 0x%02x offset to DTDs: 0x%x vsdb header: 0x%x\n",
+			num_3D_structure_bytes_pruned,
+			*((uint8_t *) &mhl_edid_3d_data->parse_data.
+			p_byte_13_through_byte_15->byte14),
+			p_CEA_extension->
+			byte_offset_to_18_byte_descriptors,
+			*((uint8_t *) &mhl_edid_3d_data->parse_data.
+			p_HDMI_vsdb->header)
 		    );
 
 		mhl_edid_3d_data->parse_data.p_byte_13_through_byte_15->byte14.
@@ -2145,17 +2134,15 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 		mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
 		    length_following_header -= num_3D_structure_bytes_pruned;
 
-		MHL_TX_EDID_INFO("num_3D_structure_bytes_pruned:0x%x "
-				 "byte14: 0x%02x "
-				 "offset to DTDs: 0x%x "
-				 "vsdb header: 0x%x\n",
-				 num_3D_structure_bytes_pruned,
-				 *((uint8_t *) &mhl_edid_3d_data->parse_data.
-				   p_byte_13_through_byte_15->byte14),
-				 p_CEA_extension->
-				 byte_offset_to_18_byte_descriptors,
-				 *((uint8_t *) &mhl_edid_3d_data->parse_data.
-				   p_HDMI_vsdb->header)
+		MHL_TX_EDID_INFO(
+			"num_3D_structure_bytes_pruned:0x%x byte14: 0x%02x offset to DTDs: 0x%x vsdb header: 0x%x\n",
+			num_3D_structure_bytes_pruned,
+			*((uint8_t *) &mhl_edid_3d_data->parse_data.
+			p_byte_13_through_byte_15->byte14),
+			p_CEA_extension->
+			byte_offset_to_18_byte_descriptors,
+			*((uint8_t *) &mhl_edid_3d_data->parse_data.
+			p_HDMI_vsdb->header)
 		    );
 	}
 	MHL_TX_EDID_INFO("\n");
@@ -2837,8 +2824,7 @@ void si_mhl_tx_process_3d_vic_burst(void *context,
 
 				if (VIC) {
 					MHL_TX_EDID_INFO(
-					    "short Descriptor[%d] 3D VIC: "
-					    "%d %s %s %s\n",
+					    "short Descriptor[%d] 3D VIC: %d %s %s %s\n",
 					    mhl_edid_3d_data->parse_data.
 					    burst_entry_count_3d_vic, VIC,
 					    p_descriptor->mhl2_3d_descriptor.
@@ -2925,16 +2911,10 @@ static void process_cea_dtds(struct edid_3d_data_t *mhl_edid_3d_data,
 	struct CEA_extension_t *p_CEA_extension =
 	    (struct CEA_extension_t *)&mhl_edid_3d_data->
 	    EDID_block_data[EDID_BLOCK_SIZE];
-#if 0
-	uint8_t dtd_limit =
-	    (uint8_t) p_CEA_extension->version_u.version3.misc_support.
-	    total_number_native_dtds_in_entire_EDID;
-#else
 	uint8_t dtd_limit =
 		(EDID_BLOCK_SIZE
 			- p_CEA_extension->byte_offset_to_18_byte_descriptors)
 		/ sizeof(struct detailed_timing_descriptor_t);
-#endif
 	union {
 		uint8_t *puc_data_block;
 		union _18_byte_descriptor_u *p_long_descriptors;
@@ -2942,18 +2922,16 @@ static void process_cea_dtds(struct edid_3d_data_t *mhl_edid_3d_data,
 	p_data_u.p_long_descriptors =
 	    (union _18_byte_descriptor_u *)(((uint8_t *)p_CEA_extension) +
 			p_CEA_extension->byte_offset_to_18_byte_descriptors);
-	MHL_TX_EDID_INFO("continuing with CEA-861-D/E DTDs"
-			 "\n\tburst_index: %d"
-			 "\n\tburst_entry_count_3d_dtd: %d"
-			 "\n\tnum_entries_this_burst: %d"
-			 "\n\ttotal_entries:%d"
-			 "\n\tdtd_limit:%d"
-			 "\n\toffsetTo18_byte_descriptors:0x%x\n",
-			 burst_index,
-			 mhl_edid_3d_data->parse_data.
-			 burst_entry_count_3d_dtd,
-			 p_write_burst_data->
-			 num_entries_this_burst,
+	MHL_TX_EDID_INFO("continuing with CEA-861-D/E DTDs\n");
+	MHL_TX_EDID_INFO(
+			"\tburst_index: %d\n\tburst_entry_count_3d_dtd: %d\n\tnum_entries_this_burst: %d",
+			burst_index,
+			mhl_edid_3d_data->parse_data.
+			burst_entry_count_3d_dtd,
+			p_write_burst_data->
+			num_entries_this_burst);
+	MHL_TX_EDID_INFO(
+			"\n\ttotal_entries:%d\n\tdtd_limit:%d\n\toffsetTo18_byte_descriptors:0x%x\n",
 			 p_write_burst_data->header.
 			 total_entries, dtd_limit,
 			 p_CEA_extension->
@@ -2988,9 +2966,8 @@ static void process_cea_dtds(struct edid_3d_data_t *mhl_edid_3d_data,
 		if (is_timing) {
 
 			if (is_valid) {
-				MHL_TX_EDID_INFO
-				    ("CEA-861 DTD index: %d burst index:%d DTD "
-				     "SP index:%d %s %s %s\n\n",
+				MHL_TX_EDID_INFO(
+				    "CEA-861 DTD index: %d burst index:%d DTD SP index:%d %s %s %s\n\n",
 				     (uint16_t)mhl_edid_3d_data->
 				     parse_data.cea_861_dtd_index,
 				     (uint16_t)burst_index,
@@ -3076,15 +3053,9 @@ void si_mhl_tx_process_3d_dtd_burst(void *context,
 	mhl_edid_3d_data = (struct edid_3d_data_t *)context;
 	p_CEA_extension = (struct CEA_extension_t *) &mhl_edid_3d_data->
 	    EDID_block_data[EDID_BLOCK_SIZE];
-#if 0
-	dtd_limit = (uint8_t) p_CEA_extension->version_u.version3.misc_support.
-	    total_number_native_dtds_in_entire_EDID;
-#else
-
 	dtd_limit = (EDID_BLOCK_SIZE
 			- p_CEA_extension->byte_offset_to_18_byte_descriptors)
-		/ sizeof(struct detailed_timing_descriptor_t) ;
-#endif
+		/ sizeof(struct detailed_timing_descriptor_t);
 
 	if (1 == p_write_burst_data->header.sequence_index) {
 		size_t _3d_dtd_size;
@@ -3381,16 +3352,20 @@ void si_mhl_tx_process_hev_dtd_b_burst(struct edid_3d_data_t *mhl_edid_3d_data,
 	MHL_TX_EDID_INFO(STRINGIZE(m)" offset:%x\n", SII_OFFSETOF(s, m))
 
 #define DUMP_ESTABLISHED_TIMING(group, width, height, refresh, progressive) \
-if (p_EDID_block_0->group.et##width##x##height##_##refresh##progressive) { \
-	MHL_TX_EDID_INFO(STRINGIZE(group)"."STRINGIZE(width)"x" \
-		STRINGIZE(height)"@"STRINGIZE(refresh)STRINGIZE(progressive) \
-		"\n"); \
-	if (!is_MHL_timing_mode(mhl_edid_3d_data, width, height, refresh*1000, \
-		0, NULL, 0)) { \
-		p_EDID_block_0-> \
-		group.et##width##x##height##_##refresh##progressive = 0; \
+do { \
+	if (p_EDID_block_0-> \
+		group.et##width##x##height##_##refresh##progressive) { \
+		MHL_TX_EDID_INFO(STRINGIZE(group)"."STRINGIZE(width)"x" \
+			STRINGIZE(height)"@"STRINGIZE(refresh) \
+			STRINGIZE(progressive)"\n"); \
+		if (!is_MHL_timing_mode(mhl_edid_3d_data, width, height, \
+			refresh*1000, 0, NULL, 0)) { \
+			p_EDID_block_0-> \
+			group.et##width##x##height##_##refresh## \
+			progressive = 0; \
+		}	 \
 	} \
-}
+} while (0)
 
 static void si_mhl_tx_parse_established_timing(
 	struct edid_3d_data_t *mhl_edid_3d_data,
@@ -3429,29 +3404,29 @@ static void si_mhl_tx_parse_established_timing(
 
 	/* Parse Established Timing Byte #0 */
 	DUMP_OFFSET(struct EDID_block0_t, established_timings_I);
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 720, 400, 70, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 720, 400, 88, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 60, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 67, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 72, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 75, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 800, 600, 56, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_I, 800, 600, 60, p)
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 720, 400, 70, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 720, 400, 88, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 60, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 67, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 72, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 640, 480, 75, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 800, 600, 56, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_I, 800, 600, 60, p);
 
 	/* Parse Established Timing Byte #1: */
 	DUMP_OFFSET(struct EDID_block0_t, established_timings_II);
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 800, 600, 72, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 800, 600, 75, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 832, 624, 75, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 87, i)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 60, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 70, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 75, p)
-	DUMP_ESTABLISHED_TIMING(established_timings_II, 1280, 1024, 75, p)
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 800, 600, 72, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 800, 600, 75, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 832, 624, 75, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 87, i);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 60, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 70, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 1024, 768, 75, p);
+	DUMP_ESTABLISHED_TIMING(established_timings_II, 1280, 1024, 75, p);
 
 	/* Parse Established Timing Byte #2: */
 	DUMP_OFFSET(struct EDID_block0_t, manufacturers_timings);
-	DUMP_ESTABLISHED_TIMING(manufacturers_timings, 1152, 870, 75, p)
+	DUMP_ESTABLISHED_TIMING(manufacturers_timings, 1152, 870, 75, p);
 
 	if ((!p_EDID_block_0->header_data[0]) &&
 		(0 == *((uint8_t *) &p_EDID_block_0->established_timings_II)) &&
@@ -3808,8 +3783,14 @@ static void SiiMhlTx3dReq(struct edid_3d_data_t *mhl_edid_3d_data)
 			CLR_3D_FLAG(mhl_edid_3d_data,
 				FLAGS_BURST_3D_DTD_VESA_DONE);
 		} else {
+			struct drv_hw_context *hw_context =
+			    mhl_edid_3d_data->drv_context;
 			MHL_TX_EDID_INFO("MHL 1.x sink detected\n");
-			si_mhl_tx_prune_edid(mhl_edid_3d_data);
+			hw_context->callbacks.display_timing_enum_begin(
+				hw_context->callbacks.context);
+			si_mhl_tx_display_timing_enumeration_end(
+				mhl_edid_3d_data);
+
 		}
 	} else {
 		struct EDID_block0_t *p_EDID_block_0 = (struct EDID_block0_t *)
@@ -3862,9 +3843,12 @@ static uint8_t parse_861_short_descriptors(
 
 	if (EDID_EXTENSION_TAG != p_CEA_extension->tag) {
 		enum NumExtensions_e ret_val;
-		MHL_TX_DBG_ERR("%sEDID -> Non-CEA Extension read fifo again\n\t"
-			"0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x "
-			"0x%02x%s\n", ANSI_ESC_RED_TEXT, p_EDID_block_data[0],
+		MHL_TX_DBG_ERR(
+			"%sEDID -> Non-CEA Extension read fifo again\n",
+			ANSI_ESC_RED_TEXT);
+		MHL_TX_DBG_ERR(
+			"\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x%s\n",
+			p_EDID_block_data[0],
 			p_EDID_block_data[1], p_EDID_block_data[2],
 			p_EDID_block_data[3], p_EDID_block_data[4],
 			p_EDID_block_data[5], p_EDID_block_data[6],
@@ -3878,8 +3862,9 @@ static uint8_t parse_861_short_descriptors(
 
 	}
 	if (EDID_REV_THREE != p_CEA_extension->revision) {
-		MHL_TX_DBG_ERR("EDID -> Non-HDMI EIA-861 Revision ID. Expected "
-			"%02X. Got %02X\n", (int)EDID_REV_THREE,
+		MHL_TX_DBG_ERR(
+			"EDID -> Non-HDMI EIA-861 Revision ID. Expected %02X. Got %02X\n",
+			(int)EDID_REV_THREE,
 			(int)p_CEA_extension->revision);
 		return EDID_REV_ADDR_ERROR;
 	}
@@ -3962,8 +3947,7 @@ static uint8_t parse_861_short_descriptors(
 					i++;
 				}
 				MHL_TX_EDID_INFO(
-				    "EDID -> %d descriptors in "
-				    "Short Descriptor Video Block\n",
+				    "EDID -> %d descriptors in Short Descriptor Video Block\n",
 				     i);
 				mhl_edid_3d_data->parse_data.
 				    num_video_data_blocks++;
@@ -4178,8 +4162,7 @@ static uint8_t parse_861_block(struct edid_3d_data_t *mhl_edid_3d_data,
 		     ++i) {
 			if (EDID_EXTENSION_TAG != p_block_map->block_tags[i]) {
 				MHL_TX_EDID_INFO(
-					"Edid: Adjusting number of extensions "
-					"according to Block Map\n");
+					"Edid: Adjusting number of extensions according to Block Map\n");
 				mhl_edid_3d_data->parse_data.
 					num_EDID_extensions = i;
 				break;
@@ -4344,9 +4327,8 @@ static int do_block_0(struct edid_3d_data_t *mhl_edid_3d_data)
 			EDID_BLOCK_0_HEADER_SIZE, pb_data)) {
 		if (!si_mhl_tx_check_edid_header(mhl_edid_3d_data, p_EDID)) {
 			MHL_TX_DBG_ERR
-			    ("%sEDID -> Incorrect Header pb_data:%s"
-			     "\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x "
-			     "0x%02x 0x%02x 0x%02x\n",
+			    (
+			     "%sEDID -> Incorrect Header pb_data:%s\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
 			     ANSI_ESC_RED_TEXT, ANSI_ESC_RESET_TEXT,
 			     pb_data[0], pb_data[1], pb_data[2],
 			     pb_data[3], pb_data[4], pb_data[5],
@@ -4383,8 +4365,7 @@ static int do_block_0(struct edid_3d_data_t *mhl_edid_3d_data)
 					mhl_edid_3d_data, &mhl_edid_3d_data->
 					EDID_block_data[0])) {
 					MHL_TX_DBG_ERR(
-					    "%sBAD Header\n\t%02x %02x %02x "
-					    "%02x %02x %02x %02x %02x%s\n",
+					    "%sBAD Header\n\t%02x %02x %02x %02x %02x %02x %02x %02x%s\n",
 					    ANSI_ESC_RED_TEXT,
 					    pb_data[0], pb_data[1],
 					    pb_data[2], pb_data[3],
@@ -4594,7 +4575,7 @@ void dump_EDID_block_impl(const char *pszFunction, int iLineNum,
 {
 	uint16_t i;
 	char hex_digits[] = "0123456789ABCDEF";
-	printk(KERN_DEFAULT "%s:%d EDID DATA:\n", pszFunction, iLineNum);
+	pr_debug("%s:%d EDID DATA:\n", pszFunction, iLineNum);
 	for (i = 0; i < length;) {
 		uint16_t j, k;
 		uint16_t temp = i;
@@ -4612,7 +4593,7 @@ void dump_EDID_block_impl(const char *pszFunction, int iLineNum,
 			buffer[k++] = ((pData[temp] >= ' ')
 				&& (pData[temp] <= 'z')) ? pData[temp] : '.';
 
-		printk(KERN_DEFAULT "%s\n", buffer);
+		pr_debug("%s\n", buffer);
 	}
 }
 #endif
@@ -4644,7 +4625,7 @@ int process_emsc_edid_sub_payload(struct edid_3d_data_t *edid_context,
 			MHL_TX_DBG_ERR("%skmalloc failed%s\n",
 				ANSI_ESC_RED_TEXT,
 				ANSI_ESC_RESET_TEXT)
-			return -1;
+			return -ENOMEM;
 		} else {
 			MHL_TX_DBG_ERR("block 0\n")
 			memcpy(edid_context->p_edid_emsc,
@@ -4666,7 +4647,7 @@ int process_emsc_edid_sub_payload(struct edid_3d_data_t *edid_context,
 			edid_context->num_edid_emsc_blocks) {
 			MHL_TX_DBG_ERR("EDID overflow %d offset: 0x%X\n",
 				block_num, edid_offset)
-			return -1;
+			return -EPERM;
 		} else if (edid_context->cur_edid_emsc_block <
 			edid_context->num_edid_emsc_blocks) {
 			MHL_TX_DBG_ERR("block %d offset 0x%X\n",

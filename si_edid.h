@@ -74,13 +74,6 @@ struct SI_PACK_THIS_STRUCT cea_short_descriptor_t {
 	unsigned char native:1;
 };
 
-#if 0
-struct SI_PACK_THIS_STRUCT MHL_short_desc_t {
-	cea_short_descriptor_t cea_short_desc;
-	MHL2_video_descriptor_t mhl_vid_desc;
-};
-#endif
-
 struct SI_PACK_THIS_STRUCT video_data_block_t {
 	union data_block_header_byte_t header;
 	struct cea_short_descriptor_t short_descriptors[1]; /*open ended */

@@ -234,7 +234,7 @@ static int cypress_compute_slot(struct mt_device *td)
 	if (td->curdata.contactid != 0 || td->num_received == 0)
 		return td->curdata.contactid;
 	else
-		return -1;
+		return -EPERM;
 }
 
 #if (LINUX_KERNEL_VER < 309)
@@ -254,7 +254,7 @@ static int find_slot_from_contactid(struct mt_device *td)
 	/* should not occurs. If this happens that means
 	 * that the device sent more touches that it says
 	 * in the report descriptor. It is ignored then. */
-	return -1;
+	return -EPERM;
 }
 #endif
 
@@ -634,11 +634,11 @@ int mhl3_mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 		case HID_DG_CONTACTMAX:
 			/* we don't set td->last_slot_field as contactcount and
 			 * contact max are global to the report */
-			return -1;
+			return -EPERM;
 		case HID_DG_TOUCH:
 			/* Legacy devices use TIPSWITCH and not TOUCH.
 			 * Let's just ignore this field. */
-			return -1;
+			return -EPERM;
 		}
 		/* let hid-input decide for the others */
 		return 0;
@@ -651,7 +651,7 @@ int mhl3_mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 
 	case 0xff000000:
 		/* we do not want to map these: no input-oriented meaning */
-		return -1;
+		return -EPERM;
 	}
 
 	return 0;
@@ -671,7 +671,7 @@ int mhl3_mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 	* such as Mouse that might have the same GenericDesktop usages. */
 	if (field->application != HID_DG_TOUCHSCREEN &&
 		field->application != HID_DG_TOUCHPAD)
-		return -1;
+		return -EPERM;
 #else
 	/* Only map fields from TouchScreen or TouchPad collections.
 	 * We need to ignore fields that belong to other collections
@@ -803,14 +803,14 @@ int mhl3_mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			 * contact max are global to the report */
 			if (td->last_mt_collection == usage->collection_index)
 				td->last_field_index = field->index;
-			return -1;
+			return -EPERM;
 		}
 		/* let hid-input decide for the others */
 		return 0;
 
 	case 0xff000000:
 		/* we do not want to map these: no input-oriented meaning */
-		return -1;
+		return -EPERM;
 	}
 
 	return 0;
@@ -829,7 +829,7 @@ int mhl3_mt_input_mapped(struct hid_device *hdev, struct hid_input *hi,
 	if (usage->type == EV_KEY || usage->type == EV_ABS)
 		set_bit(usage->type, hi->input->evbit);
 
-	return -1;
+	return -EPERM;
 }
 
 #if (LINUX_KERNEL_VER >= 311)
@@ -1140,6 +1140,8 @@ int mhl3_mt_event(struct hid_device *hid, struct hid_field *field,
 	}
 
 #else
+		/* bz37964 - adding comment below to avoid warning */
+		/* FALLTHROUGH */
 		default:
 			/* fallback to the generic hidinput handling */
 			return 0;
@@ -1853,67 +1855,3 @@ fail:
 	kfree(td);
 	return ret;
 }
-
-#if 0
-#ifdef CONFIG_PM
-static int mt_reset_resume(struct hid_device *hdev)
-{
-	mt_set_input_mode(hdev);
-	return 0;
-}
-#endif
-
-static void mt_remove(struct hid_device *hdev)
-{
-	struct mt_device *td = hid_get_drvdata(hdev);
-
-#if (LINUX_KERNEL_VER >= 311)
-	struct hid_input *hi;
-
-	list_for_each_entry(hi, &hdev->inputs, list)
-		mt_free_input_name(hi);
-	hid_hw_stop(hdev);
-#else
-	hid_hw_stop(hdev);
-	kfree(td->slots);
-#endif
-	kfree(td);
-	hid_set_drvdata(hdev, NULL);
-}
-
-
-static struct hid_driver mt_driver = {
-	.name = "hid-multitouch",
-	.id_table = mhl3_mt_devices,
-/*	.probe = mt_probe, */
-	.remove = mt_remove,
-	.input_mapping = mhl3_mt_input_mapping,
-	.input_mapped = mhl3_mt_input_mapped,
-#if (LINUX_KERNEL_VER >= 311)
-	.input_configured = mt_input_configured,
-#endif
-	.feature_mapping = mt_feature_mapping,
-	.usage_table = mt_grabbed_usages,
-/*	.event = mt_event, */
-#if (LINUX_KERNEL_VER >= 311)
-	.report = mt_report,
-#endif
-#ifdef CONFIG_PM
-	.reset_resume = mt_reset_resume,
-#if (LINUX_KERNEL_VER >= 311)
-	.resume = mt_resume,
-#endif
-#endif
-};
-
-static int __init mt_init(void)
-{
-	return hid_register_driver(&mt_driver);
-}
-
-static void __exit mt_exit(void)
-{
-	hid_unregister_driver(&mt_driver);
-}
-
-#endif

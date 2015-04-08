@@ -38,7 +38,7 @@ struct cbus_req {
 	const char *function;
 	int line;
 	int sequence;
-	struct cbus_req *(*completion)(struct mhl_dev_context *dev_context,
+	struct cbus_req * (*completion)(struct mhl_dev_context *dev_context,
 				struct cbus_req *req,
 				uint8_t data1);
 };

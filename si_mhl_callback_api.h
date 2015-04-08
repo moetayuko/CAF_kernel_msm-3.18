@@ -75,21 +75,19 @@ enum hpd_high_callback_status {
 
 struct __attribute__((__packed__)) si_mhl_callback_api_t {
 	void *context;
-#if 1
-	int (*display_timing_enum_begin) (void *context);
-	int (*display_timing_enum_item) (void *context, uint16_t columns,
+	int (*display_timing_enum_begin)(void *context);
+	int (*display_timing_enum_item)(void *context, uint16_t columns,
 		uint16_t rows, uint8_t bits_per_pixel,
 		uint32_t vertical_refresh_rate_in_milliHz, uint16_t burst_id,
 		union video_burst_descriptor_u *p_descriptor);
-	int (*display_timing_enum_end) (void *context);
-#endif
+	int (*display_timing_enum_end)(void *context);
 	/*
 	   hpd_driven_low:
 	   This gets called in response to CLR_HPD messages from the MHL sink.
 	   The upstream client that registers this callback should disable
 	   video and all DDC access before returning.
 	 */
-	void (*hpd_driven_low) (void *context);
+	void (*hpd_driven_low)(void *context);
 
 	/*
 	   hpd_driven_high:
@@ -213,7 +211,7 @@ struct __attribute__((__packed__)) si_mhl_callback_api_t {
 	   hpd_high_callback_status that do have the sign bit set.
 
 	 */
-	enum hpd_high_callback_status(*hpd_driven_high) (void *context,
+	enum hpd_high_callback_status (*hpd_driven_high)(void *context,
 		uint8_t *p_edid, size_t edid_length,
 		uint8_t *p_emsc_edid, size_t emsc_edid_length,
 		struct MHL3_hev_dtd_item_t *p_hev_dtd, size_t num_hev_dtds,

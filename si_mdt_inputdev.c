@@ -459,8 +459,9 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 						 usb_kbd_keycode[keycodes_old
 								 [i]], 0);
 			} else {
-				MHL_TX_DBG_INFO("Unknown key (scancode %#x) "
-						"released.\n", keycodes_old[i]);
+				MHL_TX_DBG_INFO(
+					"Unknown key (scancode %#x) released.\n",
+					keycodes_old[i]);
 			}
 		}
 
@@ -475,8 +476,9 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 						 usb_kbd_keycode[keycodes_new
 								 [i]], 1);
 			} else {
-				MHL_TX_DBG_INFO("Unknown key (scancode %#x) "
-						"pressed.\n", keycodes_new[i]);
+				MHL_TX_DBG_INFO(
+					"Unknown key (scancode %#x) pressed.\n",
+					keycodes_new[i]);
 			}
 		}
 	}
@@ -830,11 +832,11 @@ bool si_mhl_tx_mdt_process_packet(struct mhl_dev_context *dev_context,
 		(MDT_HDR_IS_NOT_MOUSE & mdt_event_packet->header) &&
 		(MDT_HDR_IS_NOT_LAST & mdt_event_packet->header)) {
 
-		MHL_TX_DBG_INFO("Unsupported gaming controller "
-				"event received\n");
+		MHL_TX_DBG_INFO(
+			"Unsupported gaming controller event received\n");
 	} else {
-		MHL_TX_DBG_INFO("Event is either not an HID event or "
-				"is an an unknown HID event type\n");
+		MHL_TX_DBG_INFO(
+			"Event is either not an HID event or is an an unknown HID event type\n");
 		return false;
 	}
 

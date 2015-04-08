@@ -48,7 +48,7 @@ enum scratch_pad_status si_mhl_tx_request_write_burst(
 	uint8_t length, uint8_t *data);
 bool si_mhl_tx_send_msc_msg(struct mhl_dev_context *dev_context,
 	uint8_t command, uint8_t cmdData,
-	struct cbus_req *(*completion)(struct mhl_dev_context *dev_context,
+	struct cbus_req * (*completion)(struct mhl_dev_context *dev_context,
 	struct cbus_req *req, uint8_t data1));
 bool si_mhl_tx_rcp_send(struct mhl_dev_context *dev_context,
 			uint8_t rcpKeyCode);

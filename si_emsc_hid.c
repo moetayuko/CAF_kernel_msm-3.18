@@ -650,62 +650,6 @@ static void mhl3_hid_find_max_report(struct hid_device *hid, unsigned int type,
 /*
  *
  */
-#if 0
-static void mhl3_hid_init_report(struct hid_report *report, u8 *buffer,
-	size_t bufsize)
-{
-	struct hid_device *hid = report->device;
-	struct mhl3_hid_data *mhid = hid->driver_data;
-	unsigned int size, ret_size;
-
-	size = mhl3_hid_get_report_length(report);
-	if (mhl3_hid_get_report(mhid,
-		report->type == HID_FEATURE_REPORT ? 0x03 : 0x01,
-		report->id, buffer, size))
-		return;
-
-	ret_size = buffer[0] | (buffer[1] << 8);
-
-	if (ret_size != size) {
-		MHL3_HID_DBG_ERR("Error in %s size:%d / ret_size:%d\n",
-			__func__, size, ret_size);
-		return;
-	}
-
-	/*
-	 * hid->driver_lock is held as we are in probe function,
-	 * we just need to setup the input fields, so using
-	 * hid_report_raw_event is safe.
-	 */
-	hid_report_raw_event(hid, report->type, buffer + 2, size - 2, 1);
-}
-#endif
-
-#if 0
-/*
- * Initialize all reports.  This gets the current value of all
- * input/feature reports for the device so that the HID-core can keep
- * them in internal structures.  The structure is updated as further
- * device reports occur.
- */
-static void mhl3_hid_init_reports(struct hid_device *hid)
-{
-	struct mhl3_hid_data *mhid = hid->driver_data;
-	struct hid_report *report;
-
-	MHL3_HID_DBG_INFO("%s\n", __func__);
-	list_for_each_entry(report,
-		&hid->report_enum[HID_INPUT_REPORT].report_list, list)
-		mhl3_hid_init_report(
-			report, mhid->in_report_buf, mhid->bufsize);
-
-	list_for_each_entry(report,
-		&hid->report_enum[HID_FEATURE_REPORT].report_list, list)
-		mhl3_hid_init_report(
-			report, mhid->in_report_buf, mhid->bufsize);
-}
-#endif
-
 /*
  * TODO: Doesn't do anything yet except manage the open count
  */
@@ -1470,8 +1414,7 @@ void build_received_hid_message(struct mhl_dev_context *mdev,
 		msg_chksum = *((uint16_t *)&emsc->in_buf[emsc->msg_length]);
 		if (accum != msg_chksum) {
 			MHL3_HID_DBG_ERR(
-				"HID MSG CKSM fail, ignoring message: "
-				"Act: %04X Exp: %04X\n",
+				"HID MSG CKSM fail, ignoring message: Act: %04X Exp: %04X\n",
 				accum, msg_chksum);
 
 			/* Request a re-try. */
