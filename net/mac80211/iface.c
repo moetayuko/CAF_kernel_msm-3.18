@@ -1123,6 +1123,43 @@ ieee80211_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
 	return stats;
 }
 
+static int ieee80211_netdev_set_features(struct net_device *dev,
+					 netdev_features_t features)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_local *local = sdata->local;
+	netdev_features_t changed = dev->features ^ features;
+	int ret;
+
+	if (!(changed & IEEE80211_SUPPORTED_NETDEV_FEATURES))
+		return 0;
+
+	switch (sdata->vif.type) {
+	case NL80211_IFTYPE_MONITOR:
+	case NL80211_IFTYPE_AP_VLAN:
+		/* these aren't known to the driver */
+		return -EOPNOTSUPP;
+	default:
+		break;
+	}
+
+	ret = drv_set_features(local, sdata, features, changed);
+	if (ret)
+		return ret;
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP) {
+		struct ieee80211_sub_if_data *vlan;
+
+		/* propagate to VLANs as they're dependent */
+		list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
+			vlan->dev->features = features;
+			netdev_update_features(vlan->dev);
+		}
+	}
+
+	return 0;
+}
+
 static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_open		= ieee80211_open,
 	.ndo_stop		= ieee80211_stop,
@@ -1133,6 +1170,7 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_set_mac_address 	= ieee80211_change_mac,
 	.ndo_select_queue	= ieee80211_netdev_select_queue,
 	.ndo_get_stats64	= ieee80211_get_stats64,
+	.ndo_set_features	= ieee80211_netdev_set_features,
 };
 
 static u16 ieee80211_monitor_select_queue(struct net_device *dev,
