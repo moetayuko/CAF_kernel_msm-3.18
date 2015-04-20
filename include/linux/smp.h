@@ -19,7 +19,7 @@ struct call_single_data {
 	struct list_head list;
 	smp_call_func_t func;
 	void *info;
-	u16 flags;
+	unsigned int flags;
 	u16 priv;
 };
 
