@@ -983,6 +983,7 @@ struct vfe32_ctrl_type {
         struct device *iommu_ctx_misc;
 	uint32_t simultaneous_sof_frame;
 	uint32_t simultaneous_sof_stat;
+	struct tasklet_struct vfe32_tasklet;
 };
 
 #define statsAeNum      0
