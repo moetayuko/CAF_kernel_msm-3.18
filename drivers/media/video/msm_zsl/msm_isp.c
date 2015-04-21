@@ -153,6 +153,7 @@ static int msm_isp_notify_vfe(struct v4l2_subdev *sd,
 	struct msm_free_buf buf;
         memset(&v4l2_evt,0,sizeof(struct v4l2_event));
 
+	v4l2_evt.id = 0;
 	if (!sync) {
 		pr_err("%s: no context in dsp callback.\n", __func__);
 		rc = -EINVAL;

@@ -44,6 +44,7 @@ static int msm_mctl_pp_buf_divert(
 	struct msm_isp_event_ctrl *isp_event;
 	isp_event = kzalloc(sizeof(struct msm_isp_event_ctrl),
 						GFP_ATOMIC);
+	v4l2_evt.id = 0;
 	if (!isp_event) {
 		pr_err("%s Insufficient memory. return", __func__);
 		return -ENOMEM;
