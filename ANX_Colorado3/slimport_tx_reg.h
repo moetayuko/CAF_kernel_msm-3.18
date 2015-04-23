@@ -12,7 +12,6 @@
  *
  */
 
-
 #ifndef _SP_TX_REG_DEF_H
 #define _SP_TX_REG_DEF_H
 
@@ -25,12 +24,12 @@
 
 /***************************************************************/
 /*Register definition of device address 0x7e*/
-#define HDMI_RX_PORT_SEL_REG 0x10
+#define HDMI_RX_PORT_SEL_REG 0x10		
 #define DDC_EN 0x10
 #define TMDS_EN 0x01
 
 #define RX_SRST 0x11
-#define VIDEO_RST 0x10
+#define VIDEO_RST 0x10		
 #define HDCP_MAN_RST 0X04
 #define TMDS_RST 0X02
 #define SW_MAN_RST 0X01
@@ -45,7 +44,7 @@
 #define DEEP_COLOR_MODE 0X40
 #define HDMI_AUD_LAYOUT 0X08
 #define MUTE_STAT				0X04
-/*//#define HDMI_MODE				0X01*/
+//#define HDMI_MODE				0X01
 
 #define RX_MUTE_CTRL 0X16
 #define MUTE_POL	0X04
@@ -57,13 +56,13 @@
 #define RX_SYS_PWDN1 0X18
 #define PWDN_CTRL	0X01
 
-#define RX_AEC_CTRL 0X20
+#define RX_AEC_CTRL 0X20	
 #define AVC_OE 0x80
 #define AAC_OE 0X40
 #define AVC_EN 0X02
 #define AAC_EN 0X01
 
-#define RX_AEC_EN0 0X24
+#define RX_AEC_EN0 0X24 
 #define AEC_EN07 0X80
 #define AEC_EN06 0X40
 #define AEC_EN05 0X20
@@ -230,7 +229,7 @@
 #define CEC_PIN_SEL 0X02
 #define CEC_RST 0X01
 
-/*//new added 2013-02-16*/
+//new added 2013-02-16
 #define HDMI_RX_CEC_RX_STATUS_REG 0XD1
 #define HDMI_RX_CEC_RX_BUSY 0X80
 #define HDMI_RX_CEC_RX_FULL 0X20
@@ -264,6 +263,8 @@
 #define VSI_RCVD 0X20
 /***************************************************************/
 /*Register definition of device address 0x80*/
+#define HDCP_BCAPS_SHADOW 0x2A
+#define REPEATER_M 0x40
 
 
 #define HDMI_RX_HDCP_STATUS_REG 0X3F
@@ -320,6 +321,10 @@
 /*Register definition of device address 0x70*/
 #define SP_TX_HDCP_STATUS	0x00
 #define SP_TX_HDCP_AUTH_PASS	0x02
+#define SP_TX_HDCP_AUTH_FAIL	0x40
+/*bit defination*/
+#define SP_TX_HDCP_PASSED_STATUS 0x0F
+#define TX_HDCP_FUNCTION_ENABLE 0x0F
 
 #define TX_HDCP_CTRL0 0x01
 #define STORE_AN 0x80
@@ -372,27 +377,27 @@
 
 
 #define SP_TX_SYS_CTRL1_REG 0x80
-#define CHIP_AUTH_RESET 0x80
-#define PD_BYPASS_CHIP_AUTH 0x40
-#define DET_STA  0x04
-#define FORCE_DET 0x02
-#define DET_CTRL 0x01
+#define CHIP_AUTH_RESET 0x80    
+#define PD_BYPASS_CHIP_AUTH 0x40    
+#define DET_STA  0x04    
+#define FORCE_DET 0x02    
+#define DET_CTRL 0x01    
 
 #define SP_TX_SYS_CTRL2_REG 0x81
-#define CHA_STA  0x04
-#define FORCE_CHA  0x02
-#define CHA_CTRL 0x01
+#define CHA_STA  0x04    
+#define FORCE_CHA  0x02    
+#define CHA_CTRL 0x01    
 
 #define SP_TX_SYS_CTRL3_REG 0x82
-#define HPD_STATUS 0x40
-#define F_HPD  0x20
-#define HPD_CTRL 0x10
-#define STRM_VALID 0x04
-#define F_VALID 0x02
-#define VALID_CTRL  0x01
+#define HPD_STATUS 0x40    
+#define F_HPD  0x20    
+#define HPD_CTRL 0x10    
+#define STRM_VALID 0x04    
+#define F_VALID 0x02    
+#define VALID_CTRL  0x01    
 
 #define SP_TX_SYS_CTRL4_REG 0x83
-#define ENHANCED_MODE	0x08
+#define ENHANCED_MODE 	0x08
 
 #define SP_TX_VID_CTRL 0x84
 
@@ -403,14 +408,14 @@
 #define  I2C_GEN_10US_TIMER1	0x89
 
 #define SP_TX_PKT_EN_REG 0x90
-#define AUD_IF_UP 0x80
-#define AVI_IF_UD 0x40
-#define MPEG_IF_UD 0x20
-#define SPD_IF_UD 0x10
-#define AUD_IF_EN 0x08
-#define AVI_IF_EN 0x04
-#define MPEG_IF_EN 0x02
-#define SPD_IF_EN 0x01
+#define AUD_IF_UP 0x80  
+#define AVI_IF_UD 0x40  
+#define MPEG_IF_UD 0x20      
+#define SPD_IF_UD 0x10     
+#define AUD_IF_EN 0x08  
+#define AVI_IF_EN 0x04            
+#define MPEG_IF_EN 0x02       
+#define SPD_IF_EN 0x01         
 
 #define TX_HDCP_CTRL 0x92
 #define AUTO_EN	0x80
@@ -432,9 +437,9 @@
 #define DRVIE_CURRENT_LEVEL1 0x01
 #define PRE_EMP_LEVEL1 0x08
 
-/*//#define SSC_CTRL_REG1 0xA7*/
-/*//#define SPREAD_AMP 0x10*/
-/*//#define MODULATION_FREQ 0x01*/
+//#define SSC_CTRL_REG1 0xA7
+//#define SPREAD_AMP 0x10
+//#define MODULATION_FREQ 0x01
 
 #define LT_CTRL 0xA8
 #define SP_TX_LT_EN	0x01
@@ -455,8 +460,8 @@
 #define TX_LINK_DEBUG 0xB8
 #define M_VID_DEBUG 0x20
 #define NEW_PRBS7 0x10
-#define INSERT_ER  0x02
-#define PRBS31_EN  0x01
+#define INSERT_ER  0x02        
+#define PRBS31_EN  0x01     
 
 #define DPCD_200 0xB9
 #define DPCD_201 0xBA
@@ -469,18 +474,18 @@
 #define PLL_RST 0x40
 
 #define SP_TX_ANALOG_PD_REG 0xC8
-#define MACRO_PD 0x20
-#define AUX_PD 0x10
-#define CH0_PD 0x01
+#define MACRO_PD 0x20         
+#define AUX_PD 0x10         
+#define CH0_PD 0x01    
 
 #define TX_MISC 0xCD
 #define EQ_TRAINING_LOOP 0x40
 
-
-#define SP_TX_DOWN_SPREADING_CTRL1 0xD0
-#define SP_TX_SSC_DISABLE 0xC0
-#define SP_TX_SSC_DWSPREAD 0x40
-
+     
+#define SP_TX_DOWN_SPREADING_CTRL1 0xD0  
+#define SP_TX_SSC_DISABLE 0xC0  
+#define SP_TX_SSC_DWSPREAD 0x40  
+  
 
 #define SP_TX_M_CALCU_CTRL	0xD9
 #define M_GEN_CLK_SEL 0x01
@@ -529,27 +534,27 @@
 #define TOTAL_PD 0x02
 
 #define SP_TX_RST_CTRL_REG 0x06
-#define MISC_RST 0x80
-#define VIDCAP_RST 0x40
-#define VIDFIF_RST 0x20
-#define AUDFIF_RST 0x10
-#define AUDCAP_RST 0x08
-#define HDCP_RST 0x04
-#define SW_RST 0x02
-#define HW_RST 0x01
+#define MISC_RST 0x80	
+#define VIDCAP_RST 0x40	
+#define VIDFIF_RST 0x20    
+#define AUDFIF_RST 0x10    
+#define AUDCAP_RST 0x08    
+#define HDCP_RST 0x04    
+#define SW_RST 0x02    
+#define HW_RST 0x01    
 
 #define RST_CTRL2 0x07
-/*//#define SSC_RST 0x80*/
+//#define SSC_RST 0x80
 #define AUX_RST	0x04
 #define SERDES_FIFO_RST 0x02
 #define I2C_REG_RST	0x01
 
 #define VID_CTRL1 0x08
-#define VIDEO_EN 0x80
-#define VIDEO_MUTE 0x40
-#define IN_BIT_SEl 0x04
-#define DDR_CTRL 0x02
-#define EDGE_CTRL 0x01
+#define VIDEO_EN 0x80    
+#define VIDEO_MUTE 0x40      
+#define IN_BIT_SEl 0x04    
+#define DDR_CTRL 0x02    
+#define EDGE_CTRL 0x01    
 
 #define SP_TX_VID_CTRL2_REG 0x09
 #define IN_BPC_12BIT 0x30
@@ -557,7 +562,7 @@
 #define IN_BPC_8BIT 0x10
 
 #define SP_TX_VID_CTRL3_REG 0x0A
-#define HPD_OUT 0x40
+#define HPD_OUT 0x40   
 
 #define SP_TX_VID_CTRL5_REG 0x0C
 #define CSC_STD_SEL 0x80
@@ -635,8 +640,8 @@
 
 #define TX_PLL_FILTER 0xDF
 #define PD_RING_OSC	0x40
-/*//#define AUX_TERM_50OHM 0x30*/
-#define V33_SWITCH_ON 0x08
+//#define AUX_TERM_50OHM 0x30
+#define V33_SWITCH_ON 0x08 
 
 #define TX_PLL_FILTER5	0xE0
 #define SP_TX_ANALOG_CTRL0	  0xE1
@@ -655,24 +660,24 @@
 #define VIDEO_CLOCK_CHG 0x02
 
 #define SP_COMMON_INT_STATUS2 0xF2
-#define HDCP_AUTH_CHG 0x02
-#define HDCP_AUTH_DONE 0x01
+#define HDCP_AUTH_CHG 0x02 
+#define HDCP_AUTH_DONE 0x01 
 
 #define SP_COMMON_INT_STATUS3 0xF3
-#define HDCP_LINK_CHECK_FAIL 0x01
+#define HDCP_LINK_CHECK_FAIL 0x01 
 
 #define SP_COMMON_INT_STATUS4 0xF4
-#define PLUG 0x01
-#define ESYNC_ERR 0x10
-#define HPD_LOST 0x02
-#define HPD_CHANGE 0x04
+#define PLUG 0x01   
+#define ESYNC_ERR 0x10   
+#define HPD_LOST 0x02   
+#define HPD_CHANGE 0x04   
 
 #define SP_TX_INT_STATUS1 0xF7
-#define DPCD_IRQ_REQUEST 0x80
-#define HPD 0x40
-#define TRAINING_Finish 0x20
-#define POLLING_ERR 0x10
-#define LINK_CHANGE 0x04
+#define DPCD_IRQ_REQUEST 0x80 
+#define HPD 0x40 
+#define TRAINING_Finish 0x20   
+#define POLLING_ERR 0x10   
+#define LINK_CHANGE 0x04   
 #define SINK_CHG 0x08
 
 #define SP_COMMON_INT_MASK1 0xF8
@@ -707,7 +712,7 @@
 #define SP_TX_LT_CTRL_REG18 0x4A
 #define SP_TX_LT_CTRL_REG19 0x4B
 
-#define SP_TX_AUD_INTERFACE_CTRL0  0x5f
+#define SP_TX_AUD_INTERFACE_CTRL0  0x5f 
 #define AUD_INTERFACE_DISABLE 0x80
 
 #define SP_TX_AUD_INTERFACE_CTRL2 0x60
@@ -727,7 +732,8 @@
 /***************************************************************/
 /*Definition of DPCD*/
 
-/*//DPCD 0518*/
+
+//DPCD 0518
 #define DOWN_R_TERM_DET _BIT6
 #define SRAM_EEPROM_LOAD_DONE _BIT5
 #define SRAM_CRC_CHK_DONE _BIT4
@@ -735,6 +741,8 @@
 #define DOWN_STRM_ENC _BIT2
 #define DOWN_STRM_AUTH _BIT1
 #define DOWN_STRM_HPD _BIT0
+
+
 #define DPCD_DPCD_REV  0x00
 #define DPCD_MAX_LINK_RATE 0x01
 
@@ -787,46 +795,46 @@
 
 
 #ifdef ANX7730_DEBUG
-/*///////for analogix  downstream DP RX*/
+///////for analogix  downstream DP RX
 
 #define DP_RX_LINK_BW_SET               0x0a
 
-#define  DP_RX_H_RES_LOW				0x90
-#define  DP_RX_H_RES_HIGH				0x91
+#define  DP_RX_H_RES_LOW        			0x90 
+#define  DP_RX_H_RES_HIGH        			0x91
 
-#define  DP_RX_V_RES_LOW				0x92
-#define  DP_RX_V_RES_HIGH				0x93
+#define  DP_RX_V_RES_LOW        			0x92 
+#define  DP_RX_V_RES_HIGH        			0x93
 
-#define  DP_RX_ACT_PIX_LOW				0x94
-#define  DP_RX_ACT_PIX_HIGH				0x95
+#define  DP_RX_ACT_PIX_LOW        			0x94 
+#define  DP_RX_ACT_PIX_HIGH        			0x95
 
-#define  DP_RX_ACT_LINE_LOW				0x96
-#define  DP_RX_ACT_LINE_HIGH			0x97
+#define  DP_RX_ACT_LINE_LOW        			0x96 
+#define  DP_RX_ACT_LINE_HIGH        		0x97 
 
-#define  DP_RX_VSYNC_TO_ACT_LINE		0x98
-#define  DP_RX_ACT_LINE_TO_VSYNC		0x99
+#define  DP_RX_VSYNC_TO_ACT_LINE        	0x98 
+#define  DP_RX_ACT_LINE_TO_VSYNC        	0x99 
 
-#define  DP_RX_H_F_PORCH_LOW			0x9b
-#define  DP_RX_H_F_PORCH_HIGH			0x9c
+#define  DP_RX_H_F_PORCH_LOW        		0x9b 
+#define  DP_RX_H_F_PORCH_HIGH        		0x9c 
 
-#define  DP_RX_HSYNC_WIDTH_LOW			0x9d
-#define  DP_RX_HSYNC_WIDTH_HIGH			0x9e
+#define  DP_RX_HSYNC_WIDTH_LOW        		0x9d 
+#define  DP_RX_HSYNC_WIDTH_HIGH        		0x9e
 
-#define DP_RX_M_FORCE_VALUE_3				0x0d
-#define DP_RX_M_FORCE_VALUE_2				0x0e
-#define DP_RX_M_FORCE_VALUE_1				0x0F
-#define DP_RX_N_FORCE_VALUE_3				0x10
-#define DP_RX_N_FORCE_VALUE_2				0x11
-#define DP_RX_N_FORCE_VALUE_1				0x12
+#define DP_RX_M_FORCE_VALUE_3     			0x0d 
+#define DP_RX_M_FORCE_VALUE_2     			0x0e 
+#define DP_RX_M_FORCE_VALUE_1     			0x0F 
+#define DP_RX_N_FORCE_VALUE_3     			0x10 
+#define DP_RX_N_FORCE_VALUE_2     			0x11 
+#define DP_RX_N_FORCE_VALUE_1     			0x12
 
 
 #define DP_TX_HDCP_LINK_CHK_FRAME_NUM                     0x03
 #define DP_TX_HDCP_CONTROL_2_REG                        0x04
-#define DP_TX_HDCP_AUTO_MODE_EN                         0x10/*//bit4*/
-#define DP_TX_DOWN_HDCP_AUTO_START                  0x20/*//bit5*/
+#define DP_TX_HDCP_AUTO_MODE_EN                         0x10//bit4
+#define DP_TX_DOWN_HDCP_AUTO_START                  0x20//bit5
 
 #define DP_RX_SYSTEM_CTRL_1          0x08
-#define DP_RX_HW_HDCP_REP_MODE 0x80/*//bit7*/
+#define DP_RX_HW_HDCP_REP_MODE 0x80//bit7
 #define DP_RX_FORCE_MN_VAL            0x40
 #endif
 
@@ -835,3 +843,7 @@
 #define SINK_GOOD_BATTERY   0x34
 
 #endif
+
+
+
+

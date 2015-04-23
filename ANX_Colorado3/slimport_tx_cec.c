@@ -31,17 +31,17 @@ static unchar HDMI_SendFrame_len;
 static unchar *HDMI_CECRecv_cur;	/*//cursor of data end in the buf */
 
 struct {
-	uint hdmi_cec_receive_done:1;
-	uint hdmi_cec_transmit_done:1;
-	uint dp_cec_receive_done:1;
-	uint dp_cec_transmit_done:1;
-	uint dp_resend_flag:1;
-	uint hdmi_resend_flag:1;
-	uint hdmi_frame_ready:1;
-	uint dp_frame_ready:1;
-	uint dp_frametx_error:1;
-	uint dp_resend_count:3;
-	uint hdmi_resend_count:3;
+	uint hdmi_cec_receive_done : 1;
+	uint hdmi_cec_transmit_done : 1;
+	uint dp_cec_receive_done : 1;
+	uint dp_cec_transmit_done : 1;
+	uint dp_resend_flag : 1;
+	uint hdmi_resend_flag : 1;
+	uint hdmi_frame_ready : 1;
+	uint dp_frame_ready : 1;
+	uint dp_frametx_error : 1;
+	uint dp_resend_count : 3;
+	uint hdmi_resend_count : 3;
 } cec;
 
 static unchar dp_timeout_count;

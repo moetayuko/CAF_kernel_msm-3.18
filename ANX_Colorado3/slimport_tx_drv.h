@@ -12,27 +12,27 @@
  *
  */
 
-
 #ifndef _SP_TX_DRV_H
 #define _SP_TX_DRV_H
 
 /*---SlimPort macro define for some feature---*/
-/*//#define DEMO_4K_2K*/
+/* #define DEMO_4K_2K */
 
-/*//#define SIMULATE_WATCHDOG*/
+/* #define SIMULATE_WATCHDOG  */
+
 /*---End---*/
-
-#include "slimport_tx_reg.h"
 #include "slimport.h"
+#include "slimport_tx_reg.h"
 
-/*//#define CEC_PHYCISAL_ADDRESS_INSERT*/
-/*//#define CEC_DBG_MSG_ENABLED*/
+/* #define CEC_PHYCISAL_ADDRESS_INSERT */
+
+/* #define CEC_DBG_MSG_ENABLED */
 
 #ifdef DEMO_4K_2K
 #define FW_VERSION 0xA4
 #else
-#define FW_VERSION 0x15
-#define FW_REVERSION 0x01
+#define FW_VERSION 0x16
+#define FW_REVERSION 0x00
 #endif
 #define _BIT0	0x01
 #define _BIT1	0x02
@@ -53,7 +53,8 @@
 #define _bit7_(val)  ((bit)(val & _BIT7))
 
 #ifdef SP_REGISTER_SET_TEST
-/*//For Slimport test*/
+/* For Slimport test */
+
 extern unchar val_SP_TX_LT_CTRL_REG0;
 extern unchar val_SP_TX_LT_CTRL_REG10;
 extern unchar val_SP_TX_LT_CTRL_REG11;
@@ -71,7 +72,6 @@ extern unchar val_SP_TX_LT_CTRL_REG18;
 #define DVI_MODE 0x00
 #define HDMI_MODE 0x01
 #define ENABLE_READ_EDID
-
 
 enum CO3_CHIPID {
 	ANX7818,
@@ -103,18 +103,15 @@ enum SP_TX_System_State {
 	STATE_WAITTING_CABLE_PLUG,
 	STATE_SP_INITIALIZED,
 	STATE_SINK_CONNECTION,
-	#ifdef ENABLE_READ_EDID
+#ifdef ENABLE_READ_EDID
 	STATE_PARSE_EDID,
-	#endif
+#endif
 	STATE_LINK_TRAINING,
 	STATE_VIDEO_OUTPUT,
-	#ifndef HDCP_AUTO_EN
 	STATE_HDCP_AUTH,
-	#endif
 	STATE_AUDIO_OUTPUT,
 	STATE_PLAY_BACK
 };
-
 
 enum SP_TX_POWER_BLOCK {
 	SP_TX_PWR_REG = REGISTER_PD,
@@ -144,7 +141,7 @@ enum SP_TX_SEND_MSG {
 enum SINK_CONNECTION_STATUS {
 	SC_INIT,
 	SC_CHECK_CABLE_TYPE,
-	SC_WAITTING_CABLE_TYPE = SC_CHECK_CABLE_TYPE+5,
+	SC_WAITTING_CABLE_TYPE = SC_CHECK_CABLE_TYPE + 5,
 	SC_SINK_CONNECTED,
 	SC_NOT_CABLE,
 	SC_STATE_NUM
@@ -167,7 +164,6 @@ enum SP_TX_LT_STATUS {
 	LT_STATES_NUM
 };
 
-#ifndef HDCP_AUTO_EN
 enum HDCP_STATUS {
 	HDCP_CAPABLE_CHECK,
 	HDCP_WAITTING_VID_STB,
@@ -178,12 +174,12 @@ enum HDCP_STATUS {
 	HDCP_NOT_SUPPORT,
 	HDCP_PROCESS_STATE_NUM
 };
-#endif
 
 enum VIDEO_OUTPUT_STATUS {
 	VO_WAIT_VIDEO_STABLE,
 	VO_WAIT_TX_VIDEO_STABLE,
-	/*//VO_WAIT_PLL_LOCK,*/
+	/* VO_WAIT_PLL_LOCK, */
+
 	VO_CHECK_VIDEO_INFO,
 	VO_FINISH,
 	VO_STATE_NUM
@@ -200,16 +196,13 @@ struct Packet_AVI {
 	unchar AVI_data[13];
 };
 
-
 struct Packet_SPD {
 	unchar SPD_data[25];
 };
 
-
 struct Packet_MPEG {
 	unchar MPEG_data[13];
 };
-
 
 struct AudiInfoframe {
 	unchar type;
@@ -217,7 +210,6 @@ struct AudiInfoframe {
 	unchar length;
 	unchar pb_byte[11];
 };
-
 
 enum PACKETS_TYPE {
 	AVI_PACKETS,
@@ -247,7 +239,8 @@ enum xtal_enum {
 	XTAL_CLK_NUM
 };
 
-/*// SSC settings*/
+/*  SSC settings */
+
 enum SP_SSC_DEP {
 	SSC_DEP_DISABLE = 0x0,
 	SSC_DEP_500PPM,
@@ -269,7 +262,6 @@ struct clock_Data {
 	unsigned int xtal_clk_m10;
 };
 
-
 #define SP_POWER_ON 1
 #define SP_POWER_DOWN 0
 
@@ -282,7 +274,6 @@ extern unchar edid_blocks[256];
 
 #define MAKE_WORD(ch, cl) ((uint)(((uint)ch<<8) | (uint)cl))
 #define MAX_BUF_CNT 16
-
 
 #define SP_BREAK(current_status, next_status) {\
 	if ((next_status) != (current_status + 1)) \
@@ -302,16 +293,16 @@ bool slimport_chip_detect(void);
 void slimport_chip_initial(void);
 void slimport_main_process(void);
 unchar is_cable_detected(void);
-unchar sp_tx_aux_dpcdread_bytes(unchar addrh, unchar addrm,
-	unchar addrl, unchar cCount, unchar *pBuf);
-unchar sp_tx_aux_dpcdwrite_bytes(unchar addrh, unchar addrm,
-	unchar addrl, unchar cCount, unchar *pBuf);
-unchar sp_tx_aux_dpcdwrite_byte(unchar addrh, unchar addrm,
-	unchar addrl, unchar data1);
+unchar sp_tx_aux_dpcdread_bytes(unchar addrh, unchar addrm, unchar addrl,
+				unchar cCount, unchar *pBuf);
+unchar sp_tx_aux_dpcdwrite_bytes(unchar addrh, unchar addrm, unchar addrl,
+				 unchar cCount, unchar *pBuf);
+unchar sp_tx_aux_dpcdwrite_byte(unchar addrh, unchar addrm, unchar addrl,
+				unchar data1);
 void sp_tx_show_infomation(void);
 void hdmi_rx_show_video_info(void);
 void slimport_block_power_ctrl(enum SP_TX_POWER_BLOCK sp_tx_pd_block,
-	unchar power);
+			       unchar power);
 void vbus_power_ctrl(unsigned char ON);
 void slimport_initialization(void);
 void sp_tx_clean_state_machine(void);
@@ -331,7 +322,5 @@ bool source_aux_read_7730dpcd(long addr, unchar cCount, unchar *pBuf);
 bool source_aux_write_7730dpcd(long addr, unchar cCount, unchar *pBuf);
 bool i2c_master_read_reg(unchar Sink_device_sel, unchar offset, unchar *Buf);
 bool i2c_master_write_reg(unchar Sink_device_sel, unchar offset, unchar value);
-
-
 
 #endif

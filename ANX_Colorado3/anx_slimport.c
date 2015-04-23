@@ -15,6 +15,7 @@
 #ifdef QUICK_CHARGE_SUPPORT
 #include "quick_charge.h"
 
+
 static struct blocking_notifier_head charger_notifier_head;
 
 struct blocking_notifier_head *get_notifier_list_head(void)
