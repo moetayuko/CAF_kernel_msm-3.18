@@ -324,10 +324,12 @@ static int __devinit csid_probe(struct platform_device *pdev)
 
 
 	return 0;
+#if 0
 ioremap_fail:
-		release_mem_region(new_csid_dev->mem->start,
-			resource_size(new_csid_dev->mem));
+#endif
 csid_no_resource:
+	release_mem_region(new_csid_dev->mem->start,
+		resource_size(new_csid_dev->mem));
 	mutex_destroy(&new_csid_dev->mutex);
 	kfree(new_csid_dev);
 	return 0;
