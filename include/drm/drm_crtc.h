@@ -1176,6 +1176,8 @@ struct drm_mode_config {
 	 * connectors must be of and active must be set to disabled, too.
 	 */
 	struct drm_property *prop_mode_id;
+	struct drm_property *content_protection_property;
+	struct drm_property *content_protection_ksv_property;
 
 	/**
 	 * @dvi_i_subconnector_property: Optional DVI-I property to
@@ -1359,11 +1361,12 @@ static inline uint32_t drm_crtc_mask(struct drm_crtc *crtc)
 	return 1 << drm_crtc_index(crtc);
 }
 
+const char *drm_get_content_protection_name(int val);
+
 extern void drm_crtc_get_hv_timing(const struct drm_display_mode *mode,
 				   int *hdisplay, int *vdisplay);
 extern int drm_crtc_force_disable(struct drm_crtc *crtc);
 extern int drm_crtc_force_disable_all(struct drm_device *dev);
-
 extern void drm_mode_config_init(struct drm_device *dev);
 extern void drm_mode_config_reset(struct drm_device *dev);
 extern void drm_mode_config_cleanup(struct drm_device *dev);
