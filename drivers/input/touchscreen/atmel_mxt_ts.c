@@ -1793,9 +1793,23 @@ static int mxt_acquire_irq(struct mxt_data *data)
 {
 	int error;
 
-	enable_irq(data->irq);
+	if (!data->irq) {
+		error = request_threaded_irq(data->client->irq, NULL,
+				mxt_interrupt,
+				data->pdata->irqflags | IRQF_ONESHOT,
+				data->client->name, data);
+		if (error) {
+			dev_err(&data->client->dev, "Error requesting irq\n");
+			return error;
+		}
 
-	if (data->use_retrigen_workaround) {
+		/* Presence of data->irq means IRQ initialised */
+		data->irq = data->client->irq;
+	} else {
+		enable_irq(data->irq);
+	}
+
+	if (data->object_table && data->use_retrigen_workaround) {
 		error = mxt_process_messages_until_invalid(data);
 		if (error)
 			return error;
@@ -2839,7 +2853,9 @@ static int mxt_load_fw(struct device *dev)
 			goto release_firmware;
 	}
 
-	enable_irq(data->irq);
+	ret = mxt_acquire_irq(data);
+	if (ret)
+		goto release_firmware;
 
 	/* Poll after 0.1s if no interrupt received */
 	schedule_delayed_work(&data->flash->work, HZ / 10);
@@ -3377,7 +3393,6 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	data->client = client;
 	data->pdata = pdata;
-	data->irq = client->irq;
 	i2c_set_clientdata(client, data);
 
 	if (data->pdata->cfg_name)
@@ -3390,21 +3405,17 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	init_completion(&data->reset_completion);
 	init_completion(&data->crc_completion);
 
-	error = request_threaded_irq(client->irq, NULL, mxt_interrupt,
-				     pdata->irqflags | IRQF_ONESHOT,
-				     client->name, data);
-	if (error) {
-		dev_err(&client->dev, "Failed to register interrupt\n");
-		goto err_free_mem;
-	}
-
 	if (pdata->suspend_mode == MXT_SUSPEND_REGULATOR) {
+		error = mxt_acquire_irq(data);
+		if (error)
+			goto err_free_mem;
+
 		error = mxt_probe_regulators(data);
 		if (error)
 			goto err_free_irq;
-	}
 
-	disable_irq(data->irq);
+		disable_irq(data->irq);
+	}
 
 	error = sysfs_create_group(&client->dev.kobj, &mxt_fw_attr_group);
 	if (error) {
@@ -3420,7 +3431,8 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	return 0;
 
 err_free_irq:
-	free_irq(client->irq, data);
+	if (data->irq)
+		free_irq(data->irq, data);
 err_free_mem:
 	kfree(data);
 	return error;
@@ -3432,7 +3444,10 @@ static int mxt_remove(struct i2c_client *client)
 
 	sysfs_remove_group(&client->dev.kobj, &mxt_fw_attr_group);
 	mxt_sysfs_remove(data);
-	free_irq(data->irq, data);
+
+	if (data->irq)
+		free_irq(data->irq, data);
+
 	regulator_put(data->reg_avdd);
 	regulator_put(data->reg_vdd);
 	mxt_free_input_device(data);
