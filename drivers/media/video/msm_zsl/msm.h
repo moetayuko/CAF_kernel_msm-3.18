@@ -232,6 +232,7 @@ struct msm_cam_media_controller {
 	struct pm_qos_request pm_qos_req_list;
 	struct msm_mctl_pp_info pp_info;
 	struct ion_client *client;
+	struct kref refcount;
 };
 
 /* abstract camera device represents a VFE and connected sensor */
@@ -498,6 +499,7 @@ int msm_mctl_pp_done(
 int msm_mctl_pp_divert_done(
 	struct msm_cam_media_controller *p_mctl,
 	void __user *arg);
+void msm_release_ion_client(struct kref *ref);
 
 extern void sensor_native_control(void __user *arg);
 
