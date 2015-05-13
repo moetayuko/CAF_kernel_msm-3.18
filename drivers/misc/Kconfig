@@ -7,7 +7,7 @@ menu "Misc devices"
 config GAMMA_CONTROL
 	bool "Gamma Control for OLED"
 	depends on FB_MSM_MIPI_DSI_SAMSUNG_OLED
-	default y
+	default n
 	help
 	  This adds full support for shifting RGB panel colors.
 
