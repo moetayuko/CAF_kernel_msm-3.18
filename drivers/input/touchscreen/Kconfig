@@ -341,6 +341,14 @@ config TOUCHSCREEN_TOUCHWIN
 	  module will be called touchwin.
 
 config TOUCHSCREEN_ATMEL_MXT
+	tristate "Atmel mXT I2C Touchscreen"
+	depends on I2C && m
+	select FW_LOADER
+	help
+	  Atmel mXT series touch controller.
+	  The driver will be compiled as a module called atmel_mxt_ts
+
+config TOUCHSCREEN_ATMEL_TSADCC
 	tristate "Atmel Touchscreen Interface"
 	depends on I2C
 	help

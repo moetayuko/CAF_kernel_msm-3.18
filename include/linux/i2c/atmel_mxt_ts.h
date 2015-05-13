@@ -10,26 +10,21 @@
  * option) any later version.
  */
 
-#ifndef __LINUX_ATMEL_MXT_TS_H
-#define __LINUX_ATMEL_MXT_TS_H
+#ifndef __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H
+#define __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H
 
 #include <linux/types.h>
-
-/* Orient */
-#define MXT_NORMAL		0x0
-#define MXT_DIAGONAL		0x1
-#define MXT_HORIZONTAL_FLIP	0x2
-#define MXT_ROTATED_90_COUNTER	0x3
-#define MXT_VERTICAL_FLIP	0x4
-#define MXT_ROTATED_90		0x5
-#define MXT_ROTATED_180		0x6
-#define MXT_DIAGONAL_COUNTER	0x7
 
 /* The platform data for the Atmel maXTouch touchscreen driver */
 struct mxt_platform_data {
 	unsigned long irqflags;
-	u8(*read_chg) (void);
+	u8 t19_num_keys;
+	const unsigned int *t19_keymap;
+	int t15_num_keys;
+	const unsigned int *t15_keymap;
+	unsigned long gpio_reset;
+	const char *cfg_name;
 	const char *input_name;
 };
 
-#endif /* __LINUX_ATMEL_MXT_TS_H */
+#endif /* __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H */
