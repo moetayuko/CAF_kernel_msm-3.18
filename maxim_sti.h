@@ -26,8 +26,8 @@
 #include "genetlink.h"
 #endif
 
-#define DRIVER_VERSION  "1.4.1"
-#define DRIVER_RELEASE  "August 14, 2013"
+#define DRIVER_VERSION  "1.1.0"
+#define DRIVER_RELEASE  "May 2, 2013"
 
 /****************************************************************************\
 * Netlink: common kernel/user space macros                                   *
@@ -129,14 +129,22 @@ enum {
 };
 
 enum {
+	DR_IRQ_FALLING_EDGE,
+	DR_IRQ_RISING_EDGE,
+};
+
+enum {
 	DR_INPUT_FINGER,
 	DR_INPUT_STYLUS,
 	DR_INPUT_ERASER,
 };
 
 enum {
-	DR_IRQ_FALLING_EDGE,
-	DR_IRQ_RISING_EDGE,
+	DR_DOUBLE_TAP,
+	DR_CHAR_M,
+	DR_CHAR_C,
+	DR_CHAR_S,
+	DR_CHAR_W,
 };
 
 enum {
@@ -150,11 +158,10 @@ enum {
 	DR_CHIP_ACCESS_METHOD,
 	DR_CONFIG_IRQ,
 	DR_CONFIG_INPUT,
-	DR_CONFIG_WATCHDOG,
 	DR_DECONFIG,
 	DR_INPUT,
+	DR_WAKEUP,
 	DR_LEGACY_FWDL,
-	DR_LEGACY_ACCELERATION,
 };
 
 struct __attribute__ ((__packed__)) dr_add_mc_group {
@@ -202,10 +209,6 @@ struct __attribute__ ((__packed__)) dr_config_input {
 	__u16  y_range;
 };
 
-struct __attribute__ ((__packed__)) dr_config_watchdog {
-	__u32  pid;
-};
-
 struct __attribute__ ((__packed__)) dr_input_event {
 	__u8   id;
 	__u8   tool_type;
@@ -220,8 +223,8 @@ struct __attribute__ ((__packed__)) dr_input {
 	__u8                   events;
 };
 
-struct __attribute__ ((__packed__)) dr_legacy_acceleration {
-	__u8  enable;
+struct __attribute__ ((__packed__)) dr_wakeup {
+	__u32  type;
 };
 
 enum {
@@ -229,6 +232,7 @@ enum {
 	FU_CHIP_READ_RESULT,
 	FU_IRQLINE_STATUS,
 	FU_ASYNC_DATA,
+	FU_SUSPEND,
 	FU_RESUME,
 };
 
@@ -275,6 +279,7 @@ struct maxim_sti_pdata {
 	int       (*init)(struct maxim_sti_pdata *pdata, bool init);
 	void      (*reset)(struct maxim_sti_pdata *pdata, int value);
 	int       (*irq)(struct maxim_sti_pdata *pdata);
+	int       (*power)(int on);
 };
 #endif
 
