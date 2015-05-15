@@ -3,6 +3,7 @@
  * Maxim SmartTouch Imager Touchscreen Driver
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
+ * Copyright (C) 2013, NVIDIA Corporation.  All Rights Reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,14 +27,17 @@
 #include "genetlink.h"
 #endif
 
-#define DRIVER_VERSION  "1.4.1"
-#define DRIVER_RELEASE  "August 14, 2013"
+#define DRIVER_VERSION       "0101"
+#define DRIVER_VERSION_NUM   0x0101
+#define DRIVER_RELEASE       "October 29, 2014"
+#define DRIVER_PROTOCOL      0x0101
 
 /****************************************************************************\
 * Netlink: common kernel/user space macros                                   *
 \****************************************************************************/
 
-#define NL_BUF_SIZE  8192
+//#define NL_BUF_SIZE  8192
+#define NL_BUF_SIZE  30720
 
 #define NL_ATTR_FIRST(nptr) \
 	((struct nlattr *)((void *)nptr + NLMSG_HDRLEN + GENL_HDRLEN))
@@ -153,8 +157,12 @@ enum {
 	DR_CONFIG_WATCHDOG,
 	DR_DECONFIG,
 	DR_INPUT,
+	DR_RESUME_ACK,
 	DR_LEGACY_FWDL,
 	DR_LEGACY_ACCELERATION,
+	DR_HANDSHAKE,
+	DR_CONFIG_FW,
+	DR_IDLE,
 };
 
 struct __attribute__ ((__packed__)) dr_add_mc_group {
@@ -189,10 +197,10 @@ struct __attribute__ ((__packed__)) dr_chip_access_method {
 	__u8  method;
 };
 
-#define MAX_IRQ_PARAMS  20
+#define MAX_IRQ_PARAMS  30
 struct __attribute__ ((__packed__)) dr_config_irq {
-	__u16  irq_param[MAX_IRQ_PARAMS];
 	__u8   irq_params;
+	__u16  irq_param[MAX_IRQ_PARAMS];
 	__u8   irq_method;
 	__u8   irq_edge;
 };
@@ -224,12 +232,27 @@ struct __attribute__ ((__packed__)) dr_legacy_acceleration {
 	__u8  enable;
 };
 
+struct __attribute__ ((__packed__)) dr_handshake {
+	__u16 tf_ver;
+	__u16 chip_id;
+};
+
+struct __attribute__ ((__packed__)) dr_config_fw {
+	__u16 fw_ver;
+	__u16 fw_protocol;
+};
+
+struct __attribute__ ((__packed__)) dr_idle {
+	__u8  idle;
+};
+
 enum {
 	FU_ECHO_RESPONSE,
 	FU_CHIP_READ_RESULT,
 	FU_IRQLINE_STATUS,
 	FU_ASYNC_DATA,
 	FU_RESUME,
+	FU_HANDSHAKE_RESPONSE,
 };
 
 struct __attribute__ ((__packed__)) fu_echo_response {
@@ -254,6 +277,12 @@ struct __attribute__ ((__packed__)) fu_async_data {
 	__u8   data[0];
 };
 
+struct __attribute__ ((__packed__)) fu_handshake_response {
+	__u16  driver_ver;
+	__u16  panel_id;
+	__u16  driver_protocol;
+};
+
 #ifdef __KERNEL__
 /****************************************************************************\
 * Kernel platform data structure                                             *
@@ -265,13 +294,14 @@ struct maxim_sti_pdata {
 	char      *touch_fusion;
 	char      *config_file;
 	char      *nl_family;
-	u8        nl_mc_groups;
-	u8        chip_access_method;
-	u8        default_reset_state;
-	u16       tx_buf_size;
-	u16       rx_buf_size;
-	unsigned  gpio_reset;
-	unsigned  gpio_irq;
+	char      *fw_name;
+	u32       nl_mc_groups;
+	u32       chip_access_method;
+	u32       default_reset_state;
+	u32       tx_buf_size;
+	u32       rx_buf_size;
+	u32       gpio_reset;
+	u32       gpio_irq;
 	int       (*init)(struct maxim_sti_pdata *pdata, bool init);
 	void      (*reset)(struct maxim_sti_pdata *pdata, int value);
 	int       (*irq)(struct maxim_sti_pdata *pdata);

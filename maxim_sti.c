@@ -3,6 +3,7 @@
  * Maxim SmartTouch Imager Touchscreen Driver
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
+ * Copyright (C) 2013, NVIDIA Corporation.  All Rights Reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -23,19 +24,31 @@
 #include <linux/crc16.h>
 #include <linux/interrupt.h>
 #include <linux/input.h>
+#include <linux/regulator/consumer.h>
 #include <linux/maxim_sti.h>
 #include <asm/byteorder.h>  /* MUST include this header to get byte order */
+#ifdef CONFIG_OF
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+#endif
 
 /****************************************************************************\
 * Custom features                                                            *
 \****************************************************************************/
 
 #define INPUT_DEVICES         1
-#define INPUT_ENABLE_DISABLE  1
-#define CPU_BOOST             1
+#define INPUT_ENABLE_DISABLE  0
+#define SUSPEND_POWER_OFF     0
+#define CPU_BOOST             0
+#define FB_CALLBACK           1
+#define HI02                  1
 
 #if CPU_BOOST
-#include <linux/pm_qos.h>
+#define INPUT_IDLE_PERIOD     (msecs_to_jiffies(50))
+#endif
+
+#if FB_CALLBACK && defined(CONFIG_FB)
+#include <linux/fb.h>
 #endif
 
 /****************************************************************************\
@@ -59,9 +72,10 @@ struct dev_data {
 	bool                         start_fusion;
 	bool                         suspend_in_progress;
 	bool                         resume_in_progress;
+	bool                         expect_resume_ack;
 	bool                         eraser_active;
 	bool                         legacy_acceleration;
-#if INPUT_ENABLE_DISABLE
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
 	bool                         input_no_deconfig;
 #endif
 	bool                         irq_registered;
@@ -80,12 +94,23 @@ struct dev_data {
 	struct task_struct           *thread;
 	struct sched_param           thread_sched;
 	struct list_head             dev_list;
+	struct regulator             *reg_avdd;
+	struct regulator             *reg_dvdd;
 	void                         (*service_irq)(struct dev_data *dd);
 #if CPU_BOOST
-	struct pm_qos_request        cpus_req;
-	struct pm_qos_request        freq_req;
-	unsigned long                boost_freq;
+	unsigned long                last_irq_jiffies;
 #endif
+#if FB_CALLBACK
+	struct notifier_block        fb_notifier;
+#endif
+	struct kobject               *parent;
+	u8                           sysfs_created;
+	u16                          chip_id;
+	u16                          tf_ver;
+	u16                          drv_ver;
+	u16                          fw_ver;
+	u16            	             fw_protocol;
+	bool                         idle;
 };
 
 static struct list_head  dev_list;
@@ -160,10 +185,11 @@ static inline int
 spi_write_123(struct dev_data *dd, u16 address, u8 *buf, u16 len,
 	      bool add_len)
 {
-	u16  *tx_buf = (u16 *)dd->tx_buf;
-	u16  words = len / sizeof(u16), header_len = 1;
+	struct maxim_sti_pdata  *pdata = dd->spi->dev.platform_data;
+	u16                     *tx_buf = (u16 *)dd->tx_buf;
+	u16                     words = len / sizeof(u16), header_len = 1;
 #ifdef __LITTLE_ENDIAN
-	u16  i;
+	u16                     i;
 #endif
 	int  ret;
 
@@ -186,7 +212,7 @@ spi_write_123(struct dev_data *dd, u16 address, u8 *buf, u16 len,
 				len + header_len * sizeof(u16));
 	} while (ret == -EAGAIN);
 
-	memset(dd->tx_buf, 0xFF, sizeof(dd->tx_buf));
+	memset(dd->tx_buf, 0xFF, pdata->tx_buf_size);
 	return ret;
 }
 
@@ -291,6 +317,7 @@ spi_write_2_page(struct dev_data *dd, u16 address, u8 *buf, u16 len)
 	page[0] = 0xFEDC;
 	page[1] = address << 1;
 	page[2] = len / sizeof(u16);
+	page[3] = 0x0000;
 	memcpy(page + 4, buf, len);
 
 	/* write data with write request header */
@@ -643,7 +670,8 @@ static void stop_scan_canned(struct dev_data *dd)
 	value = dd->irq_param[13];
 	(void)dd->chip.write(dd, dd->irq_param[12], (u8 *)&value,
 			     sizeof(value));
-	value = dd->irq_param[11];
+	(void)dd->chip.read(dd, dd->irq_param[0], (u8 *)&value,
+			    sizeof(value));
 	(void)dd->chip.write(dd, dd->irq_param[0], (u8 *)&value,
 			     sizeof(value));
 	usleep_range(dd->irq_param[15], dd->irq_param[15] + 1000);
@@ -651,6 +679,7 @@ static void stop_scan_canned(struct dev_data *dd)
 			     sizeof(value));
 }
 
+#if !SUSPEND_POWER_OFF
 static void start_scan_canned(struct dev_data *dd)
 {
 	u16  value;
@@ -663,6 +692,214 @@ static void start_scan_canned(struct dev_data *dd)
 				     sizeof(value));
 	}
 }
+#endif
+
+static int regulator_control(struct dev_data *dd, bool on)
+{
+	int ret;
+
+	if (!dd->reg_avdd || !dd->reg_dvdd)
+		return 0;
+
+	if (on) {
+		ret = regulator_enable(dd->reg_dvdd);
+		if (ret < 0) {
+			ERROR("Failed to enable regulator dvdd: %d", ret);
+			return ret;
+		}
+		usleep_range(1000, 1020);
+
+		ret = regulator_enable(dd->reg_avdd);
+		if (ret < 0) {
+			ERROR("Failed to enable regulator avdd: %d", ret);
+			regulator_disable(dd->reg_dvdd);
+			return ret;
+		}
+	} else {
+		ret = regulator_disable(dd->reg_avdd);
+		if (ret < 0) {
+			ERROR("Failed to disable regulator avdd: %d", ret);
+			return ret;
+		}
+
+		ret = regulator_disable(dd->reg_dvdd);
+		if (ret < 0) {
+			ERROR("Failed to disable regulator dvdd: %d", ret);
+			regulator_enable(dd->reg_avdd);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static void regulator_init(struct dev_data *dd)
+{
+	dd->reg_avdd = devm_regulator_get(&dd->spi->dev, "avdd");
+	if (IS_ERR(dd->reg_avdd))
+		goto err_null_regulator;
+
+	dd->reg_dvdd = devm_regulator_get(&dd->spi->dev, "dvdd");
+	if (IS_ERR(dd->reg_dvdd))
+		goto err_null_regulator;
+
+	return;
+
+err_null_regulator:
+	dd->reg_avdd = NULL;
+	dd->reg_dvdd = NULL;
+	dev_warn(&dd->spi->dev, "Failed to init regulators\n");
+}
+
+#ifdef CONFIG_OF
+#define MAXIM_STI_GPIO_ERROR(ret, gpio, op)                                \
+	if (ret < 0) {                                                     \
+		pr_err("%s: GPIO %d %s failed (%d)\n", __func__, gpio, op, \
+			ret);                                              \
+		return ret;                                                \
+	}
+
+
+int maxim_sti_gpio_init(struct maxim_sti_pdata *pdata, bool init)
+{
+	int  ret;
+
+	if (init) {
+		ret = gpio_request(pdata->gpio_irq, "maxim_sti_irq");
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_irq, "request");
+		ret = gpio_direction_input(pdata->gpio_irq);
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_irq, "direction");
+
+		ret = gpio_request(pdata->gpio_reset, "maxim_sti_reset");
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_reset, "request");
+		ret = gpio_direction_output(pdata->gpio_reset,
+					    pdata->default_reset_state);
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_reset, "direction");
+	} else {
+		gpio_free(pdata->gpio_irq);
+		gpio_free(pdata->gpio_reset);
+	}
+
+	return 0;
+}
+
+void maxim_sti_gpio_reset(struct maxim_sti_pdata *pdata, int value)
+{
+	gpio_set_value(pdata->gpio_reset, !!value);
+}
+
+int maxim_sti_gpio_irq(struct maxim_sti_pdata *pdata)
+{
+	return gpio_get_value(pdata->gpio_irq);
+}
+
+/****************************************************************************\
+* Device Tree Support
+\****************************************************************************/
+
+static int maxim_parse_dt(struct device *dev, struct maxim_sti_pdata *pdata)
+{
+	struct device_node *np = dev->of_node;
+	u32 val;
+	const char *str;
+	int ret;
+
+	/* TODO: use of_get_named_gpio() here? */
+	ret = of_property_read_u32(np, "maxim_sti,reset-gpio", &pdata->gpio_reset);
+	if (ret) {
+		dev_err(dev, "%s: unable to read reset-gpio (%d)\n",
+							__func__, ret);
+		goto fail;
+	}
+
+	ret = of_property_read_u32(np, "maxim_sti,irq-gpio", &pdata->gpio_irq);
+	if (ret) {
+		dev_err(dev, "%s: unable to read irq-gpio (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+
+	ret = of_property_read_u32(np, "maxim_sti,nl_mc_groups", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read nl_mc_groups (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->nl_mc_groups = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,chip_access_method", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read chip_access_method (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->chip_access_method = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,default_reset_state", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read default_reset_state (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->default_reset_state = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,tx_buf_size", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read tx_buf_size (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->tx_buf_size = (u16)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,rx_buf_size", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read rx_buf_size (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->rx_buf_size = (u16)val;
+
+	ret = of_property_read_string(np, "maxim_sti,touch_fusion", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read touch_fusion location (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->touch_fusion = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,config_file", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read config_file location (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->config_file = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,nl_family", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read nl_family (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->nl_family = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,fw_name", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read fw_name (%d)\n",
+								__func__, ret);
+	}
+	pdata->fw_name = (char *)str;
+
+	pdata->init = maxim_sti_gpio_init;
+	pdata->reset = maxim_sti_gpio_reset;
+	pdata->irq = maxim_sti_gpio_irq;
+
+	return 0;
+
+fail:
+	return ret;
+}
+#endif
 
 /****************************************************************************\
 * Suspend/resume processing                                                  *
@@ -672,6 +909,10 @@ static void start_scan_canned(struct dev_data *dd)
 static int suspend(struct device *dev)
 {
 	struct dev_data  *dd = spi_get_drvdata(to_spi_device(dev));
+#if SUSPEND_POWER_OFF
+	struct maxim_sti_pdata *pdata = dev->platform_data;
+	int ret;
+#endif
 
 	if (dd->suspend_in_progress)
 		return 0;
@@ -679,15 +920,41 @@ static int suspend(struct device *dev)
 	dd->suspend_in_progress = true;
 	wake_up_process(dd->thread);
 	wait_for_completion(&dd->suspend_resume);
+
+#if SUSPEND_POWER_OFF
+	/* reset-low and power-down */
+	pdata->reset(pdata, 0);
+	usleep_range(100, 120);
+	ret = regulator_control(dd, false);
+	if (ret < 0) {
+		pdata->reset(pdata, 1);
+		return ret;
+	}
+#endif
+
 	return 0;
 }
 
 static int resume(struct device *dev)
 {
 	struct dev_data  *dd = spi_get_drvdata(to_spi_device(dev));
+#if SUSPEND_POWER_OFF
+	struct maxim_sti_pdata *pdata = dev->platform_data;
+	int ret;
+#endif
 
 	if (!dd->suspend_in_progress)
 		return 0;
+
+#if SUSPEND_POWER_OFF
+	/* power-up and reset-high */
+	ret = regulator_control(dd, true);
+	if (ret < 0)
+		return ret;
+
+	usleep_range(300, 400);
+	pdata->reset(pdata, 1);
+#endif
 
 	dd->resume_in_progress = true;
 	wake_up_process(dd->thread);
@@ -713,6 +980,25 @@ static int input_enable(struct input_dev *dev)
 	struct dev_data *dd = input_get_drvdata(dev);
 
 	return resume(&dd->spi->dev);
+}
+#endif
+#if FB_CALLBACK && defined(CONFIG_FB)
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event  *evdata = data;
+	int              *blank;
+	struct dev_data  *dd = container_of(self,
+					    struct dev_data, fb_notifier);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_UNBLANK)
+			resume(&dd->spi->dev);
+		else if (*blank == FB_BLANK_POWERDOWN)
+			suspend(&dd->spi->dev);
+	}
+	return 0;
 }
 #endif
 #endif
@@ -758,8 +1044,19 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 	struct dr_config_watchdog     *config_watchdog_msg;
 	struct dr_input               *input_msg;
 	struct dr_legacy_acceleration *legacy_acceleration_msg;
+	struct dr_handshake           *handshake_msg;
+	struct fu_handshake_response  *handshake_response;
+	struct dr_config_fw           *config_fw_msg;
+	struct dr_idle                *idle_msg;
 	u8                            i, inp;
 	int                           ret;
+#if HI02
+	u16                           read_value[2] = { 0 };
+#endif
+
+	if (dd->expect_resume_ack && msg_id != DR_DECONFIG &&
+	    msg_id != DR_RESUME_ACK)
+		return false;
 
 	switch (msg_id) {
 	case DR_ADD_MC_GROUP:
@@ -810,6 +1107,34 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 		return true;
 	case DR_CHIP_WRITE:
 		write_msg = msg;
+#if HI02
+		if (write_msg->address == dd->irq_param[12] &&
+		    write_msg->data[0] == dd->irq_param[13]) {
+			ret = dd->chip.write(dd, write_msg->address,
+					     write_msg->data,
+					     write_msg->length);
+			if (ret < 0)
+				ERROR("failed to write chip (%d)", ret);
+			msleep(15);
+			ret = dd->chip.read(dd, dd->irq_param[0],
+					    (u8 *)read_value,
+					    sizeof(read_value));
+			if (ret < 0)
+				ERROR("failed to read from chip (%d)", ret);
+			ret = dd->chip.write(dd, dd->irq_param[0],
+					     (u8 *)read_value,
+					     sizeof(read_value));
+			return false;
+		}
+		if (write_msg->address == dd->irq_param[0]) {
+			/* assume nothing follows TSISTAT, of course */
+			read_value[0] = ((u16 *)write_msg->data)[0];
+			ret = dd->chip.write(dd, write_msg->address,
+					     (u8 *)read_value,
+					     sizeof(read_value));
+			return false;
+		}
+#endif
 		ret = dd->chip.write(dd, write_msg->address, write_msg->data,
 				     write_msg->length);
 		if (ret < 0)
@@ -905,9 +1230,14 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 			input_set_abs_params(dd->input_dev[i],
 					     ABS_MT_TRACKING_ID, 0,
 					     MAX_INPUT_EVENTS, 0, 0);
-			input_set_abs_params(dd->input_dev[i],
-					     ABS_MT_TOOL_TYPE, 0, MT_TOOL_MAX,
-					     0, 0);
+			if (i == (INPUT_DEVICES - 1))
+				input_set_abs_params(dd->input_dev[i],
+						     ABS_MT_TOOL_TYPE, 0,
+						     MT_TOOL_MAX, 0, 0);
+			else
+				input_set_abs_params(dd->input_dev[i],
+						     ABS_MT_TOOL_TYPE, 0,
+						     MT_TOOL_FINGER, 0, 0);
 
 			ret = input_register_device(dd->input_dev[i]);
 			if (ret < 0) {
@@ -915,6 +1245,18 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 				dd->input_dev[i] = NULL;
 				ERROR("failed to register input device");
 			}
+		}
+#if FB_CALLBACK && defined(CONFIG_FB)
+		dd->fb_notifier.notifier_call = fb_notifier_callback;
+		fb_register_client(&dd->fb_notifier);
+#endif
+		/* create symlink */
+		if (dd->parent == NULL) {
+			dd->parent = dd->input_dev[0]->dev.kobj.parent;
+			ret = sysfs_create_link(dd->parent, &dd->spi->dev.kobj,
+								MAXIM_STI_NAME);
+			if (ret)
+				ERROR("sysfs_create_link error\n");
 		}
 		return false;
 	case DR_CONFIG_WATCHDOG:
@@ -927,14 +1269,31 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 			dd->irq_registered = false;
 		}
 		stop_scan_canned(dd);
+
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
 		if (!dd->input_no_deconfig) {
+			if (dd->parent != NULL) {
+				sysfs_remove_link(
+					dd->input_dev[0]->dev.kobj.parent,
+					MAXIM_STI_NAME);
+				dd->parent = NULL;
+			}
+		}
+#endif
+
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
+		if (!dd->input_no_deconfig)
+#endif
 			for (i = 0; i < INPUT_DEVICES; i++) {
 				if (dd->input_dev[i] == NULL)
 					continue;
 				input_unregister_device(dd->input_dev[i]);
 				dd->input_dev[i] = NULL;
 			}
-		}
+#if FB_CALLBACK && defined(CONFIG_FB)
+			fb_unregister_client(&dd->fb_notifier);
+#endif
+		dd->expect_resume_ack = false;
 		dd->eraser_active = false;
 		dd->legacy_acceleration = false;
 		dd->service_irq = service_irq;
@@ -975,6 +1334,7 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 					dd->eraser_active = true;
 					break;
 				default:
+					inp = 0;
 					ERROR("invalid input tool type (%d)",
 					      input_msg->event[i].tool_type);
 					break;
@@ -997,6 +1357,11 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 				input_sync(dd->input_dev[i]);
 		}
 		return false;
+	case DR_RESUME_ACK:
+		dd->expect_resume_ack = false;
+		if (dd->irq_registered)
+			enable_irq(dd->spi->irq);
+		return false;
 	case DR_LEGACY_FWDL:
 		ret = fw_request_load(dd);
 		if (ret < 0)
@@ -1015,6 +1380,28 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 			dd->legacy_acceleration = false;
 			dd->service_irq = service_irq;
 		}
+		return false;
+	case DR_HANDSHAKE:
+		handshake_msg = msg;
+		dd->tf_ver = handshake_msg->tf_ver;
+		dd->chip_id = handshake_msg->chip_id;
+		dd->drv_ver = DRIVER_VERSION_NUM;
+		handshake_response = nl_alloc_attr(dd->outgoing_skb->data,
+						FU_HANDSHAKE_RESPONSE,
+						sizeof(*handshake_response));
+		if (handshake_response == NULL)
+			goto alloc_attr_failure;
+		handshake_response->driver_ver = dd->drv_ver;
+		handshake_response->driver_protocol = DRIVER_PROTOCOL;
+		return true;
+	case DR_CONFIG_FW:
+		config_fw_msg = msg;
+		dd->fw_ver = config_fw_msg->fw_ver;
+		dd->fw_protocol = config_fw_msg->fw_protocol;
+		return false;
+	case DR_IDLE:
+		idle_msg = msg;
+		dd->idle = !!(idle_msg->idle);
 		return false;
 	default:
 		ERROR("unexpected message %d", msg_id);
@@ -1045,7 +1432,7 @@ static int nl_process_msg(struct dev_data *dd, struct sk_buff *skb)
 		(void)skb_put(dd->outgoing_skb,
 			      NL_SIZE(dd->outgoing_skb->data));
 		if (NL_SEQ(skb->data) == 0)
-			ret = genlmsg_unicast(sock_net(skb->sk),
+			ret = genlmsg_unicast(&init_net,
 					      dd->outgoing_skb,
 					      NETLINK_CB(skb).pid);
 		else
@@ -1126,6 +1513,13 @@ static irqreturn_t irq_handler(int irq, void *context)
 {
 	struct dev_data  *dd = context;
 
+#if CPU_BOOST
+	if (time_after(jiffies, dd->last_irq_jiffies + INPUT_IDLE_PERIOD)) {
+		/* implement CPU boost here */
+	}
+	dd->last_irq_jiffies = jiffies;
+#endif
+
 	wake_up_process(dd->thread);
 	return IRQ_HANDLED;
 }
@@ -1137,10 +1531,6 @@ static void service_irq_legacy_acceleration(struct dev_data *dd)
 	u16                   buf[255], rx_limit = 250 * sizeof(u16);
 	int                   ret = 0, counter = 0;
 
-#if CPU_BOOST
-	pm_qos_update_request_timeout(&dd->cpus_req, 1, 10000);
-	pm_qos_update_request_timeout(&dd->freq_req, dd->boost_freq, 10000);
-#endif
 	async_data = nl_alloc_attr(dd->outgoing_skb->data, FU_ASYNC_DATA,
 				   sizeof(*async_data) + dd->irq_param[4] +
 				   2 * sizeof(u16));
@@ -1182,7 +1572,7 @@ static void service_irq_legacy_acceleration(struct dev_data *dd)
 
 			if (async_data->address +
 					offset / sizeof(u16) != buf[1]) {
-				ERROR("sequence number incorrect");
+				ERROR("sequence number incorrect %04X", buf[1]);
 				start_legacy_acceleration_canned(dd);
 				ret = -EBUSY;
 				break;
@@ -1227,14 +1617,10 @@ static void service_irq_legacy_acceleration(struct dev_data *dd)
 static void service_irq(struct dev_data *dd)
 {
 	struct fu_async_data  *async_data;
-	u16                   status, clear, test, address[2], xbuf;
+	u16                   status, test, address[2], xbuf, value;
+	u16                   clear[2] = { 0 };
 	bool                  read_buf[2] = {true, false};
 	int                   ret, ret2;
-
-#if CPU_BOOST
-	pm_qos_update_request_timeout(&dd->cpus_req, 1, 10000);
-	pm_qos_update_request_timeout(&dd->freq_req, dd->boost_freq, 10000);
-#endif
 
 	ret = dd->chip.read(dd, dd->irq_param[0], (u8 *)&status,
 			    sizeof(status));
@@ -1245,7 +1631,49 @@ static void service_irq(struct dev_data *dd)
 
 	if (status & dd->irq_param[10]) {
 		read_buf[0] = false;
-		clear = 0xFFFF;
+		clear[0] = dd->irq_param[10];
+	} else if (status & dd->irq_param[18]) {
+		(void)dd->chip.read(dd, dd->irq_param[22], (u8 *)&value,
+				    sizeof(value));
+		if (value != dd->irq_param[23]) {
+			ERROR("unrecognized value [%#x] => %#x",
+					dd->irq_param[22], value);
+			clear[0] = dd->irq_param[18];
+#if HI02
+			ret2 = dd->chip.write(dd, dd->irq_param[0],
+					      (u8 *)clear, sizeof(clear));
+#else
+			ret2 = dd->chip.write(dd, dd->irq_param[0],
+					      (u8 *)clear, sizeof(clear[0]));
+#endif
+			return;
+		}
+
+		test = status & (dd->irq_param[6] | dd->irq_param[7]);
+
+		if (test == 0)
+			return;
+		else if (test == (dd->irq_param[6] | dd->irq_param[7]))
+			xbuf = ((status & dd->irq_param[5]) == 0) ? 0 : 1;
+		else if (test == dd->irq_param[6])
+			xbuf = 0;
+		else if (test == dd->irq_param[7])
+			xbuf = 1;
+		else {
+			ERROR("unexpected IRQ handler case 0x%04X ", status);
+			return;
+		}
+
+		read_buf[1] = true;
+		address[1] = xbuf ? dd->irq_param[2] : dd->irq_param[1];
+		address[0] = dd->irq_param[3];
+		clear[0] = xbuf ? dd->irq_param[7] : dd->irq_param[6];
+		clear[0] |= dd->irq_param[8];
+		clear[0] |= dd->irq_param[18];
+
+		value = dd->irq_param[17];
+		(void)dd->chip.write(dd, dd->irq_param[16], (u8 *)&value,
+				     sizeof(value));
 	} else if (status & dd->irq_param[9]) {
 		test = status & (dd->irq_param[6] | dd->irq_param[7]);
 
@@ -1263,8 +1691,11 @@ static void service_irq(struct dev_data *dd)
 		address[1] = xbuf ? dd->irq_param[2] : dd->irq_param[1];
 
 		address[0] = dd->irq_param[3];
-		clear = dd->irq_param[6] | dd->irq_param[7] |
+		clear[0] = dd->irq_param[6] | dd->irq_param[7] |
 			dd->irq_param[8] | dd->irq_param[9];
+		value = dd->irq_param[13];
+		(void)dd->chip.write(dd, dd->irq_param[12], (u8 *)&value,
+				     sizeof(value));
 	} else {
 		test = status & (dd->irq_param[6] | dd->irq_param[7]);
 
@@ -1277,13 +1708,13 @@ static void service_irq(struct dev_data *dd)
 		else if (test == dd->irq_param[7])
 			xbuf = 1;
 		else {
-			ERROR("unexpected IRQ handler case");
+			ERROR("unexpected IRQ handler case 0x%04X ",status);
 			return;
 		}
 
 		address[0] = xbuf ? dd->irq_param[2] : dd->irq_param[1];
-		clear = xbuf ? dd->irq_param[7] : dd->irq_param[6];
-		clear |= dd->irq_param[8];
+		clear[0] = xbuf ? dd->irq_param[7] : dd->irq_param[6];
+		clear[0] |= dd->irq_param[8];
 	}
 
 	async_data = nl_alloc_attr(dd->outgoing_skb->data, FU_ASYNC_DATA,
@@ -1319,8 +1750,13 @@ static void service_irq(struct dev_data *dd)
 				    dd->irq_param[4]);
 	}
 
-	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)&clear,
+#if HI02
+	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)clear,
 			     sizeof(clear));
+#else
+	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)clear,
+			     sizeof(clear[0]));
+#endif
 	if (ret2 < 0)
 		ERROR("can't clear IRQ status (%d)", ret2);
 
@@ -1337,8 +1773,9 @@ static void service_irq(struct dev_data *dd)
 		if (ret < 0) {
 			ERROR("can't send IRQ buffer %d", ret);
 			msleep(300);
-			if (++dd->send_fail_count >= 10 &&
-			    dd->fusion_process != (pid_t)0) {
+			if (read_buf[0] == false ||
+			    (++dd->send_fail_count >= 10 &&
+			     dd->fusion_process != (pid_t)0)) {
 				(void)kill_pid(
 					find_get_pid(dd->fusion_process),
 					SIGKILL, 1);
@@ -1365,7 +1802,8 @@ static int processing_thread(void *arg)
 	char                    *argv[] = { pdata->touch_fusion, "daemon",
 					    pdata->nl_family,
 					    pdata->config_file, NULL };
-	int                     ret;
+	int                     ret, ret2;
+	bool                    fusion_dead;
 
 	sched_setscheduler(current, SCHED_FIFO, &dd->thread_sched);
 
@@ -1386,7 +1824,7 @@ static int processing_thread(void *arg)
 			stop_scan_canned(dd);
 			dd->start_fusion = true;
 			dd->fusion_process = (pid_t)0;
-#if INPUT_ENABLE_DISABLE
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
 			dd->input_no_deconfig = true;
 #endif
 		}
@@ -1397,12 +1835,21 @@ static int processing_thread(void *arg)
 				if (ret != 0)
 					msleep(100);
 			} while (ret != 0 && !kthread_should_stop());
+
+			/* power-up and reset-high */
+			ret = regulator_control(dd, true);
+			if (ret < 0)
+				ERROR("failed to enable regulators");
+
+			usleep_range(300, 400);
+			pdata->reset(pdata, 1);
+
 			dd->start_fusion = false;
 		}
 		if (kthread_should_stop())
 			break;
 
-		/* priority 1: process pending Netlink messages */
+		/* priority 2: process pending Netlink messages */
 		while ((skb = skb_dequeue(&dd->incoming_skb_queue)) != NULL) {
 			if (kthread_should_stop())
 				break;
@@ -1412,50 +1859,163 @@ static int processing_thread(void *arg)
 		if (kthread_should_stop())
 			break;
 
-		/* priority 2: suspend/resume */
+		/* priority 3: suspend/resume */
 		if (dd->suspend_in_progress) {
 			if (dd->irq_registered)
 				disable_irq(dd->spi->irq);
 			stop_scan_canned(dd);
 			complete(&dd->suspend_resume);
+			dd->expect_resume_ack = true;
 			while (!dd->resume_in_progress) {
 				/* the line below is a MUST */
 				set_current_state(TASK_INTERRUPTIBLE);
 				schedule();
 			}
+#if !SUSPEND_POWER_OFF
 			start_scan_canned(dd);
-			if (dd->irq_registered)
-				enable_irq(dd->spi->irq);
+#endif
 			dd->resume_in_progress = false;
 			dd->suspend_in_progress = false;
 			complete(&dd->suspend_resume);
 
-			ret = nl_add_attr(dd->outgoing_skb->data, FU_RESUME,
-					  NULL, 0);
-			if (ret < 0)
-				ERROR("can't add data to resume buffer");
-			(void)skb_put(dd->outgoing_skb,
-				      NL_SIZE(dd->outgoing_skb->data));
-			ret = genlmsg_multicast(dd->outgoing_skb, 0,
-					dd->nl_mc_groups[MC_FUSION].id,
-					GFP_KERNEL);
-			if (ret < 0)
-				ERROR("can't send resume message %d", ret);
-			ret = nl_msg_new(dd, MC_FUSION);
-			if (ret < 0)
-				ERROR("could not allocate outgoing skb (%d)",
-				      ret);
+			fusion_dead = false;
+			do {
+				if (dd->fusion_process != (pid_t)0 &&
+				    get_pid_task(find_get_pid(
+							dd->fusion_process),
+						 PIDTYPE_PID) == NULL) {
+					fusion_dead = true;
+					break;
+				}
+				ret = nl_add_attr(dd->outgoing_skb->data,
+						  FU_RESUME, NULL, 0);
+				if (ret < 0) {
+					ERROR("can't add data to resume " \
+					      "buffer");
+					nl_msg_init(dd->outgoing_skb->data,
+						    dd->nl_family.id,
+						    dd->nl_seq - 1, MC_FUSION);
+					msleep(100);
+					continue;
+				}
+				(void)skb_put(dd->outgoing_skb,
+					      NL_SIZE(dd->outgoing_skb->data));
+				ret = genlmsg_multicast(dd->outgoing_skb, 0,
+						dd->nl_mc_groups[MC_FUSION].id,
+						GFP_KERNEL);
+				if (ret < 0) {
+					ERROR("can't send resume message %d",
+					      ret);
+					msleep(100);
+				}
+				ret2 = nl_msg_new(dd, MC_FUSION);
+				if (ret2 < 0)
+					ERROR("could not allocate outgoing " \
+					      "skb (%d)", ret2);
+			} while (ret != 0);
+			if (fusion_dead)
+				continue;
 		}
 
-		/* priority 3: service interrupt */
-		if (dd->irq_registered && pdata->irq(pdata) == 0)
+		/* priority 4: service interrupt */
+		if (dd->irq_registered && !dd->expect_resume_ack &&
+		    pdata->irq(pdata) == 0)
 			dd->service_irq(dd);
+		if (dd->irq_registered && !dd->expect_resume_ack &&
+		    pdata->irq(pdata) == 0)
+			continue;
 
 		/* nothing more to do; sleep */
 		schedule();
 	}
 
 	return 0;
+}
+
+/****************************************************************************\
+* SYSFS interface                                                            *
+\****************************************************************************/
+
+static ssize_t chip_id_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct spi_device       *spi = to_spi_device(dev);
+	struct dev_data         *dd = spi_get_drvdata(spi);
+	return snprintf(buf, PAGE_SIZE, "0x%04X\n", dd->chip_id);
+}
+
+static ssize_t fw_ver_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+
+	struct spi_device       *spi = to_spi_device(dev);
+	struct dev_data         *dd = spi_get_drvdata(spi);
+	return snprintf(buf, PAGE_SIZE, "0x%04X\n", dd->fw_ver);
+}
+
+static ssize_t driver_ver_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+
+	struct spi_device       *spi = to_spi_device(dev);
+	struct dev_data         *dd = spi_get_drvdata(spi);
+	return snprintf(buf, PAGE_SIZE, "0x%04X\n", dd->drv_ver);
+}
+
+static ssize_t tf_ver_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct spi_device       *spi = to_spi_device(dev);
+	struct dev_data         *dd = spi_get_drvdata(spi);
+	return snprintf(buf, PAGE_SIZE, "0x%04X\n", dd->tf_ver);
+}
+
+static ssize_t info_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct spi_device       *spi = to_spi_device(dev);
+	struct dev_data         *dd = spi_get_drvdata(spi);
+	return snprintf(buf, PAGE_SIZE, "chip id: 0x%04X driver ver: 0x%04X "
+					"fw ver: 0x%04X "
+					"tf ver: 0x%04X\n",
+					dd->chip_id, dd->drv_ver, dd->fw_ver,
+					dd->tf_ver);
+}
+
+static struct device_attribute dev_attrs[] = {
+	__ATTR(fw_ver, S_IRUGO, fw_ver_show, NULL),
+	__ATTR(chip_id, S_IRUGO, chip_id_show, NULL),
+	__ATTR(tf_ver, S_IRUGO, tf_ver_show, NULL),
+	__ATTR(driver_ver, S_IRUGO, driver_ver_show, NULL),
+	__ATTR(info, S_IRUGO, info_show, NULL),
+};
+
+static int create_sysfs_entries(struct dev_data *dd)
+{
+	int i, ret = 0;
+
+	for (i = 0; i < ARRAY_SIZE(dev_attrs); i++) {
+		ret = device_create_file(&dd->spi->dev, &dev_attrs[i]);
+		if (ret) {
+			for (; i >= 0; --i) {
+				device_remove_file(&dd->spi->dev,
+							&dev_attrs[i]);
+				dd->sysfs_created--;
+			}
+			break;
+		}
+		dd->sysfs_created++;
+	}
+	return ret;
+}
+
+static void remove_sysfs_entries(struct dev_data *dd)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dev_attrs); i++)
+		if (dd->sysfs_created && dd->sysfs_created--)
+			device_remove_file(&dd->spi->dev, &dev_attrs[i]);
 }
 
 /****************************************************************************\
@@ -1469,6 +2029,22 @@ static int probe(struct spi_device *spi)
 	unsigned long           flags;
 	int                     ret, i;
 	void                    *ptr;
+
+#ifdef CONFIG_OF
+	if (pdata == NULL && spi->dev.of_node) {
+		pdata = devm_kzalloc(&spi->dev,
+			sizeof(struct maxim_sti_pdata), GFP_KERNEL);
+		if (!pdata) {
+			dev_err(&spi->dev, "failed to allocate memory\n");
+			return -ENOMEM;
+		}
+
+		ret = maxim_parse_dt(&spi->dev, pdata);
+		if (ret)
+			return ret;
+		spi->dev.platform_data = pdata;
+	}
+#endif
 
 	/* validate platform data */
 	if (pdata == NULL || pdata->init == NULL || pdata->reset == NULL ||
@@ -1508,13 +2084,19 @@ static int probe(struct spi_device *spi)
 	dd->spi = spi;
 	dd->nl_seq = 1;
 	init_completion(&dd->suspend_resume);
-	memset(dd->tx_buf, 0xFF, sizeof(dd->tx_buf));
+	memset(dd->tx_buf, 0xFF, pdata->tx_buf_size);
 	(void)set_chip_access_method(dd, pdata->chip_access_method);
+
+	/* initialize regulators */
+	regulator_init(dd);
 
 	/* initialize platform */
 	ret = pdata->init(pdata, true);
 	if (ret < 0)
 		goto platform_failure;
+
+	/* Netlink: initialize incoming skb queue */
+	skb_queue_head_init(&dd->incoming_skb_queue);
 
 	/* start processing thread */
 	dd->thread_sched.sched_priority = MAX_USER_RT_PRIO / 2;
@@ -1561,18 +2143,6 @@ static int probe(struct spi_device *spi)
 	if (ret < 0)
 		goto nl_failure;
 
-#if CPU_BOOST
-	/* initialize PM QOS */
-	dd->boost_freq = pm_qos_request(PM_QOS_CPU_FREQ_MAX);
-	pm_qos_add_request(&dd->cpus_req, PM_QOS_MIN_ONLINE_CPUS,
-			   PM_QOS_DEFAULT_VALUE);
-	pm_qos_add_request(&dd->freq_req, PM_QOS_CPU_FREQ_MIN,
-			   PM_QOS_DEFAULT_VALUE);
-#endif
-
-	/* Netlink: initialize incoming skb queue */
-	skb_queue_head_init(&dd->incoming_skb_queue);
-
 	/* Netlink: ready to start processing incoming messages */
 	dd->nl_enabled = true;
 
@@ -1580,6 +2150,16 @@ static int probe(struct spi_device *spi)
 	spin_lock_irqsave(&dev_lock, flags);
 	list_add_tail(&dd->dev_list, &dev_list);
 	spin_unlock_irqrestore(&dev_lock, flags);
+
+#if CPU_BOOST
+	dd->last_irq_jiffies = jiffies;
+#endif
+
+	ret = create_sysfs_entries(dd);
+	if (ret) {
+		INFO("failed to create sysfs file");
+		goto sysfs_remove_group;
+	}
 
 	/* start up Touch Fusion */
 	dd->start_fusion = true;
@@ -1589,6 +2169,8 @@ static int probe(struct spi_device *spi)
 
 	return 0;
 
+sysfs_remove_group:
+	remove_sysfs_entries(dd);
 nl_failure:
 	genl_unregister_family(&dd->nl_family);
 nl_family_failure:
@@ -1609,6 +2191,11 @@ static int remove(struct spi_device *spi)
 	if (dd->fusion_process != (pid_t)0)
 		(void)kill_pid(find_get_pid(dd->fusion_process), SIGKILL, 1);
 
+	if (dd->parent != NULL)
+		sysfs_remove_link(dd->input_dev[0]->dev.kobj.parent,
+						MAXIM_STI_NAME);
+	remove_sysfs_entries(dd);
+
 	/* BEWARE: tear-down sequence below is carefully staged:            */
 	/* 1) first the feeder of Netlink messages to the processing thread */
 	/*    is turned off                                                 */
@@ -1627,16 +2214,12 @@ static int remove(struct spi_device *spi)
 	for (i = 0; i < INPUT_DEVICES; i++)
 		if (dd->input_dev[i])
 			input_unregister_device(dd->input_dev[i]);
+#if FB_CALLBACK && defined(CONFIG_FB)
+	fb_unregister_client(&dd->fb_notifier);
+#endif
 
 	if (dd->irq_registered)
 		free_irq(dd->spi->irq, dd);
-
-#if CPU_BOOST
-	if (dd->boost_freq != 0) {
-		pm_qos_remove_request(&dd->freq_req);
-		pm_qos_remove_request(&dd->cpus_req);
-	}
-#endif
 
 	stop_scan_canned(dd);
 
@@ -1644,11 +2227,30 @@ static int remove(struct spi_device *spi)
 	list_del(&dd->dev_list);
 	spin_unlock_irqrestore(&dev_lock, flags);
 
+	pdata->reset(pdata, 0);
+	usleep_range(100, 120);
+	regulator_control(dd, false);
+	pdata->init(pdata, false);
+
 	kfree(dd);
 
-	pdata->init(pdata, false);
 	INFO("driver unloaded");
 	return 0;
+}
+
+static void shutdown(struct spi_device *spi)
+{
+	struct maxim_sti_pdata  *pdata = spi->dev.platform_data;
+	struct dev_data         *dd = spi_get_drvdata(spi);
+
+	if (dd->parent != NULL)
+		sysfs_remove_link(dd->input_dev[0]->dev.kobj.parent,
+						MAXIM_STI_NAME);
+	remove_sysfs_entries(dd);
+
+	pdata->reset(pdata, 0);
+	usleep_range(100, 120);
+	regulator_control(dd, false);
 }
 
 /****************************************************************************\
@@ -1662,12 +2264,23 @@ static const struct spi_device_id id[] = {
 
 MODULE_DEVICE_TABLE(spi, id);
 
+#ifdef CONFIG_OF
+static struct of_device_id maxim_match_table[] = {
+	{ .compatible = "maxim,maxim_sti",},
+	{ },
+};
+#endif
+
 static struct spi_driver driver = {
 	.probe          = probe,
 	.remove         = remove,
+	.shutdown       = shutdown,
 	.id_table       = id,
 	.driver = {
 		.name   = MAXIM_STI_NAME,
+#ifdef CONFIG_OF
+		.of_match_table = maxim_match_table,
+#endif
 		.owner  = THIS_MODULE,
 #ifdef CONFIG_PM_SLEEP
 		.pm     = &pm_ops,
