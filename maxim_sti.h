@@ -3,6 +3,7 @@
  * Maxim SmartTouch Imager Touchscreen Driver
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
+ * Copyright (C) 2013, NVIDIA Corporation.  All Rights Reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,8 +20,14 @@
 #define __MAXIM_STI_H__
 
 #ifdef __KERNEL__
+#include <linux/version.h>
 #include <net/genetlink.h>
 #include <net/sock.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#define __NO_NL_DYNAMIC_MC_GRP__
+#endif
+
 #else
 #include <stdlib.h>
 #include "genetlink.h"
@@ -104,13 +111,15 @@ nl_add_attr(void *buf, __u16 type, void *ptr, __u16 len)
 \****************************************************************************/
 
 enum {
-	MC_DRIVER,
+	MC_DRIVER=0,
 	MC_FUSION,
-	MC_REQUIRED_GROUPS,
+	MC_EVENT_BROADCAST,
+	MC_GROUPS,
 };
 
 #define MC_DRIVER_NAME     "driver"
 #define MC_FUSION_NAME     "fusion"
+#define MC_EVENT_BROADCAST_NAME  "event_broadcast"
 
 #define NL_FAMILY_VERSION  1
 
@@ -140,8 +149,8 @@ enum {
 };
 
 enum {
-	DR_ADD_MC_GROUP,
-	DR_ECHO_REQUEST,
+	/*DR_ADD_MC_GROUP, Removed */
+	DR_ECHO_REQUEST=1,
 	DR_CHIP_READ,
 	DR_CHIP_WRITE,
 	DR_CHIP_RESET,
@@ -153,6 +162,7 @@ enum {
 	DR_CONFIG_WATCHDOG,
 	DR_DECONFIG,
 	DR_INPUT,
+	DR_RESUME_ACK,
 	DR_LEGACY_FWDL,
 	DR_LEGACY_ACCELERATION,
 };
