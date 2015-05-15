@@ -3,6 +3,7 @@
  * Maxim SmartTouch Imager Touchscreen Driver
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
+ * Copyright (C) 2013, NVIDIA Corporation.  All Rights Reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,8 +27,8 @@
 #include "genetlink.h"
 #endif
 
-#define DRIVER_VERSION  "1.4.1"
-#define DRIVER_RELEASE  "August 14, 2013"
+#define DRIVER_VERSION  "1.4.3.dt1"
+#define DRIVER_RELEASE  "December 4, 2013"
 
 /****************************************************************************\
 * Netlink: common kernel/user space macros                                   *
@@ -153,6 +154,7 @@ enum {
 	DR_CONFIG_WATCHDOG,
 	DR_DECONFIG,
 	DR_INPUT,
+	DR_RESUME_ACK,
 	DR_LEGACY_FWDL,
 	DR_LEGACY_ACCELERATION,
 };
@@ -189,7 +191,7 @@ struct __attribute__ ((__packed__)) dr_chip_access_method {
 	__u8  method;
 };
 
-#define MAX_IRQ_PARAMS  20
+#define MAX_IRQ_PARAMS  26
 struct __attribute__ ((__packed__)) dr_config_irq {
 	__u16  irq_param[MAX_IRQ_PARAMS];
 	__u8   irq_params;
@@ -264,6 +266,7 @@ struct __attribute__ ((__packed__)) fu_async_data {
 struct maxim_sti_pdata {
 	char      *touch_fusion;
 	char      *config_file;
+	char      *fw_name;
 	char      *nl_family;
 	u8        nl_mc_groups;
 	u8        chip_access_method;
