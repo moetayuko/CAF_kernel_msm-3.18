@@ -34,7 +34,8 @@
 * Netlink: common kernel/user space macros                                   *
 \****************************************************************************/
 
-#define NL_BUF_SIZE  8192
+//#define NL_BUF_SIZE  8192
+#define NL_BUF_SIZE  30720
 
 #define NL_ATTR_FIRST(nptr) \
 	((struct nlattr *)((void *)nptr + NLMSG_HDRLEN + GENL_HDRLEN))
@@ -267,13 +268,14 @@ struct maxim_sti_pdata {
 	char      *touch_fusion;
 	char      *config_file;
 	char      *nl_family;
-	u8        nl_mc_groups;
-	u8        chip_access_method;
-	u8        default_reset_state;
-	u16       tx_buf_size;
-	u16       rx_buf_size;
-	unsigned  gpio_reset;
-	unsigned  gpio_irq;
+	char      *fw_name;
+	u32       nl_mc_groups;
+	u32       chip_access_method;
+	u32       default_reset_state;
+	u32       tx_buf_size;
+	u32       rx_buf_size;
+	u32       gpio_reset;
+	u32       gpio_irq;
 	int       (*init)(struct maxim_sti_pdata *pdata, bool init);
 	void      (*reset)(struct maxim_sti_pdata *pdata, int value);
 	int       (*irq)(struct maxim_sti_pdata *pdata);

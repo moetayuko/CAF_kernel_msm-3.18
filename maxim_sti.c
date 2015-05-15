@@ -27,27 +27,30 @@
 #include <linux/regulator/consumer.h>
 #include <linux/maxim_sti.h>
 #include <asm/byteorder.h>  /* MUST include this header to get byte order */
-
-//#define CREATE_TRACE_POINTS
-//#include <trace/events/touchscreen_maxim.h>
+#ifdef CONFIG_OF
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+#endif
 
 /****************************************************************************\
 * Custom features                                                            *
 \****************************************************************************/
 
 #define INPUT_DEVICES         1
-#define INPUT_ENABLE_DISABLE  1
+#define INPUT_ENABLE_DISABLE  0
 #define SUSPEND_POWER_OFF     0
-#define NV_ENABLE_CPU_BOOST   1
-#define HI02_WORKAROUND       1
+#define CPU_BOOST             0
+#define FB_CALLBACK           1
+#define HI02                  1
 
-#if NV_ENABLE_CPU_BOOST
+#if CPU_BOOST
 #define INPUT_IDLE_PERIOD     (msecs_to_jiffies(50))
 #endif
 
-#if HI02_WORKAROUND
-u16 read_value[2] = { 0 };
+#if FB_CALLBACK && defined(CONFIG_FB)
+#include <linux/fb.h>
 #endif
+
 /****************************************************************************\
 * Device context structure, globals, and macros                              *
 \****************************************************************************/
@@ -72,7 +75,7 @@ struct dev_data {
 	bool                         expect_resume_ack;
 	bool                         eraser_active;
 	bool                         legacy_acceleration;
-#if INPUT_ENABLE_DISABLE
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
 	bool                         input_no_deconfig;
 #endif
 	bool                         irq_registered;
@@ -94,8 +97,11 @@ struct dev_data {
 	struct regulator             *reg_avdd;
 	struct regulator             *reg_dvdd;
 	void                         (*service_irq)(struct dev_data *dd);
-#if NV_ENABLE_CPU_BOOST
+#if CPU_BOOST
 	unsigned long                last_irq_jiffies;
+#endif
+#if FB_CALLBACK
+	struct notifier_block        fb_notifier;
 #endif
 };
 
@@ -303,6 +309,7 @@ spi_write_2_page(struct dev_data *dd, u16 address, u8 *buf, u16 len)
 	page[0] = 0xFEDC;
 	page[1] = address << 1;
 	page[2] = len / sizeof(u16);
+	page[3] = 0x0000;
 	memcpy(page + 4, buf, len);
 
 	/* write data with write request header */
@@ -736,6 +743,156 @@ err_null_regulator:
 	dev_warn(&dd->spi->dev, "Failed to init regulators\n");
 }
 
+#ifdef CONFIG_OF
+#define MAXIM_STI_GPIO_ERROR(ret, gpio, op)                                \
+	if (ret < 0) {                                                     \
+		pr_err("%s: GPIO %d %s failed (%d)\n", __func__, gpio, op, \
+			ret);                                              \
+		return ret;                                                \
+	}
+
+
+int maxim_sti_gpio_init(struct maxim_sti_pdata *pdata, bool init)
+{
+	int  ret;
+
+	if (init) {
+		ret = gpio_request(pdata->gpio_irq, "maxim_sti_irq");
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_irq, "request");
+		ret = gpio_direction_input(pdata->gpio_irq);
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_irq, "direction");
+
+		ret = gpio_request(pdata->gpio_reset, "maxim_sti_reset");
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_reset, "request");
+		ret = gpio_direction_output(pdata->gpio_reset,
+					    pdata->default_reset_state);
+		MAXIM_STI_GPIO_ERROR(ret, pdata->gpio_reset, "direction");
+	} else {
+		gpio_free(pdata->gpio_irq);
+		gpio_free(pdata->gpio_reset);
+	}
+
+	return 0;
+}
+
+void maxim_sti_gpio_reset(struct maxim_sti_pdata *pdata, int value)
+{
+	gpio_set_value(pdata->gpio_reset, !!value);
+}
+
+int maxim_sti_gpio_irq(struct maxim_sti_pdata *pdata)
+{
+	return gpio_get_value(pdata->gpio_irq);
+}
+
+/****************************************************************************\
+* Device Tree Support
+\****************************************************************************/
+
+static int maxim_parse_dt(struct device *dev, struct maxim_sti_pdata *pdata)
+{
+	struct device_node *np = dev->of_node;
+	u32 val;
+	const char *str;
+	int ret;
+
+	/* TODO: use of_get_named_gpio() here? */
+	ret = of_property_read_u32(np, "maxim_sti,reset-gpio", &pdata->gpio_reset);
+	if (ret) {
+		dev_err(dev, "%s: unable to read reset-gpio (%d)\n",
+							__func__, ret);
+		goto fail;
+	}
+
+	ret = of_property_read_u32(np, "maxim_sti,irq-gpio", &pdata->gpio_irq);
+	if (ret) {
+		dev_err(dev, "%s: unable to read irq-gpio (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+
+	ret = of_property_read_u32(np, "maxim_sti,nl_mc_groups", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read nl_mc_groups (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->nl_mc_groups = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,chip_access_method", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read chip_access_method (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->chip_access_method = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,default_reset_state", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read default_reset_state (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->default_reset_state = (u8)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,tx_buf_size", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read tx_buf_size (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->tx_buf_size = (u16)val;
+
+	ret = of_property_read_u32(np, "maxim_sti,rx_buf_size", &val);
+	if (ret) {
+		dev_err(dev, "%s: unable to read rx_buf_size (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->rx_buf_size = (u16)val;
+
+	ret = of_property_read_string(np, "maxim_sti,touch_fusion", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read touch_fusion location (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->touch_fusion = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,config_file", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read config_file location (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->config_file = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,nl_family", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read nl_family (%d)\n",
+								__func__, ret);
+		goto fail;
+	}
+	pdata->nl_family = (char *)str;
+
+	ret = of_property_read_string(np, "maxim_sti,fw_name", &str);
+	if (ret) {
+		dev_err(dev, "%s: unable to read fw_name (%d)\n",
+								__func__, ret);
+	}
+	pdata->fw_name = (char *)str;
+
+	pdata->init = maxim_sti_gpio_init;
+	pdata->reset = maxim_sti_gpio_reset;
+	pdata->irq = maxim_sti_gpio_irq;
+
+	return 0;
+
+fail:
+	return ret;
+}
+#endif
+
 /****************************************************************************\
 * Suspend/resume processing                                                  *
 \****************************************************************************/
@@ -817,6 +974,25 @@ static int input_enable(struct input_dev *dev)
 	return resume(&dd->spi->dev);
 }
 #endif
+#if FB_CALLBACK && defined(CONFIG_FB)
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event  *evdata = data;
+	int              *blank;
+	struct dev_data  *dd = container_of(self,
+					    struct dev_data, fb_notifier);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_UNBLANK)
+			resume(&dd->spi->dev);
+		else if (*blank == FB_BLANK_POWERDOWN)
+			suspend(&dd->spi->dev);
+	}
+	return 0;
+}
+#endif
 #endif
 
 /****************************************************************************\
@@ -862,6 +1038,9 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 	struct dr_legacy_acceleration *legacy_acceleration_msg;
 	u8                            i, inp;
 	int                           ret;
+#if HI02
+	u16                           read_value[2] = { 0 };
+#endif
 
 	if (dd->expect_resume_ack && msg_id != DR_DECONFIG &&
 	    msg_id != DR_RESUME_ACK)
@@ -916,23 +1095,23 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 		return true;
 	case DR_CHIP_WRITE:
 		write_msg = msg;
-#if HI02_WORKAROUND
-		if (write_msg->address == dd->irq_param[12] && write_msg->data[0] == dd->irq_param[13]) {
-				ret = dd->chip.write(dd, write_msg->address, write_msg->data,
+#if HI02
+		if (write_msg->address == dd->irq_param[12] &&
+		    write_msg->data[0] == dd->irq_param[13]) {
+			ret = dd->chip.write(dd, write_msg->address,
+					     write_msg->data,
 					     write_msg->length);
 			if (ret < 0)
 				ERROR("failed to write chip (%d)", ret);
 			msleep(15);
-			ret = dd->chip.read(dd, dd->irq_param[0], (u8 *)read_value, sizeof(read_value));
+			ret = dd->chip.read(dd, dd->irq_param[0],
+					    (u8 *)read_value,
+					    sizeof(read_value));
 			if (ret < 0)
 				ERROR("failed to read from chip (%d)", ret);
-			ret = dd->chip.write(dd, dd->irq_param[0], (u8 *)read_value, sizeof(read_value));
-			return false;
-		}
-		if (write_msg->address == dd->irq_param[0]) {
-			/* assume nothing follows TSISTAT, of course */
-			read_value[0] = ((u16 *)write_msg->data)[0];
-			ret = dd->chip.write(dd, write_msg->address, (u8 *)read_value, sizeof(read_value));
+			ret = dd->chip.write(dd, dd->irq_param[0],
+					     (u8 *)read_value,
+					     sizeof(read_value));
 			return false;
 		}
 #endif
@@ -1013,11 +1192,6 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 				input_set_drvdata(dd->input_dev[i], dd);
 			}
 #endif
-#if NV_ENABLE_CPU_BOOST
-			if (i == 0)
-				input_set_capability(dd->input_dev[i], EV_MSC,
-						     MSC_ACTIVITY);
-#endif
 			__set_bit(EV_SYN, dd->input_dev[i]->evbit);
 			__set_bit(EV_ABS, dd->input_dev[i]->evbit);
 			if (i == (INPUT_DEVICES - 1)) {
@@ -1052,6 +1226,10 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 				ERROR("failed to register input device");
 			}
 		}
+#if FB_CALLBACK && defined(CONFIG_FB)
+		dd->fb_notifier.notifier_call = fb_notifier_callback;
+		fb_register_client(&dd->fb_notifier);
+#endif
 		return false;
 	case DR_CONFIG_WATCHDOG:
 		config_watchdog_msg = msg;
@@ -1063,14 +1241,18 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 			dd->irq_registered = false;
 		}
 		stop_scan_canned(dd);
-		if (!dd->input_no_deconfig) {
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
+		if (!dd->input_no_deconfig)
+#endif
 			for (i = 0; i < INPUT_DEVICES; i++) {
 				if (dd->input_dev[i] == NULL)
 					continue;
 				input_unregister_device(dd->input_dev[i]);
 				dd->input_dev[i] = NULL;
 			}
-		}
+#if FB_CALLBACK && defined(CONFIG_FB)
+			fb_unregister_client(&dd->fb_notifier);
+#endif
 		dd->expect_resume_ack = false;
 		dd->eraser_active = false;
 		dd->legacy_acceleration = false;
@@ -1188,7 +1370,7 @@ static int nl_process_msg(struct dev_data *dd, struct sk_buff *skb)
 		(void)skb_put(dd->outgoing_skb,
 			      NL_SIZE(dd->outgoing_skb->data));
 		if (NL_SEQ(skb->data) == 0)
-			ret = genlmsg_unicast(sock_net(skb->sk),
+			ret = genlmsg_unicast(&init_net,
 					      dd->outgoing_skb,
 					      NETLINK_CB(skb).pid);
 		else
@@ -1269,11 +1451,10 @@ static irqreturn_t irq_handler(int irq, void *context)
 {
 	struct dev_data  *dd = context;
 
-	//trace_touchscreen_maxim_irq("irq_handler");
-
-#if NV_ENABLE_CPU_BOOST
-	if (time_after(jiffies, dd->last_irq_jiffies + INPUT_IDLE_PERIOD))
-		input_event(dd->input_dev[0], EV_MSC, MSC_ACTIVITY, 1);
+#if CPU_BOOST
+	if (time_after(jiffies, dd->last_irq_jiffies + INPUT_IDLE_PERIOD)) {
+		/* implement CPU boost here */
+	}
 	dd->last_irq_jiffies = jiffies;
 #endif
 
@@ -1374,11 +1555,10 @@ static void service_irq_legacy_acceleration(struct dev_data *dd)
 static void service_irq(struct dev_data *dd)
 {
 	struct fu_async_data  *async_data;
-	u16                   status, test, address[2], xbuf;
+	u16                   status, test, address[2], xbuf, value;
 	u16                   clear[2] = { 0 };
 	bool                  read_buf[2] = {true, false};
 	int                   ret, ret2;
-	u16 value;
 
 	ret = dd->chip.read(dd, dd->irq_param[0], (u8 *)&status,
 			    sizeof(status));
@@ -1389,7 +1569,7 @@ static void service_irq(struct dev_data *dd)
 
 	if (status & dd->irq_param[10]) {
 		read_buf[0] = false;
-		clear[0] = 0x8000;
+		clear[0] = 0xFFFF;
 	} else if (status & dd->irq_param[9]) {
 		test = status & (dd->irq_param[6] | dd->irq_param[7]);
 
@@ -1468,7 +1648,7 @@ static void service_irq(struct dev_data *dd)
 				    dd->irq_param[4]);
 	}
 
-#if HI02_WORKAROUND
+#if HI02
 	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)clear,
 			     sizeof(clear));
 #else
@@ -1542,7 +1722,7 @@ static int processing_thread(void *arg)
 			stop_scan_canned(dd);
 			dd->start_fusion = true;
 			dd->fusion_process = (pid_t)0;
-#if INPUT_ENABLE_DISABLE
+#if INPUT_ENABLE_DISABLE || FB_CALLBACK
 			dd->input_no_deconfig = true;
 #endif
 		}
@@ -1662,6 +1842,22 @@ static int probe(struct spi_device *spi)
 	int                     ret, i;
 	void                    *ptr;
 
+#ifdef CONFIG_OF
+	if (pdata == NULL && spi->dev.of_node) {
+		pdata = devm_kzalloc(&spi->dev,
+			sizeof(struct maxim_sti_pdata), GFP_KERNEL);
+		if (!pdata) {
+			dev_err(&spi->dev, "failed to allocate memory\n");
+			return -ENOMEM;
+		}
+
+		ret = maxim_parse_dt(&spi->dev, pdata);
+		if (ret)
+			return ret;
+		spi->dev.platform_data = pdata;
+	}
+#endif
+
 	/* validate platform data */
 	if (pdata == NULL || pdata->init == NULL || pdata->reset == NULL ||
 		pdata->irq == NULL || pdata->touch_fusion == NULL ||
@@ -1767,7 +1963,7 @@ static int probe(struct spi_device *spi)
 	list_add_tail(&dd->dev_list, &dev_list);
 	spin_unlock_irqrestore(&dev_lock, flags);
 
-#if NV_ENABLE_CPU_BOOST
+#if CPU_BOOST
 	dd->last_irq_jiffies = jiffies;
 #endif
 
@@ -1817,6 +2013,9 @@ static int remove(struct spi_device *spi)
 	for (i = 0; i < INPUT_DEVICES; i++)
 		if (dd->input_dev[i])
 			input_unregister_device(dd->input_dev[i]);
+#if FB_CALLBACK && defined(CONFIG_FB)
+	fb_unregister_client(&dd->fb_notifier);
+#endif
 
 	if (dd->irq_registered)
 		free_irq(dd->spi->irq, dd);
@@ -1859,6 +2058,13 @@ static const struct spi_device_id id[] = {
 
 MODULE_DEVICE_TABLE(spi, id);
 
+#ifdef CONFIG_OF
+static struct of_device_id maxim_match_table[] = {
+	{ .compatible = "maxim,maxim_sti",},
+	{ },
+};
+#endif
+
 static struct spi_driver driver = {
 	.probe          = probe,
 	.remove         = remove,
@@ -1866,6 +2072,9 @@ static struct spi_driver driver = {
 	.id_table       = id,
 	.driver = {
 		.name   = MAXIM_STI_NAME,
+#ifdef CONFIG_OF
+		.of_match_table = maxim_match_table,
+#endif
 		.owner  = THIS_MODULE,
 #ifdef CONFIG_PM_SLEEP
 		.pm     = &pm_ops,
