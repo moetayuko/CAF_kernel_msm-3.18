@@ -23,6 +23,9 @@
 #include <linux/crc16.h>
 #include <linux/interrupt.h>
 #include <linux/input.h>
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HAS_EARLYSUSPEND)
+#include <linux/earlysuspend.h>
+#endif
 #include <linux/maxim_sti.h>
 #include <asm/byteorder.h>  /* MUST include this header to get byte order */
 
@@ -30,9 +33,8 @@
 * Custom features                                                            *
 \****************************************************************************/
 
-#define INPUT_DEVICES         1
-#define INPUT_ENABLE_DISABLE  1
-#define CPU_BOOST             1
+#define INPUT_ENABLE_DISABLE  0
+#define CPU_BOOST             0
 
 #if CPU_BOOST
 #include <linux/pm_qos.h>
@@ -52,7 +54,6 @@ struct chip_access_method {
 struct dev_data {
 	u8                           *tx_buf;
 	u8                           *rx_buf;
-	u8                           send_fail_count;
 	u32                          nl_seq;
 	u8                           nl_mc_group_count;
 	bool                         nl_enabled;
@@ -60,15 +61,13 @@ struct dev_data {
 	bool                         suspend_in_progress;
 	bool                         resume_in_progress;
 	bool                         eraser_active;
-	bool                         legacy_acceleration;
-#if INPUT_ENABLE_DISABLE
-	bool                         input_no_deconfig;
-#endif
 	bool                         irq_registered;
 	u16                          irq_param[MAX_IRQ_PARAMS];
-	pid_t                        fusion_process;
 	char                         input_phys[128];
-	struct input_dev             *input_dev[INPUT_DEVICES];
+	struct input_dev             *input_dev;
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HAS_EARLYSUSPEND)
+	struct early_suspend         early_suspend;
+#endif
 	struct completion            suspend_resume;
 	struct chip_access_method    chip;
 	struct spi_device            *spi;
@@ -80,7 +79,6 @@ struct dev_data {
 	struct task_struct           *thread;
 	struct sched_param           thread_sched;
 	struct list_head             dev_list;
-	void                         (*service_irq)(struct dev_data *dd);
 #if CPU_BOOST
 	struct pm_qos_request        cpus_req;
 	struct pm_qos_request        freq_req;
@@ -92,8 +90,6 @@ static struct list_head  dev_list;
 static spinlock_t        dev_lock;
 
 static irqreturn_t irq_handler(int irq, void *context);
-static void service_irq(struct dev_data *dd);
-static void service_irq_legacy_acceleration(struct dev_data *dd);
 
 #define ERROR(a, b...) printk(KERN_ERR "%s driver(ERROR:%s:%d): " a "\n", \
 			      dd->nl_family.name, __func__, __LINE__, ##b)
@@ -109,8 +105,10 @@ spi_read_123(struct dev_data *dd, u16 address, u8 *buf, u16 len, bool add_len)
 {
 	struct spi_message   message;
 	struct spi_transfer  transfer;
-	u16                  *tx_buf = (u16 *)dd->tx_buf;
-	u16                  *rx_buf = (u16 *)dd->rx_buf;
+	u16                  *tx_buf = (u16 *)(((size_t)dd->tx_buf + 64) & ~63);
+	u16                  *rx_buf = (u16 *)(((size_t)dd->rx_buf + 64) & ~63);
+//	u16                  *tx_buf = dd->tx_buf;
+//	u16                  *rx_buf = dd->rx_buf;
 	u16                  words = len / sizeof(u16), header_len = 1;
 	u16                  *ptr2 = rx_buf + 1;
 #ifdef __LITTLE_ENDIAN
@@ -160,6 +158,7 @@ static inline int
 spi_write_123(struct dev_data *dd, u16 address, u8 *buf, u16 len,
 	      bool add_len)
 {
+	struct maxim_sti_pdata  *pdata = dd->spi->dev.platform_data;
 	u16  *tx_buf = (u16 *)dd->tx_buf;
 	u16  words = len / sizeof(u16), header_len = 1;
 #ifdef __LITTLE_ENDIAN
@@ -186,7 +185,7 @@ spi_write_123(struct dev_data *dd, u16 address, u8 *buf, u16 len,
 				len + header_len * sizeof(u16));
 	} while (ret == -EAGAIN);
 
-	memset(dd->tx_buf, 0xFF, sizeof(dd->tx_buf));
+	memset(dd->tx_buf, 0xFF, pdata->tx_buf_size);
 	return ret;
 }
 
@@ -205,42 +204,6 @@ spi_write_1(struct dev_data *dd, u16 address, u8 *buf, u16 len)
 }
 
 /* ======================================================================== */
-
-static inline int
-stop_legacy_acceleration(struct dev_data *dd)
-{
-	u16  value = 0xDEAD, status, i;
-	int  ret;
-
-	ret = spi_write_123(dd, 0x0003, (u8 *)&value,
-				sizeof(value), false);
-	if (ret < 0)
-		return -1;
-	usleep_range(100, 120);
-
-	for (i = 0; i < 200; i++) {
-		ret = spi_read_123(dd, 0x0003, (u8 *)&status, sizeof(status),
-				   false);
-		if (ret < 0)
-			return -1;
-		if (status == 0xABCD)
-			return 0;
-	}
-
-	return -2;
-}
-
-static inline int
-start_legacy_acceleration(struct dev_data *dd)
-{
-	u16  value = 0xBEEF;
-	int  ret;
-
-	ret = spi_write_123(dd, 0x0003, (u8 *)&value, sizeof(value), false);
-	usleep_range(100, 120);
-
-	return ret;
-}
 
 static inline int
 spi_rw_2_poll_status(struct dev_data *dd)
@@ -278,23 +241,23 @@ spi_read_2_page(struct dev_data *dd, u16 address, u8 *buf, u16 len)
 		return ret;
 
 	/* read data */
-	ret = spi_read_123(dd, 0x0004, (u8 *)buf, len, false);
+	ret = spi_read_123(dd, 0x0003, (u8 *)buf, len, false);
 	return ret;
 }
 
 static inline int
 spi_write_2_page(struct dev_data *dd, u16 address, u8 *buf, u16 len)
 {
-	u16  page[254];
+	u16  page[253];
 	int  ret;
 
 	page[0] = 0xFEDC;
 	page[1] = address << 1;
 	page[2] = len / sizeof(u16);
-	memcpy(page + 4, buf, len);
+	memcpy(page + 3, buf, len);
 
 	/* write data with write request header */
-	ret = spi_write_123(dd, 0x0000, (u8 *)page, len + 4 * sizeof(u16),
+	ret = spi_write_123(dd, 0x0000, (u8 *)page, len + 3 * sizeof(u16),
 			    false);
 	if (ret < 0)
 		return -1;
@@ -312,12 +275,8 @@ spi_rw_2(struct dev_data *dd, u16 address, u8 *buf, u16 len,
 
 	while (len > 0) {
 		rx_len = (len > rx_limit) ? rx_limit : len;
-		if (dd->legacy_acceleration)
-			stop_legacy_acceleration(dd);
 		ret = func(dd, address + (offset / sizeof(u16)), buf + offset,
 			   rx_len);
-		if (dd->legacy_acceleration)
-			start_legacy_acceleration(dd);
 		if (ret < 0)
 			return ret;
 		offset += rx_len;
@@ -378,26 +337,6 @@ set_chip_access_method(struct dev_data *dd, u8 method)
 
 	memcpy(&dd->chip, &chip_access_methods[method - 1], sizeof(dd->chip));
 	return 0;
-}
-
-/* ======================================================================== */
-
-static inline int
-stop_legacy_acceleration_canned(struct dev_data *dd)
-{
-	u16  value = dd->irq_param[18];
-
-	return dd->chip.write(dd, dd->irq_param[16], (u8 *)&value,
-			      sizeof(value));
-}
-
-static inline int
-start_legacy_acceleration_canned(struct dev_data *dd)
-{
-	u16  value = dd->irq_param[17];
-
-	return dd->chip.write(dd, dd->irq_param[16], (u8 *)&value,
-			      sizeof(value));
 }
 
 /* ======================================================================== */
@@ -638,15 +577,13 @@ static void stop_scan_canned(struct dev_data *dd)
 {
 	u16  value;
 
-	if (dd->legacy_acceleration)
-		(void)stop_legacy_acceleration_canned(dd);
-	value = dd->irq_param[13];
-	(void)dd->chip.write(dd, dd->irq_param[12], (u8 *)&value,
+	value = dd->irq_param[9];
+	(void)dd->chip.write(dd, dd->irq_param[8], (u8 *)&value,
 			     sizeof(value));
-	value = dd->irq_param[11];
+	value = dd->irq_param[7];
 	(void)dd->chip.write(dd, dd->irq_param[0], (u8 *)&value,
 			     sizeof(value));
-	usleep_range(dd->irq_param[15], dd->irq_param[15] + 1000);
+	usleep_range(dd->irq_param[11], dd->irq_param[11] + 1000);
 	(void)dd->chip.write(dd, dd->irq_param[0], (u8 *)&value,
 			     sizeof(value));
 }
@@ -655,13 +592,9 @@ static void start_scan_canned(struct dev_data *dd)
 {
 	u16  value;
 
-	if (dd->legacy_acceleration) {
-		(void)start_legacy_acceleration_canned(dd);
-	} else {
-		value = dd->irq_param[14];
-		(void)dd->chip.write(dd, dd->irq_param[12], (u8 *)&value,
-				     sizeof(value));
-	}
+	value = dd->irq_param[10];
+	(void)dd->chip.write(dd, dd->irq_param[8], (u8 *)&value,
+			     sizeof(value));
 }
 
 /****************************************************************************\
@@ -715,6 +648,21 @@ static int input_enable(struct input_dev *dev)
 	return resume(&dd->spi->dev);
 }
 #endif
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void early_suspend(struct early_suspend *h)
+{
+	struct dev_data *dd = container_of(h, struct dev_data, early_suspend);
+
+	(void)suspend(&dd->spi->dev);
+}
+
+static void late_resume(struct early_suspend *h)
+{
+	struct dev_data *dd = container_of(h, struct dev_data, early_suspend);
+
+	(void)resume(&dd->spi->dev);
+}
+#endif
 #endif
 
 /****************************************************************************\
@@ -755,10 +703,8 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 	struct fu_irqline_status      *irqline_status;
 	struct dr_config_irq          *config_irq_msg;
 	struct dr_config_input        *config_input_msg;
-	struct dr_config_watchdog     *config_watchdog_msg;
 	struct dr_input               *input_msg;
-	struct dr_legacy_acceleration *legacy_acceleration_msg;
-	u8                            i, inp;
+	u8                            i;
 	int                           ret;
 
 	switch (msg_id) {
@@ -849,9 +795,6 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 		}
 		memcpy(dd->irq_param, config_irq_msg->irq_param,
 		       config_irq_msg->irq_params * sizeof(dd->irq_param[0]));
-		if (dd->irq_registered)
-			return false;
-		dd->service_irq = service_irq;
 		ret = request_irq(dd->spi->irq, irq_handler,
 			(config_irq_msg->irq_edge == DR_IRQ_RISING_EDGE) ?
 				IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING,
@@ -865,113 +808,93 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 		return false;
 	case DR_CONFIG_INPUT:
 		config_input_msg = msg;
-		for (i = 0; i < INPUT_DEVICES; i++)
-			if (dd->input_dev[i] != NULL)
-				return false;
-		for (i = 0; i < INPUT_DEVICES; i++) {
-			dd->input_dev[i] = input_allocate_device();
-			if (dd->input_dev[i] == NULL) {
-				ERROR("failed to allocate input device");
-				continue;
-			}
+		dd->input_dev = input_allocate_device();
+		if (dd->input_dev == NULL) {
+			ERROR("failed to allocate input device");
+		} else {
 			snprintf(dd->input_phys, sizeof(dd->input_phys),
-				 "%s/input%d", dev_name(&dd->spi->dev), i);
-			dd->input_dev[i]->name = pdata->nl_family;
-			dd->input_dev[i]->phys = dd->input_phys;
-			dd->input_dev[i]->id.bustype = BUS_SPI;
+				 "%s/input0", dev_name(&dd->spi->dev));
+			dd->input_dev->name = pdata->nl_family;
+			dd->input_dev->phys = dd->input_phys;
+			dd->input_dev->id.bustype = BUS_SPI;
 #if defined(CONFIG_PM_SLEEP) && INPUT_ENABLE_DISABLE
-			if (i == 0) {
-				dd->input_dev[i]->enable = input_enable;
-				dd->input_dev[i]->disable = input_disable;
-				dd->input_dev[i]->enabled = true;
-				input_set_drvdata(dd->input_dev[i], dd);
-			}
+			dd->input_dev->enable = input_enable;
+			dd->input_dev->disable = input_disable;
+			dd->input_dev->enabled = true;
+			input_set_drvdata(dd->input_dev, dd);
 #endif
-			__set_bit(EV_SYN, dd->input_dev[i]->evbit);
-			__set_bit(EV_ABS, dd->input_dev[i]->evbit);
-			if (i == (INPUT_DEVICES - 1)) {
-				__set_bit(EV_KEY, dd->input_dev[i]->evbit);
-				__set_bit(BTN_TOOL_RUBBER,
-					  dd->input_dev[i]->keybit);
-			}
-			input_set_abs_params(dd->input_dev[i],
-					     ABS_MT_POSITION_X, 0,
-					     config_input_msg->x_range, 0, 0);
-			input_set_abs_params(dd->input_dev[i],
-					     ABS_MT_POSITION_Y, 0,
-					     config_input_msg->y_range, 0, 0);
-			input_set_abs_params(dd->input_dev[i],
-					     ABS_MT_PRESSURE, 0, 0xFF, 0, 0);
-			input_set_abs_params(dd->input_dev[i],
+			__set_bit(EV_SYN, dd->input_dev->evbit);
+			__set_bit(EV_ABS, dd->input_dev->evbit);
+			__set_bit(EV_KEY, dd->input_dev->evbit);
+			__set_bit(BTN_TOOL_RUBBER, dd->input_dev->keybit);
+			input_set_abs_params(dd->input_dev, ABS_MT_POSITION_X,
+					     0, config_input_msg->x_range, 0,
+					     0);
+			input_set_abs_params(dd->input_dev, ABS_MT_POSITION_Y,
+					     0, config_input_msg->y_range, 0,
+					     0);
+			input_set_abs_params(dd->input_dev, ABS_MT_PRESSURE,
+					     0, 0xFF, 0, 0);
+			input_set_abs_params(dd->input_dev,
 					     ABS_MT_TRACKING_ID, 0,
 					     MAX_INPUT_EVENTS, 0, 0);
-			input_set_abs_params(dd->input_dev[i],
-					     ABS_MT_TOOL_TYPE, 0, MT_TOOL_MAX,
-					     0, 0);
-
-			ret = input_register_device(dd->input_dev[i]);
+			input_set_abs_params(dd->input_dev, ABS_MT_TOOL_TYPE,
+					     0, MT_TOOL_MAX, 0, 0);
+			ret = input_register_device(dd->input_dev);
 			if (ret < 0) {
-				input_free_device(dd->input_dev[i]);
-				dd->input_dev[i] = NULL;
+				input_free_device(dd->input_dev);
+				dd->input_dev = NULL;
 				ERROR("failed to register input device");
 			}
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HAS_EARLYSUSPEND)
+			dd->early_suspend.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 1;
+			dd->early_suspend.suspend = early_suspend;
+			dd->early_suspend.resume = late_resume;
+			register_early_suspend(&dd->early_suspend);
+#endif
+
 		}
 		return false;
-	case DR_CONFIG_WATCHDOG:
-		config_watchdog_msg = msg;
-		dd->fusion_process = (pid_t)config_watchdog_msg->pid;
-		return false;
 	case DR_DECONFIG:
+		if (dd->input_dev != NULL) {
+			input_unregister_device(dd->input_dev);
+			dd->input_dev = NULL;
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HAS_EARLYSUSPEND)
+			unregister_early_suspend(&dd->early_suspend);
+#endif
+		}
 		if (dd->irq_registered) {
 			free_irq(dd->spi->irq, dd);
 			dd->irq_registered = false;
 		}
 		stop_scan_canned(dd);
-		if (!dd->input_no_deconfig) {
-			for (i = 0; i < INPUT_DEVICES; i++) {
-				if (dd->input_dev[i] == NULL)
-					continue;
-				input_unregister_device(dd->input_dev[i]);
-				dd->input_dev[i] = NULL;
-			}
-		}
-		dd->eraser_active = false;
-		dd->legacy_acceleration = false;
-		dd->service_irq = service_irq;
-		dd->fusion_process = (pid_t)0;
 		return false;
 	case DR_INPUT:
 		input_msg = msg;
 		if (input_msg->events == 0) {
 			if (dd->eraser_active) {
-				input_report_key(
-					dd->input_dev[INPUT_DEVICES - 1],
-					BTN_TOOL_RUBBER, 0);
+				input_report_key(dd->input_dev,
+						 BTN_TOOL_RUBBER, 0);
 				dd->eraser_active = false;
 			}
-			for (i = 0; i < INPUT_DEVICES; i++) {
-				input_mt_sync(dd->input_dev[i]);
-				input_sync(dd->input_dev[i]);
-			}
+			input_mt_sync(dd->input_dev);
+			input_sync(dd->input_dev);
 		} else {
 			for (i = 0; i < input_msg->events; i++) {
 				switch (input_msg->event[i].tool_type) {
 				case DR_INPUT_FINGER:
-					inp = 0;
-					input_report_abs(dd->input_dev[inp],
+					input_report_abs(dd->input_dev,
 							 ABS_MT_TOOL_TYPE,
 							 MT_TOOL_FINGER);
 					break;
 				case DR_INPUT_STYLUS:
-					inp = INPUT_DEVICES - 1;
-					input_report_abs(dd->input_dev[inp],
+					input_report_abs(dd->input_dev,
 							 ABS_MT_TOOL_TYPE,
 							 MT_TOOL_PEN);
 					break;
 				case DR_INPUT_ERASER:
-					inp = INPUT_DEVICES - 1;
-					input_report_key(dd->input_dev[inp],
-						BTN_TOOL_RUBBER, 1);
+					input_report_key(dd->input_dev,
+							 BTN_TOOL_RUBBER, 1);
 					dd->eraser_active = true;
 					break;
 				default:
@@ -979,22 +902,21 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 					      input_msg->event[i].tool_type);
 					break;
 				}
-				input_report_abs(dd->input_dev[inp],
+				input_report_abs(dd->input_dev,
 						 ABS_MT_TRACKING_ID,
 						 input_msg->event[i].id);
-				input_report_abs(dd->input_dev[inp],
+				input_report_abs(dd->input_dev,
 						 ABS_MT_POSITION_X,
 						 input_msg->event[i].x);
-				input_report_abs(dd->input_dev[inp],
+				input_report_abs(dd->input_dev,
 						 ABS_MT_POSITION_Y,
 						 input_msg->event[i].y);
-				input_report_abs(dd->input_dev[inp],
+				input_report_abs(dd->input_dev,
 						 ABS_MT_PRESSURE,
 						 input_msg->event[i].z);
-				input_mt_sync(dd->input_dev[inp]);
+				input_mt_sync(dd->input_dev);
 			}
-			for (i = 0; i < INPUT_DEVICES; i++)
-				input_sync(dd->input_dev[i]);
+			input_sync(dd->input_dev);
 		}
 		return false;
 	case DR_LEGACY_FWDL:
@@ -1003,18 +925,6 @@ nl_process_driver_msg(struct dev_data *dd, u16 msg_id, void *msg)
 			ERROR("firmware download failed (%d)", ret);
 		else
 			INFO("firmware download OK");
-		return false;
-	case DR_LEGACY_ACCELERATION:
-		legacy_acceleration_msg = msg;
-		if (legacy_acceleration_msg->enable) {
-			dd->service_irq = service_irq_legacy_acceleration;
-			start_legacy_acceleration(dd);
-			dd->legacy_acceleration = true;
-		} else {
-			stop_legacy_acceleration(dd);
-			dd->legacy_acceleration = false;
-			dd->service_irq = service_irq;
-		}
 		return false;
 	default:
 		ERROR("unexpected message %d", msg_id);
@@ -1130,105 +1040,10 @@ static irqreturn_t irq_handler(int irq, void *context)
 	return IRQ_HANDLED;
 }
 
-static void service_irq_legacy_acceleration(struct dev_data *dd)
-{
-	struct fu_async_data  *async_data;
-	u16                   len, rx_len = 0, offset = 0;
-	u16                   buf[255], rx_limit = 250 * sizeof(u16);
-	int                   ret = 0, counter = 0;
-
-#if CPU_BOOST
-	pm_qos_update_request_timeout(&dd->cpus_req, 1, 10000);
-	pm_qos_update_request_timeout(&dd->freq_req, dd->boost_freq, 10000);
-#endif
-	async_data = nl_alloc_attr(dd->outgoing_skb->data, FU_ASYNC_DATA,
-				   sizeof(*async_data) + dd->irq_param[4] +
-				   2 * sizeof(u16));
-	if (async_data == NULL) {
-		ERROR("can't add data to async IRQ buffer");
-		return;
-	}
-	async_data->length = dd->irq_param[4] + 2 * sizeof(u16);
-	len = async_data->length;
-	async_data->address = 0;
-
-	while (len > 0) {
-		rx_len = (len > rx_limit) ? rx_limit : len;
-		ret = spi_read_123(dd, 0x0000, (u8 *)&buf,
-					rx_len + 4 * sizeof(u16), false);
-		if (ret < 0)
-			break;
-
-		if (buf[3] == 0xBABE) {
-			dd->legacy_acceleration = false;
-			dd->service_irq = service_irq;
-			nl_msg_init(dd->outgoing_skb->data, dd->nl_family.id,
-				    dd->nl_seq - 1, MC_FUSION);
-			return;
-		}
-
-		if (rx_limit == rx_len)
-			usleep_range(200, 300);
-
-		if (buf[0] == 0x6060) {
-			ERROR("data not ready");
-			start_legacy_acceleration_canned(dd);
-			ret = -EBUSY;
-			break;
-		} else if (buf[0] == 0x8070) {
-			if (buf[1] == dd->irq_param[1] ||
-					buf[1] == dd->irq_param[2])
-				async_data->address = buf[1];
-
-			if (async_data->address +
-					offset / sizeof(u16) != buf[1]) {
-				ERROR("sequence number incorrect");
-				start_legacy_acceleration_canned(dd);
-				ret = -EBUSY;
-				break;
-			}
-		}
-		counter++;
-		memcpy(async_data->data + offset, buf + 4, rx_len);
-		offset += rx_len;
-		len -= rx_len;
-	}
-	async_data->status = *(buf + rx_len / sizeof(u16) + 2);
-
-	if (ret < 0) {
-		ERROR("can't read IRQ buffer (%d)", ret);
-		nl_msg_init(dd->outgoing_skb->data, dd->nl_family.id,
-			    dd->nl_seq - 1, MC_FUSION);
-	} else {
-		(void)skb_put(dd->outgoing_skb,
-			      NL_SIZE(dd->outgoing_skb->data));
-		ret = genlmsg_multicast(dd->outgoing_skb, 0,
-					dd->nl_mc_groups[MC_FUSION].id,
-					GFP_KERNEL);
-		if (ret < 0) {
-			ERROR("can't send IRQ buffer %d", ret);
-			msleep(300);
-			if (++dd->send_fail_count >= 10 &&
-			    dd->fusion_process != (pid_t)0) {
-				(void)kill_pid(
-					find_get_pid(dd->fusion_process),
-					SIGKILL, 1);
-				wake_up_process(dd->thread);
-			}
-		} else {
-			dd->send_fail_count = 0;
-		}
-		ret = nl_msg_new(dd, MC_FUSION);
-		if (ret < 0)
-			ERROR("could not allocate outgoing skb (%d)", ret);
-	}
-}
-
 static void service_irq(struct dev_data *dd)
 {
 	struct fu_async_data  *async_data;
-	u16                   status, clear, test, address[2], xbuf;
-	bool                  read_buf[2] = {true, false};
+	u16                   status, test, address, xbuf;
 	int                   ret, ret2;
 
 #if CPU_BOOST
@@ -1243,91 +1058,39 @@ static void service_irq(struct dev_data *dd)
 		return;
 	}
 
-	if (status & dd->irq_param[10]) {
-		read_buf[0] = false;
-		clear = 0xFFFF;
-	} else if (status & dd->irq_param[9]) {
-		test = status & (dd->irq_param[6] | dd->irq_param[7]);
-
-		if (test == (dd->irq_param[6] | dd->irq_param[7]))
-			xbuf = ((status & dd->irq_param[5]) != 0) ? 0 : 1;
-		else if (test == dd->irq_param[6])
-			xbuf = 0;
-		else if (test == dd->irq_param[7])
-			xbuf = 1;
-		else {
-			ERROR("unexpected IRQ handler case");
-			return;
-		}
-		read_buf[1] = true;
-		address[1] = xbuf ? dd->irq_param[2] : dd->irq_param[1];
-
-		address[0] = dd->irq_param[3];
-		clear = dd->irq_param[6] | dd->irq_param[7] |
-			dd->irq_param[8] | dd->irq_param[9];
-	} else {
-		test = status & (dd->irq_param[6] | dd->irq_param[7]);
-
-		if (test == 0)
-			return;
-		else if (test == (dd->irq_param[6] | dd->irq_param[7]))
-			xbuf = ((status & dd->irq_param[5]) == 0) ? 0 : 1;
-		else if (test == dd->irq_param[6])
-			xbuf = 0;
-		else if (test == dd->irq_param[7])
-			xbuf = 1;
-		else {
-			ERROR("unexpected IRQ handler case");
-			return;
-		}
-
-		address[0] = xbuf ? dd->irq_param[2] : dd->irq_param[1];
-		clear = xbuf ? dd->irq_param[7] : dd->irq_param[6];
-		clear |= dd->irq_param[8];
-	}
-
-	async_data = nl_alloc_attr(dd->outgoing_skb->data, FU_ASYNC_DATA,
-				   sizeof(*async_data) + dd->irq_param[4]);
-	if (async_data == NULL) {
-		ERROR("can't add data to async IRQ buffer 1");
+	test = status & (dd->irq_param[5] | dd->irq_param[6]);
+	if (test == 0)
+		return;
+	else if (test == (dd->irq_param[5] | dd->irq_param[6]))
+		xbuf = ((status & dd->irq_param[4]) == 0) ? 0 : 1;
+	else if (test == dd->irq_param[5])
+		xbuf = 0;
+	else if (test == dd->irq_param[6])
+		xbuf = 1;
+	else {
+		ERROR("unexpected IRQ handler case");
 		return;
 	}
+	address = xbuf ? dd->irq_param[2] : dd->irq_param[1];
+	status = xbuf ? dd->irq_param[6] : dd->irq_param[5];
 
-	async_data->status = status;
-	if (read_buf[0]) {
-		async_data->address = address[0];
-		async_data->length = dd->irq_param[4];
-		ret = dd->chip.read(dd, address[0], async_data->data,
-				    dd->irq_param[4]);
+	async_data = nl_alloc_attr(dd->outgoing_skb->data, FU_ASYNC_DATA,
+				   sizeof(*async_data) + dd->irq_param[3]);
+	if (async_data == NULL) {
+		ERROR("can't add data to async IRQ buffer");
+		return;
 	}
+	async_data->address = address;
+	async_data->length = dd->irq_param[3];
+	ret = dd->chip.read(dd, address, async_data->data, dd->irq_param[3]);
 
-	if (read_buf[1] && ret == 0) {
-		async_data = nl_alloc_attr(dd->outgoing_skb->data,
-					   FU_ASYNC_DATA,
-					   sizeof(*async_data) +
-						dd->irq_param[4]);
-		if (async_data == NULL) {
-			ERROR("can't add data to async IRQ buffer 2");
-			nl_msg_init(dd->outgoing_skb->data, dd->nl_family.id,
-				    dd->nl_seq - 1, MC_FUSION);
-			return;
-		}
-		async_data->address = address[1];
-		async_data->length = dd->irq_param[4];
-		async_data->status = status;
-		ret = dd->chip.read(dd, address[1], async_data->data,
-				    dd->irq_param[4]);
-	}
-
-	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)&clear,
-			     sizeof(clear));
+	ret2 = dd->chip.write(dd, dd->irq_param[0], (u8 *)&status,
+			     sizeof(status));
 	if (ret2 < 0)
 		ERROR("can't clear IRQ status (%d)", ret2);
 
 	if (ret < 0) {
 		ERROR("can't read IRQ buffer (%d)", ret);
-		nl_msg_init(dd->outgoing_skb->data, dd->nl_family.id,
-			    dd->nl_seq - 1, MC_FUSION);
 	} else {
 		(void)skb_put(dd->outgoing_skb,
 			      NL_SIZE(dd->outgoing_skb->data));
@@ -1337,15 +1100,6 @@ static void service_irq(struct dev_data *dd)
 		if (ret < 0) {
 			ERROR("can't send IRQ buffer %d", ret);
 			msleep(300);
-			if (++dd->send_fail_count >= 10 &&
-			    dd->fusion_process != (pid_t)0) {
-				(void)kill_pid(
-					find_get_pid(dd->fusion_process),
-					SIGKILL, 1);
-				wake_up_process(dd->thread);
-			}
-		} else {
-			dd->send_fail_count = 0;
 		}
 		ret = nl_msg_new(dd, MC_FUSION);
 		if (ret < 0)
@@ -1380,16 +1134,6 @@ static int processing_thread(void *arg)
 			}
 
 		/* priority 1: start up fusion process */
-		if (dd->fusion_process != (pid_t)0 && get_pid_task(
-					find_get_pid(dd->fusion_process),
-					PIDTYPE_PID) == NULL) {
-			stop_scan_canned(dd);
-			dd->start_fusion = true;
-			dd->fusion_process = (pid_t)0;
-#if INPUT_ENABLE_DISABLE
-			dd->input_no_deconfig = true;
-#endif
-		}
 		if (dd->start_fusion) {
 			do {
 				ret = call_usermodehelper(argv[0], argv, NULL,
@@ -1449,7 +1193,7 @@ static int processing_thread(void *arg)
 
 		/* priority 3: service interrupt */
 		if (dd->irq_registered && pdata->irq(pdata) == 0)
-			dd->service_irq(dd);
+			service_irq(dd);
 
 		/* nothing more to do; sleep */
 		schedule();
@@ -1508,13 +1252,14 @@ static int probe(struct spi_device *spi)
 	dd->spi = spi;
 	dd->nl_seq = 1;
 	init_completion(&dd->suspend_resume);
-	memset(dd->tx_buf, 0xFF, sizeof(dd->tx_buf));
+	memset(dd->tx_buf, 0xFF, pdata->tx_buf_size);
 	(void)set_chip_access_method(dd, pdata->chip_access_method);
 
 	/* initialize platform */
 	ret = pdata->init(pdata, true);
 	if (ret < 0)
 		goto platform_failure;
+	(void)pdata->power(1);
 
 	/* start processing thread */
 	dd->thread_sched.sched_priority = MAX_USER_RT_PRIO / 2;
@@ -1604,10 +1349,6 @@ static int remove(struct spi_device *spi)
 	struct maxim_sti_pdata  *pdata = spi->dev.platform_data;
 	struct dev_data         *dd = spi_get_drvdata(spi);
 	unsigned long           flags;
-	u8                      i;
-
-	if (dd->fusion_process != (pid_t)0)
-		(void)kill_pid(find_get_pid(dd->fusion_process), SIGKILL, 1);
 
 	/* BEWARE: tear-down sequence below is carefully staged:            */
 	/* 1) first the feeder of Netlink messages to the processing thread */
@@ -1624,9 +1365,12 @@ static int remove(struct spi_device *spi)
 	kfree_skb(dd->outgoing_skb);
 	skb_queue_purge(&dd->incoming_skb_queue);
 
-	for (i = 0; i < INPUT_DEVICES; i++)
-		if (dd->input_dev[i])
-			input_unregister_device(dd->input_dev[i]);
+	if (dd->input_dev) {
+		input_unregister_device(dd->input_dev);
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HAS_EARLYSUSPEND)
+		unregister_early_suspend(&dd->early_suspend);
+#endif
+	}
 
 	if (dd->irq_registered)
 		free_irq(dd->spi->irq, dd);
@@ -1647,6 +1391,7 @@ static int remove(struct spi_device *spi)
 	kfree(dd);
 
 	pdata->init(pdata, false);
+	(void)pdata->power(0);
 	INFO("driver unloaded");
 	return 0;
 }
