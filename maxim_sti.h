@@ -26,8 +26,8 @@
 #include "genetlink.h"
 #endif
 
-#define DRIVER_VERSION  "1.4.1"
-#define DRIVER_RELEASE  "August 14, 2013"
+#define DRIVER_VERSION  "1.1.0"
+#define DRIVER_RELEASE  "May 2, 2013"
 
 /****************************************************************************\
 * Netlink: common kernel/user space macros                                   *
@@ -150,11 +150,9 @@ enum {
 	DR_CHIP_ACCESS_METHOD,
 	DR_CONFIG_IRQ,
 	DR_CONFIG_INPUT,
-	DR_CONFIG_WATCHDOG,
 	DR_DECONFIG,
 	DR_INPUT,
 	DR_LEGACY_FWDL,
-	DR_LEGACY_ACCELERATION,
 };
 
 struct __attribute__ ((__packed__)) dr_add_mc_group {
@@ -202,10 +200,6 @@ struct __attribute__ ((__packed__)) dr_config_input {
 	__u16  y_range;
 };
 
-struct __attribute__ ((__packed__)) dr_config_watchdog {
-	__u32  pid;
-};
-
 struct __attribute__ ((__packed__)) dr_input_event {
 	__u8   id;
 	__u8   tool_type;
@@ -218,10 +212,6 @@ struct __attribute__ ((__packed__)) dr_input_event {
 struct __attribute__ ((__packed__)) dr_input {
 	struct dr_input_event  event[MAX_INPUT_EVENTS];
 	__u8                   events;
-};
-
-struct __attribute__ ((__packed__)) dr_legacy_acceleration {
-	__u8  enable;
 };
 
 enum {
@@ -250,7 +240,6 @@ struct __attribute__ ((__packed__)) fu_irqline_status {
 struct __attribute__ ((__packed__)) fu_async_data {
 	__u16  address;
 	__u16  length;
-	__u16  status;
 	__u8   data[0];
 };
 
@@ -275,6 +264,7 @@ struct maxim_sti_pdata {
 	int       (*init)(struct maxim_sti_pdata *pdata, bool init);
 	void      (*reset)(struct maxim_sti_pdata *pdata, int value);
 	int       (*irq)(struct maxim_sti_pdata *pdata);
+	int       (*power)(int on);
 };
 #endif
 
