@@ -2,8 +2,8 @@
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
  *
- * Driver Version: 3.1.7
- * Release Date: May 9, 2013
+ * Driver Version: 3.1.8
+ * Release Date: May 10, 2013
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -158,10 +158,16 @@ static int cmd_send(struct data *ts, u16 *buf, u16 len);
 static int rbcmd_send_receive(struct data *ts, u16 *buf,
 		u16 len, u16 report_id, u16 timeout);
 
+#ifdef MAX1187X_PRESSURE_SHAPING
+static u16 max1187x_sqrt(u32 num);
+#endif
+
 #if MAX1187X_TOUCH_REPORT_MODE == 2
 #ifndef MAX1187X_REPORT_FAST_CALCULATION
 static u16 binary_search(const u16 *array, u16 len, u16 val);
+#ifndef MAX1187X_PRESSURE_SHAPING
 static u16 max1187x_sqrt(u32 num);
+#endif
 static s16 max1187x_orientation(s16 x, s16 y);
 #endif
 #endif
@@ -223,10 +229,9 @@ static int i2c_rx_words(struct data *ts, u16 *buf, u16 len)
 
 	len = ret/2;
 
-#ifdef __BIG_ENDIAN
 	for (i = 0; i < len; i++)
-		buf[i] = (buf[i] << 8) | (buf[i] >> 8);
-#endif
+		buf[i] = cpu_to_le16(buf[i]);
+
 	if (debugmask_if(1)) {
 		pr_info("I2C RX (%d):", len);
 		written = 0;
@@ -284,10 +289,9 @@ static int i2c_tx_words(struct data *ts, u16 *buf, u16 len)
 	int i, ret, written;
 	char debug_string[DEBUG_STRING_LEN_MAX];
 
-#ifdef __BIG_ENDIAN
 	for (i = 0; i < len; i++)
-		buf[i] = (buf[i] << 8) | (buf[i] >> 8);
-#endif
+		buf[i] = cpu_to_le16(buf[i]);
+
 	do {
 		ret = i2c_master_send(ts->client,
 			(char *) buf, (int) (len * 2));
@@ -480,8 +484,9 @@ static void max1187x_wfxn_cmd(struct work_struct *work)
 }
 
 /* Integer math operations */
-#if MAX1187X_TOUCH_REPORT_MODE == 2
-#ifndef MAX1187X_REPORT_FAST_CALCULATION
+#if defined(MAX1187X_PRESSURE_SHAPING) || \
+	(MAX1187X_TOUCH_REPORT_MODE == 2 && \
+		!defined(MAX1187X_REPORT_FAST_CALCULATION))
 u16 max1187x_sqrt(u32 num)
 {
 	u16 mask = 0x8000;
@@ -506,6 +511,10 @@ u16 max1187x_sqrt(u32 num)
 
 	return guess;
 }
+#endif
+
+#if MAX1187X_TOUCH_REPORT_MODE == 2
+#ifndef MAX1187X_REPORT_FAST_CALCULATION
 /* Returns index of element in array closest to val */
 static u16 binary_search(const u16 *array, u16 len, u16 val)
 {
@@ -607,7 +616,8 @@ u32 time_difference(u32 time_later, u32 time_earlier)
 static void process_report(struct data *ts, u16 *buf)
 {
 	u32 i, j;
-	u16 x, y, swap_u16, curr_finger_ids, tool_type;
+	u16 x, y, z, swap_u16, curr_finger_ids, tool_type;
+
 #if MAX1187X_TOUCH_REPORT_MODE == 2
 	u32 area;
 	s16 swap_s16;
@@ -628,7 +638,7 @@ static void process_report(struct data *ts, u16 *buf)
 	if (device_may_wakeup(&ts->client->dev) && ts->is_suspended == 1) {
 		pr_info_if(4, "Received gesture: (0x%04X)\n", buf[3]);
 		if (header->report_id == MAX1187X_REPORT_POWER_MODE
-				&& buf[3] == 0x0006) {
+				&& buf[3] == 0x0102) {
 			pr_info_if(4, "Received touch wakeup report\n");
 			input_report_key(ts->input_dev_key,	KEY_POWER, 1);
 			input_sync(ts->input_dev_key);
@@ -651,22 +661,26 @@ static void process_report(struct data *ts, u16 *buf)
 	ts->framecounter = header->framecounter;
 
 	if (header->button0 != ts->button0) {
-		input_report_key(ts->input_dev, PDATA(button_code0), header->button0);
+		input_report_key(ts->input_dev, PDATA(button_code0),
+				header->button0);
 		input_sync(ts->input_dev);
 		ts->button0 = header->button0;
 	}
 	if (header->button1 != ts->button1) {
-		input_report_key(ts->input_dev, PDATA(button_code1), header->button1);
+		input_report_key(ts->input_dev, PDATA(button_code1),
+				header->button1);
 		input_sync(ts->input_dev);
 		ts->button1 = header->button1;
 	}
 	if (header->button2 != ts->button2) {
-		input_report_key(ts->input_dev, PDATA(button_code2), header->button2);
+		input_report_key(ts->input_dev, PDATA(button_code2),
+				header->button2);
 		input_sync(ts->input_dev);
 		ts->button2 = header->button2;
 	}
 	if (header->button3 != ts->button3) {
-		input_report_key(ts->input_dev, PDATA(button_code3), header->button3);
+		input_report_key(ts->input_dev, PDATA(button_code3),
+				header->button3);
 		input_sync(ts->input_dev);
 		ts->button3 = header->button3;
 	}
@@ -699,6 +713,7 @@ static void process_report(struct data *ts, u16 *buf)
 		for (i = 0; i < header->touch_count; i++) {
 			x = reportb->x;
 			y = reportb->y;
+			z = reportb->z;
 			if (PDATA(coordinate_settings) & MAX1187X_SWAP_XY) {
 				swap_u16 = x;
 				x = y;
@@ -712,8 +727,6 @@ static void process_report(struct data *ts, u16 *buf)
 				y = PDATA(panel_margin_yl) + PDATA(lcd_y)
 					+ PDATA(panel_margin_yh) - 1 - y;
 			}
-			if (reportb->z == 0)
-				reportb->z++;
 
 			tool_type = reportb->tool_type;
 			if (tool_type == 1)
@@ -721,10 +734,6 @@ static void process_report(struct data *ts, u16 *buf)
 			else
 				tool_type = MT_TOOL_FINGER;
 
-			pr_info_if(4, "(TOUCH): (%u) Finger %u: "\
-				"X(%d) Y(%d) Z(%d) TT(%d)",
-				header->framecounter, reportb->finger_id,
-				x, y, reportb->z, tool_type);
 			curr_finger_ids |= (1<<reportb->finger_id);
 #ifdef MAX1187X_PROTOCOL_A
 			input_report_abs(ts->input_dev,
@@ -738,8 +747,19 @@ static void process_report(struct data *ts, u16 *buf)
 #endif
 			input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x);
 			input_report_abs(ts->input_dev,	ABS_MT_POSITION_Y, y);
+#ifdef MAX1187X_PRESSURE_SHAPING
+			z = (PRESSURE_MAX_SQRT >> 2) + max1187x_sqrt(z);
+			if (z > PRESSURE_MAX_SQRT)
+				z = PRESSURE_MAX_SQRT;
+#endif
 			input_report_abs(ts->input_dev,
-					ABS_MT_PRESSURE, reportb->z);
+					ABS_MT_PRESSURE, z);
+
+			pr_info_if(4, "(TOUCH): (%u) Finger %u: "\
+				"X(%d) Y(%d) Z(%d) TT(%d)",
+				header->framecounter, reportb->finger_id,
+				x, y, z, tool_type);
+
 			if (header->report_id
 				== MAX1187X_REPORT_TOUCH_EXTENDED) {
 #if MAX1187X_TOUCH_REPORT_MODE == 2
@@ -1081,7 +1101,7 @@ err_fw_ver_show:
 static ssize_t driver_ver_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "3.1.7: May 9, 2013\n");
+	return snprintf(buf, PAGE_SIZE, "3.1.8: May 10, 2013\n");
 }
 
 static ssize_t debug_show(struct device *dev, struct device_attribute *attr,
@@ -1869,7 +1889,12 @@ static int device_init(struct i2c_client *client)
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y,
 			PDATA(panel_margin_yl),
 			PDATA(panel_margin_yl) + PDATA(lcd_y), 0, 0);
-	input_set_abs_params(ts->input_dev, ABS_MT_PRESSURE, 0, 0xFF, 0, 0);
+#ifndef MAX1187X_PRESSURE_SHAPING
+	input_set_abs_params(ts->input_dev, ABS_MT_PRESSURE, 0, 0xFFFF, 0, 0);
+#else
+	input_set_abs_params(ts->input_dev, ABS_MT_PRESSURE,
+			0, PRESSURE_MAX_SQRT, 0, 0);
+#endif
 	input_set_abs_params(ts->input_dev, ABS_MT_TOOL_TYPE,
 			0, MT_TOOL_MAX, 0, 0);
 #if MAX1187X_TOUCH_REPORT_MODE == 2
@@ -1968,6 +1993,7 @@ static int device_init(struct i2c_client *client)
 #ifdef TOUCH_WAKEUP_FEATURE
 	pr_info("Touch Wakeup Feature enabled\n");
 	device_init_wakeup(&client->dev, 1);
+	device_wakeup_disable(&client->dev);
 #endif
 
 	pr_info("(INIT): Done\n");
@@ -1995,11 +2021,13 @@ err_device_init:
 static int device_deinit(struct i2c_client *client)
 {
 	struct data *ts = i2c_get_clientdata(client);
-	struct max1187x_pdata *pdata = ts->pdata;
+	struct max1187x_pdata *pdata;
 	struct device_attribute **dev_attr = dev_attrs;
 
 	if (ts == NULL)
 		return 0;
+
+	pdata = ts->pdata;
 
 	propagate_report(ts, -1, NULL);
 
@@ -2721,4 +2749,4 @@ module_exit(max1187x_exit);
 MODULE_AUTHOR("Maxim Integrated Products, Inc.");
 MODULE_DESCRIPTION("MAX1187X Touchscreen Driver");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("3.1.7");
+MODULE_VERSION("3.1.8");

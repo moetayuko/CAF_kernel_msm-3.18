@@ -2,8 +2,8 @@
  *
  * Copyright (c)2012 Maxim Integrated Products, Inc.
  *
- * Driver Version: 3.1.4
- * Release Date: Mar 27, 2013
+ * Driver Version: 3.1.8
+ * Release Date: May 10, 2013
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,15 +36,18 @@
 #define MAX1187X_REPORT_TOUCH_RAW       0x0800
 #define MAX1187X_REPORT_TOUCH_BASIC     0x0801
 #define MAX1187X_REPORT_TOUCH_EXTENDED  0x0802
-#define MAX1187X_REPORT_POWER_MODE	0x0121
+#define MAX1187X_REPORT_POWER_MODE		0x0121
 /* #define MAX1187X_PROTOCOL_A */
 #define MAX1187X_TOUCH_REPORT_MODE 1 /* 1=basic, 2=extended */
 #define MAX1187X_REPORT_FAST_CALCULATION
-#define MAX_REPORT_READERS	5
+#define PRESSURE_MAX                    32768
+#define PRESSURE_MAX_SQRT               181
+/* #define MAX1187X_PRESSURE_SHAPING */
+#define MAX_REPORT_READERS              5
 #define FW_DOWNLOAD_FEATURE
 /* #define TOUCH_WAKEUP_FEATURE */
-#define DEBUG_STRING_LEN_MAX 60
-#define MAX_FW_RETRIES 5
+#define DEBUG_STRING_LEN_MAX            60
+#define MAX_FW_RETRIES                  5
 
 #ifndef MAX1187X_REPORT_FAST_CALCULATION
 #define MAX1187X_PI 205887 /* pi multiplied by 2^16 */
@@ -82,8 +85,7 @@ struct max1187x_touch_report_basic {
 	u16 reserved2:4;
 	u16 y:12;
 	u16 reserved3:4;
-	u16 reserved4:8;
-	u16 z:8;
+	u16 z;
 };
 
 struct max1187x_touch_report_extended {
@@ -95,8 +97,7 @@ struct max1187x_touch_report_extended {
 	u16 reserved2:4;
 	u16 y:12;
 	u16 reserved3:4;
-	u16 reserved4:8;
-	u16 z:8;
+	u16 z;
 	s16 xspeed;
 	s16 yspeed;
 	s8 xpixel;
