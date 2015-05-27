@@ -1,0 +1,46 @@
+/* board.dts
+ *
+ * Copyright (c)2013 Maxim Integrated Products, Inc.
+ *
+ * Driver Version: 3.0.7
+ * Release Date: Jan 22, 2013
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+	i2c@0 {
+		touchscreen@48 {
+			compatible = "maxim,max1187x_tsc";
+			reg = <0x48>;
+			interrupts = <61 0>;
+			gpio_tirq = <61>;
+			num_fw_mappings = <2>;
+			config_id = <0x0CFD 0x0CFD>;
+			chip_id = <0x72 0x74>;
+			filename = "max11876.bin", "max11876.bin";
+			filesize = <0xC000 0xC000>;
+			file_codesize = <0xC000 0xC000>;
+			defaults_allow = <1>;
+			default_chip_config = <0x0CFD>;
+			default_chip_id = <0x74>;
+			i2c_words = <128>;
+			coordinate_settings = <0x2>;
+			panel_margin_xl = <0>;
+			lcd_x = <4000>;
+			panel_margin_xh = <0>;
+			panel_margin_yl = <0>;
+			lcd_y = <2800>;
+			panel_margin_yh = <0>;
+			num_rows = <32>;
+			num_cols = <18>;
+		};
+
+	};
+
