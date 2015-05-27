@@ -2,8 +2,8 @@
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
  *
- * Driver Version: 3.0.7
- * Release Date: Jan 22, 2013
+ * Driver Version: 3.1.7
+ * Release Date: May 9, 2013
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,7 +27,7 @@ struct max1187x_pdata max1187x_platdata = {
 		.fw_mapping[0] = {.config_id = 0x0CFD, .chip_id = 0x72, .filename = "max11876.bin", .filesize = 0xC000, .file_codesize = 0xC000},
 		.fw_mapping[1] = {.config_id = 0x0CFD, .chip_id = 0x74, .filename = "max11876.bin", .filesize = 0xC000, .file_codesize = 0xC000},
 		.defaults_allow = 1,
-		.default_chip_config = 0x0CFD,
+		.default_config_id = 0x0CFD,
 		.default_chip_id = 0x74,
 		//.i2c_words = MAX_WORDS_REPORT,
 		.i2c_words = 128,
@@ -39,8 +39,12 @@ struct max1187x_pdata max1187x_platdata = {
 		.panel_margin_yl = 0,
 		.lcd_y = 700,
 		.panel_margin_yh = 0,
-		.num_rows = 32,
-		.num_cols = 18
+		.num_sensor_x = 32,
+		.num_sensor_y = 18,
+		.button_code0 = KEY_HOME,
+		.button_code1 = KEY_MENU,
+		.button_code2 = KEY_BACK,
+		.button_code3 = KEY_RESERVED,
 };
 
 static struct i2c_board_info __initdata panda_i2c4_boardinfo[] = {
