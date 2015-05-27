@@ -19,11 +19,8 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef CONFIG_USE_EARLYSUSPEND
 #include <linux/earlysuspend.h>
-#elif defined CONFIG_FB
-#include <linux/notifier.h>
-#include <linux/fb.h>
 #endif
 
 #include <linux/i2c.h>
@@ -40,8 +37,22 @@
 #include <linux/of.h>
 #include <linux/jiffies.h>
 #include <asm/byteorder.h>
-#include <linux/input/max1187x.h>
-#include <linux/input/max1187x_config.h>
+#include "max1187x.h"
+#include "max1187x_config.h"
+#include "tpd.h"
+#include "cust_gpio_usage.h" 
+#include "cust_eint.h" 
+
+#ifdef CONFIG_OF_TOUCH
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#endif
+
+#define GTP_SUPPORT_I2C_DMA 1
+
+#if GTP_SUPPORT_I2C_DMA
+#include <linux/dma-mapping.h>
+#endif
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -61,8 +72,32 @@
 #define PDATA(a)      (ts->pdata->a)
 
 static u16 debug_mask;
+
 #ifdef MAX1187X_LOCAL_PDATA
-struct max1187x_pdata local_pdata = { };
+struct max1187x_pdata local_pdata = {
+	.gpio_tirq	= 0,
+	.num_fw_mappings = 1,
+	.fw_mapping[0] = {.config_id = 0x6701, .chip_id = 0x78, .filename = "max11876.bin", .filesize = 0xC000, .file_codesize = 0xC000},
+	.defaults_allow = 1,
+	.default_config_id = 0x6701,
+	.default_chip_id = 0x78,
+	//.i2c_words = MAX_WORDS_REPORT,
+	.i2c_words = 128,
+	//.coordinate_settings = MAX1187X_REVERSE_Y | MAX1187X_SWAP_XY,
+	.coordinate_settings = 0,
+	.panel_margin_xl = 0,
+	.lcd_x = 1300,
+	.panel_margin_xh = 0,
+	.panel_margin_yl = 0,
+	.lcd_y = 700,
+	.panel_margin_yh = 0,
+	.num_sensor_x = 32,
+	.num_sensor_y = 18,
+	.button_code0 = 0,
+	.button_code1 = 0,
+	.button_code2 = 0,
+	.button_code3 = 0,
+};
 #endif
 
 struct report_reader {
@@ -77,14 +112,14 @@ struct data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
 	char phys[32];
+	
 #ifdef TOUCH_WAKEUP_FEATURE
 	struct input_dev *input_dev_key;
 	char phys_key[32];
 #endif
-#ifdef CONFIG_HAS_EARLYSUSPEND
+
+#ifdef CONFIG_USE_EARLYSUSPEND
 	struct early_suspend early_suspend;
-#elif defined CONFIG_FB
-	struct notifier_block fb_notif;
 #endif
 
 	u8 is_suspended;
@@ -132,12 +167,42 @@ struct data {
 	u16 button3:1;
 };
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+/************************++MTK add++*************************/
+extern struct tpd_device *tpd;
+static st_tpd_info tpd_info = {0};
+
+#ifdef TPD_HAVE_BUTTON
+static int tpd_keys_local[TPD_KEY_COUNT] = TPD_KEYS;
+static int tpd_keys_dim_local[TPD_KEY_COUNT][4] = TPD_KEYS_DIM;
+#endif
+
+static const struct i2c_device_id tpd_i2c_id[] = {{MAX1187X_NAME, 0}, {}};
+static struct i2c_board_info __initdata i2c_tpd = { I2C_BOARD_INFO(MAX1187X_NAME, 0x48)};
+
+static bool check_flag = false;
+
+static struct data *ts = NULL;//we need this function to be used in MTK's EINT call back funciotn, so we change it from a tample data to a static data
+
+#if GTP_SUPPORT_I2C_DMA
+#define GTP_DMA_MAX_TRANSACTION_LENGTH 255
+#define GTP_DMA_MAX_I2C_TRANSFER_SIZE 255
+
+static u8 *gpDMABuf_va = NULL;
+static dma_addr_t *gpDMABuf_pa = 0;
+#endif
+
+#define MAX_TRANSACTION_LENGTH 8
+#define I2C_MASTER_CLOCK 100
+#define GTP_ADDR_LENGTH 2
+#define MAX_I2C_TRANSFER_SIZE 6
+/************************--MTK add--*************************/
+
+
+
+
+#ifdef CONFIG_USE_EARLYSUSPEND
 static void early_suspend(struct early_suspend *h);
 static void late_resume(struct early_suspend *h);
-#elif defined CONFIG_FB
-static int fb_notifier_callback(struct notifier_block *self,
-				unsigned long event, void *data);
 #endif
 
 static int device_init(struct i2c_client *client);
@@ -168,17 +233,327 @@ static s16 max1187x_orientation(s16 x, s16 y);
 
 static u8 init_state;
 
+
+#if GTP_SUPPORT_I2C_DMA
+s32 i2c_dma_read(struct i2c_client *client, u16 addr, u8 *rxbuf, s32 len)
+{
+    int ret;
+    s32 retry = 0;
+    u8 buffer[2];
+ 
+    struct i2c_msg msg[2] =
+    {
+        {
+            .addr = (client->addr & I2C_MASK_FLAG),
+            .flags = 0,
+            .buf = buffer,
+            .len = 2,
+            .timing = I2C_MASTER_CLOCK
+        },
+        {
+            .addr = (client->addr & I2C_MASK_FLAG),
+            .ext_flag = (client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG),
+            .flags = I2C_M_RD,
+            .buf = gpDMABuf_pa,     
+            .len = len,
+            .timing = I2C_MASTER_CLOCK
+        },
+    };
+	
+	mutex_lock(&ts->i2c_mutex);    
+    buffer[1] = (addr >> 8) & 0xFF;
+    buffer[0] = addr & 0xFF;
+
+    if (rxbuf == NULL){
+		mutex_unlock(&ts->i2c_mutex); 
+        return -1;
+    	}
+    //GTP_DEBUG("dma i2c read: 0x%04X, %d bytes(s)", addr, len);
+    for (retry = 0; retry < 5; ++retry)
+    {
+        ret = i2c_transfer(client->adapter, &msg[0], 2);
+        if (ret < 0)
+        {
+            continue;
+        }
+        memcpy(rxbuf, gpDMABuf_va, len);
+		mutex_unlock(&ts->i2c_mutex);
+        return 0;
+    }
+    TPD_DMESG("Dma I2C Read Error: 0x%04X, %d byte(s), err-code: %d", addr, len, ret);
+	mutex_unlock(&ts->i2c_mutex);
+    return ret;
+}
+
+
+s32 i2c_dma_write(struct i2c_client *client, u16 addr, u8 *txbuf, s32 len)
+{
+    int ret;
+    s32 retry = 0;
+    u8 *wr_buf = gpDMABuf_va;
+ 
+    struct i2c_msg msg =
+    {
+        .addr = (client->addr & I2C_MASK_FLAG),
+        .ext_flag = (client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG),
+        .flags = 0,
+        .buf = gpDMABuf_pa,
+        .len = 2 + len,
+        .timing = I2C_MASTER_CLOCK
+    };
+	
+    mutex_lock(&ts->i2c_mutex);    
+    wr_buf[1] = (u8)((addr >> 8) & 0xFF);
+    wr_buf[0] = (u8)(addr & 0xFF);
+
+    if (txbuf == NULL){
+			mutex_unlock(&ts->i2c_mutex); 
+			return -1;
+    	}
+    //GTP_DEBUG("dma i2c write: 0x%04X, %d bytes(s)", addr, len);
+    memcpy(wr_buf+2, txbuf, len);
+    for (retry = 0; retry < 5; ++retry)
+    {
+        ret = i2c_transfer(client->adapter, &msg, 1);
+        if (ret < 0)
+        {
+            continue;
+        }
+		mutex_unlock(&ts->i2c_mutex); 
+        return 0;
+    }
+    TPD_DMESG("Dma I2C Write Error: 0x%04X, %d byte(s), err-code: %d", addr, len, ret);
+	mutex_unlock(&ts->i2c_mutex); 
+    return ret;
+}
+
+s32 i2c_read_bytes_dma(struct i2c_client *client, u16 addr, u8 *rxbuf, s32 len)
+{
+    s32 left = len;
+    s32 read_len = 0;
+    u8 *rd_buf = rxbuf;
+    s32 ret = 0;
+	
+    //mutex_lock(&tp_wr_access);    
+    //GTP_DEBUG("Read bytes dma: 0x%04X, %d byte(s)", addr, len);
+    while (left > 0)
+    {
+        if (left > GTP_DMA_MAX_TRANSACTION_LENGTH)
+        {
+            read_len = GTP_DMA_MAX_TRANSACTION_LENGTH;
+        }
+        else
+        {
+            read_len = left;
+        }
+        ret = i2c_dma_read(client, addr, rd_buf, read_len);
+        if (ret < 0)
+        {
+            TPD_DMESG("dma read failed");
+			//mutex_unlock(&tp_wr_access);
+            return -1;
+        }
+        
+        left -= read_len;
+        addr += read_len/2;
+        rd_buf += read_len;
+    }
+    //mutex_unlock(&tp_wr_access);
+    return 0;
+}
+
+s32 i2c_write_bytes_dma(struct i2c_client *client, u16 addr, u8 *txbuf, s32 len)
+{
+
+    s32 ret = 0;
+    s32 write_len = 0;
+    s32 left = len;
+    u8 *wr_buf = txbuf;
+    //mutex_lock(&tp_wr_access);      
+    //GTP_DEBUG("Write bytes dma: 0x%04X, %d byte(s)", addr, len);
+    while (left > 0)
+    {
+        if (left > GTP_DMA_MAX_I2C_TRANSFER_SIZE)
+        {
+            write_len = GTP_DMA_MAX_I2C_TRANSFER_SIZE;
+        }
+        else
+        {
+            write_len = left;
+        }
+        ret = i2c_dma_write(client, addr, wr_buf, write_len);
+        
+        if (ret < 0)
+        {
+            TPD_DMESG("dma i2c write failed!");
+		    //mutex_unlock(&tp_wr_access);  
+            return -1;
+        }
+        
+        left -= write_len;
+        addr += write_len/2;
+        wr_buf += write_len;
+    }
+    //mutex_unlock(&tp_wr_access);  
+    return 0;
+}
+#endif
+
+
 /* I2C communication */
+
+static int i2c_write_bytes_non_dma(struct i2c_client *client, u16 addr, u8 *txbuf, int len)
+{
+    u8 buffer[MAX_TRANSACTION_LENGTH];
+    u16 left = len;
+    u16 offset = 0;
+    u8 retry = 0;
+
+    struct i2c_msg msg =
+    {
+        .addr = ((client->addr &I2C_MASK_FLAG) | (I2C_ENEXT_FLAG)),
+        //.addr = ((client->addr &I2C_MASK_FLAG) | (I2C_PUSHPULL_FLAG)),
+        .flags = 0,
+        .buf = buffer,
+        .timing = I2C_MASTER_CLOCK,
+    };
+
+
+    if (txbuf == NULL)
+        return -1;
+
+    TPD_DMESG("i2c_write_bytes to device %02X address %04X len %d\n", client->addr, addr, len);
+
+	mutex_lock(&ts->i2c_mutex);
+    while (left > 0)
+    {
+        retry = 0;
+
+        buffer[1] = ((addr + offset/2) >> 8) & 0xFF;
+        buffer[0] = (addr + offset/2) & 0xFF;
+
+        if (left > MAX_I2C_TRANSFER_SIZE)
+        {
+            memcpy(&buffer[GTP_ADDR_LENGTH], &txbuf[offset], MAX_I2C_TRANSFER_SIZE);
+            msg.len = MAX_TRANSACTION_LENGTH;
+            left -= MAX_I2C_TRANSFER_SIZE;
+            offset += MAX_I2C_TRANSFER_SIZE;
+        }
+        else
+        {
+            memcpy(&buffer[GTP_ADDR_LENGTH], &txbuf[offset], left);
+            msg.len = left + GTP_ADDR_LENGTH;
+            left = 0;
+        }
+
+        //GTP_DEBUG("byte left %d offset %d\n", left, offset);
+
+        while (i2c_transfer(client->adapter, &msg, 1) != 1)
+        {
+            retry++;
+
+            if (retry == 5)
+            {
+                TPD_DMESG("I2C write 0x%X%X length=%d failed\n", buffer[0], buffer[1], len);
+				mutex_unlock(&ts->i2c_mutex);
+                return -1;
+            }
+        }
+    }
+	mutex_unlock(&ts->i2c_mutex);
+
+    return 0;
+}
+
+static int i2c_read_bytes_non_dma(struct i2c_client *client, u16 addr, u8 *rxbuf, int len)
+{
+    u8 buffer[GTP_ADDR_LENGTH];
+    u8 retry;
+    u16 left = len;
+    u16 offset = 0;
+
+
+    struct i2c_msg msg[2] =
+    {
+        {
+            .addr = ((client->addr &I2C_MASK_FLAG) | (I2C_ENEXT_FLAG)),
+            //.addr = ((client->addr &I2C_MASK_FLAG) | (I2C_PUSHPULL_FLAG)),
+            .flags = 0,
+            .buf = buffer,
+            .len = 2,
+            .timing = I2C_MASTER_CLOCK
+        },
+        {
+            .addr = ((client->addr &I2C_MASK_FLAG) | (I2C_ENEXT_FLAG)),
+            //.addr = ((client->addr &I2C_MASK_FLAG) | (I2C_PUSHPULL_FLAG)),
+            .flags = I2C_M_RD,
+            .timing = I2C_MASTER_CLOCK
+        },
+    };
+
+    if (rxbuf == NULL)
+        return -1;
+
+    TPD_DMESG("i2c_read_bytes to device %02X address %04X len %d\n", client->addr, addr, len);
+
+	mutex_lock(&ts->i2c_mutex);
+
+    while (left > 0)
+    {
+        buffer[1] = ((addr + offset/2) >> 8) & 0xFF;
+        buffer[0] = (addr + offset/2) & 0xFF;
+
+        msg[1].buf = &rxbuf[offset];
+
+        if (left > MAX_TRANSACTION_LENGTH)
+        {
+            msg[1].len = MAX_TRANSACTION_LENGTH;
+            left -= MAX_TRANSACTION_LENGTH;
+            offset += MAX_TRANSACTION_LENGTH;
+        }
+        else
+        {
+            msg[1].len = left;
+            left = 0;
+        }
+
+        retry = 0;
+		
+        while (i2c_transfer(client->adapter, &msg[0], 2) != 2)
+        {
+            retry++;
+
+            if (retry == 5)
+            {
+                TPD_DMESG("I2C read 0x%X length=%d failed\n", addr + offset, len);
+				mutex_unlock(&ts->i2c_mutex);
+                return -1;
+            }
+        }
+    }
+	mutex_unlock(&ts->i2c_mutex);
+
+    return 0;
+}
+
 /* debug_mask |= 0x1 for I2C RX communication */
 static int i2c_rx_bytes(struct data *ts, u8 *buf, u16 len)
 {
 	int i, ret, written;
 	char debug_string[DEBUG_STRING_LEN_MAX];
+
+	u16 command_address = 0;
+	command_address = (buf[0])|((buf[1]) << 8);
+	
 	do {
-		ret = i2c_master_recv(ts->client, (char *) buf, (int) len);
+		#if GTP_SUPPORT_I2C_DMA
+		ret = i2c_read_bytes_dma(ts->client, command_address, (char *) buf, (int) len);
+		#else
+		ret = i2c_read_bytes_non_dma(ts->client, command_address, (char *) buf, (int) len);
+		#endif
 	} while (ret == -EAGAIN);
 	if (ret < 0) {
-		pr_err("I2C RX fail (%d)", ret);
+		TPD_DMESG("I2C RX fail (%d)", ret);
 		return ret;
 	}
 
@@ -206,18 +581,27 @@ static int i2c_rx_words(struct data *ts, u16 *buf, u16 len)
 {
 	int i, ret, written;
 	char debug_string[DEBUG_STRING_LEN_MAX];
+	
+	u16 command_address = 0;
+
+	command_address = buf[0];
 
 	do {
-		ret = i2c_master_recv(ts->client,
+	#if GTP_SUPPORT_I2C_DMA
+		ret = i2c_read_bytes_dma(ts->client, command_address,
+			(char *) buf, (int) (len * 2));	
+	#else
+		ret = i2c_read_bytes_non_dma(ts->client, command_address,
 			(char *) buf, (int) (len * 2));
+	#endif		
 	} while (ret == -EAGAIN);
 	if (ret < 0) {
-		pr_err("I2C RX fail (%d)", ret);
+		TPD_DMESG("I2C RX fail (%d)\n", ret);
 		return ret;
 	}
 
 	if ((ret % 2) != 0) {
-		pr_err("I2C words RX fail: odd number of bytes (%d)", ret);
+		TPD_DMESG("I2C words RX fail: odd number of bytes (%d)\n", ret);
 		return -EIO;
 	}
 
@@ -250,12 +634,22 @@ static int i2c_tx_bytes(struct data *ts, u8 *buf, u16 len)
 {
 	int i, ret, written;
 	char debug_string[DEBUG_STRING_LEN_MAX];
+	
+	u8 *command_buffer = NULL;
+	u16 command_address = 0;
+
+	command_address = (buf[0])|((buf[1]) << 8);
+	command_buffer = &buf[2];
 
 	do {
-		ret = i2c_master_send(ts->client, (char *) buf, (int) len);
+		#if GTP_SUPPORT_I2C_DMA
+		ret = i2c_write_bytes_dma(ts->client, command_address, (char *) command_buffer, (int) len);
+		#else
+		ret = i2c_write_bytes_non_dma(ts->client, command_address, (char *) command_buffer, (int) len);
+		#endif
 	} while (ret == -EAGAIN);
 	if (ret < 0) {
-		pr_err("I2C TX fail (%d)", ret);
+		TPD_DMESG("I2C TX fail (%d)\n", ret);
 		return ret;
 	}
 
@@ -283,21 +677,32 @@ static int i2c_tx_words(struct data *ts, u16 *buf, u16 len)
 {
 	int i, ret, written;
 	char debug_string[DEBUG_STRING_LEN_MAX];
+	
+	u8 *command_buffer = NULL;
+	u16 command_address = 0;
 
+	command_address = buf[0];
+	command_buffer = &buf[1];
+	
 #ifdef __BIG_ENDIAN
 	for (i = 0; i < len; i++)
 		buf[i] = (buf[i] << 8) | (buf[i] >> 8);
 #endif
 	do {
-		ret = i2c_master_send(ts->client,
-			(char *) buf, (int) (len * 2));
+		#if GTP_SUPPORT_I2C_DMA
+			ret = i2c_write_bytes_dma(ts->client, command_address, 
+			(char *) command_buffer, (int) (len * 2));	
+		#else
+		ret = i2c_write_bytes_non_dma(ts->client, command_address, 
+			(char *) command_buffer, (int) (len * 2));
+		#endif	
 	} while (ret == -EAGAIN);
 	if (ret < 0) {
-		pr_err("I2C TX fail (%d)", ret);
+		TPD_DMESG("I2C TX fail (%d)\n", ret);
 		return ret;
 	}
 	if ((ret % 2) != 0) {
-		pr_err("I2C words TX fail: odd number of bytes (%d)", ret);
+		TPD_DMESG("I2C words TX fail: odd number of bytes (%d)\n", ret);
 		return -EIO;
 	}
 
@@ -328,28 +733,25 @@ static int read_mtp_report(struct data *ts, u16 *buf)
 	int ret = 0, remainder = 0, offset = 0;
 	u16 address = 0x000A;
 
-	mutex_lock(&ts->i2c_mutex);
 	/* read header, get size, read entire report */
 	{
-		words_tx = i2c_tx_words(ts, &address, 1);
-		if (words_tx != 1) {
-			mutex_unlock(&ts->i2c_mutex);
-			pr_err("Report RX fail: failed to set address");
-			return -EIO;
-		}
-
 		if (ts->is_raw_mode == 0) {
+			buf[0] = 0x000A;
 			words_rx = i2c_rx_words(ts, buf, 2);
-			if (words_rx != 2 ||
+			if (words_rx < 0 ||
 					BYTEL(buf[0]) > RPT_LEN_PACKET_MAX) {
 				ret = -EIO;
-				pr_err("Report RX fail: received (%d) " \
+				printk("max1187x Report RX fail: received (%d) " \
 						"expected (%d) words, " \
 						"header (%04X)",
 						words_rx, words, buf[0]);
-				mutex_unlock(&ts->i2c_mutex);
 				return ret;
 			}
+			
+			printk("max1187x Report RX 1: received (%d) " \
+					"expected (%d) words, " \
+					"header (%04X, %04X)\n",
+					words_rx, words, buf[0], buf[1]);
 
 			if ((((BYTEH(buf[0])) & 0xF) == 0x1)
 				&& buf[1] == 0x0800)
@@ -357,35 +759,36 @@ static int read_mtp_report(struct data *ts, u16 *buf)
 
 			words = BYTEL(buf[0]) + 1;
 
-			words_tx = i2c_tx_words(ts, &address, 1);
-			if (words_tx != 1) {
-				mutex_unlock(&ts->i2c_mutex);
-				pr_err("Report RX fail:" \
-					"failed to set address");
-				return -EIO;
-			}
-
+			printk("max1187x Report RX 2: received (%d) " \
+					"expected (%d) words, " \
+					"header (%04X, %04X)\n",
+					words_rx, words, buf[0], buf[1]);
+			
+			buf[offset] = 0x000A;
 			words_rx = i2c_rx_words(ts, &buf[offset], words);
-			if (words_rx != words) {
-				mutex_unlock(&ts->i2c_mutex);
-				pr_err("Report RX fail 0x%X: received (%d) " \
+			if (words_rx < 0) {
+				printk("max1187x Report RX fail 0x%X: received (%d) " \
 					"expected (%d) words",
 					address, words_rx, remainder);
 				return -EIO;
 
 			}
+			
+			printk("max1187x Report RX 3: received (%d) " \
+					"expected (%d) words, " \
+					"header (%04X, %04X, %04X, %04X, %04X, %04X, %04X, %04X, %04X, %04X)\n",
+					words_rx, words, buf[0], buf[1], buf[2], buf[3],buf[4],buf[5],buf[6],buf[7],buf[8],buf[9]);
 
 		} else {
-
+			buf[0] = 0x000A;
 			words_rx = i2c_rx_words(ts, buf,
 					(u16) PDATA(i2c_words));
-			if (words_rx != (u16) PDATA(i2c_words) || BYTEL(buf[0])
+			if (words_rx < 0 || BYTEL(buf[0])
 					> RPT_LEN_PACKET_MAX) {
 				ret = -EIO;
-				pr_err("Report RX fail: received (%d) " \
+				printk("max1187x Report RX fail: received (%d) " \
 					"expected (%d) words, header (%04X)",
 					words_rx, words, buf[0]);
-				mutex_unlock(&ts->i2c_mutex);
 				return ret;
 			}
 
@@ -401,26 +804,17 @@ static int read_mtp_report(struct data *ts, u16 *buf)
 				offset += (u16) PDATA(i2c_words);
 				address += (u16) PDATA(i2c_words);
 			}
-
-			words_tx = i2c_tx_words(ts, &address, 1);
-			if (words_tx != 1) {
-				mutex_unlock(&ts->i2c_mutex);
-				pr_err("Report RX fail: failed to set " \
-					"address 0x%X", address);
-				return -EIO;
-			}
-
+				
+			buf[offset] = address;
 			words_rx = i2c_rx_words(ts, &buf[offset], remainder);
-			if (words_rx != remainder) {
-				mutex_unlock(&ts->i2c_mutex);
-				pr_err("Report RX fail 0x%X: received (%d) " \
+			if (words_rx < 0) {
+				printk("max1187x Report RX fail 0x%X: received (%d) " \
 						"expected (%d) words",
 						address, words_rx, remainder);
 				return -EIO;
 			}
 		}
 	}
-	mutex_unlock(&ts->i2c_mutex);
 	return ret;
 }
 
@@ -433,7 +827,7 @@ static int send_mtp_command(struct data *ts, u16 *buf, u16 len)
 
 	/* check basics */
 	if (len < 2 || len > CMD_LEN_MAX || (buf[1] + 2) != len) {
-		pr_err("Command length is not valid");
+		TPD_DMESG("Command length is not valid\n");
 		ret = -EINVAL;
 		goto err_send_mtp_command;
 	}
@@ -444,24 +838,21 @@ static int send_mtp_command(struct data *ts, u16 *buf, u16 len)
 		packets++;
 	tx_buf[0] = 0x0000;
 
-	mutex_lock(&ts->i2c_mutex);
 	for (i = 0; i < packets; i++) {
 		words = (i == (packets - 1)) ? len : CMD_LEN_PACKET_MAX;
 		tx_buf[1] = (packets << 12) | ((i + 1) << 8) | words;
 		memcpy(&tx_buf[2], &buf[i * CMD_LEN_PACKET_MAX],
 			BYTE_SIZE(words));
 		words_tx = i2c_tx_words(ts, tx_buf, words + 2);
-		if (words_tx != (words + 2)) {
-			pr_err("Command TX fail: transmitted (%d) " \
-				"expected (%d) words, packet (%d)",
+		if (words_tx < 0) {
+			TPD_DMESG("Command TX fail: transmitted (%d) " \
+				"expected (%d) words, packet (%d)\n",
 				words_tx, words + 2, i);
 			ret = -EIO;
-			mutex_unlock(&ts->i2c_mutex);
 			goto err_send_mtp_command;
 		}
 		len -= CMD_LEN_PACKET_MAX;
 	}
-	mutex_unlock(&ts->i2c_mutex);
 
 	return ret;
 
@@ -621,15 +1012,16 @@ static void process_report(struct data *ts, u16 *buf)
 
 	header = (struct max1187x_touch_report_header *) buf;
 
-	if (BYTEH(header->header) != 0x11)
+	if (BYTEH(header->header) != 0x11){
+		printk("max1187x (header->header) != 0x11\n");
 		goto err_process_report_header;
-
+	}
 #ifdef TOUCH_WAKEUP_FEATURE
 	if (device_may_wakeup(&ts->client->dev) && ts->is_suspended == 1) {
-		pr_info_if(4, "Received gesture: (0x%04X)\n", buf[3]);
+		TPD_DMESG("Received gesture: (0x%04X)\n", buf[3]);
 		if (header->report_id == MAX1187X_REPORT_POWER_MODE
 				&& buf[3] == 0x0006) {
-			pr_info_if(4, "Received touch wakeup report\n");
+			TPD_DMESG("Received touch wakeup report\n");
 			input_report_key(ts->input_dev_key,	KEY_POWER, 1);
 			input_sync(ts->input_dev_key);
 			input_report_key(ts->input_dev_key,	KEY_POWER, 0);
@@ -644,51 +1036,51 @@ static void process_report(struct data *ts, u16 *buf)
 		goto err_process_report_reportid;
 
 	if (ts->framecounter == header->framecounter) {
-		pr_err("Same framecounter (%u) encountered at irq (%u)!\n",
+		TPD_DMESG("Same framecounter (%u) encountered at irq (%u)!\n",
 				ts->framecounter, ts->irq_count);
 		goto err_process_report_framecounter;
 	}
 	ts->framecounter = header->framecounter;
 
 	if (header->button0 != ts->button0) {
-		input_report_key(ts->input_dev, PDATA(button_code0), header->button0);
-		input_sync(ts->input_dev);
+		input_report_key(tpd->dev, PDATA(button_code0), header->button0);
+		input_sync(tpd->dev);
 		ts->button0 = header->button0;
 	}
 	if (header->button1 != ts->button1) {
-		input_report_key(ts->input_dev, PDATA(button_code1), header->button1);
-		input_sync(ts->input_dev);
+		input_report_key(tpd->dev, PDATA(button_code1), header->button1);
+		input_sync(tpd->dev);
 		ts->button1 = header->button1;
 	}
 	if (header->button2 != ts->button2) {
-		input_report_key(ts->input_dev, PDATA(button_code2), header->button2);
-		input_sync(ts->input_dev);
+		input_report_key(tpd->dev, PDATA(button_code2), header->button2);
+		input_sync(tpd->dev);
 		ts->button2 = header->button2;
 	}
 	if (header->button3 != ts->button3) {
-		input_report_key(ts->input_dev, PDATA(button_code3), header->button3);
-		input_sync(ts->input_dev);
+		input_report_key(tpd->dev, PDATA(button_code3), header->button3);
+		input_sync(tpd->dev);
 		ts->button3 = header->button3;
 	}
 
 	if (header->touch_count > 10) {
-		pr_err("Touch count (%u) out of bounds [0,10]!",
+		TPD_DMESG("Touch count (%u) out of bounds [0,10]!\n",
 				header->touch_count);
 		goto err_process_report_touchcount;
 	}
 
 	if (header->touch_count == 0) {
-		pr_info_if(4, "(TOUCH): Finger up (all)\n");
+		TPD_DMESG("(TOUCH): Finger up (all)\n");
 #ifdef MAX1187X_PROTOCOL_A
-		input_mt_sync(ts->input_dev);
+		input_mt_sync(tpd->dev);
 #else
 		for (i = 0; i < MAX1187X_TOUCH_COUNT_MAX; i++) {
-			input_mt_slot(ts->input_dev, i);
-			input_mt_report_slot_state(ts->input_dev,
+			input_mt_slot(tpd->dev, i);
+			input_mt_report_slot_state(tpd->dev,
 						MT_TOOL_FINGER, 0);
 		}
 #endif
-		input_sync(ts->input_dev);
+		input_sync(tpd->dev);
 		ts->list_finger_ids = 0;
 	} else {
 		curr_finger_ids = 0;
@@ -721,24 +1113,24 @@ static void process_report(struct data *ts, u16 *buf)
 			else
 				tool_type = MT_TOOL_FINGER;
 
-			pr_info_if(4, "(TOUCH): (%u) Finger %u: "\
-				"X(%d) Y(%d) Z(%d) TT(%d)",
+			TPD_DMESG("(TOUCH): (%u) Finger %u: "\
+				"X(%d) Y(%d) Z(%d) TT(%d)\n",
 				header->framecounter, reportb->finger_id,
 				x, y, reportb->z, tool_type);
 			curr_finger_ids |= (1<<reportb->finger_id);
 #ifdef MAX1187X_PROTOCOL_A
-			input_report_abs(ts->input_dev,
+			input_report_abs(tpd->dev,
 				ABS_MT_TRACKING_ID,	reportb->finger_id);
-			input_report_abs(ts->input_dev,
+			input_report_abs(tpd->dev,
 				ABS_MT_TOOL_TYPE, tool_type);
 #else
-			input_mt_slot(ts->input_dev, reportb->finger_id);
-			input_mt_report_slot_state(ts->input_dev,
+			input_mt_slot(tpd->dev, reportb->finger_id);
+			input_mt_report_slot_state(tpd->dev,
 					tool_type, 1);
 #endif
-			input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x);
-			input_report_abs(ts->input_dev,	ABS_MT_POSITION_Y, y);
-			input_report_abs(ts->input_dev,
+			input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
+			input_report_abs(tpd->dev,	ABS_MT_POSITION_Y, y);
+			input_report_abs(tpd->dev,
 					ABS_MT_PRESSURE, reportb->z);
 			if (header->report_id
 				== MAX1187X_REPORT_TOUCH_EXTENDED) {
@@ -762,7 +1154,7 @@ static void process_report(struct data *ts, u16 *buf)
 				* (s16)(PDATA(lcd_x)/PDATA(num_sensor_x));
 				ysize = reporte->ypixel
 				* (s16)(PDATA(lcd_y)/PDATA(num_sensor_y));
-				pr_info_if(4, "(TOUCH): pixelarea (%u) " \
+				TPD_DMESG("(TOUCH): pixelarea (%u) " \
 					"xpixel (%d) ypixel (%d) " \
 					"xsize (%d) ysize (%d)\n",
 					reporte->area,
@@ -796,15 +1188,15 @@ static void process_report(struct data *ts, u16 *buf)
 				major_axis = (xsize > ysize) ? xsize : ysize;
 				minor_axis = (xsize > ysize) ? ysize : xsize;
 #endif
-				pr_info_if(4, "(TOUCH): Finger %u: " \
-					"Orientation(%d) Area(%u) Major_axis(%u) Minor_axis(%u)",
+				TPD_DMESG("(TOUCH): Finger %u: " \
+					"Orientation(%d) Area(%u) Major_axis(%u) Minor_axis(%u)\n",
 					reportb->finger_id,	orientation,
 					area, major_axis, minor_axis);
-				input_report_abs(ts->input_dev,
+				input_report_abs(tpd->dev,
 					ABS_MT_ORIENTATION, orientation);
-				input_report_abs(ts->input_dev,
+				input_report_abs(tpd->dev,
 						ABS_MT_TOUCH_MAJOR, major_axis);
-				input_report_abs(ts->input_dev,
+				input_report_abs(tpd->dev,
 						ABS_MT_TOUCH_MINOR, minor_axis);
 #endif
 				reporte++;
@@ -814,7 +1206,7 @@ static void process_report(struct data *ts, u16 *buf)
 				reportb++;
 			}
 #ifdef MAX1187X_PROTOCOL_A
-			input_mt_sync(ts->input_dev);
+			input_mt_sync(tpd->dev);
 #endif
 		}
 
@@ -823,10 +1215,10 @@ static void process_report(struct data *ts, u16 *buf)
 		while (i < 10) {
 			if ((ts->list_finger_ids & j) != 0 &&
 					(curr_finger_ids & j) == 0) {
-				pr_info_if(4, "(TOUCH): Finger up (%d)\n", i);
+				TPD_DMESG("(TOUCH): Finger up (%d)\n", i);
 #ifndef MAX1187X_PROTOCOL_A
-				input_mt_slot(ts->input_dev, i);
-				input_mt_report_slot_state(ts->input_dev,
+				input_mt_slot(tpd->dev, i);
+				input_mt_report_slot_state(tpd->dev,
 						MT_TOOL_FINGER, 0);
 #endif
 			}
@@ -834,7 +1226,7 @@ static void process_report(struct data *ts, u16 *buf)
 			j <<= 1;
 		}
 
-		input_sync(ts->input_dev);
+		input_sync(tpd->dev);
 		ts->list_finger_ids = curr_finger_ids;
 	}
 
@@ -852,34 +1244,44 @@ err_process_report_framecounter:
 
 static void max1187x_wfxn_irq(struct work_struct *work)
 {
-	struct data *ts = container_of(work, struct data, work_irq);
+	//struct data *ts = container_of(work, struct data, work_irq);
 	int ret;
 	u32	time_elapsed;
 
-	if (gpio_get_value(ts->pdata->gpio_tirq) != 0)
-		return;
+	//if (gpio_get_value(ts->pdata->gpio_tirq) != 0)
+		//return;
 
 	ret = read_mtp_report(ts, ts->rx_packet);
 
 	time_elapsed = time_difference(jiffies, ts->irq_receive_time);
 
 	/* Verify time_elapsed < 1s */
-	if (ret == 0 || time_elapsed > HZ) {
+	//if (ret == 0 || time_elapsed > HZ) {
 		process_report(ts, ts->rx_packet);
 		propagate_report(ts, 0, ts->rx_packet);
-	}
+	//}
+	mt_set_gpio_pull_select(GPIO_CTP_EINT_PIN, 1);
+	
+	msleep(10);
+	
+#ifdef CONFIG_OF_TOUCH
 	enable_irq(ts->client->irq);
+#else
+	mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
+
 }
 
+#ifdef CONFIG_OF_TOUCH
 /* debug_mask |= 0x20 for irq_handler */
 static irqreturn_t irq_handler(int irq, void *context)
 {
 	struct data *ts = (struct data *) context;
 
-	pr_info_if(0x20, "Enter\n");
+	TPD_DMESG("Enter\n");
 
-	if (gpio_get_value(ts->pdata->gpio_tirq) != 0)
-		goto irq_handler_complete;
+	//if (gpio_get_value(ts->pdata->gpio_tirq) != 0)
+		//goto irq_handler_complete;
 
 	disable_irq_nosync(ts->client->irq);
 	ts->irq_receive_time = jiffies;
@@ -888,10 +1290,33 @@ static irqreturn_t irq_handler(int irq, void *context)
 	queue_work(ts->wq, &ts->work_irq);
 
 irq_handler_complete:
-	pr_info_if(0x20, "Exit\n");
+	TPD_DMESG("Exit\n");
 	return IRQ_HANDLED;
 }
+#else
+static void irq_handler(void)
+{
+	TPD_DMESG("Enter\n");
 
+	if(ts == NULL)
+		goto irq_handler_complete;
+	
+	//if (gpio_get_value(ts->pdata->gpio_tirq) != 0)
+		//goto irq_handler_complete;
+	
+	mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+	ts->irq_receive_time = jiffies;
+	ts->irq_count++;
+	
+	queue_work(ts->wq, &ts->work_irq);
+	
+irq_handler_complete:
+	TPD_DMESG("Exit\n");
+	return IRQ_HANDLED;
+
+}
+
+#endif
 static ssize_t init_show(struct device *dev, struct device_attribute *attr,
 	char *buf)
 {
@@ -904,7 +1329,7 @@ static ssize_t init_store(struct device *dev, struct device_attribute *attr,
 	int value, ret;
 
 	if (sscanf(buf, "%d", &value) != 1) {
-		pr_err("bad parameter");
+		TPD_DMESG("bad parameter\n");
 		return -EINVAL;
 	}
 	switch (value) {
@@ -913,7 +1338,7 @@ static ssize_t init_store(struct device *dev, struct device_attribute *attr,
 			break;
 		ret = device_deinit(to_i2c_client(dev));
 		if (ret != 0) {
-			pr_err("deinit error (%d)", ret);
+			TPD_DMESG("deinit error (%d)\n", ret);
 			return ret;
 		}
 		break;
@@ -922,7 +1347,7 @@ static ssize_t init_store(struct device *dev, struct device_attribute *attr,
 			break;
 		ret = device_init(to_i2c_client(dev));
 		if (ret != 0) {
-			pr_err("init error (%d)", ret);
+			TPD_DMESG("init error (%d)\n", ret);
 			return ret;
 		}
 		break;
@@ -930,18 +1355,18 @@ static ssize_t init_store(struct device *dev, struct device_attribute *attr,
 		if (init_state == 1) {
 			ret = device_deinit(to_i2c_client(dev));
 			if (ret != 0) {
-				pr_err("deinit error (%d)", ret);
+				TPD_DMESG("deinit error (%d)\n", ret);
 				return ret;
 			}
 		}
 		ret = device_init(to_i2c_client(dev));
 		if (ret != 0) {
-			pr_err("init error (%d)", ret);
+			TPD_DMESG("init error (%d)\n", ret);
 			return ret;
 		}
 		break;
 	default:
-		pr_err("bad value");
+		TPD_DMESG("bad value\n");
 		return -EINVAL;
 	}
 
@@ -958,7 +1383,7 @@ static ssize_t sreset_store(struct device *dev, struct device_attribute *attr,
 
 	ret = rbcmd_send_receive(ts, cmd_buf, 2, 0x01A0, 3 * HZ);
 	if (ret)
-		pr_err("Failed to do soft reset.");
+		TPD_DMESG("Failed to do soft reset.\n");
 	return count;
 }
 
@@ -1060,7 +1485,7 @@ static ssize_t fw_ver_show(struct device *dev, struct device_attribute *attr,
 	ret = rbcmd_send_receive(ts, cmd_buf, 2, 0x0102, HZ/4);
 
 	if (ret) {
-		pr_err("Failed to receive chip config\n");
+		TPD_DMESG("Failed to receive chip config\n");
 		goto err_fw_ver_show;
 	}
 
@@ -1094,7 +1519,7 @@ static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
 	if (sscanf(buf, "%hx", &debug_mask) != 1) {
-		pr_err("bad parameter");
+		TPD_DMESG("bad parameter\n");
 		return -EINVAL;
 	}
 
@@ -1112,20 +1537,20 @@ static ssize_t command_store(struct device *dev, struct device_attribute *attr,
 
 	count--; /* ignore carriage return */
 	if ((count % 4) != 0) {
-		pr_err("words not properly defined");
+		TPD_DMESG("words not properly defined\n");
 		return -EINVAL;
 	}
 	scan_buf[4] = '\0';
 	for (i = 0; i < count; i += 4) {
 		memcpy(scan_buf, &buf[i], 4);
 		if (sscanf(scan_buf, "%hx", &buffer[i / 4]) != 1) {
-			pr_err("bad word (%s)", scan_buf);
+			TPD_DMESG("bad word (%s)\n", scan_buf);
 			return -EINVAL;
 		}
 	}
 	ret = cmd_send(ts, buffer, count / 4);
 	if (ret)
-		pr_err("MTP command failed");
+		TPD_DMESG("MTP command failed\n");
 	return ++count;
 }
 
@@ -1265,12 +1690,12 @@ static int read_chip_data(struct data *ts)
 	}
 
 	if (ret) {
-		pr_err("Failed to receive fw version\n");
+		TPD_DMESG("Failed to receive fw version\n");
 		goto err_read_chip_data;
 	}
 
 	ts->chip_id = BYTEH(ts->rbcmd_rx_report[4]);
-	pr_info_if(8, "(INIT): fw_ver (%u.%u) " \
+	TPD_DMESG("(INIT): fw_ver (%u.%u) " \
 					"chip_id (0x%02X)\n",
 					BYTEH(ts->rbcmd_rx_report[3]),
 					BYTEL(ts->rbcmd_rx_report[3]),
@@ -1288,13 +1713,13 @@ static int read_chip_data(struct data *ts)
 	}
 
 	if (ret) {
-		pr_err("Failed to receive chip config\n");
+		TPD_DMESG("Failed to receive chip config\n");
 		goto err_read_chip_data;
 	}
 
 	ts->config_id = ts->rbcmd_rx_report[3];
 
-	pr_info_if(8, "(INIT): config_id (0x%04X)\n",
+	TPD_DMESG("(INIT): config_id (0x%04X)\n",
 					ts->config_id);
 	return 0;
 
@@ -1313,8 +1738,8 @@ static int device_fw_load(struct data *ts, const struct firmware *fw,
 	file_codesize = PDATA(fw_mapping[fw_index]).file_codesize;
 
 	if (fw->size != filesize) {
-		pr_err("filesize (%d) is not equal to expected size (%d)",
-				fw->size, filesize);
+		TPD_DMESG("filesize (%ld) is not equal to expected size (%d)\n",
+				(long)fw->size, filesize);
 		return -EIO;
 	}
 
@@ -1332,7 +1757,7 @@ static int device_fw_load(struct data *ts, const struct firmware *fw,
 		loopcounter++;
 	} while (loopcounter < MAX_FW_RETRIES && chip_crc16_1 == -1);
 
-	pr_info_if(8, "(INIT): file_crc16_1 = 0x%04x, chip_crc16_1 = 0x%04x\n",
+	TPD_DMESG("(INIT): file_crc16_1 = 0x%04x, chip_crc16_1 = 0x%04x\n",
 			file_crc16_1, chip_crc16_1);
 
 	if (file_crc16_1 != chip_crc16_1) {
@@ -1341,7 +1766,7 @@ static int device_fw_load(struct data *ts, const struct firmware *fw,
 
 		while (loopcounter < MAX_FW_RETRIES && file_crc16_2
 				!= chip_crc16_2) {
-			pr_info_if(8, "(INIT): Reprogramming chip. Attempt %d",
+			TPD_DMESG("(INIT): Reprogramming chip. Attempt %d\n",
 					loopcounter+1);
 			ret = bootloader_enter(ts);
 			if (ret == 0)
@@ -1356,7 +1781,7 @@ static int device_fw_load(struct data *ts, const struct firmware *fw,
 					0, filesize, 200);
 			if (ret == 0)
 				chip_crc16_2 = local_crc16;
-			pr_info_if(8, "(INIT): file_crc16_2 = 0x%04x, "\
+			TPD_DMESG("(INIT): file_crc16_2 = 0x%04x, "\
 					"chip_crc16_2 = 0x%04x\n",
 					file_crc16_2, chip_crc16_2);
 			ret = bootloader_exit(ts);
@@ -1379,15 +1804,6 @@ static int device_fw_load(struct data *ts, const struct firmware *fw,
 	return 0;
 }
 
-static int is_booting(void)
-{
-	unsigned long long t;
-	unsigned long nanosec_rem;
-
-	t = cpu_clock(smp_processor_id());
-	nanosec_rem = do_div(t, 1000000000);
-	return (t < 30) ? 1 : 0;
-}
 
 static void validate_fw(struct data *ts)
 {
@@ -1396,12 +1812,14 @@ static void validate_fw(struct data *ts)
 	int i, ret;
 	u16 cmd_buf[3];
 
+#if 0
 	ret = read_chip_data(ts);
 	if (ret && PDATA(defaults_allow) == 0) {
-		pr_err("Firmware is not responsive "\
+		TPD_DMESG("Firmware is not responsive "\
 				"and default update is disabled\n");
 		return;
 	}
+#endif
 
 	if (ts->chip_id != 0)
 		chip_id = ts->chip_id;
@@ -1422,19 +1840,19 @@ static void validate_fw(struct data *ts)
 	}
 
 	if (i == PDATA(num_fw_mappings)) {
-		pr_err("FW not found for configID(0x%04X) and chipID(0x%04X)",
+		TPD_DMESG("FW not found for configID(0x%04X) and chipID(0x%04X)\n",
 			config_id, chip_id);
 		return;
 	}
 
-	pr_info_if(8, "(INIT): Firmware file (%s)",
+	TPD_DMESG("(INIT): Firmware file (%s)\n",
 		PDATA(fw_mapping[i]).filename);
 
 	ret = request_firmware(&fw, PDATA(fw_mapping[i]).filename,
 					&ts->client->dev);
 
 	if (ret || fw == NULL) {
-		pr_err("firmware request failed (ret = %d, fwptr = %p)",
+		TPD_DMESG("firmware request failed (ret = %d, fwptr = %p)\n",
 			ret, fw);
 		return;
 	}
@@ -1442,22 +1860,38 @@ static void validate_fw(struct data *ts)
 	ret = down_interruptible(&ts->sema_cmd);
 	if (ret) {
 		release_firmware(fw);
-		pr_err("Could not get lock\n");
+		TPD_DMESG("Could not get lock\n");
 		return;
 	}
+	
+#ifdef CONFIG_OF_TOUCH
 	disable_irq(ts->client->irq);
+#else
+	mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
+	
 	flush_workqueue(ts->wq);
 	if (device_fw_load(ts, fw, i)) {
 		release_firmware(fw);
-		pr_err("firmware download failed");
-		enable_irq(ts->client->irq);
+		TPD_DMESG("firmware download failed\n");
+		
+#ifdef CONFIG_OF_TOUCH
+	    enable_irq(ts->client->irq);
+#else
+	    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif		
 		up(&ts->sema_cmd);
 		return;
 	}
 
 	release_firmware(fw);
-	pr_info_if(8, "(INIT): firmware okay\n");
+	TPD_DMESG("(INIT): firmware okay\n");
+#ifdef CONFIG_OF_TOUCH
 	enable_irq(ts->client->irq);
+#else
+	mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
+
 	up(&ts->sema_cmd);
 	ret = read_chip_data(ts);
 
@@ -1468,7 +1902,7 @@ static void validate_fw(struct data *ts)
 	cmd_buf[2] = MAX1187X_TOUCH_REPORT_MODE;
 	ret = cmd_send(ts, cmd_buf, 3);
 	if (ret) {
-		pr_err("Failed to set up touch report mode");
+		TPD_DMESG("Failed to set up touch report mode\n");
 		return;
 	}
 }
@@ -1486,20 +1920,20 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
-		pr_err("Failed to allocate memory for pdata\n");
+		TPD_DMESG("Failed to allocate memory for pdata\n");
 		return NULL;
 	}
 
 	/* Parse gpio_tirq */
 	if (of_property_read_u32(devnode, "gpio_tirq", &pdata->gpio_tirq)) {
-		pr_err("Failed to get property: gpio_tirq\n");
+		TPD_DMESG("Failed to get property: gpio_tirq\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse num_fw_mappings */
 	if (of_property_read_u32(devnode, "num_fw_mappings",
 		&pdata->num_fw_mappings)) {
-		pr_err("Failed to get property: num_fw_mappings\n");
+		TPD_DMESG("Failed to get property: num_fw_mappings\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1509,7 +1943,7 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	/* Parse config_id */
 	if (of_property_read_u32_array(devnode, "config_id", datalist,
 			pdata->num_fw_mappings)) {
-		pr_err("Failed to get property: config_id\n");
+		TPD_DMESG("Failed to get property: config_id\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1519,7 +1953,7 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	/* Parse chip_id */
 	if (of_property_read_u32_array(devnode, "chip_id", datalist,
 			pdata->num_fw_mappings)) {
-		pr_err("Failed to get property: chip_id\n");
+		TPD_DMESG("Failed to get property: chip_id\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1530,7 +1964,7 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	for (i = 0; i < pdata->num_fw_mappings; i++) {
 		if (of_property_read_string_index(devnode, "filename", i,
 			(const char **) &pdata->fw_mapping[i].filename)) {
-				pr_err("Failed to get property: "\
+				TPD_DMESG("Failed to get property: "\
 					"filename[%d]\n", i);
 				goto err_max1187x_get_platdata_dt;
 			}
@@ -1539,7 +1973,7 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	/* Parse filesize */
 	if (of_property_read_u32_array(devnode, "filesize", datalist,
 		pdata->num_fw_mappings)) {
-		pr_err("Failed to get property: filesize\n");
+		TPD_DMESG("Failed to get property: filesize\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1549,7 +1983,7 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	/* Parse file_codesize */
 	if (of_property_read_u32_array(devnode, "file_codesize", datalist,
 		pdata->num_fw_mappings)) {
-		pr_err("Failed to get property: file_codesize\n");
+		TPD_DMESG("Failed to get property: file_codesize\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1559,116 +1993,116 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	/* Parse defaults_allow */
 	if (of_property_read_u32(devnode, "defaults_allow",
 		&pdata->defaults_allow)) {
-		pr_err("Failed to get property: defaults_allow\n");
+		TPD_DMESG("Failed to get property: defaults_allow\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse default_config_id */
 	if (of_property_read_u32(devnode, "default_config_id",
 		&pdata->default_config_id)) {
-		pr_err("Failed to get property: default_config_id\n");
+		TPD_DMESG("Failed to get property: default_config_id\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse default_chip_id */
 	if (of_property_read_u32(devnode, "default_chip_id",
 		&pdata->default_chip_id)) {
-		pr_err("Failed to get property: default_chip_id\n");
+		TPD_DMESG("Failed to get property: default_chip_id\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse i2c_words */
 	if (of_property_read_u32(devnode, "i2c_words", &pdata->i2c_words)) {
-		pr_err("Failed to get property: i2c_words\n");
+		TPD_DMESG("Failed to get property: i2c_words\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse coordinate_settings */
 	if (of_property_read_u32(devnode, "coordinate_settings",
 		&pdata->coordinate_settings)) {
-		pr_err("Failed to get property: coordinate_settings\n");
+		TPD_DMESG("Failed to get property: coordinate_settings\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse panel_margin_xl */
 	if (of_property_read_u32(devnode, "panel_margin_xl",
 		&pdata->panel_margin_xl)) {
-		pr_err("Failed to get property: panel_margin_xl\n");
+		TPD_DMESG("Failed to get property: panel_margin_xl\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse lcd_x */
 	if (of_property_read_u32(devnode, "lcd_x", &pdata->lcd_x)) {
-		pr_err("Failed to get property: lcd_x\n");
+		TPD_DMESG("Failed to get property: lcd_x\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse panel_margin_xh */
 	if (of_property_read_u32(devnode, "panel_margin_xh",
 		&pdata->panel_margin_xh)) {
-		pr_err("Failed to get property: panel_margin_xh\n");
+		TPD_DMESG("Failed to get property: panel_margin_xh\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse panel_margin_yl */
 	if (of_property_read_u32(devnode, "panel_margin_yl",
 		&pdata->panel_margin_yl)) {
-		pr_err("Failed to get property: panel_margin_yl\n");
+		TPD_DMESG("Failed to get property: panel_margin_yl\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse lcd_y */
 	if (of_property_read_u32(devnode, "lcd_y", &pdata->lcd_y)) {
-		pr_err("Failed to get property: lcd_y\n");
+		TPD_DMESG("Failed to get property: lcd_y\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse panel_margin_yh */
 	if (of_property_read_u32(devnode, "panel_margin_yh",
 		&pdata->panel_margin_yh)) {
-		pr_err("Failed to get property: panel_margin_yh\n");
+		TPD_DMESG("Failed to get property: panel_margin_yh\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse row_count */
 	if (of_property_read_u32(devnode, "num_sensor_x",
 		&pdata->num_sensor_x)) {
-		pr_err("Failed to get property: num_sensor_x\n");
+		TPD_DMESG("Failed to get property: num_sensor_x\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse num_sensor_y */
 	if (of_property_read_u32(devnode, "num_sensor_y",
 		&pdata->num_sensor_y)) {
-		pr_err("Failed to get property: num_sensor_y\n");
+		TPD_DMESG("Failed to get property: num_sensor_y\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse button_code0 */
 	if (of_property_read_u32(devnode, "button_code0",
 		&pdata->button_code0)) {
-		pr_err("Failed to get property: button_code0\n");
+		TPD_DMESG("Failed to get property: button_code0\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse button_code1 */
 	if (of_property_read_u32(devnode, "button_code1",
 		&pdata->button_code1)) {
-		pr_err("Failed to get property: button_code1\n");
+		TPD_DMESG("Failed to get property: button_code1\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse button_code2 */
 	if (of_property_read_u32(devnode, "button_code2",
 		&pdata->button_code2)) {
-		pr_err("Failed to get property: button_code2\n");
+		TPD_DMESG("Failed to get property: button_code2\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
 	/* Parse button_code3 */
 	if (of_property_read_u32(devnode, "button_code3",
 		&pdata->button_code3)) {
-		pr_err("Failed to get property: button_code3\n");
+		TPD_DMESG("Failed to get property: button_code3\n");
 		goto err_max1187x_get_platdata_dt;
 	}
 
@@ -1691,33 +2125,33 @@ static inline struct max1187x_pdata *
 static int validate_pdata(struct max1187x_pdata *pdata)
 {
 	if (pdata == NULL) {
-		pr_err("Platform data not found!\n");
+		TPD_DMESG("Platform data not found!\n");
 		goto err_validate_pdata;
 	}
 
 	if (pdata->gpio_tirq == 0) {
-		pr_err("gpio_tirq (%u) not defined!\n", pdata->gpio_tirq);
+		TPD_DMESG("gpio_tirq (%u) not defined!\n", pdata->gpio_tirq);
 		goto err_validate_pdata;
 	}
 
 	if (pdata->lcd_x < 480 || pdata->lcd_x > 0x7FFF) {
-		pr_err("lcd_x (%u) out of range!\n", pdata->lcd_x);
+		TPD_DMESG("lcd_x (%u) out of range!\n", pdata->lcd_x);
 		goto err_validate_pdata;
 	}
 
 	if (pdata->lcd_y < 240 || pdata->lcd_y > 0x7FFF) {
-		pr_err("lcd_y (%u) out of range!\n", pdata->lcd_y);
+		TPD_DMESG("lcd_y (%u) out of range!\n", pdata->lcd_y);
 		goto err_validate_pdata;
 	}
 
 	if (pdata->num_sensor_x == 0 || pdata->num_sensor_x > 40) {
-		pr_err("num_sensor_x (%u) out of range!\n",
+		TPD_DMESG("num_sensor_x (%u) out of range!\n",
 				pdata->num_sensor_x);
 		goto err_validate_pdata;
 	}
 
 	if (pdata->num_sensor_y == 0 || pdata->num_sensor_y > 40) {
-		pr_err("num_sensor_y (%u) out of range!\n",
+		TPD_DMESG("num_sensor_y (%u) out of range!\n",
 				pdata->num_sensor_y);
 		goto err_validate_pdata;
 	}
@@ -1728,30 +2162,93 @@ err_validate_pdata:
 	return -ENXIO;
 }
 
-static int max1187x_chip_init(struct max1187x_pdata *pdata, int value)
+static int max1187x_auto_detect_check(struct data *ts)
 {
-	int  ret;
-
-	if (value) {
-		ret = gpio_request(pdata->gpio_tirq, "max1187x_tirq");
-		if (ret) {
-			pr_err("GPIO request failed for max1187x_tirq (%d)\n",
-				pdata->gpio_tirq);
-			return -EIO;
-		}
-		ret = gpio_direction_input(pdata->gpio_tirq);
-		if (ret) {
-			pr_err("GPIO set input direction failed for "\
-				"max1187x_tirq (%d)\n", pdata->gpio_tirq);
-			gpio_free(pdata->gpio_tirq);
-			return -EIO;
-		}
-	} else {
-		gpio_free(pdata->gpio_tirq);
+	u8 buffer[] = { 0x00, 0x00, 0x00, 0x00 };
+	int length = 0;
+	u16 buff[245] = {0};
+	
+	if (i2c_tx_bytes(ts, buffer, 2) < 0) {
+		TPD_DMESG("max1187x_auto_detect_check RX fail\n");
+		return -EIO;
 	}
 
+	/*
+	u8 buffer1[] = {0x40, 0x00, 0x00, 0x00};
+	
+	if (i2c_tx_bytes(ts, buffer1, 2) < 0) {
+		TPD_DMESG("TX fail");
+		return -EIO;
+	}
+
+	u16 buffer2[] = {0x000A, 0x0000, 0x0000, 0x0000};
+
+	if (i2c_rx_words(ts, buffer2, 2) < 0) {
+		TPD_DMESG("RX fail\n");
+		return -EIO;
+	}	
+
+	length = BYTEL(buffer2[0]) + 1;
+	printk("max1187x read length: %d\n", length);
+	printk("max1187x: 0x%x, 0x%x, 0x%x, 0x%x\n", buffer2[0], buffer2[1], buffer2[2], buffer2[3]);
+	
+	buff[0] = 0x000B;
+	if (i2c_rx_words(ts, buff, length) < 0) {
+		TPD_DMESG("RX fail\n");
+		return -EIO;
+	}
+
+	printk("max1187x: 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x\n", buff[0], buff[1], buff[2], buff[3], buff[4], buff[5], buff[6]);
+	*/
+	check_flag = true;
+	tpd_load_status = 1;
 	return 0;
 }
+
+static int max1187x_chip_init(void)
+{
+	// set INT mode
+	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+	mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+	mt_set_gpio_out(GPIO_CTP_RST_PIN, 1);
+	msleep(50);
+
+	
+	mt_set_gpio_mode(GPIO_CTP_EINT_PIN, GPIO_CTP_EINT_PIN_M_EINT);
+	mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_IN);
+	mt_set_gpio_pull_enable(GPIO_CTP_EINT_PIN, GPIO_PULL_ENABLE);
+	mt_set_gpio_pull_select(GPIO_CTP_EINT_PIN, 1);
+	msleep(50);
+	return 0;
+}
+
+#ifdef CONFIG_OF_TOUCH 
+static int tpd_irq_registration(unsigned int irq, irq_handler_t handler, unsigned long flags, const char *name, void *dev)
+{
+	struct device_node *node = NULL;
+	int ret = 0;
+	u32 ints[2] = {0,0};
+	
+	node = of_find_compatible_node(NULL, NULL, "mediatek, TOUCH_PANEL-eint");
+	if(node){
+		of_property_read_u32_array(node , "debounce", ints, ARRAY_SIZE(ints));
+		gpio_set_debounce(ints[0], ints[1]);
+
+		irq = irq_of_parse_and_map(node, 0);
+
+		ret = request_irq(irq, handler, flags, "TOUCH_PANEL-eint", dev);
+		if(ret > 0){
+		    ret = -1;
+		    printk("tpd request_irq IRQ LINE NOT AVAILABLE!.");
+		}
+	}else{
+		printk("tpd request_irq can not find touch eint device node!.");
+		ret = -1;
+	}
+	printk("[%s]irq:%d, debounce:%d-%d:", __FUNCTION__, irq, ints[0], ints[1]);
+	return ret;
+}
+#endif
 
 static int device_init_thread(void *arg)
 {
@@ -1761,7 +2258,6 @@ static int device_init_thread(void *arg)
 static int device_init(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
-	struct data *ts = NULL;
 	struct max1187x_pdata *pdata = NULL;
 	struct device_attribute **dev_attr = dev_attrs;
 	int ret = 0;
@@ -1771,25 +2267,25 @@ static int device_init(struct i2c_client *client)
 
 	/* if I2C functionality is not present we are done */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		pr_err("I2C core driver does not support I2C functionality");
+		TPD_DMESG("I2C core driver does not support I2C functionality\n");
 		ret = -ENXIO;
 		goto err_device_init;
 	}
-	pr_info_if(8, "(INIT): I2C functionality OK");
+	TPD_DMESG("(INIT): I2C functionality OK\n");
 
 	/* allocate control block; nothing more to do if we can't */
 	ts = kzalloc(sizeof(*ts), GFP_KERNEL);
 	if (!ts) {
-		pr_err("Failed to allocate control block memory");
+		TPD_DMESG("Failed to allocate control block memory\n");
 		ret = -ENOMEM;
 		goto err_device_init;
 	}
 
-	/* Get platform data */
+	/* Get platform data  this is used to get related custom data for touchpanel*/
 #ifdef MAX1187X_LOCAL_PDATA
 	pdata = &local_pdata;
 	if (!pdata) {
-		pr_err("Platform data is missing");
+		TPD_DMESG("Platform data is missing\n");
 		ret = -ENXIO;
 		goto err_device_init_pdata;
 	}
@@ -1803,7 +2299,7 @@ static int device_init(struct i2c_client *client)
 	ret = validate_pdata(pdata);
 	if (ret < 0)
 		goto err_device_init_pdata;
-	pr_info_if(8, "(INIT): Platform data OK");
+	TPD_DMESG("(INIT): Platform data OK\n");
 #endif
 
 	ts->pdata = pdata;
@@ -1823,7 +2319,7 @@ static int device_init(struct i2c_client *client)
 	/* Create workqueue with maximum 1 running task */
 	ts->wq = alloc_workqueue("max1187x_wq", WQ_UNBOUND | WQ_HIGHPRI, 1);
 	if (ts->wq == NULL) {
-		pr_err("Not able to create workqueue\n");
+		TPD_DMESG("Not able to create workqueue\n");
 		ret = -ENOMEM;
 		goto err_device_init_memalloc;
 	}
@@ -1832,19 +2328,37 @@ static int device_init(struct i2c_client *client)
 	init_waitqueue_head(&ts->waitqueue_all);
 	init_waitqueue_head(&ts->waitqueue_rbcmd);
 
-	pr_info_if(8, "(INIT): Memory allocation OK");
+#if GTP_SUPPORT_I2C_DMA
+	tpd->dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+	gpDMABuf_va = (u8 *)dma_alloc_coherent(&tpd->dev->dev, GTP_DMA_MAX_TRANSACTION_LENGTH, &gpDMABuf_pa, GFP_KERNEL);
+	if(!gpDMABuf_va){
+		TPD_DMESG("[Error] Allocate DMA I2C Buffer failed!\n");
+	}
+	memset(gpDMABuf_va, 0, GTP_DMA_MAX_TRANSACTION_LENGTH);
+#endif
+
+	TPD_DMESG("(INIT): Memory allocation OK\n");
 
 	/* Initialize GPIO pins */
-	if (max1187x_chip_init(ts->pdata, 1) < 0) {
+	if (max1187x_chip_init() < 0) {
 		ret = -EIO;
 		goto err_device_init_gpio;
 	}
-	pr_info_if(8, "(INIT): chip init OK");
+	TPD_DMESG("(INIT): chip GPIO init OK\n");
+
+	/*chip i2c fucntion check for touch panel auto detect*/
+	if(max1187x_auto_detect_check(ts) < 0){
+		ret = -EIO;
+		goto err_device_init_gpio;
+	}
+	TPD_DMESG("(INIT): chip detect OK\n");
 
 	/* allocate and register touch device */
+	//no need to allocate input device because of we will use MTK common input device to report input events
+	/*
 	ts->input_dev = input_allocate_device();
 	if (!ts->input_dev) {
-		pr_err("Failed to allocate touch input device");
+		TPD_DMESG("Failed to allocate touch input device");
 		ret = -ENOMEM;
 		goto err_device_init_alloc_inputdev;
 	}
@@ -1860,9 +2374,11 @@ static int device_init(struct i2c_client *client)
 #ifdef MAX1187X_PROTOCOL_A
 	input_set_abs_params(ts->input_dev, ABS_MT_TRACKING_ID, 0, 10, 0, 0);
 #else
-	input_mt_init_slots(ts->input_dev, MAX1187X_TOUCH_COUNT_MAX);
+	input_mt_init_slots(ts->input_dev, MAX1187X_TOUCH_COUNT_MAX, INPUT_MT_POINTER);
 #endif
+	*/
 	ts->list_finger_ids = 0;
+	/*
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X,
 			PDATA(panel_margin_xl),
 			PDATA(panel_margin_xl) + PDATA(lcd_x), 0, 0);
@@ -1879,6 +2395,7 @@ static int device_init(struct i2c_client *client)
 			0, PDATA(lcd_x) + PDATA(lcd_y), 0, 0);
 	input_set_abs_params(ts->input_dev, ABS_MT_ORIENTATION, -90, 90, 0, 0);
 #endif
+	//this is for touch key report
 	if (PDATA(button_code0) != KEY_RESERVED)
 		set_bit(pdata->button_code0, ts->input_dev->keybit);
 	if (PDATA(button_code1) != KEY_RESERVED)
@@ -1890,16 +2407,16 @@ static int device_init(struct i2c_client *client)
 
 	ret = input_register_device(ts->input_dev);
 	if (ret) {
-		pr_err("Failed to register touch input device");
+		TPD_DMESG("Failed to register touch input device");
 		ret = -EPERM;
 		goto err_device_init_register_inputdev;
 	}
-	pr_info_if(8, "(INIT): Input touch device OK");
-
+	TPD_DMESG("(INIT): Input touch device OK");
+	*/
 #ifdef TOUCH_WAKEUP_FEATURE
 	ts->input_dev_key = input_allocate_device();
 	if (!ts->input_dev_key) {
-		pr_err("Failed to allocate touch input key device");
+		TPD_DMESG("Failed to allocate touch input key device\n");
 		ret = -ENOMEM;
 		goto err_device_init_alloc_inputdevkey;
 	}
@@ -1912,47 +2429,46 @@ static int device_init(struct i2c_client *client)
 	set_bit(KEY_POWER, ts->input_dev_key->keybit);
 	ret = input_register_device(ts->input_dev_key);
 	if (ret) {
-		pr_err("Failed to register touch input key device");
+		TPD_DMESG("Failed to register touch input key device\n");
 		ret = -EPERM;
 		goto err_device_init_register_inputdevkey;
 	}
-	pr_info_if(8, "(INIT): Input key device OK");
+	TPD_DMESG("(INIT): Input key device OK\n");
 #endif
 
 	/* Setup IRQ and handler */
-	ret = request_irq(client->irq, irq_handler,
+#ifdef CONFIG_OF_TOUCH
+	ret = tpd_irq_registration(ts->client->irq, irq_handler,
 			IRQF_TRIGGER_FALLING, client->name, ts);
 	if (ret != 0) {
-			pr_err("Failed to setup IRQ handler");
+			TPD_DMESG("Failed to setup IRQ handler\n");
 			ret = -EIO;
 			goto err_device_init_irq;
 	}
-	pr_info_if(8, "(INIT): IRQ handler OK");
-
+	TPD_DMESG("(INIT): IRQ handler OK\n");
+#else
+    mt_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, IRQF_TRIGGER_FALLING, irq_handler, 1); 
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
 	/* collect controller ID and configuration ID data from firmware   */
 	/* and perform firmware comparison/download if we have valid image */
 	validate_fw(ts);
 
 	/* configure suspend/resume */
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef CONFIG_USE_EARLYSUSPEND
 	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 1;
 	ts->early_suspend.suspend = early_suspend;
 	ts->early_suspend.resume = late_resume;
 	register_early_suspend(&ts->early_suspend);
-#elif defined CONFIG_FB
-	ts->fb_notif.notifier_call = fb_notifier_callback;
-	ret = fb_register_client(&ts->fb_notif);
-	if (ret)
-		pr_err("Unable to register fb_notifier");
 #endif
 
 	ts->is_suspended = 0;
-	pr_info_if(8, "(INIT): suspend/resume registration OK");
+	TPD_DMESG("(INIT): suspend/resume registration OK\n");
 
 	/* set up debug interface */
 	while (*dev_attr) {
 		if (device_create_file(&client->dev, *dev_attr) < 0) {
-			pr_err("failed to create sysfs file");
+			TPD_DMESG("failed to create sysfs file\n");
 			return 0;
 		}
 		ts->sysfs_created++;
@@ -1960,7 +2476,7 @@ static int device_init(struct i2c_client *client)
 	}
 
 	if (device_create_bin_file(&client->dev, &dev_attr_report) < 0) {
-		pr_err("failed to create sysfs file [report]");
+		TPD_DMESG("failed to create sysfs file [report]\n");
 		return 0;
 	}
 	ts->sysfs_created++;
@@ -1981,8 +2497,8 @@ err_device_init_register_inputdevkey:
 err_device_init_alloc_inputdevkey:
 #endif
 err_device_init_register_inputdev:
-	input_free_device(ts->input_dev);
-	ts->input_dev = NULL;
+	//input_free_device(ts->input_dev);
+	//ts->input_dev = NULL;
 err_device_init_alloc_inputdev:
 err_device_init_gpio:
 err_device_init_memalloc:
@@ -1994,7 +2510,6 @@ err_device_init:
 
 static int device_deinit(struct i2c_client *client)
 {
-	struct data *ts = i2c_get_clientdata(client);
 	struct max1187x_pdata *pdata = ts->pdata;
 	struct device_attribute **dev_attr = dev_attrs;
 
@@ -2017,11 +2532,8 @@ static int device_deinit(struct i2c_client *client)
 	if (ts->sysfs_created && ts->sysfs_created--)
 		device_remove_bin_file(&client->dev, &dev_attr_report);
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef CONFIG_USE_EARLYSUSPEND
 	unregister_early_suspend(&ts->early_suspend);
-#elif defined CONFIG_FB
-	if (fb_unregister_client(&ts->fb_notif))
-		pr_err("Error occurred while unregistering fb_notifier.");
 #endif
 
 	if (client->irq)
@@ -2031,35 +2543,43 @@ static int device_deinit(struct i2c_client *client)
 	input_unregister_device(ts->input_dev_key);
 #endif
 
-	input_unregister_device(ts->input_dev);
+	//input_unregister_device(ts->input_dev);
 
 	flush_workqueue(ts->wq);
 	destroy_workqueue(ts->wq);
-	(void) max1187x_chip_init(pdata, 0);
-	kfree(ts);
-
+	//kfree(ts);
+	ts = NULL;
 	pr_info("(INIT): Deinitialized\n");
 	return 0;
 }
 
-static int probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int max_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
+	int count = 0;
+	
 	if (device_create_file(&client->dev, &dev_attr_init) < 0) {
-		pr_err("failed to create sysfs file [init]");
+		TPD_DMESG("failed to create sysfs file [init]\n");
 		return 0;
 	}
 
-	if (!is_booting())
-		return device_init(client);
 	if (IS_ERR(kthread_run(device_init_thread, (void *) client,
-			MAX1187X_NAME))) {
-		pr_err("failed to start kernel thread");
+			"max1187x_probe"))) {
+		TPD_DMESG("failed to start kernel thread\n");
 		return -EAGAIN;
 	}
+
+	do{
+		msleep(10);
+		count++;
+		if(check_flag)
+			break;
+	}while(count < 50);
+	printk("max_i2c_probe done.count = %d, flag = %d",count,check_flag);
+
 	return 0;
 }
 
-static int remove(struct i2c_client *client)
+static int max_i2c_remove(struct i2c_client *client)
 {
 	int ret = device_deinit(client);
 
@@ -2172,7 +2692,7 @@ static int get_report(struct data *ts, u16 report_id, ulong timeout)
 			break;
 	if (i == MAX_REPORT_READERS) {
 		mutex_unlock(&ts->report_mutex);
-		pr_err("maximum readers reached");
+		TPD_DMESG("maximum readers reached\n");
 		return -EBUSY;
 	}
 	ts->report_readers[i].report_id = report_id;
@@ -2214,9 +2734,14 @@ static void set_suspend_mode(struct data *ts)
 	u16 cmd_buf[] = {0x0020, 0x0001, 0x0000};
 	int ret;
 
-	pr_info_if(0x10, "Enter\n");
+	TPD_DMESG("Enter\n");
 
+#ifdef CONFIG_OF_TOUCH
 	disable_irq(ts->client->irq);
+#else
+	mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
+
 	ts->is_suspended = 1;
 
 	flush_workqueue(ts->wq);
@@ -2227,16 +2752,21 @@ static void set_suspend_mode(struct data *ts)
 #endif
 	ret = cmd_send(ts, cmd_buf, 3);
 	if (ret)
-		pr_err("Failed to set sleep mode");
+		TPD_DMESG("Failed to set sleep mode\n");
 
 	flush_workqueue(ts->wq);
 
 #ifdef TOUCH_WAKEUP_FEATURE
 	if (device_may_wakeup(&ts->client->dev))
+#ifdef CONFIG_OF_TOUCH
 		enable_irq(ts->client->irq);
+#else
+		mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
 #endif
 
-	pr_info_if(0x10, "Exit\n");
+#endif
+
+	TPD_DMESG("Exit\n");
 	return;
 }
 
@@ -2245,45 +2775,54 @@ static void set_resume_mode(struct data *ts)
 	u16 cmd_buf[] = {0x0020, 0x0001, 0x0002};
 	int ret;
 
-	pr_info_if(0x10, "Enter\n");
+	TPD_DMESG("Enter\n");
 
 #ifdef TOUCH_WAKEUP_FEATURE
 	if (device_may_wakeup(&ts->client->dev))
+#ifdef CONFIG_OF_TOUCH
 		disable_irq(ts->client->irq);
+#else
+		mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
+
 #endif
 
 	ret = cmd_send(ts, cmd_buf, 3);
 	if (ret)
-		pr_err("Failed to set active mode");
+		TPD_DMESG("Failed to set active mode\n");
 
 	cmd_buf[0] = 0x0018;
 	cmd_buf[1] = 0x0001;
 	cmd_buf[2] = MAX1187X_TOUCH_REPORT_MODE;
 	ret = cmd_send(ts, cmd_buf, 3);
 	if (ret)
-		pr_err("Failed to set up touch report mode");
+		TPD_DMESG("Failed to set up touch report mode\n");
 
 	flush_workqueue(ts->wq);
 
 	ts->is_suspended = 0;
 
+#ifdef CONFIG_OF_TOUCH
 	enable_irq(ts->client->irq);
+#else
+	mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+#endif
 
-	pr_info_if(0x10, "Exit\n");
+	TPD_DMESG("Exit\n");
 
 	return;
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef CONFIG_USE_EARLYSUSPEND
 static void early_suspend(struct early_suspend *h)
 {
 	struct data *ts = container_of(h, struct data, early_suspend);
 
-	pr_info_if(0x10, "Enter\n");
+	TPD_DMESG("Enter\n");
 
 	set_suspend_mode(ts);
 
-	pr_info_if(0x10, "Exit\n");
+	TPD_DMESG("Exit\n");
 	return;
 }
 
@@ -2291,33 +2830,11 @@ static void late_resume(struct early_suspend *h)
 {
 	struct data *ts = container_of(h, struct data, early_suspend);
 
-	pr_info_if(0x10, "Enter\n");
+	TPD_DMESG("Enter\n");
 
 	set_resume_mode(ts);
 
-	pr_info_if(0x10, "Exit\n");
-}
-#elif defined CONFIG_FB
-static int fb_notifier_callback(struct notifier_block *self,
-				unsigned long event, void *data)
-{
-	struct fb_event *evdata = data;
-	int *blank;
-	struct data *ts = container_of(self, struct data, fb_notif);
-
-	if (evdata && evdata->data && event == FB_EVENT_BLANK && ts &&
-			ts->client) {
-		blank = evdata->data;
-		if (ts->is_suspended == 0 && *blank != FB_BLANK_UNBLANK) {
-			pr_info_if(0x10, "FB_BLANK_BLANKED\n");
-			set_suspend_mode(ts);
-		} else if (ts->is_suspended == 1
-				&& *blank == FB_BLANK_UNBLANK) {
-			pr_info_if(0x10, "FB_BLANK_UNBLANK\n");
-			set_resume_mode(ts);
-		}
-	}
-	return 0;
+	TPD_DMESG("Exit\n");
 }
 #endif
 
@@ -2326,22 +2843,15 @@ static int suspend(struct device *dev)
 #ifdef TOUCH_WAKEUP_FEATURE
 	struct i2c_client *client = to_i2c_client(dev);
 #endif
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-	struct data *ts = i2c_get_clientdata(to_i2c_client(dev));
-#endif
 
-	pr_info_if(0x10, "Enter\n");
-
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-	set_suspend_mode(ts);
-#endif
+	TPD_DMESG("Enter\n");
 
 #ifdef TOUCH_WAKEUP_FEATURE
 	if (device_may_wakeup(&client->dev))
 		enable_irq_wake(client->irq);
 #endif
 
-	pr_info_if(0x10, "Exit\n");
+	TPD_DMESG("Exit\n");
 
 	return 0;
 }
@@ -2351,58 +2861,35 @@ static int resume(struct device *dev)
 #ifdef TOUCH_WAKEUP_FEATURE
 	struct i2c_client *client = to_i2c_client(dev);
 #endif
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-	struct data *ts = i2c_get_clientdata(to_i2c_client(dev));
-#endif
 
-	pr_info_if(0x10, "Enter\n");
+	TPD_DMESG("Enter\n");
 
 #ifdef TOUCH_WAKEUP_FEATURE
 	if (device_may_wakeup(&client->dev))
 		disable_irq_wake(client->irq);
 #endif
 
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-	set_resume_mode(ts);
-#endif
-
-	pr_info_if(0x10, "Exit\n");
+	TPD_DMESG("Exit\n");
 
 	return 0;
 }
 
-static const struct dev_pm_ops max1187x_pm_ops = {
-	.resume = resume,
-	.suspend = suspend,
-};
 
-#define STATUS_ADDR_H 0x00
-#define STATUS_ADDR_L 0xFF
-#define DATA_ADDR_H   0x00
-#define DATA_ADDR_L   0xFE
-#define STATUS_READY_H 0xAB
-#define STATUS_READY_L 0xCC
-#define RXTX_COMPLETE_H 0x54
-#define RXTX_COMPLETE_L 0x32
 static int bootloader_read_status_reg(struct data *ts, const u8 byteL,
 	const u8 byteH)
 {
 	u8 buffer[] = { STATUS_ADDR_L, STATUS_ADDR_H }, i;
 
 	for (i = 0; i < 3; i++) {
-		if (i2c_tx_bytes(ts, buffer, 2) != 2) {
-			pr_err("TX fail");
-			return -EIO;
-		}
-		if (i2c_rx_bytes(ts, buffer, 2) != 2) {
-			pr_err("RX fail");
+		if (i2c_rx_bytes(ts, buffer, 2) < 0) {
+			TPD_DMESG("RX fail\n");
 			return -EIO;
 		}
 		if (buffer[0] == byteL && buffer[1] == byteH)
 			break;
 	}
 	if (i == 3) {
-		pr_err("Unexpected status => %02X%02X vs %02X%02X",
+		TPD_DMESG("Unexpected status => %02X%02X vs %02X%02X\n",
 				buffer[0], buffer[1], byteL, byteH);
 		return -EIO;
 	}
@@ -2415,8 +2902,8 @@ static int bootloader_write_status_reg(struct data *ts, const u8 byteL,
 {
 	u8 buffer[] = { STATUS_ADDR_L, STATUS_ADDR_H, byteL, byteH };
 
-	if (i2c_tx_bytes(ts, buffer, 4) != 4) {
-		pr_err("TX fail");
+	if (i2c_tx_bytes(ts, buffer, 4) < 0) {
+		TPD_DMESG("TX fail\n");
 		return -EIO;
 	}
 	return 0;
@@ -2431,17 +2918,12 @@ static int bootloader_rxtx_complete(struct data *ts)
 static int bootloader_read_data_reg(struct data *ts, u8 *byteL, u8 *byteH)
 {
 	u8 buffer[] = { DATA_ADDR_L, DATA_ADDR_H, 0x00, 0x00 };
-
-	if (i2c_tx_bytes(ts, buffer, 2) != 2) {
-		pr_err("TX fail");
-		return -EIO;
-	}
-	if (i2c_rx_bytes(ts, buffer, 4) != 4) {
-		pr_err("RX fail");
+	if (i2c_rx_bytes(ts, buffer, 4) < 0) {
+		TPD_DMESG("RX fail\n");
 		return -EIO;
 	}
 	if (buffer[2] != 0xCC && buffer[3] != 0xAB) {
-		pr_err("Status is not ready");
+		TPD_DMESG("Status is not ready\n");
 		return -EIO;
 	}
 
@@ -2458,11 +2940,11 @@ static int bootloader_write_data_reg(struct data *ts, const u8 byteL,
 
 	if (bootloader_read_status_reg(ts, STATUS_READY_L,
 		STATUS_READY_H) < 0) {
-		pr_err("read status register fail");
+		TPD_DMESG("read status register fail\n");
 		return -EIO;
 	}
-	if (i2c_tx_bytes(ts, buffer, 6) != 6) {
-		pr_err("TX fail");
+	if (i2c_tx_bytes(ts, buffer, 6) < 0) {
+		TPD_DMESG("TX fail\n");
 		return -EIO;
 	}
 	return 0;
@@ -2473,14 +2955,14 @@ static int bootloader_rxtx(struct data *ts, u8 *byteL, u8 *byteH,
 {
 	if (tx > 0) {
 		if (bootloader_write_data_reg(ts, *byteL, *byteH) < 0) {
-			pr_err("write data register fail");
+			TPD_DMESG("write data register fail\n");
 			return -EIO;
 		}
 		return 0;
 	}
 
 	if (bootloader_read_data_reg(ts, byteL, byteH) < 0) {
-		pr_err("read data register fail");
+		TPD_DMESG("read data register fail\n");
 		return -EIO;
 	}
 	return 0;
@@ -2508,7 +2990,7 @@ static int bootloader_write_buffer(struct data *ts, u8 *buffer, int size)
 
 	for (k = 0; k < size; k++) {
 		if (bootloader_rxtx(ts, &buffer[k], &byteH, 1) < 0) {
-			pr_err("bootloader RX-TX fail");
+			TPD_DMESG("bootloader RX-TX fail\n");
 			return -EIO;
 		}
 	}
@@ -2522,14 +3004,14 @@ static int bootloader_enter(struct data *ts)
 			0x0007 } };
 
 	for (i = 0; i < 3; i++) {
-		if (i2c_tx_words(ts, enter[i], 2) != 2) {
-			pr_err("Failed to enter bootloader");
+		if (i2c_tx_words(ts, enter[i], 2) < 0) {
+			TPD_DMESG("Failed to enter bootloader\n");
 			return -EIO;
 		}
 	}
 
 	if (bootloader_get_cmd_conf(ts, 5) < 0) {
-		pr_err("Failed to enter bootloader mode");
+		TPD_DMESG("Failed to enter bootloader mode\n");
 		return -EIO;
 	}
 	return 0;
@@ -2542,8 +3024,8 @@ static int bootloader_exit(struct data *ts)
 			0x0000 } };
 
 	for (i = 0; i < 3; i++) {
-		if (i2c_tx_words(ts, exit[i], 2) != 2) {
-			pr_err("Failed to exit bootloader");
+		if (i2c_tx_words(ts, exit[i], 2) < 0) {
+			TPD_DMESG("Failed to exit bootloader\n");
 			return -EIO;
 		}
 	}
@@ -2560,27 +3042,27 @@ static int bootloader_get_crc(struct data *ts, u16 *crc16,
 	u16 rx_crc16 = 0;
 
 	if (bootloader_write_buffer(ts, crc_command, 6) < 0) {
-		pr_err("write buffer fail");
+		TPD_DMESG("write buffer fail\n");
 		return -EIO;
 	}
 	msleep(delay);
 
 	/* reads low 8bits (crcL) */
 	if (bootloader_rxtx(ts, &byteL, &byteH, 0) < 0) {
-		pr_err("Failed to read low byte of crc response!");
+		TPD_DMESG("Failed to read low byte of crc response!\n");
 		return -EIO;
 	}
 	rx_crc16 = (u16) byteL;
 
 	/* reads high 8bits (crcH) */
 	if (bootloader_rxtx(ts, &byteL, &byteH, 0) < 0) {
-		pr_err("Failed to read high byte of crc response!");
+		TPD_DMESG("Failed to read high byte of crc response!\n");
 		return -EIO;
 	}
 	rx_crc16 = (u16)(byteL << 8) | rx_crc16;
 
 	if (bootloader_get_cmd_conf(ts, 5) < 0) {
-		pr_err("CRC get failed!");
+		TPD_DMESG("CRC get failed!\n");
 		return -EIO;
 	}
 	*crc16 = rx_crc16;
@@ -2593,11 +3075,11 @@ static int bootloader_set_byte_mode(struct data *ts)
 	u8 buffer[2] = { 0x0A, 0x00 };
 
 	if (bootloader_write_buffer(ts, buffer, 2) < 0) {
-		pr_err("write buffer fail");
+		TPD_DMESG("write buffer fail\n");
 		return -EIO;
 	}
 	if (bootloader_get_cmd_conf(ts, 10) < 0) {
-		pr_err("command confirm fail");
+		TPD_DMESG("command confirm fail\n");
 		return -EIO;
 	}
 	return 0;
@@ -2609,7 +3091,7 @@ static int bootloader_erase_flash(struct data *ts)
 	int i, verify = 0;
 
 	if (bootloader_rxtx(ts, &byteL, &byteH, 1) < 0) {
-		pr_err("bootloader RX-TX fail");
+		TPD_DMESG("bootloader RX-TX fail\n");
 		return -EIO;
 	}
 
@@ -2624,7 +3106,7 @@ static int bootloader_erase_flash(struct data *ts)
 	}
 
 	if (verify != 1) {
-		pr_err("Flash Erase failed");
+		TPD_DMESG("Flash Erase failed\n");
 		return -EIO;
 	}
 
@@ -2641,7 +3123,7 @@ static int bootloader_write_flash(struct data *ts, const u8 *image, u16 length)
 	int i, j;
 
 	if (bootloader_write_buffer(ts, command, 5) < 0) {
-		pr_err("write buffer fail");
+		TPD_DMESG("write buffer fail\n");
 		return -EIO;
 	}
 
@@ -2655,7 +3137,7 @@ static int bootloader_write_flash(struct data *ts, const u8 *image, u16 length)
 				break;
 		}
 		if (j == 100) {
-			pr_err("Failed to read Status register!");
+			TPD_DMESG("Failed to read Status register!\n");
 			return -EIO;
 		}
 
@@ -2663,19 +3145,19 @@ static int bootloader_write_flash(struct data *ts, const u8 *image, u16 length)
 		buffer[1] = 0x00;
 		memcpy(buffer + 2, image + i * 128, 128);
 
-		if (i2c_tx_bytes(ts, buffer, 130) != 130) {
-			pr_err("Failed to write data (%d)", i);
+		if (i2c_tx_bytes(ts, buffer, 130) < 0) {
+			TPD_DMESG("Failed to write data (%d)\n", i);
 			return -EIO;
 		}
 		if (bootloader_rxtx_complete(ts) < 0) {
-			pr_err("Transfer failure (%d)", i);
+			TPD_DMESG("Transfer failure (%d)\n", i);
 			return -EIO;
 		}
 	}
 
 	usleep_range(10000, 11000);
 	if (bootloader_get_cmd_conf(ts, 5) < 0) {
-		pr_err("Flash programming failed");
+		TPD_DMESG("Flash programming failed\n");
 		return -EIO;
 	}
 	return 0;
@@ -2686,33 +3168,102 @@ static int bootloader_write_flash(struct data *ts, const u8 *image, u16 length)
  * Standard Driver Structures/Functions
  *
  ****************************************/
-static const struct i2c_device_id id[] = { { MAX1187X_NAME, 0 }, { } };
 
-MODULE_DEVICE_TABLE(i2c, id);
-
-static struct of_device_id max1187x_dt_match[] = {
-	{ .compatible = "maxim,max1187x_tsc" },	{ } };
-
-static struct i2c_driver driver = {
-		.probe = probe,
-		.remove = remove,
-		.id_table = id,
+MODULE_DEVICE_TABLE(i2c, id);//what is it used for?
+/**********************************MTK Add****************************/
+static struct i2c_driver max_i2c_driver = {
+		.probe = max_i2c_probe,
+		.remove = max_i2c_remove,
+		.id_table = tpd_i2c_id,
 		.driver = {
 			.name = MAX1187X_NAME,
 			.owner	= THIS_MODULE,
-			.of_match_table = max1187x_dt_match,
-			.pm = &max1187x_pm_ops,
 		},
 };
 
-static int __devinit max1187x_init(void)
+/* Function to manage power-off suspend */
+static void tpd_suspend(struct early_suspend *h)
 {
-	return i2c_add_driver(&driver);
+
+}
+
+/* Function to manage power-on resume */
+static void tpd_resume(struct early_suspend *h)
+{
+
+}
+
+static int tpd_local_init(void)
+{
+    if (i2c_add_driver(&max_i2c_driver) != 0)
+    {
+        TPD_DMESG("unable to add i2c driver.\n");
+        return -1;
+    }
+
+    if (tpd_load_status == 0) //if(tpd_load_status == 0) // disable auto load touch driver for linux3.0 porting
+    {
+        TPD_DMESG("add error touch panel driver.\n");
+        i2c_del_driver(&max_i2c_driver);
+        return -1;
+    }
+
+#ifdef TPD_HAVE_BUTTON
+    tpd_button_setting(TPD_KEY_COUNT, tpd_keys_local, tpd_keys_dim_local);// initialize tpd button data
+#endif
+
+    // set vendor string
+    tpd->dev->id.vendor = 0x00;
+    tpd->dev->id.product = tpd_info.pid;
+    tpd->dev->id.version = tpd_info.vid;
+
+    TPD_DMESG("end %s, %d\n", __FUNCTION__, __LINE__);
+    tpd_type_cap = 1;
+#if GTP_SUPPORT_I2C_DMA
+		tpd->dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+		gpDMABuf_va = (u8 *)dma_alloc_coherent(&tpd->dev->dev, GTP_DMA_MAX_TRANSACTION_LENGTH, &gpDMABuf_pa, GFP_KERNEL);
+		if(!gpDMABuf_va){
+			TPD_DMESG("[Error] Allocate DMA I2C Buffer failed!\n");
+		}
+		memset(gpDMABuf_va, 0, GTP_DMA_MAX_TRANSACTION_LENGTH);
+#endif
+
+    return 0;
+}
+
+static struct tpd_driver_t tpd_device_driver =
+{
+    .tpd_device_name = MAX1187X_NAME,
+    .tpd_local_init = tpd_local_init,
+    .suspend = tpd_suspend,
+    .resume = tpd_resume,
+#ifdef TPD_HAVE_BUTTON
+    .tpd_have_button = 1,
+#else
+    .tpd_have_button = 0,
+#endif
+};
+
+
+
+static int __init max1187x_init(void)
+{
+	TPD_DMESG("MediaTek max1187x touch panel driver init\n");
+
+	i2c_register_board_info(2, &i2c_tpd, 1);
+
+	if (tpd_driver_add(&tpd_device_driver) < 0)
+		TPD_DMESG("add generic driver failed\n");
+	
+	return 0;
+
 }
 
 static void __exit max1187x_exit(void)
 {
-	i2c_del_driver(&driver);
+    TPD_DMESG("MediaTek max1187x touch panel driver exit\n");
+    tpd_driver_remove(&tpd_device_driver);
+
 }
 
 module_init(max1187x_init);
