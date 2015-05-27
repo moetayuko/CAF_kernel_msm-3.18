@@ -1,8 +1,9 @@
-/* Max11871p7 Generated configuration data strings
+/* Max1187xp7 Generated configuration data strings
  *
- * Date generated: Monday, November 12, 2012
+ * Date generated: Dec 14, 2012
  *
  * Copyright (c) 2012 Maxim Integrated, Inc.
+ * Copyright (C) 2012-2013 Sony Mobile Communications AB.
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by teh Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -14,8 +15,8 @@
  *
  */
 
-#ifndef __MAX11871_CONFIG_H
-#define __MAX11871_CONFIG_H
+#ifndef __MAX1187X_CONFIG_H
+#define __MAX1187X_CONFIG_H
 
 const u16 max1187x_Touch_Configuration_Data[67] = {
 		 0x0001, 0x0041, 0x0CFD, 0x1220, 0x0078, 0x001E, 0x0A01, 0x0F11,
@@ -125,4 +126,4 @@ const u16 max1187x_Image_Factor_Table[460] = {
 		 0x05A0, 0xE710, 0xE6C0, 0xECAD, 0x0795, 0xF2CE, 0xE903, 0xEB60
 };
 
-#endif /* __MAX11871_CONFIG_H */
+#endif /* __MAX1187X_CONFIG_H */
