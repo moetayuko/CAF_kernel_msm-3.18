@@ -2,8 +2,8 @@
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
  *
- * Driver Version: 3.1.7
- * Release Date: May 9, 2013
+ * Driver Version: 3.2.0
+ * Release Date: May 19, 2013
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,6 +45,12 @@ struct max1187x_pdata max1187x_platdata = {
 		.button_code1 = KEY_MENU,
 		.button_code2 = KEY_BACK,
 		.button_code3 = KEY_RESERVED,
+		.linux_touch_protocol = 1,
+		.max1187x_report_mode = 1,
+		.enable_touch_wakeup = 0,
+		.enable_pressure_shaping = 0,
+		.enable_fast_calculation = 1,
+		.enable_fw_download = 1,
 };
 
 static struct i2c_board_info __initdata panda_i2c4_boardinfo[] = {

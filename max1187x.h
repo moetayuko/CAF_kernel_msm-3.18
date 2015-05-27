@@ -2,8 +2,8 @@
  *
  * Copyright (c)2012 Maxim Integrated Products, Inc.
  *
- * Driver Version: 3.1.8
- * Release Date: May 10, 2013
+ * Driver Version: 3.2.0
+ * Release Date: May 19, 2013
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -37,19 +37,12 @@
 #define MAX1187X_REPORT_TOUCH_BASIC     0x0801
 #define MAX1187X_REPORT_TOUCH_EXTENDED  0x0802
 #define MAX1187X_REPORT_POWER_MODE		0x0121
-/* #define MAX1187X_PROTOCOL_A */
-#define MAX1187X_TOUCH_REPORT_MODE 1 /* 1=basic, 2=extended */
-#define MAX1187X_REPORT_FAST_CALCULATION
 #define PRESSURE_MAX                    32768
 #define PRESSURE_MAX_SQRT               181
-/* #define MAX1187X_PRESSURE_SHAPING */
 #define MAX_REPORT_READERS              5
-#define FW_DOWNLOAD_FEATURE
-/* #define TOUCH_WAKEUP_FEATURE */
 #define DEBUG_STRING_LEN_MAX            60
 #define MAX_FW_RETRIES                  5
 
-#ifndef MAX1187X_REPORT_FAST_CALCULATION
 #define MAX1187X_PI 205887 /* pi multiplied by 2^16 */
 /* tanlist - array containing tan(i)*(2^16-1) for i=[0,45], i in degrees */
 u16 tanlist[] = {0, 1144, 2289, 3435, 4583, 5734,
@@ -60,7 +53,6 @@ u16 tanlist[] = {0, 1144, 2289, 3435, 4583, 5734,
 			37837, 39377, 40951, 42559, 44204, 45888,
 			47614, 49384, 51202, 53069, 54990, 56969,
 			59008, 61112, 63286, 65535};
-#endif
 
 struct max1187x_touch_report_header {
 	u16 header;
@@ -142,6 +134,14 @@ struct max1187x_pdata {
 	u32			button_code1;
 	u32			button_code2;
 	u32			button_code3;
+	/* Protocol A (0) or B (1) */
+	u32			linux_touch_protocol;
+	/* Simple (1) or Extended (2) */
+	u32			max1187x_report_mode;
+	u32			enable_touch_wakeup;
+	u32			enable_pressure_shaping;
+	u32			enable_fast_calculation;
+	u32			enable_fw_download;
 };
 
 #endif /* __MAX1187X_H */
