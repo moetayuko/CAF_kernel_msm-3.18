@@ -1,7 +1,7 @@
 /* include/linux/input/max1187x.h
  *
  * Copyright (c)2013 Maxim Integrated Products, Inc.
- * Copyright (C) 2012-2014 Sony Mobile Communications AB.
+ * Copyright (C) 2013-2014 Sony Mobile Communications AB.
  *
  * Driver Version: 3.1.8
  * Release Date: May 10, 2013
@@ -25,26 +25,17 @@
 #define MAX1187X_PEN  MAX1187X_NAME "_pen_0"
 #define MAX1187X_KEY    MAX1187X_NAME "_key_0"
 
-#define MXM_NUM_FW_MAPPINGS_MAX    5
-
-struct max1187x_fw_mapping {
-	u32	config_id;
-	u32	chip_id;
-	char	*filename;
-	u32	filesize;
-	u32	filecrc16;
-	u32	file_codesize;
-};
 
 struct max1187x_pdata {
 	char	*vdd_supply_name;
 	u32	gpio_tirq;
-	u32	gpio_pwr_en;
-	u32	num_fw_mappings;
-	struct max1187x_fw_mapping  fw_mapping[MXM_NUM_FW_MAPPINGS_MAX];
+	u32	gpio_reset;
+	u32	reset_l2h;
+	u32	enable_resume_por;
 	u32	defaults_allow;
 	u32	default_config_id;
 	u32	default_chip_id;
+	char	*fw_name;
 	u32	i2c_words;
 	u32	coordinate_settings;
 	u32	panel_margin_xl;
@@ -62,7 +53,10 @@ struct max1187x_pdata {
 	u32	pressure_enabled;
 	u32	size_enabled;
 	u32	orientation_enabled;
-	u32	enable_resume_por;
+	u32	glove_enabled;
+	u32	report_pen_as_finger;
+	u32	wakeup_gesture_support;
+	u32	wakeup_gesture_timeout;
 };
 
 #endif /* __MAX1187X_H */
