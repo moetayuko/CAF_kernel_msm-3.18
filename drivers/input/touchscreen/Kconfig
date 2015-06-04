@@ -340,12 +340,12 @@ config TOUCHSCREEN_TOUCHWIN
 	  To compile this driver as a module, choose M here: the
 	  module will be called touchwin.
 
-config TOUCHSCREEN_ATMEL_TSADCC
+config TOUCHSCREEN_ATMEL_MXT
 	tristate "Atmel Touchscreen Interface"
-	depends on ARCH_AT91SAM9RL || ARCH_AT91SAM9G45
+	depends on I2C
 	help
-	  Say Y here if you have a 4-wire touchscreen connected to the
-          ADC Controller on your Atmel SoC (such as the AT91SAM9RL).
+	  To compile this driver as a module, choose M here: the
+          module will be called atmele_mxt_ts.
 
 	  If unsure, say N.
 
