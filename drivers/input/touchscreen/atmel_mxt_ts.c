@@ -292,6 +292,7 @@ struct mxt_finger {
 	int x;
 	int y;
 	int area;
+	int pressure;
 };
 
 /* Each client has this additional data */
@@ -595,8 +596,9 @@ static int mxt_read_message(struct mxt_data *data,
 	ret = __mxt_read_reg(data->client, reg,
 			object->size - 1, message);
 
-	if (message->reportid != MXT_RPTID_NOMSG && data->debug_enabled)
-		print_hex_dump(KERN_INFO, "MXT MSG:", DUMP_PREFIX_NONE,
+	if (ret == 0 && message->reportid != MXT_RPTID_NOMSG
+	    && data->debug_enabled)
+		print_hex_dump(KERN_DEBUG, "MXT MSG:", DUMP_PREFIX_NONE,
 			16, 1, message, object->size - 1, false);
 
 	return ret;
@@ -607,8 +609,11 @@ static int mxt_read_message_reportid(struct mxt_data *data,
 {
 	int try = 0;
 	int error;
+	int fail_count;
 
-	while (++try < 20) {
+	fail_count = data->max_reportid * 2;
+
+	while (++try < fail_count) {
 		error = mxt_read_message(data, message);
 		if (error)
 			return error;
@@ -676,6 +681,8 @@ static void mxt_input_report(struct mxt_data *data, int single_id)
 				finger[id].x);
 		input_report_abs(input_dev, ABS_MT_POSITION_Y,
 				finger[id].y);
+		input_report_abs(input_dev, ABS_MT_PRESSURE,
+				finger[id].pressure);
 		input_mt_sync(input_dev);
 
 		if (finger[id].status == MXT_RELEASE)
@@ -689,6 +696,8 @@ static void mxt_input_report(struct mxt_data *data, int single_id)
 	if (status != MXT_RELEASE) {
 		input_report_abs(input_dev, ABS_X, finger[single_id].x);
 		input_report_abs(input_dev, ABS_Y, finger[single_id].y);
+		input_report_abs(input_dev,
+				 ABS_PRESSURE, finger[single_id].pressure);
 	}
 
 	input_sync(input_dev);
@@ -703,13 +712,19 @@ static void mxt_input_touchevent(struct mxt_data *data,
 	int x;
 	int y;
 	int area;
+	int pressure;
 
 	if (data->driver_paused)
 		return;
 
 	/* Check the touch is present on the screen */
 	if (!(status & MXT_DETECT)) {
-		if (status & MXT_RELEASE) {
+		if (status & MXT_SUPPRESS) {
+			dev_dbg(dev, "[%d] suppressed\n", id);
+
+			finger[id].status = MXT_RELEASE;
+			mxt_input_report(data,id);
+		} else if (status & MXT_RELEASE) {
 			dev_dbg(dev, "[%d] released\n", id);
 
 			finger[id].status = MXT_RELEASE;
@@ -724,12 +739,13 @@ static void mxt_input_touchevent(struct mxt_data *data,
 
 	x = (message->message[1] << 4) | ((message->message[3] >> 4) & 0xf);
 	y = (message->message[2] << 4) | ((message->message[3] & 0xf));
-	if (data->max_x <= 1024)
+	if (data->max_x < 1024)
 		x = x >> 2;
-	if (data->max_y <= 1024)
+	if (data->max_y < 1024)
 		y = y >> 2;
 
 	area = message->message[4];
+	pressure = message->message[5];
 
 	dev_dbg(dev, "[%d] %s x: %d, y: %d, area: %d\n", id,
 		status & MXT_MOVE ? "moved" : "pressed",
@@ -740,6 +756,7 @@ static void mxt_input_touchevent(struct mxt_data *data,
 	finger[id].x = x;
 	finger[id].y = y;
 	finger[id].area = area;
+	finger[id].pressure = pressure;
 
 	mxt_input_report(data, id);
 }
@@ -769,11 +786,6 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
 		object = mxt_get_object(data, MXT_TOUCH_MULTI_T9);
 		if (!object)
 			goto end;
-
-		if (reportid != MXT_RPTID_NOMSG && data->debug_enabled)
-			print_hex_dump(KERN_DEBUG,
-				"MXT MSG:", DUMP_PREFIX_NONE, 16, 1,
-				&message, sizeof(struct mxt_message), false);
 
 		if (reportid >= object->min_reportid
 			&& reportid <= object->max_reportid) {
@@ -1074,10 +1086,12 @@ static int mxt_set_power_cfg(struct mxt_data *data, u8 mode)
 	case MXT_POWER_CFG_DEEPSLEEP:
 		actv_cycle_time = 0;
 		idle_cycle_time = 0;
+		break;
 	case MXT_POWER_CFG_RUN:
 	default:
 		actv_cycle_time = data->actv_cycle_time;
 		idle_cycle_time = data->idle_cycle_time;
+		break;
 	}
 
 	error = mxt_write_object(data, MXT_GEN_POWER_T7, MXT_POWER_ACTVACQINT,
@@ -1090,8 +1104,7 @@ static int mxt_set_power_cfg(struct mxt_data *data, u8 mode)
 	if (error)
 		goto i2c_error;
 
-	dev_dbg(dev, "%s: Set ACTV %d, IDLE %d", __func__,
-		actv_cycle_time, idle_cycle_time);
+	dev_dbg(dev, "Set ACTV %d, IDLE %d", actv_cycle_time, idle_cycle_time);
 
 	data->is_stopped = (mode == MXT_POWER_CFG_DEEPSLEEP) ? 1 : 0;
 
@@ -1285,8 +1298,8 @@ static int mxt_get_object_table(struct mxt_data *data)
 		if (end_address >= data->mem_size)
 			data->mem_size = end_address + 1;
 
-		dev_dbg(dev, "T%d, start:%d size:%d instances:%d "
-			"min_reportid:%d max_reportid:%d\n",
+		dev_dbg(dev, "T%u, start:%u size:%u instances:%u "
+			"min_reportid:%u max_reportid:%u\n",
 			object->type, object->start_address, object->size,
 			object->instances,
 			object->min_reportid, object->max_reportid);
@@ -1303,7 +1316,6 @@ static int mxt_read_resolution(struct mxt_data *data)
 	struct i2c_client *client = data->client;
 	int error;
 	unsigned int x_range, y_range;
-	unsigned int max_x, max_y;
 	unsigned char orient;
 	unsigned char val;
 
@@ -1355,19 +1367,16 @@ static int mxt_read_resolution(struct mxt_data *data)
 	if (y_range == 0)
 		y_range = 1023;
 
-	max_x = x_range + 1;
-	max_y = y_range + 1;
-
 	if (orient & MXT_XY_SWITCH) {
-		data->max_x = max_y;
-		data->max_y = max_x;
+		data->max_x = y_range;
+		data->max_y = x_range;
 	} else {
-		data->max_x = max_x;
-		data->max_y = max_y;
+		data->max_x = x_range;
+		data->max_y = y_range;
 	}
 
 	dev_info(&client->dev,
-			"Matrix Size X%dY%d Touchscreen size X%dY%d\n",
+			"Matrix Size X%uY%u Touchscreen size X%uY%u\n",
 			data->info.matrix_xsize, data->info.matrix_ysize,
 			data->max_x, data->max_y);
 
@@ -1422,11 +1431,8 @@ static int mxt_initialize(struct mxt_data *data)
 	}
 
 	error = mxt_check_message_length(data);
-	if (error) {
-		dev_err(&client->dev, "Error %d initialising configuration\n",
-			error);
+	if (error)
 		return error;
-	}
 
 	error = mxt_probe_power_cfg(data);
 	if (error) {
@@ -1790,6 +1796,8 @@ static int __devinit mxt_probe(struct i2c_client *client,
 			     0, data->max_x, 0, 0);
 	input_set_abs_params(input_dev, ABS_Y,
 			     0, data->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_PRESSURE,
+			     0, 255, 0, 0);
 
 	/* For multi touch */
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
@@ -1798,6 +1806,8 @@ static int __devinit mxt_probe(struct i2c_client *client,
 			     0, data->max_x, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
 			     0, data->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_PRESSURE,
+			     0, 255, 0, 0);
 
 	input_set_drvdata(input_dev, data);
 	i2c_set_clientdata(client, data);
@@ -1838,7 +1848,7 @@ static int __devinit mxt_probe(struct i2c_client *client,
 
 	sysfs_bin_attr_init(&data->mem_access_attr);
 	data->mem_access_attr.attr.name = "mem_access";
-	data->mem_access_attr.attr.mode = S_IRUGO | S_IWUGO;
+	data->mem_access_attr.attr.mode = S_IRUGO | S_IWUSR;
 	data->mem_access_attr.read = mxt_mem_access_read;
 	data->mem_access_attr.write = mxt_mem_access_write;
 	data->mem_access_attr.size = data->mem_size;
