@@ -44,7 +44,6 @@ struct mxt_address_pair {
 static const struct mxt_address_pair mxt_slave_addresses[] = {
 	{ 0x24, 0x4a },
 	{ 0x25, 0x4b },
-	{ 0x25, 0x4b },
 	{ 0x26, 0x4c },
 	{ 0x27, 0x4d },
 	{ 0x34, 0x5a },
@@ -70,6 +69,8 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
 #define MXT_OBJECT_START	0x07
 
 #define MXT_OBJECT_SIZE		6
+
+#define MXT_MAX_BLOCK_WRITE	256
 
 /* Object types */
 #define MXT_DEBUG_DIAGNOSTIC_T37	37
@@ -207,13 +208,14 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
 #define MXT_BOOT_VALUE		0xa5
 #define MXT_RESET_VALUE		0x01
 #define MXT_BACKUP_VALUE	0x55
+
+/* Delay times */
 #define MXT_BACKUP_TIME		25	/* msec */
 #define MXT224_RESET_TIME	65	/* msec */
 #define MXT768E_RESET_TIME	250	/* msec */
 #define MXT1386_RESET_TIME	200	/* msec */
 #define MXT_RESET_TIME		200	/* msec */
 #define MXT_RESET_NOCHGREAD	400	/* msec */
-
 #define MXT_FWRESET_TIME	1000	/* msec */
 
 /* Command to unlock bootloader */
@@ -252,9 +254,6 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
 #define MXT_MAX_AREA		0xff
 
 #define MXT_MAX_FINGER		10
-
-#define MXT_MEMACCESS_SIZE 32768
-#define MXT_I2C_MAX_REQ_SIZE 256
 
 struct mxt_info {
 	u8 family_id;
@@ -302,14 +301,15 @@ struct mxt_data {
 	const struct mxt_platform_data *pdata;
 	enum mxt_device_state state;
 	struct mxt_object *object_table;
+	u16 mem_size;
 	struct mxt_info info;
 	struct mxt_finger finger[MXT_MAX_FINGER];
 	unsigned int irq;
 	unsigned int max_x;
 	unsigned int max_y;
-	unsigned int driver_paused;
 	struct bin_attribute mem_access_attr;
-	int debug_enabled;
+	bool debug_enabled;
+	bool driver_paused;
 	u8 actv_cycle_time;
 	u8 idle_cycle_time;
 	u8 is_stopped;
@@ -331,7 +331,7 @@ static int mxt_switch_to_bootloader_address(struct mxt_data *data)
 
 	for (i = 0; mxt_slave_addresses[i].application != 0;  i++) {
 		if (mxt_slave_addresses[i].application == client->addr) {
-			dev_info(&client->dev, "Changing to bootloader address: "
+			dev_info(&client->dev, "Changing to bootloader: "
 				"0x%02x -> 0x%02x",
 				client->addr,
 				mxt_slave_addresses[i].bootloader);
@@ -342,7 +342,8 @@ static int mxt_switch_to_bootloader_address(struct mxt_data *data)
 		}
 	}
 
-	dev_err(&client->dev, "Address 0x%02x not found in address table", client->addr);
+	dev_err(&client->dev, "Address 0x%02x not found in address table",
+		client->addr);
 	return -EINVAL;
 }
 
@@ -358,7 +359,7 @@ static int mxt_switch_to_appmode_address(struct mxt_data *data)
 
 	for (i = 0; mxt_slave_addresses[i].application != 0;  i++) {
 		if (mxt_slave_addresses[i].bootloader == client->addr) {
-			dev_info(&client->dev, "Changing to application mode address: "
+			dev_info(&client->dev, "Changing to appmode: "
 				"0x%02x -> 0x%02x",
 				client->addr,
 				mxt_slave_addresses[i].application);
@@ -369,7 +370,8 @@ static int mxt_switch_to_appmode_address(struct mxt_data *data)
 		}
 	}
 
-	dev_err(&client->dev, "Address 0x%02x not found in address table", client->addr);
+	dev_err(&client->dev, "Address 0x%02x not found in address table",
+		client->addr);
 	return -EINVAL;
 }
 
@@ -377,12 +379,11 @@ static int mxt_get_bootloader_version(struct i2c_client *client, u8 val)
 {
 	u8 buf[3];
 
-	if (val | MXT_BOOT_EXTENDED_ID)
-	{
-		dev_dbg(&client->dev, "Retrieving extended mode ID information");
+	if (val | MXT_BOOT_EXTENDED_ID) {
+		dev_dbg(&client->dev, "Getting extended mode ID information");
 
 		if (i2c_master_recv(client, &buf[0], 3) != 3) {
-			dev_err(&client->dev, "%s: i2c recv failed\n", __func__);
+			dev_err(&client->dev, "%s: i2c failure\n", __func__);
 			return -EIO;
 		}
 
@@ -390,9 +391,7 @@ static int mxt_get_bootloader_version(struct i2c_client *client, u8 val)
 			buf[1], buf[2]);
 
 		return buf[0];
-	}
-	else
-	{
+	} else {
 		dev_info(&client->dev, "Bootloader ID:%d",
 			val & MXT_BOOT_ID_MASK);
 
@@ -517,15 +516,37 @@ static int mxt_write_reg(struct i2c_client *client, u16 reg, u8 val)
 	return 0;
 }
 
+int mxt_write_block(struct i2c_client *client, u16 addr, u16 length, u8 *value)
+{
+	int i;
+	struct {
+		__le16 le_addr;
+		u8  data[MXT_MAX_BLOCK_WRITE];
+	} i2c_block_transfer;
+
+	if (length > MXT_MAX_BLOCK_WRITE)
+		return -EINVAL;
+
+	memcpy(i2c_block_transfer.data, value, length);
+
+	i2c_block_transfer.le_addr = cpu_to_le16(addr);
+
+	i = i2c_master_send(client, (u8 *) &i2c_block_transfer, length + 2);
+
+	if (i == (length + 2))
+		return 0;
+	else
+		return -EIO;
+}
+
 static int mxt_read_object_table(struct i2c_client *client,
 				      u16 reg, u8 *object_buf)
 {
 	return __mxt_read_reg(client, reg, MXT_OBJECT_SIZE,
-				   object_buf);
+			      object_buf);
 }
 
-static struct mxt_object *
-mxt_get_object(struct mxt_data *data, u8 type)
+static struct mxt_object *mxt_get_object(struct mxt_data *data, u8 type)
 {
 	struct mxt_object *object;
 	int i;
@@ -536,7 +557,7 @@ mxt_get_object(struct mxt_data *data, u8 type)
 			return object;
 	}
 
-	dev_err(&data->client->dev, "Invalid object type T%d\n", type);
+	dev_err(&data->client->dev, "Invalid object type T%u\n", type);
 	return NULL;
 }
 
@@ -749,12 +770,16 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
 		if (!object)
 			goto end;
 
+		if (reportid != MXT_RPTID_NOMSG && data->debug_enabled)
+			print_hex_dump(KERN_DEBUG,
+				"MXT MSG:", DUMP_PREFIX_NONE, 16, 1,
+				&message, sizeof(struct mxt_message), false);
+
 		if (reportid >= object->min_reportid
 			&& reportid <= object->max_reportid) {
 			touchid = reportid - object->min_reportid;
 			mxt_input_touchevent(data, &message, touchid);
-		}
-		else {
+		} else {
 			object = mxt_get_object(data, MXT_GEN_COMMAND_T6);
 			if (!object)
 				goto end;
@@ -886,13 +911,11 @@ int mxt_download_config(struct mxt_data *data, const char *fn)
 		goto release;
 	}
 
-	if (cfg_info.version != data->info.version) {
+	if (cfg_info.version != data->info.version)
 		dev_err(dev, "Warning: version mismatch!\n");
-	}
 
-	if (cfg_info.build != data->info.build) {
+	if (cfg_info.build != data->info.build)
 		dev_err(dev, "Warning: build num mismatch!\n");
-	}
 
 	ret = sscanf(cfg->data + pos, "%lx%n", &info_crc, &offset);
 	if (ret != 1) {
@@ -925,7 +948,8 @@ int mxt_download_config(struct mxt_data *data, const char *fn)
 
 	while (pos < cfg->size) {
 		/* Read type, instance, length */
-		ret = sscanf(cfg->data + pos, "%x %x %x%n", &type, &instance, &size, &offset);
+		ret = sscanf(cfg->data + pos, "%x %x %x%n",
+			     &type, &instance, &size, &offset);
 		if (ret == 0) {
 			/* EOF */
 			ret = 1;
@@ -1103,7 +1127,8 @@ static int mxt_check_power_cfg_post_reset(struct mxt_data *data)
 	struct device *dev = &data->client->dev;
 	int error;
 
-	error = mxt_read_power_cfg(data, &data->actv_cycle_time, &data->idle_cycle_time);
+	error = mxt_read_power_cfg(data, &data->actv_cycle_time,
+				   &data->idle_cycle_time);
 	if (error)
 		return error;
 
@@ -1125,7 +1150,8 @@ static int mxt_probe_power_cfg(struct mxt_data *data)
 {
 	int error;
 
-	error = mxt_read_power_cfg(data, &data->actv_cycle_time, &data->idle_cycle_time);
+	error = mxt_read_power_cfg(data, &data->actv_cycle_time,
+				   &data->idle_cycle_time);
 	if (error)
 		return error;
 
@@ -1227,8 +1253,10 @@ static int mxt_get_object_table(struct mxt_data *data)
 	int error;
 	int i;
 	u16 reg;
+	u16 end_address;
 	u8 reportid = 0;
 	u8 buf[MXT_OBJECT_SIZE];
+	data->mem_size = 0;
 
 	for (i = 0; i < data->info.object_num; i++) {
 		struct mxt_object *object = data->object_table + i;
@@ -1250,6 +1278,12 @@ static int mxt_get_object_table(struct mxt_data *data)
 			object->min_reportid = object->max_reportid -
 				object->instances * object->num_report_ids + 1;
 		}
+
+		end_address = object->start_address
+			+ object->size * object->instances- 1;
+
+		if (end_address >= data->mem_size)
+			data->mem_size = end_address + 1;
 
 		dev_dbg(dev, "T%d, start:%d size:%d instances:%d "
 			"min_reportid:%d max_reportid:%d\n",
@@ -1315,8 +1349,11 @@ static int mxt_read_resolution(struct mxt_data *data)
 		return error;
 
 	/* Handle default values */
-	if (x_range == 0) x_range = 1023;
-	if (y_range == 0) y_range = 1023;
+	if (x_range == 0)
+		x_range = 1023;
+
+	if (y_range == 0)
+		y_range = 1023;
 
 	max_x = x_range + 1;
 	max_y = y_range + 1;
@@ -1380,12 +1417,14 @@ static int mxt_initialize(struct mxt_data *data)
 	/* Get object table information */
 	error = mxt_get_object_table(data);
 	if (error) {
-		dev_err(&client->dev, "Failed to read object table\n");
+		dev_err(&client->dev, "Error %d reading object table\n", error);
 		return error;
 	}
 
 	error = mxt_check_message_length(data);
 	if (error) {
+		dev_err(&client->dev, "Error %d initialising configuration\n",
+			error);
 		return error;
 	}
 
@@ -1439,8 +1478,7 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 	}
 
 	ret = mxt_check_bootloader(client, MXT_WAITING_BOOTLOAD_CMD);
-	if (ret)
-	{
+	if (ret) {
 		/* Bootloader may still be unlocked from previous update
 		 * attempt */
 		ret = mxt_check_bootloader(client,
@@ -1463,9 +1501,7 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 
 		frame_size = ((*(fw->data + pos) << 8) | *(fw->data + pos + 1));
 
-		/* We should add 2 at frame size as the the firmware data is not
-		 * included the CRC bytes.
-		 */
+		/* Take account of CRC bytes */
 		frame_size += 2;
 
 		/* Write one frame to device */
@@ -1537,10 +1573,11 @@ static ssize_t mxt_pause_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	int count = 0;
+	ssize_t count;
+	char c;
 
-	count += sprintf(buf + count, "%d", data->driver_paused);
-	count += sprintf(buf + count, "\n");
+	c = data->driver_paused ? '1' : '0';
+	count = sprintf(buf, "%c\n", c);
 
 	return count;
 }
@@ -1552,23 +1589,24 @@ static ssize_t mxt_pause_store(struct device *dev,
 	int i;
 
 	if (sscanf(buf, "%u", &i) == 1 && i < 2) {
-		data->driver_paused = i;
-
+		data->driver_paused = (i == 1);
 		dev_dbg(dev, "%s\n", i ? "paused" : "unpaused");
-	} else
+		return count;
+	} else {
 		dev_dbg(dev, "pause_driver write error\n");
-
-	return count;
+		return -EINVAL;
+	}
 }
 
 static ssize_t mxt_debug_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	int count = 0;
+	int count;
+	char c;
 
-	count += sprintf(buf + count, "%d", data->debug_enabled);
-	count += sprintf(buf + count, "\n");
+	c = data->debug_enabled ? '1' : '0';
+	count = sprintf(buf, "%c\n", c);
 
 	return count;
 }
@@ -1580,13 +1618,34 @@ static ssize_t mxt_debug_enable_store(struct device *dev,
 	int i;
 
 	if (sscanf(buf, "%u", &i) == 1 && i < 2) {
-		data->debug_enabled = i;
+		data->debug_enabled = (i == 1);
 
 		dev_dbg(dev, "%s\n", i ? "debug enabled" : "debug disabled");
-	} else
-	dev_dbg(dev, "debug_enabled write error\n");
+		return count;
+	} else {
+		dev_dbg(dev, "debug_enabled write error\n");
+		return -EINVAL;
+	}
+}
 
-	return count;
+static int mxt_check_mem_access_params(struct mxt_data *data, loff_t off,
+				       size_t *count)
+{
+	if (data->state != APPMODE) {
+		dev_err(&data->client->dev, "Not in APPMODE\n");
+		return -EINVAL;
+	}
+
+	if (off >= data->mem_size)
+		return -EIO;
+
+	if (off + *count > data->mem_size)
+		*count = data->mem_size - off;
+
+	if (*count > MXT_MAX_BLOCK_WRITE)
+		*count = MXT_MAX_BLOCK_WRITE;
+
+	return 0;
 }
 
 static ssize_t mxt_mem_access_read(struct file *filp, struct kobject *kobj,
@@ -1596,19 +1655,9 @@ static ssize_t mxt_mem_access_read(struct file *filp, struct kobject *kobj,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int ret = 0;
 
-	if (data->state != APPMODE) {
-		dev_err(dev, "Not in APPMODE\n");
-		return -EINVAL;
-	}
-
-	if (off >= MXT_MEMACCESS_SIZE)
-		return -EIO;
-
-	if (off + count > MXT_MEMACCESS_SIZE)
-		count = MXT_MEMACCESS_SIZE - off;
-
-	if (count > MXT_I2C_MAX_REQ_SIZE)
-		count = MXT_I2C_MAX_REQ_SIZE;
+	ret = mxt_check_mem_access_params(data, off, &count);
+	if (ret < 0)
+		return ret;
 
 	if (count > 0)
 		ret = __mxt_read_reg(data->client, off, count, buf);
@@ -1616,50 +1665,17 @@ static ssize_t mxt_mem_access_read(struct file *filp, struct kobject *kobj,
 	return ret == 0 ? count : ret;
 }
 
-int mxt_write_block(struct i2c_client *client, u16 addr, u16 length, u8 *value)
-{
-	int i;
-	struct {
-		__le16 le_addr;
-		u8  data[MXT_I2C_MAX_REQ_SIZE];
-	} i2c_block_transfer;
-
-	if (length > MXT_I2C_MAX_REQ_SIZE)
-		return -EINVAL;
-
-	for (i = 0; i < length; i++)
-		i2c_block_transfer.data[i] = *value++;
-
-		i2c_block_transfer.le_addr = cpu_to_le16(addr);
-
-		i = i2c_master_send(client, (u8 *) &i2c_block_transfer, length + 2);
-
-	if (i == (length + 2))
-		return 0;
-	else
-		return -EIO;
-}
-
 static ssize_t mxt_mem_access_write(struct file *filp, struct kobject *kobj,
-	struct bin_attribute *bin_attr, char *buf, loff_t off, size_t count)
+	struct bin_attribute *bin_attr, char *buf, loff_t off,
+	size_t count)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int ret = 0;
 
-	if (data->state != APPMODE) {
-		dev_err(dev, "Not in APPMODE\n");
-		return -EINVAL;
-	}
-
-	if (off >= MXT_MEMACCESS_SIZE)
-		return -EIO;
-
-	if (off + count > MXT_MEMACCESS_SIZE)
-		count = MXT_MEMACCESS_SIZE - off;
-
-	if (count > MXT_I2C_MAX_REQ_SIZE)
-		count = MXT_I2C_MAX_REQ_SIZE;
+	ret = mxt_check_mem_access_params(data, off, &count);
+	if (ret < 0)
+		return ret;
 
 	if (count > 0)
 		ret = mxt_write_block(data->client, off, count, buf);
@@ -1668,13 +1684,14 @@ static ssize_t mxt_mem_access_write(struct file *filp, struct kobject *kobj,
 }
 
 static DEVICE_ATTR(update_fw, 0664, NULL, mxt_update_fw_store);
-static DEVICE_ATTR(pause_driver, 0666, mxt_pause_show, mxt_pause_store);
-static DEVICE_ATTR(debug_enable, 0666, mxt_debug_enable_show, mxt_debug_enable_store);
+static DEVICE_ATTR(debug_enable, 0664, mxt_debug_enable_show,
+		   mxt_debug_enable_store);
+static DEVICE_ATTR(pause_driver, 0664, mxt_pause_show, mxt_pause_store);
 
 static struct attribute *mxt_attrs[] = {
 	&dev_attr_update_fw.attr,
-	&dev_attr_pause_driver.attr,
 	&dev_attr_debug_enable.attr,
+	&dev_attr_pause_driver.attr,
 	NULL
 };
 
@@ -1788,7 +1805,7 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	error = request_threaded_irq(client->irq, NULL, mxt_interrupt,
 			pdata->irqflags, client->dev.driver->name, data);
 	if (error) {
-		dev_err(&client->dev, "Failed to register interrupt\n");
+		dev_err(&client->dev, "Error %d registering irq\n", error);
 		goto err_free_object;
 	}
 
@@ -1801,21 +1818,21 @@ static int __devinit mxt_probe(struct i2c_client *client,
 
 	if (data->state == APPMODE) {
 		error = mxt_make_highchg(data);
-		if (error) {
-			dev_err(&client->dev, "Failed to make high CHG\n");
+		if (error)
 			goto err_free_irq;
-		}
 	}
 
 	error = input_register_device(input_dev);
 	if (error) {
-		dev_err(&client->dev, "Failed to register input device\n");
+		dev_err(&client->dev, "Error %d registering input device\n",
+			error);
 		goto err_free_irq;
 	}
 
 	error = sysfs_create_group(&client->dev.kobj, &mxt_attr_group);
 	if (error) {
-		dev_err(&client->dev, "Failed to create sysfs group\n");
+		dev_err(&client->dev, "Failure %d creating sysfs group\n",
+			error);
 		goto err_unregister_device;
 	}
 
@@ -1824,17 +1841,19 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	data->mem_access_attr.attr.mode = S_IRUGO | S_IWUGO;
 	data->mem_access_attr.read = mxt_mem_access_read;
 	data->mem_access_attr.write = mxt_mem_access_write;
-	data->mem_access_attr.size = MXT_MEMACCESS_SIZE;
+	data->mem_access_attr.size = data->mem_size;
 
-	if (sysfs_create_bin_file(&client->dev.kobj, &data->mem_access_attr) < 0) {
-		dev_err(&client->dev, "Failed to create %s\n", data->mem_access_attr.attr.name);
+	if (sysfs_create_bin_file(&client->dev.kobj,
+				  &data->mem_access_attr) < 0) {
+		dev_err(&client->dev, "Failed to create %s\n",
+			data->mem_access_attr.attr.name);
 		goto err_remove_sysfs_group;
 	}
 
 	return 0;
 
 err_remove_sysfs_group:
-        sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
+	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
 err_unregister_device:
 	input_unregister_device(input_dev);
 	input_dev = NULL;
