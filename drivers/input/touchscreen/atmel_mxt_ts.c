@@ -35,24 +35,6 @@
 #define MXT_VER_21		21
 #define MXT_VER_22		22
 
-/* I2C slave address pairs */
-struct mxt_address_pair {
-	int bootloader;
-	int application;
-};
-
-static const struct mxt_address_pair mxt_slave_addresses[] = {
-	{ 0x24, 0x4a },
-	{ 0x25, 0x4b },
-	{ 0x26, 0x4c },
-	{ 0x27, 0x4d },
-	{ 0x34, 0x5a },
-	{ 0x35, 0x5b },
-	{ 0 },
-};
-
-enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
-
 /* Firmware files */
 #define MXT_FW_NAME		"maxtouch.fw"
 #define MXT_CFG_NAME		"maxtouch.cfg"
@@ -295,6 +277,8 @@ struct mxt_finger {
 	int pressure;
 };
 
+enum mxt_device_state { INIT, APPMODE, BOOTLOADER, FAILED };
+
 /* Each client has this additional data */
 struct mxt_data {
 	struct i2c_client *client;
@@ -311,6 +295,7 @@ struct mxt_data {
 	struct bin_attribute mem_access_attr;
 	bool debug_enabled;
 	bool driver_paused;
+	u8 bootloader_addr;
 	u8 actv_cycle_time;
 	u8 idle_cycle_time;
 	u8 is_stopped;
@@ -320,25 +305,59 @@ struct mxt_data {
 #endif
 };
 
-static int mxt_switch_to_bootloader_address(struct mxt_data *data)
+/* I2C slave address pairs */
+struct mxt_i2c_address_pair {
+	u8 bootloader;
+	u8 application;
+};
+
+static const struct mxt_i2c_address_pair mxt_i2c_addresses[] = {
+	{ 0x24, 0x4a },
+	{ 0x25, 0x4b },
+	{ 0x26, 0x4c },
+	{ 0x27, 0x4d },
+	{ 0x34, 0x5a },
+	{ 0x35, 0x5b },
+};
+
+static int mxt_fw_read(struct mxt_data *data, u8 *val, unsigned int count)
 {
-	int i;
+	struct i2c_msg msg;
+
+	msg.addr = data->bootloader_addr;
+	msg.flags = data->client->flags & I2C_M_TEN;
+	msg.flags |= I2C_M_RD;
+	msg.len = count;
+	msg.buf = val;
+
+	return i2c_transfer(data->client->adapter, &msg, 1);
+}
+
+static int mxt_fw_write(struct mxt_data *data, const u8 * const val,
+	unsigned int count)
+{
+	struct i2c_msg msg;
+
+	msg.addr = data->bootloader_addr;
+	msg.flags = data->client->flags & I2C_M_TEN;
+	msg.len = count;
+	msg.buf = (u8 *)val;
+
+	return i2c_transfer(data->client->adapter, &msg, 1);
+}
+
+static int mxt_get_bootloader_address(struct mxt_data *data)
+{
 	struct i2c_client *client = data->client;
+	int i;
 
-	if (data->state == BOOTLOADER) {
-		dev_err(&client->dev, "Already in BOOTLOADER state\n");
-		return -EINVAL;
-	}
+	for (i = 0; i < ARRAY_SIZE(mxt_i2c_addresses); i++) {
+		if (mxt_i2c_addresses[i].application == client->addr) {
+			data->bootloader_addr = mxt_i2c_addresses[i].bootloader;
 
-	for (i = 0; mxt_slave_addresses[i].application != 0;  i++) {
-		if (mxt_slave_addresses[i].application == client->addr) {
-			dev_info(&client->dev, "Changing to bootloader: "
-				"0x%02x -> 0x%02x",
-				client->addr,
-				mxt_slave_addresses[i].bootloader);
+			dev_info(&client->dev, "Bootloader i2c adress: 0x%02x",
+				data->bootloader_addr);
 
-			client->addr = mxt_slave_addresses[i].bootloader;
-			data->state = BOOTLOADER;
 			return 0;
 		}
 	}
@@ -348,72 +367,67 @@ static int mxt_switch_to_bootloader_address(struct mxt_data *data)
 	return -EINVAL;
 }
 
-static int mxt_switch_to_appmode_address(struct mxt_data *data)
+static int mxt_probe_bootloader(struct mxt_data *data)
 {
-	int i;
-	struct i2c_client *client = data->client;
+	struct device *dev = &data->client->dev;
+	int ret;
+	u8 val;
 
-	if (data->state == APPMODE) {
-		dev_err(&client->dev, "Already in APPMODE state\n");
-		return -EINVAL;
+	ret = mxt_get_bootloader_address(data);
+	if (ret)
+		return ret;
+
+	if (mxt_fw_read(data, &val, 1) != 1) {
+		dev_err(dev, "%s: i2c recv failed\n", __func__);
+		return -EIO;
 	}
 
-	for (i = 0; mxt_slave_addresses[i].application != 0;  i++) {
-		if (mxt_slave_addresses[i].bootloader == client->addr) {
-			dev_info(&client->dev, "Changing to appmode: "
-				"0x%02x -> 0x%02x",
-				client->addr,
-				mxt_slave_addresses[i].application);
+	if (val & MXT_BOOT_STATUS_MASK)
+		dev_err(dev, "Application CRC failure\n");
+	else
+		dev_err(dev, "Device in bootloader mode\n");
 
-			client->addr = mxt_slave_addresses[i].application;
-			data->state = APPMODE;
-			return 0;
-		}
-	}
-
-	dev_err(&client->dev, "Address 0x%02x not found in address table",
-		client->addr);
-	return -EINVAL;
+	return 0;
 }
 
-static int mxt_get_bootloader_version(struct i2c_client *client, u8 val)
+static int mxt_get_bootloader_version(struct mxt_data *data, u8 val)
 {
+	struct device *dev = &data->client->dev;
 	u8 buf[3];
 
 	if (val | MXT_BOOT_EXTENDED_ID) {
-		dev_dbg(&client->dev, "Getting extended mode ID information");
+		dev_dbg(dev, "Getting extended mode ID information");
 
-		if (i2c_master_recv(client, &buf[0], 3) != 3) {
-			dev_err(&client->dev, "%s: i2c failure\n", __func__);
+		if (mxt_fw_read(data, &buf[0], 3) != 3) {
+			dev_err(dev, "%s: i2c failure\n", __func__);
 			return -EIO;
 		}
 
-		dev_info(&client->dev, "Bootloader ID:%d Version:%d",
-			buf[1], buf[2]);
+		dev_info(dev, "Bootloader ID:%d Version:%d", buf[1], buf[2]);
 
 		return buf[0];
 	} else {
-		dev_info(&client->dev, "Bootloader ID:%d",
-			val & MXT_BOOT_ID_MASK);
+		dev_info(dev, "Bootloader ID:%d", val & MXT_BOOT_ID_MASK);
 
 		return val;
 	}
 }
 
-static int mxt_check_bootloader(struct i2c_client *client,
+static int mxt_check_bootloader(struct mxt_data *data,
 				unsigned int state)
 {
+	struct device *dev = &data->client->dev;
 	u8 val;
 
 recheck:
-	if (i2c_master_recv(client, &val, 1) != 1) {
-		dev_err(&client->dev, "%s: i2c recv failed\n", __func__);
+	if (mxt_fw_read(data, &val, 1) != 1) {
+		dev_err(dev, "%s: i2c recv failed\n", __func__);
 		return -EIO;
 	}
 
 	switch (state) {
 	case MXT_WAITING_BOOTLOAD_CMD:
-		val = mxt_get_bootloader_version(client, val);
+		val = mxt_get_bootloader_version(data, val);
 		val &= ~MXT_BOOT_STATUS_MASK;
 		break;
 	case MXT_WAITING_FRAME_DATA:
@@ -424,7 +438,7 @@ recheck:
 		if (val == MXT_FRAME_CRC_CHECK)
 			goto recheck;
 		if (val == MXT_FRAME_CRC_FAIL) {
-			dev_err(&client->dev, "Bootloader CRC fail\n");
+			dev_err(dev, "Bootloader CRC fail\n");
 			return -EINVAL;
 		}
 		break;
@@ -433,34 +447,22 @@ recheck:
 	}
 
 	if (val != state) {
-		dev_err(&client->dev, "Invalid bootloader mode state 0x%X\n",
-			val);
+		dev_err(dev, "Invalid bootloader mode state 0x%X\n", val);
 		return -EINVAL;
 	}
 
 	return 0;
 }
 
-static int mxt_unlock_bootloader(struct i2c_client *client)
+static int mxt_unlock_bootloader(struct mxt_data *data)
 {
 	u8 buf[2];
 
 	buf[0] = MXT_UNLOCK_CMD_LSB;
 	buf[1] = MXT_UNLOCK_CMD_MSB;
 
-	if (i2c_master_send(client, buf, 2) != 2) {
-		dev_err(&client->dev, "%s: i2c send failed\n", __func__);
-		return -EIO;
-	}
-
-	return 0;
-}
-
-static int mxt_fw_write(struct i2c_client *client,
-			const u8 *data, unsigned int frame_size)
-{
-	if (i2c_master_send(client, data, frame_size) != frame_size) {
-		dev_err(&client->dev, "%s: i2c send failed\n", __func__);
+	if (mxt_fw_write(data, buf, 2) != 2) {
+		dev_err(&data->client->dev, "%s: i2c send failed\n", __func__);
 		return -EIO;
 	}
 
@@ -544,7 +546,7 @@ static int mxt_read_object_table(struct i2c_client *client,
 				      u16 reg, u8 *object_buf)
 {
 	return __mxt_read_reg(client, reg, MXT_OBJECT_SIZE,
-			      object_buf);
+				   object_buf);
 }
 
 static struct mxt_object *mxt_get_object(struct mxt_data *data, u8 type)
@@ -594,12 +596,12 @@ static int mxt_read_message(struct mxt_data *data,
 
 	/* Do not read last byte which contains CRC */
 	ret = __mxt_read_reg(data->client, reg,
-			object->size - 1, message);
+			     object->size - 1, message);
 
 	if (ret == 0 && message->reportid != MXT_RPTID_NOMSG
 	    && data->debug_enabled)
-		print_hex_dump(KERN_DEBUG, "MXT MSG:", DUMP_PREFIX_NONE,
-			16, 1, message, object->size - 1, false);
+		print_hex_dump(KERN_DEBUG, "MXT MSG:", DUMP_PREFIX_NONE, 16, 1,
+			       message, object->size - 1, false);
 
 	return ret;
 }
@@ -717,6 +719,11 @@ static void mxt_input_touchevent(struct mxt_data *data,
 	if (data->driver_paused)
 		return;
 
+	if (id >= MXT_MAX_FINGER) {
+		dev_err(dev, "MXT_MAX_FINGER exceeded!\n");
+		return;
+	}
+
 	/* Check the touch is present on the screen */
 	if (!(status & MXT_DETECT)) {
 		if (status & MXT_SUPPRESS) {
@@ -769,11 +776,6 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
 	struct device *dev = &data->client->dev;
 	int touchid;
 	u8 reportid;
-
-	if (data->state != APPMODE) {
-		dev_err(dev, "Ignoring IRQ - not in APPMODE state\n");
-		return IRQ_HANDLED;
-	}
 
 	do {
 		if (mxt_read_message(data, &message)) {
@@ -1060,7 +1062,7 @@ static int mxt_soft_reset(struct mxt_data *data, u8 value)
 		}
 		timeout_counter = 0;
 		while ((timeout_counter++ <= 100) && data->pdata->read_chg())
-			msleep(10);
+			msleep(20);
 		if (timeout_counter > 100) {
 			dev_err(dev, "No response after reset!\n");
 			return -EIO;
@@ -1207,7 +1209,7 @@ static int mxt_check_reg_init(struct mxt_data *data)
 					&command_register);
 		if (ret)
 			return ret;
-		msleep(10);
+		msleep(20);
 	} while ((command_register != 0) && (timeout_counter++ <= 100));
 	if (timeout_counter > 100) {
 		dev_err(dev, "No response after backup!\n");
@@ -1293,7 +1295,7 @@ static int mxt_get_object_table(struct mxt_data *data)
 		}
 
 		end_address = object->start_address
-			+ object->size * object->instances- 1;
+			+ object->size * object->instances - 1;
 
 		if (end_address >= data->mem_size)
 			data->mem_size = end_address + 1;
@@ -1391,27 +1393,22 @@ static int mxt_initialize(struct mxt_data *data)
 
 	error = mxt_get_info(data);
 	if (error) {
-		/* Try bootloader mode */
-		error = mxt_switch_to_bootloader_address(data);
-		if (error)
+		error = mxt_probe_bootloader(data);
+
+		if (error) {
 			return error;
-
-		error = mxt_check_bootloader(client, MXT_APP_CRC_FAIL);
-		if (error)
-			return error;
-
-		dev_err(&client->dev, "Application CRC failure\n");
-		data->state = BOOTLOADER;
-
-		return 0;
+		} else {
+			data->state = BOOTLOADER;
+			return 0;
+		}
 	}
 
 	dev_info(&client->dev,
-			"Family ID: %d Variant ID: %d Version: %d.%d "
-			"Build: 0x%02X Object Num: %d\n",
-			info->family_id, info->variant_id,
-			info->version >> 4, info->version & 0xf,
-			info->build, info->object_num);
+		"Family ID: %d Variant ID: %d Version: %d.%d "
+		"Build: 0x%02X Object Num: %d\n",
+		info->family_id, info->variant_id,
+		info->version >> 4, info->version & 0xf,
+		info->build, info->object_num);
 
 	data->state = APPMODE;
 
@@ -1459,7 +1456,6 @@ static int mxt_initialize(struct mxt_data *data)
 static int mxt_load_fw(struct device *dev, const char *fn)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct i2c_client *client = data->client;
 	const struct firmware *fw = NULL;
 	unsigned int frame_size;
 	unsigned int pos = 0;
@@ -1478,32 +1474,36 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 		if (ret)
 			goto release_firmware;
 
-		ret = mxt_switch_to_bootloader_address(data);
+		ret = mxt_get_bootloader_address(data);
 		if (ret)
 			goto release_firmware;
+
+		data->state = BOOTLOADER;
 	}
 
-	ret = mxt_check_bootloader(client, MXT_WAITING_BOOTLOAD_CMD);
+	ret = mxt_check_bootloader(data, MXT_WAITING_BOOTLOAD_CMD);
 	if (ret) {
 		/* Bootloader may still be unlocked from previous update
 		 * attempt */
-		ret = mxt_check_bootloader(client,
-			MXT_WAITING_FRAME_DATA);
+		ret = mxt_check_bootloader(data, MXT_WAITING_FRAME_DATA);
 
-		if (ret)
-			goto return_to_app_mode;
+		if (ret) {
+			data->state = FAILED;
+			goto release_firmware;
+		}
 	} else {
 		dev_info(dev, "Unlocking bootloader\n");
 
 		/* Unlock bootloader */
-		mxt_unlock_bootloader(client);
+		mxt_unlock_bootloader(data);
 	}
 
 	while (pos < fw->size) {
-		ret = mxt_check_bootloader(client,
-						MXT_WAITING_FRAME_DATA);
-		if (ret)
+		ret = mxt_check_bootloader(data, MXT_WAITING_FRAME_DATA);
+		if (ret) {
+			data->state = FAILED;
 			goto release_firmware;
+		}
 
 		frame_size = ((*(fw->data + pos) << 8) | *(fw->data + pos + 1));
 
@@ -1511,18 +1511,19 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 		frame_size += 2;
 
 		/* Write one frame to device */
-		mxt_fw_write(client, fw->data + pos, frame_size);
+		mxt_fw_write(data, fw->data + pos, frame_size);
 
-		ret = mxt_check_bootloader(client,
-						MXT_FRAME_CRC_PASS);
+		ret = mxt_check_bootloader(data, MXT_FRAME_CRC_PASS);
 		if (ret) {
 			retry++;
 
 			/* Back off by 20ms per retry */
 			msleep(retry * 20);
 
-			if (retry > 20)
+			if (retry > 20) {
+				data->state = FAILED;
 				goto release_firmware;
+			}
 		} else {
 			retry = 0;
 			pos += frame_size;
@@ -1530,11 +1531,10 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 		}
 	}
 
-return_to_app_mode:
-	mxt_switch_to_appmode_address(data);
+	data->state = APPMODE;
+
 release_firmware:
 	release_firmware(fw);
-
 	return ret;
 }
 
