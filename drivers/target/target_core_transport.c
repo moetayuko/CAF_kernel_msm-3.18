@@ -1231,7 +1231,6 @@ void transport_init_se_cmd(
 	spin_lock_init(&cmd->t_state_lock);
 	kref_init(&cmd->cmd_kref);
 	atomic_set(&cmd->tgt_ref, 1);
-	cmd->transport_state = CMD_T_DEV_ACTIVE;
 
 	cmd->se_tfo = tfo;
 	cmd->se_sess = se_sess;
