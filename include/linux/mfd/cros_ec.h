@@ -79,6 +79,24 @@ struct cros_ec_command {
 	uint8_t data[0];
 };
 
+/*
+ * event_data is used by keyboard or event notifier:
+ * event_data format:
+ * If MKBP protocol is supported:
+ * 0           1
+ * +-----------+--------------------------------
+ * | type      | payload
+ * +-----------+--------------------------------
+ * |HOST_EVENT | EVENT (32 bit)
+ * |KEY_MATRIX | Keyboard keys pressed.
+ * |SENSOR_FIFO| Sensors FIFO information.
+ *
+ * Otherwise:
+ * 0           1
+ * +-----------+--------------------------------
+ * |Unused     | Keyboard keys pressed.
+ */
+
 /**
  * struct cros_ec_device - Information about a ChromeOS EC device
  *
@@ -283,7 +301,7 @@ int cros_ec_register(struct cros_ec_device *ec_dev);
 /**
  * cros_ec_query_all -  Query the protocol version supported by the ChromeOS EC
  *
- * @ec_dev: Device to register
+ * @ec_dev: Device to query
  * @return 0 if ok, -ve on error
  */
 int cros_ec_query_all(struct cros_ec_device *ec_dev);
@@ -302,4 +320,14 @@ extern struct attribute_group cros_ec_attr_group;
 extern struct attribute_group cros_ec_lightbar_attr_group;
 extern struct attribute_group cros_ec_vbc_attr_group;
 
-#endif /* __LINUX_MFD_CROS_EC_H */
+/**
+ * cros_ec_get_host_event - Return a mask of event set by the EC.
+ *
+ * When MKBP is supported, when the EC raises an interrupt,
+ * We collect the events raised and call the functions in the ec notifier.
+ *
+ * This function is a helper to know which events are raised.
+ */
+uint32_t cros_ec_get_host_event(struct cros_ec_device *ec_dev);
+
+#endif  /* __LINUX_MFD_CROS_EC_H */
