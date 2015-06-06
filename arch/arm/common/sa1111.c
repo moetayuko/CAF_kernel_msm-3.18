@@ -486,7 +486,7 @@ static int sa1111_setup_irq(struct sa1111 *sachip, unsigned irq_base)
 		irq_set_chip_and_handler(irq, &sa1111_low_chip,
 					 handle_edge_irq);
 		irq_set_chip_data(irq, sachip);
-		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+		irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
 
 	for (i = AUDXMTDMADONEA; i <= IRQ_S1_BVD1_STSCHG; i++) {
@@ -494,7 +494,7 @@ static int sa1111_setup_irq(struct sa1111 *sachip, unsigned irq_base)
 		irq_set_chip_and_handler(irq, &sa1111_high_chip,
 					 handle_edge_irq);
 		irq_set_chip_data(irq, sachip);
-		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+		irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
 
 	/*

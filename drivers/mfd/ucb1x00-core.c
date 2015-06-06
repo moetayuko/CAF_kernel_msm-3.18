@@ -562,7 +562,7 @@ static int ucb1x00_probe(struct mcp *mcp)
 
 		irq_set_chip_and_handler(irq, &ucb1x00_irqchip, handle_edge_irq);
 		irq_set_chip_data(irq, ucb);
-		set_irq_flags(irq, IRQF_VALID | IRQ_NOREQUEST);
+		irq_modify_status(irq, IRQ_NOREQUEST, 0);
 	}
 
 	irq_set_irq_type(ucb->irq, IRQ_TYPE_EDGE_RISING);

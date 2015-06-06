@@ -170,7 +170,7 @@ static void __init lubbock_init_irq(void)
 	for (irq = LUBBOCK_IRQ(0); irq <= LUBBOCK_LAST_IRQ; irq++) {
 		irq_set_chip_and_handler(irq, &lubbock_irq_chip,
 					 handle_level_irq);
-		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+		irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
 
 	irq_set_chained_handler(PXA_GPIO_TO_IRQ(0), lubbock_irq_handler);

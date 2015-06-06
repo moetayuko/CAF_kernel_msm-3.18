@@ -946,7 +946,7 @@ static int __init ecard_probe(int slot, unsigned irq, card_type_t type)
 		irq_set_chip_and_handler(ec->irq, &ecard_chip,
 					 handle_level_irq);
 		irq_set_chip_data(ec->irq, ec);
-		set_irq_flags(ec->irq, IRQF_VALID);
+		irq_modify_status(ec->irq, IRQ_NOREQUEST, 0);
 	}
 
 #ifdef CONFIG_ARCH_RPC

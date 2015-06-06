@@ -987,7 +987,7 @@ static int bcm2835_pinctrl_probe(struct platform_device *pdev)
 		irq_set_chip_and_handler(irq, &bcm2835_gpio_irq_chip,
 				handle_level_irq);
 		irq_set_chip_data(irq, pc);
-		set_irq_flags(irq, IRQF_VALID);
+		irq_modify_status(irq, IRQ_NOREQUEST, 0);
 	}
 
 	for (i = 0; i < BCM2835_NUM_BANKS; i++) {

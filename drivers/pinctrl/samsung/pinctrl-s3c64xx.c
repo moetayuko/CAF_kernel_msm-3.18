@@ -395,7 +395,7 @@ static int s3c64xx_gpio_irq_map(struct irq_domain *h, unsigned int virq,
 	irq_set_chip_and_handler(virq,
 				&s3c64xx_gpio_irq_chip, handle_level_irq);
 	irq_set_chip_data(virq, bank);
-	set_irq_flags(virq, IRQF_VALID);
+	irq_modify_status(virq, IRQ_NOREQUEST, 0);
 
 	return 0;
 }
@@ -674,7 +674,7 @@ static int s3c64xx_eint0_irq_map(struct irq_domain *h, unsigned int virq,
 	irq_set_chip_and_handler(virq,
 				&s3c64xx_eint0_irq_chip, handle_level_irq);
 	irq_set_chip_data(virq, ddata);
-	set_irq_flags(virq, IRQF_VALID);
+	irq_modify_status(virq, IRQ_NOREQUEST, 0);
 
 	return 0;
 }

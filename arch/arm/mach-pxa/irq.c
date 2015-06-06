@@ -133,7 +133,7 @@ static int pxa_irq_map(struct irq_domain *h, unsigned int virq,
 	irq_set_chip_and_handler(virq, &pxa_internal_irq_chip,
 				 handle_level_irq);
 	irq_set_chip_data(virq, base);
-	set_irq_flags(virq, IRQF_VALID);
+	irq_modify_status(virq, IRQ_NOREQUEST, 0);
 
 	return 0;
 }

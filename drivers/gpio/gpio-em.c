@@ -262,7 +262,7 @@ static int em_gio_irq_domain_map(struct irq_domain *h, unsigned int irq,
 
 	irq_set_chip_data(irq, h->host_data);
 	irq_set_chip_and_handler(irq, &p->irq_chip, handle_level_irq);
-	set_irq_flags(irq, IRQF_VALID); /* kill me now */
+	irq_modify_status(irq, IRQ_NOREQUEST, 0); /* kill me now */
 	return 0;
 }
 

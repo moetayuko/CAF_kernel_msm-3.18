@@ -1263,7 +1263,7 @@ static int tegra_msi_map(struct irq_domain *domain, unsigned int irq,
 {
 	irq_set_chip_and_handler(irq, &tegra_msi_irq_chip, handle_simple_irq);
 	irq_set_chip_data(irq, domain->host_data);
-	set_irq_flags(irq, IRQF_VALID);
+	irq_modify_status(irq, IRQ_NOREQUEST, 0);
 
 	tegra_cpuidle_pcie_irqs_in_use();
 

@@ -528,7 +528,7 @@ static void __init balloon3_init_irq(void)
 	for (irq = BALLOON3_IRQ(0); irq <= BALLOON3_IRQ(7); irq++) {
 		irq_set_chip_and_handler(irq, &balloon3_irq_chip,
 					 handle_level_irq);
-		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+		irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
 
 	irq_set_chained_handler(BALLOON3_AUX_NIRQ, balloon3_irq_handler);

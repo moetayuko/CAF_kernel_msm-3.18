@@ -121,11 +121,8 @@ static int mt6397_irq_domain_map(struct irq_domain *d, unsigned int irq,
 	irq_set_chip_data(irq, mt6397);
 	irq_set_chip_and_handler(irq, &mt6397_irq_chip, handle_level_irq);
 	irq_set_nested_thread(irq, 1);
-#ifdef CONFIG_ARM
-	set_irq_flags(irq, IRQF_VALID);
-#else
+	irq_modify_status(irq, IRQ_NOREQUEST, 0);
 	irq_set_noprobe(irq);
-#endif
 
 	return 0;
 }

@@ -313,7 +313,7 @@ static void __init viper_init_irq(void)
 		isa_irq = viper_bit_to_irq(level);
 		irq_set_chip_and_handler(isa_irq, &viper_irq_chip,
 					 handle_edge_irq);
-		set_irq_flags(isa_irq, IRQF_VALID | IRQF_PROBE);
+		irq_modify_status(isa_irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
 
 	irq_set_chained_handler(gpio_to_irq(VIPER_CPLD_GPIO),

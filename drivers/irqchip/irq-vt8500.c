@@ -168,7 +168,7 @@ static int vt8500_irq_map(struct irq_domain *h, unsigned int virq,
 							irq_hw_number_t hw)
 {
 	irq_set_chip_and_handler(virq, &vt8500_irq_chip, handle_level_irq);
-	set_irq_flags(virq, IRQF_VALID);
+	irq_modify_status(virq, IRQ_NOREQUEST, 0);
 
 	return 0;
 }

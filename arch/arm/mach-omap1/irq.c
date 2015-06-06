@@ -230,7 +230,7 @@ void __init omap1_init_irq(void)
 
 			irq_set_chip_and_handler(j, &omap_irq_chip,
 						 handle_level_irq);
-			set_irq_flags(j, IRQF_VALID);
+			irq_modify_status(j, IRQ_NOREQUEST, 0);
 		}
 	}
 

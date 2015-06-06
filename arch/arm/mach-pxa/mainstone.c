@@ -170,12 +170,10 @@ static void __init mainstone_init_irq(void)
 		irq_set_chip_and_handler(irq, &mainstone_irq_chip,
 					 handle_level_irq);
 		if (irq == MAINSTONE_IRQ(10) || irq == MAINSTONE_IRQ(14))
-			set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_NOAUTOEN);
+			irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, IRQ_NOAUTOEN);
 		else
-			set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+			irq_modify_status(irq, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 	}
-	set_irq_flags(MAINSTONE_IRQ(8), 0);
-	set_irq_flags(MAINSTONE_IRQ(12), 0);
 
 	MST_INTMSKENA = 0;
 	MST_INTSETCLR = 0;

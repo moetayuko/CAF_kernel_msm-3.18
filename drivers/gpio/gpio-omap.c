@@ -1150,7 +1150,6 @@ static int omap_gpio_chip_init(struct gpio_bank *bank, struct irq_chip *irqc)
 		if (bank->is_mpuio) {
 			omap_mpuio_alloc_gc(bank, irq, bank->width);
 			irq_set_chip_and_handler(irq, NULL, NULL);
-			set_irq_flags(irq, 0);
 		}
 	}
 

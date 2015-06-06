@@ -164,7 +164,7 @@ static int irqc_irq_domain_map(struct irq_domain *h, unsigned int virq,
 	irqc_dbg(&p->irq[hw], "map");
 	irq_set_chip_data(virq, h->host_data);
 	irq_set_chip_and_handler(virq, &p->irq_chip, handle_level_irq);
-	set_irq_flags(virq, IRQF_VALID); /* kill me now */
+	irq_modify_status(virq, IRQ_NOREQUEST, 0); /* kill me now */
 	return 0;
 }
 
