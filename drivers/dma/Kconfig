@@ -315,7 +315,6 @@ config DMA_SA11X0
 
 config MMP_TDMA
 	bool "MMP Two-Channel DMA support"
-	depends on ARCH_MMP
 	select DMA_ENGINE
 	select MMP_SRAM
 	help
@@ -347,7 +346,6 @@ config TI_CPPI41
 
 config MMP_PDMA
 	bool "MMP PDMA support"
-	depends on (ARCH_MMP || ARCH_PXA)
 	select DMA_ENGINE
 	help
 	  Support the MMP PDMA engine for PXA and MMP platform.
@@ -385,7 +383,7 @@ config MOXART_DMA
 	select DMA_VIRTUAL_CHANNELS
 	help
 	  Enable support for the MOXA ART SoC DMA controller.
- 
+
 config FSL_EDMA
 	tristate "Freescale eDMA engine support"
 	depends on OF

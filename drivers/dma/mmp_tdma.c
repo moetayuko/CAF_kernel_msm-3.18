@@ -15,6 +15,7 @@
 #include <linux/types.h>
 #include <linux/interrupt.h>
 #include <linux/dma-mapping.h>
+#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/dmaengine.h>
 #include <linux/platform_device.h>
