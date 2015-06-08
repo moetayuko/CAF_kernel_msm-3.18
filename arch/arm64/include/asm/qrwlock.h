@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 ARM Ltd.
+ * Copyright (C) 2015 ARM Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -13,23 +13,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __ASM_SPINLOCK_TYPES_H
-#define __ASM_SPINLOCK_TYPES_H
+#ifndef __ASM_QRWLOCK_H
+#define __ASM_QRWLOCK_H
 
-#define TICKET_SHIFT	16
+#define arch_read_lock_flags(lock, flags)	arch_read_lock(lock)
+#define arch_write_lock_flags(lock, flags)	arch_write_lock(lock)
 
-typedef struct {
-#ifdef __AARCH64EB__
-	u16 next;
-	u16 owner;
-#else
-	u16 owner;
-	u16 next;
-#endif
-} __aligned(4) arch_spinlock_t;
+/* FIXME: This is racy. Probably need to rethink the arch interface */
+#define arch_qrwlock_relax(lock)					\
+do {									\
+	asm volatile("ldxr	wzr, %0" :: "Q" (*(u32 *)&lock->cnts));	\
+	wfe();								\
+} while (0)
 
-#define __ARCH_SPIN_LOCK_UNLOCKED	{ 0 , 0 }
+#include <asm-generic/qrwlock.h>
 
-#include <asm-generic/qrwlock_types.h>
-
-#endif
+#endif /* __ASM_QRWLOCK_H */
