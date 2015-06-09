@@ -98,7 +98,8 @@ void queued_read_lock_slowpath(struct qrwlock *lock, u32 cnts)
 	while (atomic_read(&lock->cnts) & _QW_WMASK)
 		cpu_relax_lowlatency();
 
-	cnts = atomic_add_return(_QR_BIAS, &lock->cnts) - _QR_BIAS;
+	atomic_add(_QR_BIAS, &lock->cnts);
+	cnts = smp_load_acquire((u32 *)&lock->cnts);
 	rspin_until_writer_unlock(lock, cnts);
 
 	/*
