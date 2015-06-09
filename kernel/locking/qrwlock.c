@@ -113,6 +113,10 @@ EXPORT_SYMBOL(queued_read_lock_slowpath);
  * queued_write_lock_slowpath - acquire write lock of a queue rwlock
  * @lock : Pointer to queue rwlock structure
  */
+#ifndef cmpxchg_relaxed
+# define cmpxchg_relaxed	cmpxchg
+#endif
+
 void queued_write_lock_slowpath(struct qrwlock *lock)
 {
 	u32 cnts;
@@ -133,7 +137,7 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 		struct __qrwlock *l = (struct __qrwlock *)lock;
 
 		if (!READ_ONCE(l->wmode) &&
-		   (cmpxchg(&l->wmode, 0, _QW_WAITING) == 0))
+		   (cmpxchg_relaxed(&l->wmode, 0, _QW_WAITING) == 0))
 			break;
 
 		cpu_relax_lowlatency();
