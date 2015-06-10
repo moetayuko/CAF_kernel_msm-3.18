@@ -110,11 +110,9 @@
 	#include "juno-base.dtsi"
 
 	pcie-controller@30000000 {
-		compatible = "arm,pcie-xr3";
+		compatible = "pci-host-ecam-generic";
 		device_type = "pci";
-		reg = <0 0x7ff30000 0 0x1000		/* XR3 config registers */
-		       0 0x7ff20000 0 0x10000		/* XR3 reset registers */
-		       0 0x40000000 0 0x10000000>;	/* ECAM config space */
+		reg = <0x0 0x40000000 0x0 0x10000000>;  /* ECAM config space */
 		bus-range = <0 255>;
 		linux,pci-domain = <0>;
 		#address-cells = <3>;
