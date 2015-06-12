@@ -219,7 +219,7 @@ static inline unsigned long __cmpxchg_mb(volatile void *ptr, unsigned long old,
 	__ret; \
 })
 
-#define cmpxchg_local(ptr, o, n) \
+#define cmpxchg_relaxed(ptr, o, n) \
 ({ \
 	__typeof__(*(ptr)) __ret; \
 	__ret = (__typeof__(*(ptr))) \
@@ -227,6 +227,8 @@ static inline unsigned long __cmpxchg_mb(volatile void *ptr, unsigned long old,
 			  (unsigned long)(n), sizeof(*(ptr))); \
 	__ret; \
 })
+
+#define cmpxchg_local	cmpxchg_relaxed
 
 #define cmpxchg_double(ptr1, ptr2, o1, o2, n1, n2) \
 ({\
@@ -274,6 +276,6 @@ static inline unsigned long __cmpxchg_mb(volatile void *ptr, unsigned long old,
 #define cmpxchg64(ptr,o,n)		cmpxchg((ptr),(o),(n))
 #define cmpxchg64_local(ptr,o,n)	cmpxchg_local((ptr),(o),(n))
 
-#define cmpxchg64_relaxed(ptr,o,n)	cmpxchg_local((ptr),(o),(n))
+#define cmpxchg64_relaxed(ptr,o,n)	cmpxchg_relaxed((ptr),(o),(n))
 
 #endif	/* __ASM_CMPXCHG_H */
