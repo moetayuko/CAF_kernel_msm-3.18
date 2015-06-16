@@ -163,6 +163,9 @@ if grep -q '^CONFIG_MODULES=y' $KCONFIG_CONFIG ; then
 			$OBJCOPY --add-gnu-debuglink=$dbg_dir/usr/lib/debug/$module $tmpdir/$module
 		done
 	fi
+	if grep -q '^CONFIG_MODULE_SIG=y' $KCONFIG_CONFIG ; then
+		INSTALL_MOD_PATH="$tmpdir" $MAKE KBUILD_SRC= modules_sign
+	fi
 fi
 
 if [ "$ARCH" != "um" ]; then
