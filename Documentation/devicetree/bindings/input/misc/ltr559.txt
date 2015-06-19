@@ -1,0 +1,36 @@
+Liteon ltr559 light and proximity sensor
+
+Required properties:
+
+ - compatible		: Should be "liteon,ltr559".
+ - reg			: i2c slave address of the device.
+ - pinctrl-names	: The pinctrl configuration names of this sensor driver. Should be
+	"default" and "sleep".
+ - pinctrl-0		: Should specify pin control groups used for this controller.
+ - pinctrl-1		: Should specify pin control groups used for this controller.
+ - interrupt-parent	: Parent of interrupt.
+ - interrupts		: light and proximity sample interrupt to indicate new data ready.
+ - vdd-supply		: Power supply needed to power up the device.
+ - vio-supply		: IO power supply needed for IO and I2C.
+ - liteon,intr		: The gpio pin for the interrupt.
+ - liteon,highthr	: The threshold adc value for proximity sensor to trigger close interrupt.
+ - liteon,lowthr	: The threshold adc value for proximity sensor to trigger away interrupt.
+
+Example:
+	i2c@78b5000 {
+		liteon@23 {
+			compatible = "liteon,ltr559";
+			reg = <0x23>;
+			pinctrl-names = "default","sleep";
+			pinctrl-0 = <&ltr559_default>;
+			pinctrl-1 = <&ltr559_sleep>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <94 0x2002>;
+			vdd-supply = <&pm8916_l17>;
+			vio-supply = <&pm8916_l6>;
+			liteon,intr = <&msm_gpio 94 0x2002>;
+			liteon,highthr = <800>;
+			liteon,lowthr = <300>;
+		};
+	};
+

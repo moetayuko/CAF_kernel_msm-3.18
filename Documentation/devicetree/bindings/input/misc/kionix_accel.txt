@@ -1,0 +1,51 @@
+Kionix kxtj2-1029 3-axis accelerometer sensor driver.
+
+Required properties:
+
+ - compatible		: Should be "kionix,kxtj2-1029".
+ - reg			: i2c slave address of the device.
+ - interrupt-parent	: Parent of interrupt.
+ - interrupts		: Accelerometer interrupts to indicate new data ready or events.
+ - vdd-supply		: Analog power supply needed to power device.
+ - vio-supply		: Digital IO power supply needed for IO and I2C.
+ - kionix,min-interval		: Minimum data polling interval in millisecond.
+ - kionix,poll-interval		: Initial data polling interval in millisecond.
+ - kionix,accel-direction	: The direction of the 3-axis accelerometer sensor chip. There are 8
+	patterns of direction described as below：
+				1: 1st pin is right down
+				2: 1st pin is left down
+				3: 1st pin is left top
+				4: 1st pin is right top
+				5: 1st pin is left down (from top view)
+				6: 1st pin is left top (from top view)
+				7: 1st pin is right top (from top view)
+				8: 1st pin is right down (from top view)
+ - kionix,accel-irq-use-drdy	: Choose whether to use DRDY hardware interrupt
+	mode to trigger a data report event or to use the software polling mode.
+	e.g. Giving "0" to this property means using the software polling mode.
+
+ - kionix,accel-res		: Select output data resolution. We can select "12", "8" or "6". And
+	the sensor will be configured to output 12/8/6 bits of data. The default value is "12".
+
+ - kionix,accel-g-range		: Select initial range of measurement. It defines the initial
+	configuration of the maximum measurement range of the sensor. Where 0 is 2G, 1 is 4G,
+	2 is 6G, 3 is 8G, 2G will be used for any other values.
+
+Example:
+	i2c@78b5000 {
+		kionix@e {
+			compatible = "kionix,kxtj2-1029";
+			reg = <0x0e>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <94 0x2002>;
+			vdd-supply = <&pm8916_l17>;
+			vio-supply = <&pm8916_l6>;
+			kionix,min-interval = <5>;
+			kionix,poll-interval = <100>;
+			kionix,accel-direction = <1>;
+			kionix,accel-irq-use-drdy = <0>;
+			kionix,accel-res = <12>;
+			kionix,accel-g-range = <2>;
+		};
+	};
+
