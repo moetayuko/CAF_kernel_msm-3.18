@@ -893,8 +893,7 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 		 * have happened.
 		 */
 		if (status & MXT_T9_RELEASE) {
-			input_mt_report_slot_state(input_dev,
-						   MT_TOOL_FINGER, 0);
+			input_mt_report_slot_state(input_dev, 0, 0);
 			mxt_input_sync(data);
 		}
 
@@ -919,7 +918,7 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 		input_report_abs(input_dev, ABS_MT_ORIENTATION, vector);
 	} else {
 		/* Touch no longer active, close out slot */
-		input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, 0);
+		input_mt_report_slot_state(input_dev, 0, 0);
 	}
 
 	data->update_input = true;
@@ -3056,7 +3055,7 @@ static void mxt_reset_slots(struct mxt_data *data)
 
 	for (id = 0; id < data->num_touchids; id++) {
 		input_mt_slot(input_dev, id);
-		input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, 0);
+		input_mt_report_slot_state(input_dev, 0, 0);
 	}
 
 	mxt_input_sync(data);
