@@ -87,7 +87,6 @@ enum {
 	IPOIB_FLAG_ADMIN_UP	  = 2,
 	IPOIB_PKEY_ASSIGNED	  = 3,
 	IPOIB_FLAG_SUBINTERFACE	  = 5,
-	IPOIB_MCAST_RUN		  = 6,
 	IPOIB_STOP_REAPER	  = 7,
 	IPOIB_FLAG_ADMIN_CM	  = 9,
 	IPOIB_FLAG_UMCAST	  = 10,
@@ -154,6 +153,7 @@ struct ipoib_mcast {
 
 	unsigned long created;
 	unsigned long backoff;
+	unsigned long delay_until;
 
 	unsigned long flags;
 	unsigned char logcount;
@@ -298,6 +298,11 @@ struct ipoib_neigh_table {
 	struct completion		deleted;
 };
 
+struct ipoib_qp_state_validate {
+	struct work_struct work;
+	struct ipoib_dev_priv   *priv;
+};
+
 /*
  * Device private locking: network stack tx_lock protects members used
  * in TX fast path, lock protects everything else.  lock nests inside
@@ -432,11 +437,6 @@ struct ipoib_neigh {
 
 #define IPOIB_UD_MTU(ib_mtu)		(ib_mtu - IPOIB_ENCAP_LEN)
 #define IPOIB_UD_BUF_SIZE(ib_mtu)	(ib_mtu + IB_GRH_BYTES)
-
-static inline int ipoib_ud_need_sg(unsigned int ib_mtu)
-{
-	return IPOIB_UD_BUF_SIZE(ib_mtu) > PAGE_SIZE;
-}
 
 void ipoib_neigh_dtor(struct ipoib_neigh *neigh);
 static inline void ipoib_neigh_put(struct ipoib_neigh *neigh)

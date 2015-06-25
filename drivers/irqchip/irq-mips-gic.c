@@ -37,6 +37,7 @@ static struct irq_domain *gic_irq_domain;
 static int gic_shared_intrs;
 static int gic_vpes;
 static unsigned int gic_cpu_pin;
+static unsigned int timer_cpu_pin;
 static struct irq_chip gic_level_irq_controller, gic_edge_irq_controller;
 
 static void __gic_irq_dispatch(void);
@@ -165,6 +166,27 @@ cycle_t gic_read_compare(void)
 
 	return (((cycle_t) hi) << 32) + lo;
 }
+
+void gic_start_count(void)
+{
+	u32 gicconfig;
+
+	/* Start the counter */
+	gicconfig = gic_read(GIC_REG(SHARED, GIC_SH_CONFIG));
+	gicconfig &= ~(1 << GIC_SH_CONFIG_COUNTSTOP_SHF);
+	gic_write(GIC_REG(SHARED, GIC_SH_CONFIG), gicconfig);
+}
+
+void gic_stop_count(void)
+{
+	u32 gicconfig;
+
+	/* Stop the counter */
+	gicconfig = gic_read(GIC_REG(SHARED, GIC_SH_CONFIG));
+	gicconfig |= 1 << GIC_SH_CONFIG_COUNTSTOP_SHF;
+	gic_write(GIC_REG(SHARED, GIC_SH_CONFIG), gicconfig);
+}
+
 #endif
 
 static bool gic_local_irq_is_routable(int intr)
@@ -189,14 +211,6 @@ static bool gic_local_irq_is_routable(int intr)
 	default:
 		return true;
 	}
-}
-
-unsigned int gic_get_timer_pending(void)
-{
-	unsigned int vpe_pending;
-
-	vpe_pending = gic_read(GIC_REG(VPE_LOCAL, GIC_VPE_PEND));
-	return vpe_pending & GIC_VPE_PEND_TIMER_MSK;
 }
 
 static void gic_bind_eic_interrupt(int irq, int set)
@@ -225,7 +239,7 @@ int gic_get_c0_compare_int(void)
 int gic_get_c0_perfcount_int(void)
 {
 	if (!gic_local_irq_is_routable(GIC_LOCAL_INT_PERFCTR)) {
-		/* Is the erformance counter shared with the timer? */
+		/* Is the performance counter shared with the timer? */
 		if (cp0_perfcount_irq < 0)
 			return -1;
 		return MIPS_CPU_IRQ_BASE + cp0_perfcount_irq;
@@ -234,9 +248,32 @@ int gic_get_c0_perfcount_int(void)
 				  GIC_LOCAL_TO_HWIRQ(GIC_LOCAL_INT_PERFCTR));
 }
 
-static unsigned int gic_get_int(void)
+int gic_get_c0_fdc_int(void)
 {
-	unsigned int i;
+	if (!gic_local_irq_is_routable(GIC_LOCAL_INT_FDC)) {
+		/* Is the FDC IRQ even present? */
+		if (cp0_fdc_irq < 0)
+			return -1;
+		return MIPS_CPU_IRQ_BASE + cp0_fdc_irq;
+	}
+
+	/*
+	 * Some cores claim the FDC is routable but it doesn't actually seem to
+	 * be connected.
+	 */
+	switch (current_cpu_type()) {
+	case CPU_INTERAPTIV:
+	case CPU_PROAPTIV:
+		return -1;
+	}
+
+	return irq_create_mapping(gic_irq_domain,
+				  GIC_LOCAL_TO_HWIRQ(GIC_LOCAL_INT_FDC));
+}
+
+static void gic_handle_shared_int(bool chained)
+{
+	unsigned int i, intr, virq;
 	unsigned long *pcpu_mask;
 	unsigned long pending_reg, intrmask_reg;
 	DECLARE_BITMAP(pending, GIC_MAX_INTRS);
@@ -258,7 +295,19 @@ static unsigned int gic_get_int(void)
 	bitmap_and(pending, pending, intrmask, gic_shared_intrs);
 	bitmap_and(pending, pending, pcpu_mask, gic_shared_intrs);
 
-	return find_first_bit(pending, gic_shared_intrs);
+	intr = find_first_bit(pending, gic_shared_intrs);
+	while (intr != gic_shared_intrs) {
+		virq = irq_linear_revmap(gic_irq_domain,
+					 GIC_SHARED_TO_HWIRQ(intr));
+		if (chained)
+			generic_handle_irq(virq);
+		else
+			do_IRQ(virq);
+
+		/* go to next pending bit */
+		bitmap_clear(pending, intr, 1);
+		intr = find_first_bit(pending, gic_shared_intrs);
+	}
 }
 
 static void gic_mask_irq(struct irq_data *d)
@@ -343,19 +392,19 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *cpumask,
 	int		i;
 
 	cpumask_and(&tmp, cpumask, cpu_online_mask);
-	if (cpus_empty(tmp))
+	if (cpumask_empty(&tmp))
 		return -EINVAL;
 
 	/* Assumption : cpumask refers to a single CPU */
 	spin_lock_irqsave(&gic_lock, flags);
 
 	/* Re-route this IRQ */
-	gic_map_to_vpe(irq, first_cpu(tmp));
+	gic_map_to_vpe(irq, cpumask_first(&tmp));
 
 	/* Update the pcpu_masks */
 	for (i = 0; i < NR_CPUS; i++)
 		clear_bit(irq, pcpu_masks[i].pcpu_mask);
-	set_bit(irq, pcpu_masks[first_cpu(tmp)].pcpu_mask);
+	set_bit(irq, pcpu_masks[cpumask_first(&tmp)].pcpu_mask);
 
 	cpumask_copy(d->affinity, cpumask);
 	spin_unlock_irqrestore(&gic_lock, flags);
@@ -385,16 +434,29 @@ static struct irq_chip gic_edge_irq_controller = {
 #endif
 };
 
-static unsigned int gic_get_local_int(void)
+static void gic_handle_local_int(bool chained)
 {
 	unsigned long pending, masked;
+	unsigned int intr, virq;
 
 	pending = gic_read(GIC_REG(VPE_LOCAL, GIC_VPE_PEND));
 	masked = gic_read(GIC_REG(VPE_LOCAL, GIC_VPE_MASK));
 
 	bitmap_and(&pending, &pending, &masked, GIC_NUM_LOCAL_INTRS);
 
-	return find_first_bit(&pending, GIC_NUM_LOCAL_INTRS);
+	intr = find_first_bit(&pending, GIC_NUM_LOCAL_INTRS);
+	while (intr != GIC_NUM_LOCAL_INTRS) {
+		virq = irq_linear_revmap(gic_irq_domain,
+					 GIC_LOCAL_TO_HWIRQ(intr));
+		if (chained)
+			generic_handle_irq(virq);
+		else
+			do_IRQ(virq);
+
+		/* go to next pending bit */
+		bitmap_clear(&pending, intr, 1);
+		intr = find_first_bit(&pending, GIC_NUM_LOCAL_INTRS);
+	}
 }
 
 static void gic_mask_local_irq(struct irq_data *d)
@@ -453,24 +515,14 @@ static struct irq_chip gic_all_vpes_local_irq_controller = {
 
 static void __gic_irq_dispatch(void)
 {
-	unsigned int intr, virq;
-
-	while ((intr = gic_get_local_int()) != GIC_NUM_LOCAL_INTRS) {
-		virq = irq_linear_revmap(gic_irq_domain,
-					 GIC_LOCAL_TO_HWIRQ(intr));
-		do_IRQ(virq);
-	}
-
-	while ((intr = gic_get_int()) != gic_shared_intrs) {
-		virq = irq_linear_revmap(gic_irq_domain,
-					 GIC_SHARED_TO_HWIRQ(intr));
-		do_IRQ(virq);
-	}
+	gic_handle_local_int(false);
+	gic_handle_shared_int(false);
 }
 
 static void gic_irq_dispatch(unsigned int irq, struct irq_desc *desc)
 {
-	__gic_irq_dispatch();
+	gic_handle_local_int(true);
+	gic_handle_shared_int(true);
 }
 
 #ifdef CONFIG_MIPS_GIC_IPI
@@ -591,15 +643,20 @@ static int gic_local_irq_domain_map(struct irq_domain *d, unsigned int virq,
 	 * of the MIPS kernel code does not use the percpu IRQ API for
 	 * the CP0 timer and performance counter interrupts.
 	 */
-	if (intr != GIC_LOCAL_INT_TIMER && intr != GIC_LOCAL_INT_PERFCTR) {
+	switch (intr) {
+	case GIC_LOCAL_INT_TIMER:
+	case GIC_LOCAL_INT_PERFCTR:
+	case GIC_LOCAL_INT_FDC:
+		irq_set_chip_and_handler(virq,
+					 &gic_all_vpes_local_irq_controller,
+					 handle_percpu_irq);
+		break;
+	default:
 		irq_set_chip_and_handler(virq,
 					 &gic_local_irq_controller,
 					 handle_percpu_devid_irq);
 		irq_set_percpu_devid(virq);
-	} else {
-		irq_set_chip_and_handler(virq,
-					 &gic_all_vpes_local_irq_controller,
-					 handle_percpu_irq);
+		break;
 	}
 
 	spin_lock_irqsave(&gic_lock, flags);
@@ -616,6 +673,8 @@ static int gic_local_irq_domain_map(struct irq_domain *d, unsigned int virq,
 			gic_write(GIC_REG(VPE_OTHER, GIC_VPE_COMPARE_MAP), val);
 			break;
 		case GIC_LOCAL_INT_TIMER:
+			/* CONFIG_MIPS_CMP workaround (see __gic_init) */
+			val = GIC_MAP_TO_PIN_MSK | timer_cpu_pin;
 			gic_write(GIC_REG(VPE_OTHER, GIC_VPE_TIMER_MAP), val);
 			break;
 		case GIC_LOCAL_INT_PERFCTR:
@@ -713,12 +772,36 @@ static void __init __gic_init(unsigned long gic_base_addr,
 	if (cpu_has_veic) {
 		/* Always use vector 1 in EIC mode */
 		gic_cpu_pin = 0;
+		timer_cpu_pin = gic_cpu_pin;
 		set_vi_handler(gic_cpu_pin + GIC_PIN_TO_VEC_OFFSET,
 			       __gic_irq_dispatch);
 	} else {
 		gic_cpu_pin = cpu_vec - GIC_CPU_PIN_OFFSET;
 		irq_set_chained_handler(MIPS_CPU_IRQ_BASE + cpu_vec,
 					gic_irq_dispatch);
+		/*
+		 * With the CMP implementation of SMP (deprecated), other CPUs
+		 * are started by the bootloader and put into a timer based
+		 * waiting poll loop. We must not re-route those CPU's local
+		 * timer interrupts as the wait instruction will never finish,
+		 * so just handle whatever CPU interrupt it is routed to by
+		 * default.
+		 *
+		 * This workaround should be removed when CMP support is
+		 * dropped.
+		 */
+		if (IS_ENABLED(CONFIG_MIPS_CMP) &&
+		    gic_local_irq_is_routable(GIC_LOCAL_INT_TIMER)) {
+			timer_cpu_pin = gic_read(GIC_REG(VPE_LOCAL,
+							 GIC_VPE_TIMER_MAP)) &
+					GIC_MAP_MSK;
+			irq_set_chained_handler(MIPS_CPU_IRQ_BASE +
+						GIC_CPU_PIN_OFFSET +
+						timer_cpu_pin,
+						gic_irq_dispatch);
+		} else {
+			timer_cpu_pin = gic_cpu_pin;
+		}
 	}
 
 	gic_irq_domain = irq_domain_add_simple(node, GIC_NUM_LOCAL_INTRS +

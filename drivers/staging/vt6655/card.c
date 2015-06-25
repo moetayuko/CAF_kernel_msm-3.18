@@ -68,8 +68,8 @@
 
 /*---------------------  Static Variables  --------------------------*/
 
-static const unsigned short cwRXBCNTSFOff[MAX_RATE] =
-{17, 17, 17, 17, 34, 23, 17, 11, 8, 5, 4, 3};
+static const unsigned short cwRXBCNTSFOff[MAX_RATE] = {
+	17, 17, 17, 17, 34, 23, 17, 11, 8, 5, 4, 3};
 
 /*---------------------  Static Functions  --------------------------*/
 
@@ -362,12 +362,16 @@ bool CARDbSetPhyParameter(struct vnt_private *pDevice, u8 bb_type)
  * Return Value: none
  */
 bool CARDbUpdateTSF(struct vnt_private *pDevice, unsigned char byRxRate,
-		    u64 qwBSSTimestamp, u64 qwLocalTSF)
+		    u64 qwBSSTimestamp)
 {
+	u64 local_tsf;
 	u64 qwTSFOffset = 0;
 
-	if (qwBSSTimestamp != qwLocalTSF) {
-		qwTSFOffset = CARDqGetTSFOffset(byRxRate, qwBSSTimestamp, qwLocalTSF);
+	CARDbGetCurrentTSF(pDevice, &local_tsf);
+
+	if (qwBSSTimestamp != local_tsf) {
+		qwTSFOffset = CARDqGetTSFOffset(byRxRate, qwBSSTimestamp,
+						local_tsf);
 		/* adjust TSF, HW's TSF add TSF Offset reg */
 		VNSvOutPortD(pDevice->PortOffset + MAC_REG_TSFOFST, (u32)qwTSFOffset);
 		VNSvOutPortD(pDevice->PortOffset + MAC_REG_TSFOFST + 4, (u32)(qwTSFOffset >> 32));
@@ -670,6 +674,9 @@ void CARDvSetRSPINF(struct vnt_private *pDevice, u8 bb_type)
 {
 	union vnt_phy_field_swap phy;
 	unsigned char byTxRate, byRsvTime;      /* For OFDM */
+	unsigned long flags;
+
+	spin_lock_irqsave(&pDevice->lock, flags);
 
 	/* Set to Page1 */
 	MACvSelectPage1(pDevice->PortOffset);
@@ -767,6 +774,8 @@ void CARDvSetRSPINF(struct vnt_private *pDevice, u8 bb_type)
 	VNSvOutPortW(pDevice->PortOffset + MAC_REG_RSPINF_A_72, MAKEWORD(byTxRate, byRsvTime));
 	/* Set to Page0 */
 	MACvSelectPage0(pDevice->PortOffset);
+
+	spin_unlock_irqrestore(&pDevice->lock, flags);
 }
 
 void CARDvUpdateBasicTopRate(struct vnt_private *pDevice)

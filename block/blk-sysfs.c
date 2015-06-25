@@ -517,10 +517,10 @@ static void blk_release_queue(struct kobject *kobj)
 
 	if (!q->mq_ops)
 		blk_free_flush_queue(q->fq);
+	else
+		blk_mq_release(q);
 
 	blk_trace_shutdown(q);
-
-	bdi_destroy(&q->backing_dev_info);
 
 	ida_simple_remove(&blk_queue_ida, q->id);
 	call_rcu(&q->rcu_head, blk_free_queue_rcu);

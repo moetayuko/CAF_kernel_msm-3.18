@@ -238,14 +238,6 @@ static inline void s3c2410_udc_set_ep0_de_out(void __iomem *base)
 			S3C2410_UDC_EP0_CSR_REG);
 }
 
-static inline void s3c2410_udc_set_ep0_sse_out(void __iomem *base)
-{
-	udc_writeb(base, S3C2410_UDC_INDEX_EP0, S3C2410_UDC_INDEX_REG);
-	udc_writeb(base, (S3C2410_UDC_EP0_CSR_SOPKTRDY
-				| S3C2410_UDC_EP0_CSR_SSE),
-			S3C2410_UDC_EP0_CSR_REG);
-}
-
 static inline void s3c2410_udc_set_ep0_de_in(void __iomem *base)
 {
 	udc_writeb(base, S3C2410_UDC_INDEX_EP0, S3C2410_UDC_INDEX_REG);
@@ -289,18 +281,6 @@ static void s3c2410_udc_nuke(struct s3c2410_udc *udc,
 				queue);
 		s3c2410_udc_done(ep, req, status);
 	}
-}
-
-static inline void s3c2410_udc_clear_ep_state(struct s3c2410_udc *dev)
-{
-	unsigned i;
-
-	/* hardware SET_{CONFIGURATION,INTERFACE} automagic resets endpoint
-	 * fifos, and pending transactions mustn't be continued in any case.
-	 */
-
-	for (i = 1; i < S3C2410_ENDPOINTS; i++)
-		s3c2410_udc_nuke(dev, &dev->ep[i], -ECONNABORTED);
 }
 
 static inline int s3c2410_udc_fifo_count_out(void)
@@ -1454,6 +1434,7 @@ static int s3c2410_udc_set_selfpowered(struct usb_gadget *gadget, int value)
 
 	dprintk(DEBUG_NORMAL, "%s()\n", __func__);
 
+	gadget->is_selfpowered = (value != 0);
 	if (value)
 		udc->devstatus |= (1 << USB_DEVICE_SELF_POWERED);
 	else
@@ -1506,7 +1487,7 @@ static int s3c2410_udc_pullup(struct usb_gadget *gadget, int is_on)
 
 	dprintk(DEBUG_NORMAL, "%s()\n", __func__);
 
-	s3c2410_udc_set_pullup(udc, is_on ? 0 : 1);
+	s3c2410_udc_set_pullup(udc, is_on);
 	return 0;
 }
 

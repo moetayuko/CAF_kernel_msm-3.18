@@ -452,9 +452,7 @@ void btrfs_get_logged_extents(struct inode *inode,
 			continue;
 		if (entry_end(ordered) <= start)
 			break;
-		if (!list_empty(&ordered->log_list))
-			continue;
-		if (test_bit(BTRFS_ORDERED_LOGGED, &ordered->flags))
+		if (test_and_set_bit(BTRFS_ORDERED_LOGGED, &ordered->flags))
 			continue;
 		list_add(&ordered->log_list, logged_list);
 		atomic_inc(&ordered->refs);
@@ -511,8 +509,7 @@ void btrfs_wait_logged_extents(struct btrfs_trans_handle *trans,
 		wait_event(ordered->wait, test_bit(BTRFS_ORDERED_IO_DONE,
 						   &ordered->flags));
 
-		if (!test_and_set_bit(BTRFS_ORDERED_LOGGED, &ordered->flags))
-			list_add_tail(&ordered->trans_list, &trans->ordered);
+		list_add_tail(&ordered->trans_list, &trans->ordered);
 		spin_lock_irq(&log->log_extents_lock[index]);
 	}
 	spin_unlock_irq(&log->log_extents_lock[index]);
@@ -725,6 +722,7 @@ void btrfs_start_ordered_extent(struct inode *inode,
 int btrfs_wait_ordered_range(struct inode *inode, u64 start, u64 len)
 {
 	int ret = 0;
+	int ret_wb = 0;
 	u64 end;
 	u64 orig_end;
 	struct btrfs_ordered_extent *ordered;
@@ -744,9 +742,14 @@ int btrfs_wait_ordered_range(struct inode *inode, u64 start, u64 len)
 	if (ret)
 		return ret;
 
-	ret = filemap_fdatawait_range(inode->i_mapping, start, orig_end);
-	if (ret)
-		return ret;
+	/*
+	 * If we have a writeback error don't return immediately. Wait first
+	 * for any ordered extents that haven't completed yet. This is to make
+	 * sure no one can dirty the same page ranges and call writepages()
+	 * before the ordered extents complete - to avoid failures (-EEXIST)
+	 * when adding the new ordered extents to the ordered tree.
+	 */
+	ret_wb = filemap_fdatawait_range(inode->i_mapping, start, orig_end);
 
 	end = orig_end;
 	while (1) {
@@ -770,7 +773,7 @@ int btrfs_wait_ordered_range(struct inode *inode, u64 start, u64 len)
 			break;
 		end--;
 	}
-	return ret;
+	return ret_wb ? ret_wb : ret;
 }
 
 /*

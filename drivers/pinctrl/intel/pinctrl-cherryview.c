@@ -148,6 +148,11 @@ struct chv_community {
 	size_t ngpios;
 };
 
+struct chv_pin_context {
+	u32 padctrl0;
+	u32 padctrl1;
+};
+
 /**
  * struct chv_pinctrl - CHV pinctrl private structure
  * @dev: Pointer to the parent device
@@ -172,6 +177,8 @@ struct chv_pinctrl {
 	spinlock_t lock;
 	unsigned intr_lines[16];
 	const struct chv_community *community;
+	u32 saved_intmask;
+	struct chv_pin_context *saved_pin_context;
 };
 
 #define gpiochip_to_pinctrl(c) container_of(c, struct chv_pinctrl, chip)
@@ -873,9 +880,22 @@ static int chv_gpio_request_enable(struct pinctrl_dev *pctldev,
 		value &= ~CHV_PADCTRL1_INVRXTX_MASK;
 		chv_writel(value, reg);
 
-		/* Switch to a GPIO mode */
 		reg = chv_padreg(pctrl, offset, CHV_PADCTRL0);
-		value = readl(reg) | CHV_PADCTRL0_GPIOEN;
+		value = readl(reg);
+
+		/*
+		 * If the pin is in HiZ mode (both TX and RX buffers are
+		 * disabled) we turn it to be input now.
+		 */
+		if ((value & CHV_PADCTRL0_GPIOCFG_MASK) ==
+		     (CHV_PADCTRL0_GPIOCFG_HIZ << CHV_PADCTRL0_GPIOCFG_SHIFT)) {
+			value &= ~CHV_PADCTRL0_GPIOCFG_MASK;
+			value |= CHV_PADCTRL0_GPIOCFG_GPI <<
+				CHV_PADCTRL0_GPIOCFG_SHIFT;
+		}
+
+		/* Switch to a GPIO mode */
+		value |= CHV_PADCTRL0_GPIOEN;
 		chv_writel(value, reg);
 	}
 
@@ -1206,6 +1226,7 @@ static int chv_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 static int chv_gpio_direction_output(struct gpio_chip *chip, unsigned offset,
 				     int value)
 {
+	chv_gpio_set(chip, offset, value);
 	return pinctrl_gpio_direction_output(chip->base + offset);
 }
 
@@ -1269,6 +1290,49 @@ static void chv_gpio_irq_mask(struct irq_data *d)
 static void chv_gpio_irq_unmask(struct irq_data *d)
 {
 	chv_gpio_irq_mask_unmask(d, false);
+}
+
+static unsigned chv_gpio_irq_startup(struct irq_data *d)
+{
+	/*
+	 * Check if the interrupt has been requested with 0 as triggering
+	 * type. In that case it is assumed that the current values
+	 * programmed to the hardware are used (e.g BIOS configured
+	 * defaults).
+	 *
+	 * In that case ->irq_set_type() will never be called so we need to
+	 * read back the values from hardware now, set correct flow handler
+	 * and update mappings before the interrupt is being used.
+	 */
+	if (irqd_get_trigger_type(d) == IRQ_TYPE_NONE) {
+		struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
+		struct chv_pinctrl *pctrl = gpiochip_to_pinctrl(gc);
+		unsigned offset = irqd_to_hwirq(d);
+		int pin = chv_gpio_offset_to_pin(pctrl, offset);
+		irq_flow_handler_t handler;
+		unsigned long flags;
+		u32 intsel, value;
+
+		intsel = readl(chv_padreg(pctrl, pin, CHV_PADCTRL0));
+		intsel &= CHV_PADCTRL0_INTSEL_MASK;
+		intsel >>= CHV_PADCTRL0_INTSEL_SHIFT;
+
+		value = readl(chv_padreg(pctrl, pin, CHV_PADCTRL1));
+		if (value & CHV_PADCTRL1_INTWAKECFG_LEVEL)
+			handler = handle_level_irq;
+		else
+			handler = handle_edge_irq;
+
+		spin_lock_irqsave(&pctrl->lock, flags);
+		if (!pctrl->intr_lines[intsel]) {
+			__irq_set_handler_locked(d->irq, handler);
+			pctrl->intr_lines[intsel] = offset;
+		}
+		spin_unlock_irqrestore(&pctrl->lock, flags);
+	}
+
+	chv_gpio_irq_unmask(d);
+	return 0;
 }
 
 static int chv_gpio_irq_type(struct irq_data *d, unsigned type)
@@ -1336,6 +1400,7 @@ static int chv_gpio_irq_type(struct irq_data *d, unsigned type)
 
 static struct irq_chip chv_gpio_irqchip = {
 	.name = "chv-gpio",
+	.irq_startup = chv_gpio_irq_startup,
 	.irq_ack = chv_gpio_irq_ack,
 	.irq_mask = chv_gpio_irq_mask,
 	.irq_unmask = chv_gpio_irq_unmask,
@@ -1443,6 +1508,14 @@ static int chv_pinctrl_probe(struct platform_device *pdev)
 	spin_lock_init(&pctrl->lock);
 	pctrl->dev = &pdev->dev;
 
+#ifdef CONFIG_PM_SLEEP
+	pctrl->saved_pin_context = devm_kcalloc(pctrl->dev,
+		pctrl->community->npins, sizeof(*pctrl->saved_pin_context),
+		GFP_KERNEL);
+	if (!pctrl->saved_pin_context)
+		return -ENOMEM;
+#endif
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	pctrl->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(pctrl->regs))
@@ -1486,6 +1559,94 @@ static int chv_pinctrl_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int chv_pinctrl_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct chv_pinctrl *pctrl = platform_get_drvdata(pdev);
+	int i;
+
+	pctrl->saved_intmask = readl(pctrl->regs + CHV_INTMASK);
+
+	for (i = 0; i < pctrl->community->npins; i++) {
+		const struct pinctrl_pin_desc *desc;
+		struct chv_pin_context *ctx;
+		void __iomem *reg;
+
+		desc = &pctrl->community->pins[i];
+		if (chv_pad_locked(pctrl, desc->number))
+			continue;
+
+		ctx = &pctrl->saved_pin_context[i];
+
+		reg = chv_padreg(pctrl, desc->number, CHV_PADCTRL0);
+		ctx->padctrl0 = readl(reg) & ~CHV_PADCTRL0_GPIORXSTATE;
+
+		reg = chv_padreg(pctrl, desc->number, CHV_PADCTRL1);
+		ctx->padctrl1 = readl(reg);
+	}
+
+	return 0;
+}
+
+static int chv_pinctrl_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct chv_pinctrl *pctrl = platform_get_drvdata(pdev);
+	int i;
+
+	/*
+	 * Mask all interrupts before restoring per-pin configuration
+	 * registers because we don't know in which state BIOS left them
+	 * upon exiting suspend.
+	 */
+	chv_writel(0, pctrl->regs + CHV_INTMASK);
+
+	for (i = 0; i < pctrl->community->npins; i++) {
+		const struct pinctrl_pin_desc *desc;
+		const struct chv_pin_context *ctx;
+		void __iomem *reg;
+		u32 val;
+
+		desc = &pctrl->community->pins[i];
+		if (chv_pad_locked(pctrl, desc->number))
+			continue;
+
+		ctx = &pctrl->saved_pin_context[i];
+
+		/* Only restore if our saved state differs from the current */
+		reg = chv_padreg(pctrl, desc->number, CHV_PADCTRL0);
+		val = readl(reg) & ~CHV_PADCTRL0_GPIORXSTATE;
+		if (ctx->padctrl0 != val) {
+			chv_writel(ctx->padctrl0, reg);
+			dev_dbg(pctrl->dev, "restored pin %2u ctrl0 0x%08x\n",
+				desc->number, readl(reg));
+		}
+
+		reg = chv_padreg(pctrl, desc->number, CHV_PADCTRL1);
+		val = readl(reg);
+		if (ctx->padctrl1 != val) {
+			chv_writel(ctx->padctrl1, reg);
+			dev_dbg(pctrl->dev, "restored pin %2u ctrl1 0x%08x\n",
+				desc->number, readl(reg));
+		}
+	}
+
+	/*
+	 * Now that all pins are restored to known state, we can restore
+	 * the interrupt mask register as well.
+	 */
+	chv_writel(0xffff, pctrl->regs + CHV_INTSTAT);
+	chv_writel(pctrl->saved_intmask, pctrl->regs + CHV_INTMASK);
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops chv_pinctrl_pm_ops = {
+	SET_LATE_SYSTEM_SLEEP_PM_OPS(chv_pinctrl_suspend, chv_pinctrl_resume)
+};
+
 static const struct acpi_device_id chv_pinctrl_acpi_match[] = {
 	{ "INT33FF" },
 	{ }
@@ -1497,7 +1658,7 @@ static struct platform_driver chv_pinctrl_driver = {
 	.remove = chv_pinctrl_remove,
 	.driver = {
 		.name = "cherryview-pinctrl",
-		.owner = THIS_MODULE,
+		.pm = &chv_pinctrl_pm_ops,
 		.acpi_match_table = chv_pinctrl_acpi_match,
 	},
 };

@@ -188,12 +188,12 @@ static u64 add_io_space(struct pci_root_info *info,
 
 	name = (char *)(iospace + 1);
 
-	min = addr->minimum;
-	max = min + addr->address_length - 1;
+	min = addr->address.minimum;
+	max = min + addr->address.address_length - 1;
 	if (addr->info.io.translation_type == ACPI_SPARSE_TRANSLATION)
 		sparse = 1;
 
-	space_nr = new_space(addr->translation_offset, sparse);
+	space_nr = new_space(addr->address.translation_offset, sparse);
 	if (space_nr == ~0)
 		goto free_resource;
 
@@ -240,15 +240,12 @@ static acpi_status resource_to_window(struct acpi_resource *resource,
 	 * We're only interested in _CRS descriptors that are
 	 *	- address space descriptors for memory or I/O space
 	 *	- non-zero size
-	 *	- producers, i.e., the address space is routed downstream,
-	 *	  not consumed by the bridge itself
 	 */
 	status = acpi_resource_to_address64(resource, addr);
 	if (ACPI_SUCCESS(status) &&
 	    (addr->resource_type == ACPI_MEMORY_RANGE ||
 	     addr->resource_type == ACPI_IO_RANGE) &&
-	    addr->address_length &&
-	    addr->producer_consumer == ACPI_PRODUCER)
+	    addr->address.address_length)
 		return AE_OK;
 
 	return AE_ERROR;
@@ -284,7 +281,7 @@ static acpi_status add_window(struct acpi_resource *res, void *data)
 	if (addr.resource_type == ACPI_MEMORY_RANGE) {
 		flags = IORESOURCE_MEM;
 		root = &iomem_resource;
-		offset = addr.translation_offset;
+		offset = addr.address.translation_offset;
 	} else if (addr.resource_type == ACPI_IO_RANGE) {
 		flags = IORESOURCE_IO;
 		root = &ioport_resource;
@@ -297,8 +294,8 @@ static acpi_status add_window(struct acpi_resource *res, void *data)
 	resource = &info->res[info->res_num];
 	resource->name = info->name;
 	resource->flags = flags;
-	resource->start = addr.minimum + offset;
-	resource->end = resource->start + addr.address_length - 1;
+	resource->start = addr.address.minimum + offset;
+	resource->end = resource->start + addr.address.address_length - 1;
 	info->res_offset[info->res_num] = offset;
 
 	if (insert_resource(root, resource)) {
@@ -481,9 +478,16 @@ struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
 
 int pcibios_root_bridge_prepare(struct pci_host_bridge *bridge)
 {
-	struct pci_controller *controller = bridge->bus->sysdata;
-
-	ACPI_COMPANION_SET(&bridge->dev, controller->companion);
+	/*
+	 * We pass NULL as parent to pci_create_root_bus(), so if it is not NULL
+	 * here, pci_create_root_bus() has been called by someone else and
+	 * sysdata is likely to be different from what we expect.  Let it go in
+	 * that case.
+	 */
+	if (!bridge->dev.parent) {
+		struct pci_controller *controller = bridge->bus->sysdata;
+		ACPI_COMPANION_SET(&bridge->dev, controller->companion);
+	}
 	return 0;
 }
 

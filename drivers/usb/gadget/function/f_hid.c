@@ -437,12 +437,20 @@ static int hidg_setup(struct usb_function *f,
 		  | USB_REQ_GET_DESCRIPTOR):
 		switch (value >> 8) {
 		case HID_DT_HID:
+		{
+			struct hid_descriptor hidg_desc_copy = hidg_desc;
+
 			VDBG(cdev, "USB_REQ_GET_DESCRIPTOR: HID\n");
+			hidg_desc_copy.desc[0].bDescriptorType = HID_DT_REPORT;
+			hidg_desc_copy.desc[0].wDescriptorLength =
+				cpu_to_le16(hidg->report_desc_length);
+
 			length = min_t(unsigned short, length,
-						   hidg_desc.bLength);
-			memcpy(req->buf, &hidg_desc, length);
+						   hidg_desc_copy.bLength);
+			memcpy(req->buf, &hidg_desc_copy, length);
 			goto respond;
 			break;
+		}
 		case HID_DT_REPORT:
 			VDBG(cdev, "USB_REQ_GET_DESCRIPTOR: REPORT\n");
 			length = min_t(unsigned short, length,
@@ -569,7 +577,7 @@ fail:
 	return status;
 }
 
-const struct file_operations f_hidg_fops = {
+static const struct file_operations f_hidg_fops = {
 	.owner		= THIS_MODULE,
 	.open		= f_hidg_open,
 	.release	= f_hidg_release,
@@ -632,6 +640,10 @@ static int hidg_bind(struct usb_configuration *c, struct usb_function *f)
 	hidg_fs_in_ep_desc.wMaxPacketSize = cpu_to_le16(hidg->report_length);
 	hidg_hs_out_ep_desc.wMaxPacketSize = cpu_to_le16(hidg->report_length);
 	hidg_fs_out_ep_desc.wMaxPacketSize = cpu_to_le16(hidg->report_length);
+	/*
+	 * We can use hidg_desc struct here but we should not relay
+	 * that its content won't change after returning from this function.
+	 */
 	hidg_desc.desc[0].bDescriptorType = HID_DT_REPORT;
 	hidg_desc.desc[0].wDescriptorLength =
 		cpu_to_le16(hidg->report_desc_length);
@@ -759,7 +771,7 @@ static struct f_hid_opts_attribute f_hid_opts_##name =			\
 
 F_HID_OPT(subclass, 8, 255);
 F_HID_OPT(protocol, 8, 255);
-F_HID_OPT(report_length, 16, 65536);
+F_HID_OPT(report_length, 16, 65535);
 
 static ssize_t f_hid_opts_report_desc_show(struct f_hid_opts *opts, char *page)
 {
@@ -908,7 +920,6 @@ static void hidg_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	/* disable/free request and end point */
 	usb_ep_disable(hidg->in_ep);
-	usb_ep_dequeue(hidg->in_ep, hidg->req);
 	kfree(hidg->req->buf);
 	usb_ep_free_request(hidg->in_ep, hidg->req);
 
