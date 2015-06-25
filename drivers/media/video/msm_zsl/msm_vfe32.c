@@ -3427,7 +3427,7 @@ static void vfe32_process_output_path_irq_2(void)
 
 	} else {
 		vfe32_ctrl->outpath.out2.frame_drop_cnt++;
-		pr_err("nishu path_irq_2 - no free buffer!\n");
+		CDBG("nishu path_irq_2 - no free buffer!\n");
 	}
 }
 
