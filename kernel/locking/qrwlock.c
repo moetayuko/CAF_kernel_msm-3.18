@@ -27,26 +27,6 @@
 # define arch_qrwlock_relax(lock)	cpu_relax_lowlatency()
 #endif
 
-/*
- * This internal data structure is used for optimizing access to some of
- * the subfields within the atomic_t cnts.
- */
-struct __qrwlock {
-	union {
-		atomic_t cnts;
-		struct {
-#ifdef __LITTLE_ENDIAN
-			u8 wmode;	/* Writer mode   */
-			u8 rcnts[3];	/* Reader counts */
-#else
-			u8 rcnts[3];	/* Reader counts */
-			u8 wmode;	/* Writer mode   */
-#endif
-		};
-	};
-	arch_spinlock_t	lock;
-};
-
 /**
  * rspin_until_writer_unlock - spin until writer is gone
  * @lock  : Pointer to queue rwlock structure
@@ -138,10 +118,8 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 	 * or wait for a previous writer to go away.
 	 */
 	for (;;) {
-		struct __qrwlock *l = (struct __qrwlock *)lock;
-
-		if (!READ_ONCE(l->wmode) &&
-		   (cmpxchg_relaxed(&l->wmode, 0, _QW_WAITING) == 0))
+		if (!READ_ONCE(lock->wmode) &&
+		   (cmpxchg_relaxed(&lock->wmode, 0, _QW_WAITING) == 0))
 			break;
 
 		arch_qrwlock_relax(lock);
