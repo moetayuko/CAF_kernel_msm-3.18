@@ -269,10 +269,10 @@
 #define ARM64_TCR_TG0_SHIFT		14
 #define ARM64_TCR_TG0_MASK		0x3UL
 #define CTXDESC_CD_0_TCR_IRGN0_SHIFT	8
-#define ARM64_TCR_IRGN0_SHIFT		24
+#define ARM64_TCR_IRGN0_SHIFT		8
 #define ARM64_TCR_IRGN0_MASK		0x3UL
 #define CTXDESC_CD_0_TCR_ORGN0_SHIFT	10
-#define ARM64_TCR_ORGN0_SHIFT		26
+#define ARM64_TCR_ORGN0_SHIFT		10
 #define ARM64_TCR_ORGN0_MASK		0x3UL
 #define CTXDESC_CD_0_TCR_SH0_SHIFT	12
 #define ARM64_TCR_SH0_SHIFT		12
@@ -1064,7 +1064,7 @@ static int arm_smmu_init_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
 		return 0;
 
 	size = 1 << (STRTAB_SPLIT + ilog2(STRTAB_STE_DWORDS) + 3);
-	strtab = &cfg->strtab[sid >> STRTAB_SPLIT << STRTAB_L1_DESC_DWORDS];
+	strtab = &cfg->strtab[(sid >> STRTAB_SPLIT) * STRTAB_L1_DESC_DWORDS];
 
 	desc->span = STRTAB_SPLIT + 1;
 	desc->l2ptr = dma_zalloc_coherent(smmu->dev, size, &desc->l2ptr_dma,
@@ -2020,21 +2020,23 @@ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
 {
 	void *strtab;
 	u64 reg;
-	u32 size;
+	u32 size, l1size;
 	int ret;
 	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
 
 	/* Calculate the L1 size, capped to the SIDSIZE */
 	size = STRTAB_L1_SZ_SHIFT - (ilog2(STRTAB_L1_DESC_DWORDS) + 3);
 	size = min(size, smmu->sid_bits - STRTAB_SPLIT);
-	if (size + STRTAB_SPLIT < smmu->sid_bits)
+	cfg->num_l1_ents = 1 << size;
+
+	size += STRTAB_SPLIT;
+	if (size < smmu->sid_bits)
 		dev_warn(smmu->dev,
 			 "2-level strtab only covers %u/%u bits of SID\n",
-			 size + STRTAB_SPLIT, smmu->sid_bits);
+			 size, smmu->sid_bits);
 
-	cfg->num_l1_ents = 1 << size;
-	size = cfg->num_l1_ents * (STRTAB_L1_DESC_DWORDS << 3);
-	strtab = dma_zalloc_coherent(smmu->dev, size, &cfg->strtab_dma,
+	l1size = cfg->num_l1_ents * (STRTAB_L1_DESC_DWORDS << 3);
+	strtab = dma_zalloc_coherent(smmu->dev, l1size, &cfg->strtab_dma,
 				     GFP_KERNEL);
 	if (!strtab) {
 		dev_err(smmu->dev,
@@ -2055,8 +2057,7 @@ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
 	ret = arm_smmu_init_l1_strtab(smmu);
 	if (ret)
 		dma_free_coherent(smmu->dev,
-				  cfg->num_l1_ents *
-				  (STRTAB_L1_DESC_DWORDS << 3),
+				  l1size,
 				  strtab,
 				  cfg->strtab_dma);
 	return ret;
