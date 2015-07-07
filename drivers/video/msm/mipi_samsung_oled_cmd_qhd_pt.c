@@ -867,10 +867,7 @@ static int get_candela_index(int bl_level)
 		backlightlevel = GAMMA_250CD; /* 22 */
 		break;
 	case 255:
-		if (mipi_pd.msd->dstat.auto_brightness == 1)
-			backlightlevel = GAMMA_300CD; /* 23 */
-		else
-			backlightlevel = GAMMA_250CD; /* 22 */
+		backlightlevel = GAMMA_300CD; /* 23 */
 		break;
 	default:
 		backlightlevel = GAMMA_40CD; /* 1 */
