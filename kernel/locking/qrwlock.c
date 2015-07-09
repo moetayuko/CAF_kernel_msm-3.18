@@ -55,7 +55,7 @@ rspin_until_writer_unlock(struct qrwlock *lock, u32 cnts)
 {
 	while ((cnts & _QW_WMASK) == _QW_LOCKED) {
 		cpu_relax_lowlatency();
-		cnts = smp_load_acquire((u32 *)&lock->cnts);
+		cnts = atomic_read_acquire(&lock->cnts);
 	}
 }
 
@@ -74,8 +74,9 @@ void queued_read_lock_slowpath(struct qrwlock *lock, u32 cnts)
 		 * Readers in interrupt context will get the lock immediately
 		 * if the writer is just waiting (not holding the lock yet).
 		 * The rspin_until_writer_unlock() function returns immediately
-		 * in this case. Otherwise, they will spin until the lock
-		 * is available without waiting in the queue.
+		 * in this case. Otherwise, they will spin (with ACQUIRE
+		 * semantics) until the lock is available without waiting in
+		 * the queue.
 		 */
 		rspin_until_writer_unlock(lock, cnts);
 		return;
@@ -97,7 +98,12 @@ void queued_read_lock_slowpath(struct qrwlock *lock, u32 cnts)
 	while (atomic_read(&lock->cnts) & _QW_WMASK)
 		cpu_relax_lowlatency();
 
-	cnts = atomic_add_return(_QR_BIAS, &lock->cnts) - _QR_BIAS;
+	/*
+	 * The ACQUIRE semantics of the following spinning code ensure
+	 * that accesses can't leak upwards out of our subsequent critical
+	 * section in the case that the lock is currently held for write.
+	 */
+	cnts = atomic_add_return_acquire(_QR_BIAS, &lock->cnts) - _QR_BIAS;
 	rspin_until_writer_unlock(lock, cnts);
 
 	/*
@@ -120,7 +126,7 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 
 	/* Try to acquire the lock directly if no reader is present */
 	if (!atomic_read(&lock->cnts) &&
-	    (atomic_cmpxchg(&lock->cnts, 0, _QW_LOCKED) == 0))
+	    (atomic_cmpxchg_acquire(&lock->cnts, 0, _QW_LOCKED) == 0))
 		goto unlock;
 
 	/*
@@ -131,7 +137,7 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 		struct __qrwlock *l = (struct __qrwlock *)lock;
 
 		if (!READ_ONCE(l->wmode) &&
-		   (cmpxchg(&l->wmode, 0, _QW_WAITING) == 0))
+		   (cmpxchg_relaxed(&l->wmode, 0, _QW_WAITING) == 0))
 			break;
 
 		cpu_relax_lowlatency();
@@ -141,8 +147,8 @@ void queued_write_lock_slowpath(struct qrwlock *lock)
 	for (;;) {
 		cnts = atomic_read(&lock->cnts);
 		if ((cnts == _QW_WAITING) &&
-		    (atomic_cmpxchg(&lock->cnts, _QW_WAITING,
-				    _QW_LOCKED) == _QW_WAITING))
+		    (atomic_cmpxchg_acquire(&lock->cnts, _QW_WAITING,
+					    _QW_LOCKED) == _QW_WAITING))
 			break;
 
 		cpu_relax_lowlatency();
