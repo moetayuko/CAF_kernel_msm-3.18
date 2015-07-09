@@ -202,6 +202,16 @@ struct cros_ec_dev {
 	u32 features[2];
 };
 
+/* struct cros_ec_sensor_platform - ChromeOS EC sensor platform information
+ *
+ * On top of cros_ec_devicem information cros_ec_sensors needs.
+ *
+ * @sensor_num: Id of the sensor, as reported by the EC.
+ */
+struct cros_ec_sensor_platform {
+	u8 sensor_num;
+};
+
 /**
  * cros_ec_suspend - Handle a suspend operation for the ChromeOS EC device
  *
