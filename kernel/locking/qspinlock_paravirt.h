@@ -296,6 +296,13 @@ __visible void __pv_queued_spin_unlock(struct qspinlock *lock)
 		return;
 
 	/*
+	 * A failed cmpxchg doesn't provide any memory-ordering guarantees,
+	 * so we need a barrier to order the read of the node data in
+	 * pv_unhash *after* we've read the lock being _Q_SLOW_VAL.
+	 */
+	smp_rmb();
+
+	/*
 	 * Since the above failed to release, this must be the SLOW path.
 	 * Therefore start by looking up the blocked node and unhashing it.
 	 */
