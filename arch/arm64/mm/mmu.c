@@ -283,7 +283,7 @@ static void *late_pgtable_alloc(void)
 	return ptr;
 }
 
-static void __ref create_mapping(phys_addr_t phys, unsigned long virt,
+static void __init create_mapping(phys_addr_t phys, unsigned long virt,
 				  phys_addr_t size, pgprot_t prot)
 {
 	if (virt < VMALLOC_START) {
