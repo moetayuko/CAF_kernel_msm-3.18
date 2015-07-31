@@ -121,7 +121,7 @@ static bool debug_aca_enabled;
 static bool debug_bus_voting_enabled;
 static bool mhl_det_in_progress;
 
-static struct regulator *hsusb_3p3;
+struct regulator *hsusb_3p3;
 static struct regulator *hsusb_1p8;
 static struct regulator *hsusb_vdd;
 static struct regulator *vbus_otg;

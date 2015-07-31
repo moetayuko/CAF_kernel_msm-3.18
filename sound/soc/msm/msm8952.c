@@ -9,7 +9,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+//#define  DEBUG
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
@@ -19,6 +19,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/workqueue.h>
+#include <linux/regulator/consumer.h>
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -45,6 +46,8 @@
 
 #define WCD_MBHC_DEF_RLOADS 5
 #define MAX_WSA_CODEC_NAME_LENGTH 80
+#define VCC_PA_3P3_VOL_MIN	3050000 /* uV */
+#define VCC_PA_3P3_VOL_MAX	3300000 /* uV */
 
 enum btsco_rates {
 	RATE_8KHZ_ID,
@@ -52,7 +55,7 @@ enum btsco_rates {
 };
 
 static bool ext_codec;
-
+extern struct regulator *hsusb_3p3;
 static int msm8952_auxpcm_rate = 8000;
 static int msm_btsco_rate = BTSCO_RATE_8KHZ;
 static int msm_btsco_ch = 1;
@@ -145,6 +148,7 @@ int is_ext_spk_gpio_support(struct platform_device *pdev,
 			struct msm8916_asoc_mach_data *pdata)
 {
 	const char *spk_ext_pa = "qcom,msm-spk-ext-pa";
+	//int rc = -EINVAL;
 
 	pr_debug("%s:Enter\n", __func__);
 
@@ -160,6 +164,7 @@ int is_ext_spk_gpio_support(struct platform_device *pdev,
 				__func__, pdata->spk_ext_pa_gpio);
 			return -EINVAL;
 		}
+		gpio_direction_output(pdata->spk_ext_pa_gpio,0);
 	}
 	return 0;
 }
@@ -171,6 +176,7 @@ static int ext_audio_switch_support(struct platform_device *pdev,
 	const char *ext_audio_state = "qcom,msm-ext-audio-state";
 	int rc = -EINVAL;
 
+	pr_debug("%s:Enter\n", __func__);
 	pdata->ext_audio_switch_gpio = of_get_named_gpio(pdev->dev.of_node,
 				ext_audio_switch, 0);
 
@@ -200,10 +206,10 @@ static int ext_audio_switch_support(struct platform_device *pdev,
 			       __func__, pdata->ext_audio_switch_gpio, rc);
 			goto err;
 		}
+		gpio_direction_output(pdata->ext_audio_switch_gpio,0);
 
 		gpio_set_value_cansleep(pdata->ext_audio_switch_gpio,
-					pdata->ext_audio_switch_state);
-
+				pdata->ext_audio_switch_state);
 		return 0;
 	}
  err:
@@ -217,7 +223,8 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 	struct snd_soc_card *card = codec->card;
 	struct msm8916_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
 	int ret;
-
+	
+	pr_debug("%s:Enter\n", __func__);
 	if (!gpio_is_valid(pdata->spk_ext_pa_gpio)) {
 		pr_err("%s: Invalid gpio: %d\n", __func__,
 			pdata->spk_ext_pa_gpio);
@@ -234,8 +241,18 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 					__func__, "ext_spk_gpio");
 			return ret;
 		}
+		ret = regulator_enable(hsusb_3p3);
+		if (ret) {
+			pr_err("%s: cannot enable  pa power %s\n",	__func__, "hsusb_3p3");
+			return ret;
+		}
 		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
 	} else {
+		ret = regulator_disable(hsusb_3p3);
+		if (ret) {
+			pr_err("%s: cannot disable  pa power %s\n",	__func__, "hsusb_3p3");
+			return ret;
+		}
 		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
 		ret = msm_gpioset_suspend(CLIENT_WCD_INT, "ext_spk_gpio");
 		if (ret) {
@@ -2593,6 +2610,9 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 				__func__, ret);
 		goto err;
 	}
+         if (ret < 0)
+		pr_debug("%s:  doesn't open  pa ldo \n",
+					__func__);
 
 	ret = is_ext_spk_gpio_support(pdev, pdata);
 	if (ret < 0)

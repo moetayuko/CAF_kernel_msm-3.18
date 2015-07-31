@@ -766,7 +766,7 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 		if (status == FT_TOUCH_DOWN || status == FT_TOUCH_CONTACT) {
 			input_mt_report_slot_state(ip_dev, MT_TOOL_FINGER, 1);
 			input_report_abs(ip_dev, ABS_MT_POSITION_X, x);
-			input_report_abs(ip_dev, ABS_MT_POSITION_Y, y);
+			input_report_abs(ip_dev, ABS_MT_POSITION_Y, 1920-y);
 		} else {
 			input_mt_report_slot_state(ip_dev, MT_TOOL_FINGER, 0);
 		}
@@ -2041,7 +2041,7 @@ static int ft5x06_parse_dt(struct device *dev,
 	pdata->fw_vkey_support = of_property_read_bool(np,
 						"focaltech,fw-vkey-support");
 
-	pdata->ignore_id_check = of_property_read_bool(np,
+	pdata->ignore_id_check =of_property_read_bool(np,
 						"focaltech,ignore-id-check");
 
 	pdata->psensor_support = of_property_read_bool(np,
@@ -2094,7 +2094,8 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	u8 reg_value;
 	u8 reg_addr;
 	int err, len;
-
+	
+    
 	if (client->dev.of_node) {
 		pdata = devm_kzalloc(&client->dev,
 			sizeof(struct ft5x06_ts_platform_data), GFP_KERNEL);
