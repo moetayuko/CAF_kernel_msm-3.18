@@ -196,6 +196,8 @@ struct msm8916_asoc_mach_data {
 	int ext_pa;
 	int us_euro_gpio;
 	int spk_ext_pa_gpio;
+	int ext_audio_switch_gpio;
+	u32 ext_audio_switch_state;
 	int mclk_freq;
 	int lb_mode;
 	u8 micbias1_cap_mode;

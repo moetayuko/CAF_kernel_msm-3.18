@@ -770,6 +770,9 @@ capacitor mode.
 - qcom,msm-micbias2-ext-cap : Boolean. Enable micbias2 external
 capacitor mode.
 - qcom,msm-spk-ext-pa : GPIO which enables external speaker pa.
+- qcom,msm-ext-audio-switch: GPIO which controls external switch that switches audio path
+  between headset and speakers.
+- qcom,msm-ext-audio-state: Default GPIO state (0 = Low,1 = High)
 - qcom,msm-mclk-freq : This property is used to inform machine driver about
 mclk frequency needs to be configured for internal and external PA.
 - asoc-platform: This is phandle list containing the references to platform device

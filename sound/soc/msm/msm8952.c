@@ -105,6 +105,7 @@ static const char *const ter_mi2s_tx_ch_text[] = {"One", "Two"};
 static const char *const loopback_mclk_text[] = {"DISABLE", "ENABLE"};
 static const char *const proxy_rx_ch_text[] = {"One", "Two", "Three", "Four",
 	"Five", "Six", "Seven", "Eight"};
+static const char *const audio_sw_st_text[] = { "LOW", "HIGH"};
 
 static inline int param_is_mask(int p)
 {
@@ -161,6 +162,54 @@ int is_ext_spk_gpio_support(struct platform_device *pdev,
 		}
 	}
 	return 0;
+}
+
+static int ext_audio_switch_support(struct platform_device *pdev,
+			struct msm8916_asoc_mach_data *pdata)
+{
+	const char *ext_audio_switch = "qcom,msm-ext-audio-switch";
+	const char *ext_audio_state = "qcom,msm-ext-audio-state";
+	int rc = -EINVAL;
+
+	pdata->ext_audio_switch_gpio = of_get_named_gpio(pdev->dev.of_node,
+				ext_audio_switch, 0);
+
+	if (pdata->ext_audio_switch_gpio < 0) {
+		dev_dbg(&pdev->dev,
+			"%s: missing %s in dt node\n", __func__, ext_audio_switch);
+		goto err;
+	} else {
+
+		rc = of_property_read_u32(pdev->dev.of_node, ext_audio_state,
+					  &pdata->ext_audio_switch_state);
+		if (rc) {
+			dev_err(&pdev->dev,
+			"%s: missing %s in dt node\n", __func__, ext_audio_state);
+			goto err;
+		}
+		rc = gpio_is_valid(pdata->ext_audio_switch_gpio);
+		if (!rc) {
+			dev_err(&pdev->dev, "%s: Invalid audio switch gpio : %d",
+				__func__, pdata->ext_audio_switch_gpio);
+			goto err;
+		}
+
+		rc = gpio_request(pdata->ext_audio_switch_gpio, ext_audio_switch);
+		if (rc) {
+			dev_err(&pdev->dev, "%s: Cannot request gpio:%d ret:%d\n",
+			       __func__, pdata->ext_audio_switch_gpio, rc);
+			goto err;
+		}
+
+		gpio_set_value_cansleep(pdata->ext_audio_switch_gpio,
+					pdata->ext_audio_switch_state);
+
+		return 0;
+	}
+ err:
+	pdata->ext_audio_switch_gpio = -1;
+
+	return -EINVAL;
 }
 
 static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
@@ -775,6 +824,7 @@ static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, ter_mi2s_tx_ch_text),
 	SOC_ENUM_SINGLE_EXT(2, loopback_mclk_text),
 	SOC_ENUM_SINGLE_EXT(8, proxy_rx_ch_text),
+	SOC_ENUM_SINGLE_EXT(2, audio_sw_st_text),
 };
 
 static const char *const btsco_rate_text[] = {"BTSCO_RATE_8KHZ",
@@ -797,6 +847,44 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("PROXY_RX Channels", msm_snd_enum[3],
 			msm_proxy_rx_ch_get, msm_proxy_rx_ch_put),
 
+};
+
+static int msm_audio_sw_state_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct msm8916_asoc_mach_data *pdata = NULL;
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
+
+	pdata = snd_soc_card_get_drvdata(card);
+	ucontrol->value.integer.value[0] = pdata->ext_audio_switch_state;
+
+	pr_debug("%s: ext_audio_switch_state  = %d\n", __func__,
+		 pdata->ext_audio_switch_state);
+
+	return 0;
+}
+
+static int msm_audio_sw_state_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct msm8916_asoc_mach_data *pdata = NULL;
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
+
+	pdata = snd_soc_card_get_drvdata(card);
+	pdata->ext_audio_switch_state = ucontrol->value.integer.value[0];
+
+	gpio_set_value_cansleep(pdata->ext_audio_switch_gpio,
+				pdata->ext_audio_switch_state);
+
+	pr_debug("%s: ext_audio_switch_state = %d\n", __func__,
+		 pdata->ext_audio_switch_state);
+
+	return 0;
+}
+
+static const struct snd_kcontrol_new card_controls[] = {
+	SOC_ENUM_EXT("Ext. Audio Switch State", msm_snd_enum[4],
+			msm_audio_sw_state_get, msm_audio_sw_state_put),
 };
 
 static int msm8952_mclk_event(struct snd_soc_dapm_widget *w,
@@ -2511,6 +2599,11 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 		pr_debug("%s:  doesn't support external speaker pa\n",
 				__func__);
 
+	ret = ext_audio_switch_support(pdev, pdata);
+	if (ret < 0)
+		dev_dbg(&pdev->dev, "%s: doesn't require ext audio switch support\n",
+			 __func__);
+
 	ret = of_property_read_string(pdev->dev.of_node,
 		hs_micbias_type, &type);
 	if (ret) {
@@ -2569,8 +2662,16 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 			ret);
 		goto err;
 	}
+
+	if (pdata->ext_audio_switch_gpio >= 0) {
+		snd_soc_add_card_controls(card, card_controls,
+			ARRAY_SIZE(card_controls));
+	}
+
 	return 0;
 err:
+	if (pdata->ext_audio_switch_gpio >= 0)
+		gpio_free(pdata->ext_audio_switch_gpio);
 	if (pdata->vaddr_gpio_mux_spkr_ctl)
 		iounmap(pdata->vaddr_gpio_mux_spkr_ctl);
 	if (pdata->vaddr_gpio_mux_mic_ctl)

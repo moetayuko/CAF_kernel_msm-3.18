@@ -75,6 +75,35 @@
 			};
 		};
 
+		ext-spk-pa {
+			qcom,pins = <&gp 68>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			drive-strength = <2>;
+			label = "ext-spk-pa";
+			ext_spk_pa_act: pa_active {
+				output-high;
+				bias-disable;
+			};
+			ext_spk_pa_sus: pa_suspend {
+				bias-pull-down;
+			};
+		};
+
+		ext-audio-switch {
+			qcom,pins = <&gp 2>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			drive-strength = <2>;
+			label = "ext-spk-pa";
+			ext_audio_sw_act: audio_sw_active {
+				bias-disable;
+			};
+			ext_audio_sw_sus: audio_sw_suspend {
+				bias-pull-up;
+			};
+		};
+
 		pmx-uartconsole {
 			qcom,pins = <&gp 4>, <&gp 5>;
 			qcom,num-grp-pins = <2>;
@@ -698,6 +727,30 @@
 			label = "cam_sensor_rear_sleep";
 			/*suspended state */
 			cam_sensor_rear_sleep: cam_sensor_rear_sleep {
+				drive-strength = <2>; /* 2 MA */
+				bias-disable; /* No PULL */
+			};
+		};
+
+		cam_sensor_rear_vaf_default {
+			/* VAF_PWDN */
+			qcom,pins = <&gp 6>;
+			qcom,num-grp-pins = <1>;
+			label = "cam_sensor_rear_vaf_default";
+			/* active state */
+			cam_sensor_rear_vaf_default: cam_sensor_rear_vaf_default {
+				drive-strength = <2>; /* 2 MA */
+				bias-disable; /* No PULL */
+			};
+		};
+
+		cam_sensor_rear_vaf_sleep {
+			/* VAF_PWDN */
+			qcom,pins = <&gp 6>;
+			qcom,num-grp-pins = <1>;
+			label = "cam_sensor_rear_vaf_sleep";
+			/*suspended state */
+			cam_sensor_rear_vaf_sleep: cam_sensor_rear_vaf_sleep {
 				drive-strength = <2>; /* 2 MA */
 				bias-disable; /* No PULL */
 			};

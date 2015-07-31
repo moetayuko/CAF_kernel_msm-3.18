@@ -42,6 +42,8 @@
 };
 
 &i2c_2 {
+        status = "ok";
+
 	/* Parallel-charger configuration */
 	smb1351-charger@1d {
 		compatible = "qcom,smb1351-charger";
