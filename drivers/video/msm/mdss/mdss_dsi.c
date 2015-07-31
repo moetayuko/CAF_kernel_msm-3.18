@@ -1273,7 +1273,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);
-
+	mipi->force_clk_lane_hs = 1;//Set mipi  HS mode
 	if (mipi->force_clk_lane_hs) {
 		u32 tmp;
 
