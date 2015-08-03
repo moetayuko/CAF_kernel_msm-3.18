@@ -238,6 +238,23 @@ static int tegra_sor_set_pinmux(struct tegra_sor *sor, const char *name)
 	return pinctrl_select_state(sor->pinctrl, state);
 }
 
+static int tegra_sor_set_parent_clock(struct tegra_sor *sor, struct clk *parent)
+{
+	int err;
+
+	clk_disable_unprepare(sor->clk);
+
+	err = clk_set_parent(sor->clk, parent);
+	if (err < 0)
+		return err;
+
+	err = clk_prepare_enable(sor->clk);
+	if (err < 0)
+		return err;
+
+	return 0;
+}
+
 static int tegra_sor_dp_train_fast(struct tegra_sor *sor,
 				   struct drm_dp_link *link)
 {
@@ -746,7 +763,8 @@ static int tegra_sor_power_down(struct tegra_sor *sor)
 	if ((value & SOR_PWR_TRIGGER) != 0)
 		return -ETIMEDOUT;
 
-	err = clk_set_parent(sor->clk, sor->clk_safe);
+	/* switch to safe parent clock */
+	err = tegra_sor_set_parent_clock(sor, sor->clk_safe);
 	if (err < 0)
 		dev_err(sor->dev, "failed to set safe parent clock: %d\n", err);
 
@@ -1238,7 +1256,8 @@ static void tegra_sor_edp_enable(struct drm_encoder *encoder)
 		goto disable;
 	}
 
-	err = clk_set_parent(sor->clk, sor->clk_safe);
+	/* switch to safe parent clock */
+	err = tegra_sor_set_parent_clock(sor, sor->clk_safe);
 	if (err < 0)
 		dev_err(sor->dev, "failed to set safe parent clock: %d\n", err);
 
@@ -1345,10 +1364,10 @@ static void tegra_sor_edp_enable(struct drm_encoder *encoder)
 	value &= ~SOR_PLL2_PORT_POWERDOWN;
 	tegra_sor_writel(sor, value, SOR_PLL2);
 
-	/* switch to DP clock */
-	err = clk_set_parent(sor->clk, sor->clk_dp);
+	/* switch to DP parent clock */
+	err = tegra_sor_set_parent_clock(sor, sor->clk_dp);
 	if (err < 0)
-		dev_err(sor->dev, "failed to set DP parent clock: %d\n", err);
+		dev_err(sor->dev, "failed to set parent clock: %d\n", err);
 
 	/* power DP lanes */
 	value = tegra_sor_readl(sor, SOR_DP_PADCTL0);
@@ -1815,7 +1834,8 @@ static void tegra_sor_hdmi_enable(struct drm_encoder *encoder)
 	if (err < 0)
 		dev_err(sor->dev, "failed to set pinmux: %d\n", err);
 
-	err = clk_set_parent(sor->clk, sor->clk_safe);
+	/* switch to safe parent clock */
+	err = tegra_sor_set_parent_clock(sor, sor->clk_safe);
 	if (err < 0)
 		dev_err(sor->dev, "failed to set safe parent clock: %d\n", err);
 
@@ -1926,7 +1946,8 @@ static void tegra_sor_hdmi_enable(struct drm_encoder *encoder)
 
 	tegra_sor_writel(sor, 0x00000000, SOR_XBAR_POL);
 
-	err = clk_set_parent(sor->clk, sor->clk_parent);
+	/* switch to parent clock */
+	err = tegra_sor_set_parent_clock(sor, sor->clk_parent);
 	if (err < 0)
 		dev_err(sor->dev, "failed to set parent clock: %d\n", err);
 
