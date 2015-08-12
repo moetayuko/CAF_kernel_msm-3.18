@@ -9,10 +9,6 @@ endif
 
 source "drivers/platform/goldfish/Kconfig"
 
-if ARM
-source "drivers/platform/arm/Kconfig"
-endif
-
 source "drivers/platform/chrome/Kconfig"
 
 config CHROMEOS
