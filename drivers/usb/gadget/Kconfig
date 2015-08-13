@@ -199,6 +199,9 @@ config USB_F_HID
 config USB_F_PRINTER
 	tristate
 
+config USB_F_MTP
+	tristate
+
 choice
 	tristate "USB Gadget Drivers"
 	default USB_ETH
@@ -450,6 +453,16 @@ config USB_CONFIGFS_F_PRINTER
 
 	  For more information, see Documentation/usb/gadget_printer.txt
 	  which includes sample code for accessing the device file.
+
+config USB_CONFIGFS_F_MTP
+	bool "MTP gadget"
+	depends on USB_CONFIGFS
+	select USB_F_MTP
+	help
+	  The Media Transfer Protocol (MTP) function mounts USB gadget as
+	  a media device but unlike Mass Storage Gadget, MTP operates at
+	  the file level. Thus exposing the relevant content but hiding
+	  the system/restricted files.
 
 source "drivers/usb/gadget/legacy/Kconfig"
 
