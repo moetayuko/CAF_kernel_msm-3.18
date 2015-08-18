@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2012, 2015 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1100,6 +1100,7 @@ static int msm_divert_frame(struct msm_sync *sync,
 		return rc;
 	}
 
+	memset(&(buf.fmain), 0, sizeof(struct msm_frame));
 	buf.fmain.buffer = (unsigned long)pinfo.vaddr;
 	buf.fmain.planar0_off = pinfo.planar0_off;
 	buf.fmain.planar1_off = pinfo.planar1_off;
@@ -1234,7 +1235,7 @@ static int msm_get_stats(struct msm_sync *sync, void __user *arg)
 	}
 
 	rc = 0;
-
+	memset(&stats, 0, sizeof(stats));
 	qcmd = msm_dequeue(&sync->event_q, list_config);
 	if (!qcmd) {
 		/* Should be associated with wait_event
@@ -2482,6 +2483,7 @@ static int msm_set_crop(struct msm_sync *sync, void __user *arg)
 		ERR_COPY_FROM_USER();
 		sync->croplen = 0;
 		kfree(sync->cropinfo);
+		sync->cropinfo = NULL;
 		mutex_unlock(&sync->lock);
 		return -EFAULT;
 	}
