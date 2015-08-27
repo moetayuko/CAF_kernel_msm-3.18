@@ -72,13 +72,16 @@ DEFINE_CLK_RPM_SMD_XO_BUFFER_PINCTRL(bb_clk2_pin, bb_clk2_a_pin, BB_CLK2_ID);
 static DEFINE_CLK_VOTER(bimc_msmbus_clk, &bimc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(bimc_msmbus_a_clk, &bimc_a_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(bimc_usb_a_clk, &bimc_a_clk.c, LONG_MAX);
+static DEFINE_CLK_VOTER(bimc_usb_clk, &bimc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(pcnoc_keepalive_a_clk, &pcnoc_a_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(pcnoc_msmbus_clk, &pcnoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(pcnoc_msmbus_a_clk, &pcnoc_a_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(pcnoc_usb_a_clk, &pcnoc_a_clk.c, LONG_MAX);
+static DEFINE_CLK_VOTER(pcnoc_usb_clk, &pcnoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(snoc_msmbus_clk, &snoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(snoc_msmbus_a_clk, &snoc_a_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(snoc_usb_a_clk, &snoc_a_clk.c, LONG_MAX);
+static DEFINE_CLK_VOTER(snoc_usb_clk, &snoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(sysmmnoc_msmbus_clk,  &sysmmnoc_clk.c,  LONG_MAX);
 static DEFINE_CLK_VOTER(sysmmnoc_msmbus_a_clk,  &sysmmnoc_a_clk.c,  LONG_MAX);
 
@@ -1230,6 +1233,7 @@ static struct clk_freq_tbl ftbl_gfx3d_clk_src[] = {
 	F(  50000000,          gpll0,   16,    0,     0),
 	F(  80000000,          gpll0,   10,    0,     0),
 	F( 100000000,          gpll0,    8,    0,     0),
+	F( 133333333,          gpll0,    6,    0,     0),
 	F( 160000000,          gpll0,    5,    0,     0),
 	F( 200000000,          gpll0,    4,    0,     0),
 	F( 228571429,          gpll0,  3.5,    0,     0),
@@ -3310,13 +3314,16 @@ static struct clk_lookup msm_clocks_lookup[] = {
 	 CLK_LIST(sysmmnoc_msmbus_a_clk),
 	 CLK_LIST(bimc_msmbus_clk),
 	 CLK_LIST(bimc_msmbus_a_clk),
+	 CLK_LIST(bimc_usb_clk),
 	 CLK_LIST(bimc_usb_a_clk),
 	 CLK_LIST(pcnoc_keepalive_a_clk),
 	 CLK_LIST(pcnoc_msmbus_clk),
 	 CLK_LIST(pcnoc_msmbus_a_clk),
+	 CLK_LIST(pcnoc_usb_clk),
 	 CLK_LIST(pcnoc_usb_a_clk),
 	 CLK_LIST(snoc_msmbus_clk),
 	 CLK_LIST(snoc_msmbus_a_clk),
+	 CLK_LIST(snoc_usb_clk),
 	 CLK_LIST(snoc_usb_a_clk),
 	 CLK_LIST(xo_lpm_clk),
 	 CLK_LIST(xo_otg_clk),

@@ -798,6 +798,11 @@
 				qcom,vin-ctrl = <0x03>;
 			};
 		};
+		pm8916_pon: qcom,power-on@800 {
+			qcom,pon_1 {
+				qcom,s2-type = <7>;
+			};
+		};
 	};
 };
 
@@ -857,6 +862,23 @@
 				qcom,mode = "manual";
 				linux,default-trigger =
 					"wlan-indication-led";
+			};
+		};
+
+		qcom,leds@a200 { /* BT LED */
+		compatible = "qcom,leds-qpnp";
+		reg = <0xa200 0x100>;
+		status = "okay";
+			qcom,led_mpp_3 {
+				label = "mpp";
+				linux,name = "bt";
+				qcom,max-current = <40>;
+				qcom,id = <6>;
+				qcom,source-sel = <1>;
+				qcom,mode-ctrl = <0x10>;
+				qcom,mode = "manual";
+				linux,default-trigger =
+					"bt-indication-led";
 			};
 		};
 	};

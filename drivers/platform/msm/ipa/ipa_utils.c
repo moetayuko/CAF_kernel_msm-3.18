@@ -43,6 +43,13 @@
 #define IPA_EOT_COAL_GRAN_MIN (1)
 #define IPA_EOT_COAL_GRAN_MAX (16)
 
+#define IPA_AGGR_BYTE_LIMIT (\
+		IPA_ENDP_INIT_AGGR_N_AGGR_BYTE_LIMIT_BMSK >> \
+		IPA_ENDP_INIT_AGGR_N_AGGR_BYTE_LIMIT_SHFT)
+#define IPA_AGGR_PKT_LIMIT (\
+		IPA_ENDP_INIT_AGGR_n_AGGR_PKT_LIMIT_BMSK >> \
+		IPA_ENDP_INIT_AGGR_n_AGGR_PKT_LIMIT_SHFT)
+
 static const int ipa_ofst_meq32[] = { IPA_OFFSET_MEQ32_0,
 					IPA_OFFSET_MEQ32_1, -1 };
 static const int ipa_ofst_meq128[] = { IPA_OFFSET_MEQ128_0,
@@ -873,6 +880,11 @@ int ipa_get_ep_mapping(enum ipa_client_type client)
 {
 	u8 hw_type_index = IPA_1_1;
 
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return INVALID_EP_MAPPING_INDEX;
+	}
+
 	if (client >= IPA_CLIENT_MAX || client < 0) {
 		IPAERR("Bad client number! client =%d\n", client);
 		return INVALID_EP_MAPPING_INDEX;
@@ -912,6 +924,11 @@ enum ipa_rm_resource_name ipa_get_rm_resource_from_ep(int pipe_idx)
 	struct ipa_client_names clients;
 	bool found = false;
 
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return -EINVAL;
+	}
+
 	if (pipe_idx >= ipa_ctx->ipa_num_pipes || pipe_idx < 0) {
 		IPAERR("Bad pipe index!\n");
 		return -EINVAL;
@@ -946,6 +963,11 @@ enum ipa_rm_resource_name ipa_get_rm_resource_from_ep(int pipe_idx)
  */
 enum ipa_client_type ipa_get_client_mapping(int pipe_idx)
 {
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return -EINVAL;
+	}
+
 	if (pipe_idx >= ipa_ctx->ipa_num_pipes || pipe_idx < 0) {
 		IPAERR("Bad pipe index!\n");
 		return -EINVAL;
@@ -2293,6 +2315,11 @@ int ipa_cfg_ep(u32 clnt_hdl, const struct ipa_ep_cfg *ipa_ep_cfg)
 {
 	int result = -EINVAL;
 
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return -EINVAL;
+	}
+
 	if (clnt_hdl >= ipa_ctx->ipa_num_pipes ||
 	    ipa_ctx->ep[clnt_hdl].valid == 0 || ipa_ep_cfg == NULL) {
 		IPAERR("bad parm.\n");
@@ -3026,6 +3053,11 @@ int ipa_cfg_ep_mode(u32 clnt_hdl, const struct ipa_ep_cfg_mode *ep_mode)
 {
 	int ep;
 
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return -EINVAL;
+	}
+
 	if (clnt_hdl >= ipa_ctx->ipa_num_pipes ||
 	    ipa_ctx->ep[clnt_hdl].valid == 0 || ep_mode == NULL) {
 		IPAERR("bad parm, clnt_hdl = %d , ep_valid = %d\n",
@@ -3541,6 +3573,11 @@ int ipa_write_qmap_id(struct ipa_ioc_write_qmapid *param_in)
 	struct ipa_ep_context *ep;
 	int ipa_ep_idx;
 	int result = -EINVAL;
+
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return -EINVAL;
+	}
 
 	if (param_in->client  >= IPA_CLIENT_MAX) {
 		IPAERR("bad parm client:%d\n", param_in->client);
@@ -4714,6 +4751,11 @@ EXPORT_SYMBOL(ipa_is_ready);
  */
 bool ipa_is_client_handle_valid(u32 clnt_hdl)
 {
+	if (unlikely(!ipa_ctx)) {
+		IPAERR("IPA driver was not initialized\n");
+		return false;
+	}
+
 	if (clnt_hdl >= 0 && clnt_hdl < ipa_ctx->ipa_num_pipes)
 		return true;
 	return false;
@@ -4772,7 +4814,7 @@ u16 ipa_get_smem_restr_bytes(void)
 	if (ipa_ctx) {
 		return ipa_ctx->smem_restricted_bytes;
 	} else {
-		IPAERR("IPA Driver not initialized\n");
+		IPAERR("IPA driver was not initialized\n");
 		return 0;
 	}
 }
@@ -4802,3 +4844,52 @@ u32 ipa_get_num_pipes(void)
 		return IPA_MAX_NUM_PIPES;
 }
 EXPORT_SYMBOL(ipa_get_num_pipes);
+
+/**
+ * ipa_disable_apps_wan_cons_deaggr()- set ipa_ctx->ipa_client_apps_wan_cons_agg_gro
+ *
+ * Return value: 0 or negative in case of failure
+ */
+int ipa_disable_apps_wan_cons_deaggr(uint32_t agg_size, uint32_t agg_count)
+{
+	int res = -1;
+
+	/* checking if IPA-HW can support */
+	if ((agg_size >> 10) >
+		IPA_AGGR_BYTE_LIMIT) {
+		IPAWANERR("IPA-AGG byte limit %d\n",
+		IPA_AGGR_BYTE_LIMIT);
+		IPAWANERR("exceed aggr_byte_limit\n");
+		return res;
+		}
+	if (agg_count >
+		IPA_AGGR_PKT_LIMIT) {
+		IPAWANERR("IPA-AGG pkt limit %d\n",
+		IPA_AGGR_PKT_LIMIT);
+		IPAWANERR("exceed aggr_pkt_limit\n");
+		return res;
+	}
+
+	if (ipa_ctx) {
+		ipa_ctx->ipa_client_apps_wan_cons_agg_gro = true;
+		return 0;
+	}
+	return res;
+}
+EXPORT_SYMBOL(ipa_disable_apps_wan_cons_deaggr);
+
+/**
+ * ipa_get_sys_yellow_wm()- Return yellow WM value for IPA SYS pipes.
+ *
+ * Return value: IPA_YELLOW_MARKER_SYS_CFG_OFST register if IPA_HW_v2.6L,
+ *               0 otherwise.
+ */
+u32 ipa_get_sys_yellow_wm(void)
+{
+	if (ipa_ctx->ipa_hw_type == IPA_HW_v2_6L)
+		return ipa_read_reg(ipa_ctx->mmio,
+			IPA_YELLOW_MARKER_SYS_CFG_OFST);
+	else
+		return 0;
+}
+EXPORT_SYMBOL(ipa_get_sys_yellow_wm);

@@ -21,6 +21,8 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
 };
 
 &dsi_dual_nt35597_cmd {
@@ -71,7 +73,14 @@
 };
 
 &mdss_dsi1 {
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
+
 	qcom,dsi-pref-prim-pan = <&dsi_dual_nt35597_video>;
+	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
+	qcom,platform-bklight-en-gpio = <&msm_gpio 66 0>;
+	qcom,panel-mode-gpio = <&msm_gpio 107 0>;
 };
 
 &labibb {

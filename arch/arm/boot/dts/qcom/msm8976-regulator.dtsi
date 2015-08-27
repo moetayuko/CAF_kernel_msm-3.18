@@ -360,18 +360,17 @@
 		interrupts = <0 15 0>;
 		regulator-name = "apc0_corner";
 		regulator-min-microvolt = <1>;
-		regulator-max-microvolt = <9>;
+		regulator-max-microvolt = <8>;
 
-		qcom,cpr-fuse-corners = <4>;
-		qcom,cpr-voltage-ceiling = <950000 950000 1050000 1165000>;
-		qcom,cpr-voltage-floor =   <795000 795000  835000  930000>;
+		qcom,cpr-fuse-corners = <3>;
+		qcom,cpr-voltage-ceiling = <950000 1050000 1165000>;
+		qcom,cpr-voltage-floor =   <795000  835000  930000>;
 		vdd-apc-supply = <&pm8950_s5>;
 
 		vdd-mx-supply = <&pm8950_s6_level_ao>;
 		qcom,vdd-mx-vmin-method = <5>;
 		qcom,vdd-mx-vmax = <RPM_SMD_REGULATOR_LEVEL_TURBO>;
 		qcom,vdd-mx-corner-map = <RPM_SMD_REGULATOR_LEVEL_SVS>,
-					 <RPM_SMD_REGULATOR_LEVEL_SVS>,
 					 <RPM_SMD_REGULATOR_LEVEL_SVS>,
 					 <RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
 					 <RPM_SMD_REGULATOR_LEVEL_NOM>,
@@ -395,48 +394,44 @@
 		qcom,cpr-apc-volt-step = <5000>;
 
 		qcom,cpr-fuse-row = <73 0>;
-		qcom,cpr-fuse-target-quot = <64 48 40 32>;
-		qcom,cpr-fuse-target-quot-size = <8 8 8 8>;
+		qcom,cpr-fuse-target-quot = <48 40 32>;
+		qcom,cpr-fuse-target-quot-size = <8 8 8>;
 		qcom,cpr-fuse-target-quot-scale =
 					<0 10>,
 					<0 10>,
-					<0 10>,
 					<0 10>;
-		qcom,cpr-fuse-ro-sel = <11 11 8 5>;
+		qcom,cpr-fuse-ro-sel = <11 8 5>;
 		qcom,cpr-fuse-init-voltage =
-					<73 26 6 0>,
 					<73 26 6 0>,
 					<73 20 6 0>,
 					<73 14 6 0>;
 		qcom,cpr-fuse-quot-offset =
 					<74 21 6 0>,
-					<74 21 6 0>,
 					<74 15 6 0>,
 					<74  8 7 0>;
-		qcom,cpr-fuse-quot-offset-scale = <10 10 10 10>;
+		qcom,cpr-fuse-quot-offset-scale = <10 10 10>;
 		qcom,cpr-fuse-revision = <59 53 3 0>;
 		qcom,speed-bin-fuse-sel = <37 34 3 0>;
 
-		qcom,cpr-init-voltage-ref = <950000 950000 1050000 1165000>;
+		qcom,cpr-init-voltage-ref = <950000 1050000 1165000>;
 		qcom,cpr-init-voltage-step = <10000>;
 
-		qcom,cpr-corner-map = <1 2 2 3 3 4 4 4 4>;
+		qcom,cpr-corner-map = <1 1 2 2 3 3 3 3>;
 
 		qcom,cpr-scaled-init-voltage-as-ceiling;
-		qcom,cpr-voltage-scaling-factor-max = <0 2000 2000 2000>;
-		qcom,cpr-quot-adjust-scaling-factor-max = <0 1400 1400 1400>;
+		qcom,cpr-voltage-scaling-factor-max = <0 2000 2000>;
+		qcom,cpr-quot-adjust-scaling-factor-max = <0 1400 1400>;
 		qcom,cpr-corner-frequency-map =
-				<1   201600000>,
-				<2   400000000>,
-				<3   652800000>,
-				<4   806400000>,
-				<5   902400000>,
-				<6  1200000000>,
-				<7  1305600000>,
-				<8  1401600000>,
-				<9  1440000000>;
+				<1   400000000>,
+				<2   691200000>,
+				<3   806400000>,
+				<4  1017600000>,
+				<5  1190400000>,
+				<6  1305600000>,
+				<7  1382400000>,
+				<8  1401600000>;
 		qcom,cpr-speed-bin-max-corners =
-				<0 0 1 3 5 8>;
+				<0 0 2 4 8>;
 	};
 
 	apc1_vreg_corner: regulator@b118000 {
@@ -446,7 +441,7 @@
 		interrupts = <0 19 0>;
 		regulator-name = "apc1_corner";
 		regulator-min-microvolt = <1>;
-		regulator-max-microvolt = <8>;
+		regulator-max-microvolt = <6>;
 
 		qcom,cpr-fuse-corners = <3>;
 		qcom,cpr-voltage-ceiling = <950000 1050000 1165000>;
@@ -457,8 +452,6 @@
 		qcom,vdd-mx-vmin-method = <5>;
 		qcom,vdd-mx-vmax = <RPM_SMD_REGULATOR_LEVEL_TURBO>;
 		qcom,vdd-mx-corner-map = <RPM_SMD_REGULATOR_LEVEL_SVS>,
-					 <RPM_SMD_REGULATOR_LEVEL_SVS>,
-					 <RPM_SMD_REGULATOR_LEVEL_SVS>,
 					 <RPM_SMD_REGULATOR_LEVEL_SVS>,
 					 <RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
 					 <RPM_SMD_REGULATOR_LEVEL_NOM>,
@@ -503,21 +496,19 @@
 		qcom,cpr-init-voltage-ref = <950000 1050000 1165000>;
 		qcom,cpr-init-voltage-step = <10000>;
 
-		qcom,cpr-corner-map = <1 1 1 1 2 2 3 3>;
+		qcom,cpr-corner-map = <1 1 2 2 3 3>;
 		qcom,cpr-scaled-init-voltage-as-ceiling;
 		qcom,cpr-voltage-scaling-factor-max = <0 2000 2000>;
 		qcom,cpr-quot-adjust-scaling-factor-max = <0 1400 1400>;
 		qcom,cpr-corner-frequency-map =
-				<1   200000000>,
-				<2   302400000>,
-				<3   400000000>,
-				<4   892800000>,
-				<5  1190400000>,
-				<6  1382400000>,
-				<7  1612800000>,
-				<8  1747200000>;
+				<1   400000000>,
+				<2   883200000>,
+				<3  1190400000>,
+				<4  1382400000>,
+				<5  1612800000>,
+				<6  1747200000>;
 		qcom,cpr-speed-bin-max-corners =
-				<0 0 4 6 8>;
+				<0 0 2 4 6>;
 	};
 
 	mem_acc_gfx_vreg_corner: mem-acc-gfx-regulator {
@@ -619,5 +610,13 @@
 		startup-delay-us = <0>;
 		enable-active-high;
 		gpio = <&pm8950_gpios 7 0>;
+	};
+
+	adv_vreg: adv_vreg {
+		compatible = "regulator-fixed";
+		regulator-name = "adv_vreg";
+		startup-delay-us = <400>;
+		enable-avtive-high;
+		gpio = <&pm8004_mpps 4 0>;
 	};
 };

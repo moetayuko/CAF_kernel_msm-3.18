@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/mfd/wcd9xxx/core.h>
 #include <linux/of.h>
 #include <sound/core.h>
 #include <sound/soc.h>
@@ -17,6 +18,7 @@
 #include <sound/pcm.h>
 #include "msm8952-slimbus.h"
 #include "qdsp6v2/msm-pcm-routing-v2.h"
+#include "../codecs/wcd9335.h"
 
 static struct snd_soc_card snd_soc_card_msm[MAX_CODECS];
 static struct snd_soc_card snd_soc_card_msm_card;
@@ -25,6 +27,12 @@ static struct snd_soc_ops msm8952_quat_mi2s_be_ops = {
 	.startup = msm_quat_mi2s_snd_startup,
 	.hw_params = msm_mi2s_snd_hw_params,
 	.shutdown = msm_quat_mi2s_snd_shutdown,
+};
+
+static struct snd_soc_ops msm8952_quin_mi2s_be_ops = {
+	.startup = msm_quin_mi2s_snd_startup,
+	.hw_params = msm_mi2s_snd_hw_params,
+	.shutdown = msm_quin_mi2s_snd_shutdown,
 };
 
 static struct snd_soc_ops msm8952_slimbus_be_ops = {
@@ -64,6 +72,21 @@ static struct snd_soc_dai_link msm8952_tasha_fe_dai[] = {
 		.ignore_suspend = 1,
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ops = &msm8952_slimbus_2_be_ops,
+	},
+	/* CPE LSM direct dai-link */
+	{
+		.name = "CPE Listen service",
+		.stream_name = "CPE Listen Audio Service",
+		.cpu_dai_name = "msm-dai-slim",
+		.platform_name = "msm-cpe-lsm",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "tasha_mad1",
+		.codec_name = "tasha_codec",
+		.ops = &msm8952_cpe_ops,
 	},
 };
 
@@ -182,6 +205,20 @@ static struct snd_soc_dai_link msm8952_tasha_be_dai[] = {
 		.ops = &msm8952_slimbus_be_ops,
 		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
+		.ignore_suspend = 1,
+	},
+	/* MAD BE */
+	{
+		.name = LPASS_BE_SLIMBUS_5_TX,
+		.stream_name = "Slimbus5 Capture",
+		.cpu_dai_name = "msm-dai-q6-dev.16395",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "tasha_codec",
+		.codec_dai_name = "tasha_mad1",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SLIMBUS_5_TX,
+		.be_hw_params_fixup = msm_slim_5_tx_be_hw_params_fixup,
+		.ops = &msm8952_slimbus_be_ops,
 		.ignore_suspend = 1,
 	},
 };
@@ -1045,6 +1082,35 @@ static struct snd_soc_dai_link msm8952_common_be_dai[] = {
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
+	{
+		.name = LPASS_BE_QUIN_MI2S_RX,
+		.stream_name = "Quinary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.5",
+		.platform_name = "msm-pcm-routing",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_QUINARY_MI2S_RX,
+		.be_hw_params_fixup = msm_quin_be_hw_params_fixup,
+		.ops = &msm8952_quin_mi2s_be_ops,
+		.ignore_pmdown_time = 1, /* dai link has playback support */
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_MI2S_HDMI_RX,
+		.stream_name = "MI2S HDMI Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s-hdmi.4118",
+		.platform_name = "msm-pcm-routing",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_MI2S_HDMI_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm8952_quin_mi2s_be_ops,
+		.ignore_pmdown_time = 1, /* dai link has playback support */
+		.ignore_suspend = 1,
+	},
+
 };
 
 static struct snd_soc_aux_dev msm895x_aux_dev[] = {
@@ -1094,6 +1160,8 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	char *temp_str = NULL;
 	const char *wsa_str = NULL;
 	const char *wsa_prefix_str = NULL;
+	enum codec_variant codec_ver = 0;
+	const char *tasha_lite = "msm8976-tashalite-snd-card";
 
 	card->dev = dev;
 	ret = snd_soc_of_parse_card_name(card, "qcom,model");
@@ -1121,6 +1189,10 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		msm8952_dai_links = msm8952_tomtom_dai_links;
 	} else if (!strcmp(card->name, "msm8976-tasha-snd-card") ||
 			!strcmp(card->name, "msm8976-tasha-skun-snd-card")) {
+		codec_ver = tasha_codec_ver();
+		if (codec_ver == WCD9326)
+			card->name = tasha_lite;
+
 		len1 = ARRAY_SIZE(msm8952_common_fe_dai);
 		len2 = len1 + ARRAY_SIZE(msm8952_tasha_fe_dai);
 		len3 = len2 + ARRAY_SIZE(msm8952_common_be_dai);

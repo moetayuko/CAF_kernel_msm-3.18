@@ -1611,9 +1611,6 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 */
 int ipa_q6_cleanup(void)
 {
-	int client_idx;
-	int res;
-
 	/* If uC has notified the APPS upon a ZIP engine error,
 	 * APPS need to assert (This is a non recoverable error).
 	 */
@@ -1638,7 +1635,23 @@ int ipa_q6_cleanup(void)
 		IPAERR("Failed to disable aggregation on Q6 pipes\n");
 		BUG();
 	}
+	ipa_ctx->q6_proxy_clk_vote_valid = true;
+	return 0;
+}
 
+/**
+* ipa_q6_pipe_reset() - A cleanup for the Q6 pipes
+*                    in IPA HW. This is performed in case of SSR.
+*
+* Return codes:
+* 0: success
+* This is a mandatory procedure, in case one of the steps fails, the
+* AP needs to restart.
+*/
+int ipa_q6_pipe_reset(void)
+{
+	int client_idx;
+	int res;
 	/*
 	 * Q6 relies on the AP to reset all Q6 IPA pipes.
 	 * In case the uC is not loaded, or upon any failure in the
@@ -1656,9 +1669,9 @@ int ipa_q6_cleanup(void)
 			if (res)
 				BUG();
 		}
-	ipa_ctx->q6_proxy_clk_vote_valid = true;
 	return 0;
 }
+
 
 int _ipa_init_sram_v2(void)
 {
@@ -3879,6 +3892,16 @@ static int ipa_smmu_wlan_cb_probe(struct device *dev)
 		return ret;
 	}
 
+	IPADBG("map IPA region to WLAN_CB IOMMU\n");
+	ret = iommu_map(cb->iommu, 0x680000, 0x680000,
+			0x64000,
+			IOMMU_READ | IOMMU_WRITE | IOMMU_DEVICE);
+	if (ret) {
+		IPAERR("map IPA to WLAN_CB IOMMU failed ret=%d\n",
+			ret);
+		return ret;
+	}
+
 	cb->valid = true;
 
 	return 0;
@@ -3958,6 +3981,16 @@ static int ipa_smmu_ap_cb_probe(struct device *dev)
 	result = arm_iommu_attach_device(cb->dev, cb->mapping);
 	if (result) {
 		IPAERR("couldn't attach to IOMMU ret=%d\n", result);
+		return result;
+	}
+
+	IPADBG("map IPA region to AP_CB IOMMU\n");
+	result = iommu_map(cb->mapping->domain, 0x680000, 0x680000,
+		0x64000,
+			IOMMU_READ | IOMMU_WRITE | IOMMU_DEVICE);
+	if (result) {
+		IPAERR("map IPA region to AP_CB IOMMU failed ret=%d\n",
+			result);
 		return result;
 	}
 

@@ -345,7 +345,6 @@ static int __cpuinit msm8976_boot_secondary(unsigned int cpu,
 	return release_from_pen(cpu);
 }
 
-
 int __cpuinit arm_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
 	pr_debug("Starting secondary CPU %d\n", cpu);

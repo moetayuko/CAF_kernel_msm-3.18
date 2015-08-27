@@ -736,8 +736,18 @@ static int msm_isp_flush_buf(struct msm_isp_buf_mgr *buf_mgr,
 					__func__);
 			} else if (buf_info->state ==
 				MSM_ISP_BUFFER_STATE_DEQUEUED) {
-				msm_isp_put_buf_unsafe(buf_mgr,
-					bufq_handle, buf_info->buf_idx);
+				if (buf_info->buf_get_count ==
+					ISP_SHARE_BUF_CLIENT) {
+					msm_isp_put_buf_unsafe(buf_mgr,
+						bufq_handle, buf_info->buf_idx);
+				} else {
+					buf_info->state =
+						MSM_ISP_BUFFER_STATE_DEQUEUED;
+					buf_info->buf_get_count = 0;
+					buf_info->buf_put_count = 0;
+					memset(buf_info->buf_used, 0,
+						sizeof(uint8_t) * 2);
+				}
 			}
 		}
 	}
@@ -1175,8 +1185,8 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr)
 {
 	struct msm_isp_buffer *bufs = NULL;
 	uint32_t i = 0, j = 0, k = 0, rc = 0;
-	char *print_buf = NULL, temp_buf[512];
-	uint32_t start_addr = 0, end_addr = 0, print_buf_size = 2500;
+	char *print_buf = NULL, temp_buf[100];
+	uint32_t start_addr = 0, end_addr = 0, print_buf_size = 2000;
 	if (!buf_mgr) {
 		pr_err_ratelimited("%s: %d] NULL buf_mgr\n",
 			__func__, __LINE__);
@@ -1189,6 +1199,10 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr)
 	}
 	snprintf(print_buf, print_buf_size, "%s\n", __func__);
 	for (i = 0; i < BUF_MGR_NUM_BUF_Q; i++) {
+		if (i % 2 == 0 && i > 0) {
+			pr_err("%s\n", print_buf);
+			print_buf[0] = 0;
+		}
 		if (buf_mgr->bufq[i].bufq_handle != 0) {
 			snprintf(temp_buf, sizeof(temp_buf),
 				"handle %x stream %x num_bufs %d\n",
@@ -1199,7 +1213,7 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr)
 			for (j = 0; j < buf_mgr->bufq[i].num_bufs; j++) {
 				bufs = &buf_mgr->bufq[i].bufs[j];
 				if (!bufs) {
-					break;
+					continue;
 				}
 				for (k = 0; k < bufs->num_planes; k++) {
 					start_addr = bufs->

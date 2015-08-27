@@ -167,7 +167,7 @@ struct smbchg_chip {
 	bool				safety_timer_en;
 	bool				aicl_complete;
 	bool				usb_ov_det;
-	bool				otg_pulse_skip_en;
+	bool				otg_pulse_skip_dis;
 	const char			*battery_type;
 	bool				very_weak_charger;
 	bool				parallel_charger_detected;
@@ -258,6 +258,7 @@ enum pmic_subtype {
 enum smbchg_wa {
 	SMBCHG_AICL_DEGLITCH_WA = BIT(0),
 	SMBCHG_HVDCP_9V_EN_WA	= BIT(1),
+	SMBCHG_USB100_WA = BIT(2),
 };
 
 enum print_reason {
@@ -1413,6 +1414,10 @@ static int smbchg_set_usb_current_max(struct smbchg_chip *chip,
 
 	switch (usb_supply_type) {
 	case POWER_SUPPLY_TYPE_USB:
+		if ((current_ma < CURRENT_150_MA) &&
+				(chip->wa_flags & SMBCHG_USB100_WA))
+			current_ma = CURRENT_150_MA;
+
 		if (current_ma < CURRENT_150_MA) {
 			/* force 100mA */
 			rc = smbchg_sec_masked_write(chip,
@@ -2679,37 +2684,40 @@ static int smbchg_safety_timer_enable(struct smbchg_chip *chip, bool enable)
 	return 0;
 }
 
+enum skip_reason {
+	REASON_OTG_ENABLED	= BIT(0),
+	REASON_FLASH_ENABLED	= BIT(1)
+};
+
 #define OTG_TRIM6		0xF6
 #define TR_ENB_SKIP_BIT		BIT(2)
 #define OTG_EN_BIT		BIT(0)
-static int smbchg_otg_pulse_skip_enable(struct smbchg_chip *chip, bool enable)
+static int smbchg_otg_pulse_skip_disable(struct smbchg_chip *chip,
+				enum skip_reason reason, bool disable)
 {
 	int rc;
-	u8 reg;
+	bool disabled;
 
-	if (enable == chip->otg_pulse_skip_en)
+	disabled = !!chip->otg_pulse_skip_dis;
+	pr_smb(PR_STATUS, "%s pulse skip, reason %d\n",
+			disable ? "disabling" : "enabling", reason);
+	if (disable)
+		chip->otg_pulse_skip_dis |= reason;
+	else
+		chip->otg_pulse_skip_dis &= ~reason;
+	if (disabled == !!chip->otg_pulse_skip_dis)
 		return 0;
-
-	rc = smbchg_read(chip, &reg, chip->bat_if_base + CMD_CHG_REG, 1);
-	if (rc < 0) {
-		dev_err(chip->dev,
-				"Couldn't read OTG enable bit rc=%d\n", rc);
-		return rc;
-	}
-
-	/* If OTG is not enabled, don't set OTG pulse skip enable */
-	if (!(reg & OTG_EN_BIT))
-		return 0;
+	disabled = !!chip->otg_pulse_skip_dis;
 
 	rc = smbchg_sec_masked_write(chip, chip->otg_base + OTG_TRIM6,
-			TR_ENB_SKIP_BIT, enable ? TR_ENB_SKIP_BIT : 0);
+			TR_ENB_SKIP_BIT, disabled ? TR_ENB_SKIP_BIT : 0);
 	if (rc < 0) {
 		dev_err(chip->dev,
 			"Couldn't %s otg pulse skip rc = %d\n",
-			enable ? "enable" : "disable", rc);
+			disabled ? "disable" : "enable", rc);
 		return rc;
 	}
-	chip->otg_pulse_skip_en = enable;
+	pr_smb(PR_STATUS, "%s pulse skip\n", disabled ? "disabled" : "enabled");
 	return 0;
 }
 
@@ -3167,6 +3175,9 @@ static int smbchg_otg_regulator_enable(struct regulator_dev *rdev)
 	struct smbchg_chip *chip = rdev_get_drvdata(rdev);
 
 	chip->otg_retries = 0;
+	smbchg_otg_pulse_skip_disable(chip, REASON_OTG_ENABLED, true);
+	/* sleep to make sure the pulse skip is actually disabled */
+	msleep(20);
 	rc = smbchg_masked_write(chip, chip->bat_if_base + CMD_CHG_REG,
 			OTG_EN_BIT, OTG_EN_BIT);
 	if (rc < 0)
@@ -3186,6 +3197,7 @@ static int smbchg_otg_regulator_disable(struct regulator_dev *rdev)
 			OTG_EN_BIT, 0);
 	if (rc < 0)
 		dev_err(chip->dev, "Couldn't disable OTG mode rc=%d\n", rc);
+	smbchg_otg_pulse_skip_disable(chip, REASON_OTG_ENABLED, false);
 	pr_smb(PR_STATUS, "Disabling OTG Boost\n");
 	return rc;
 }
@@ -3978,6 +3990,10 @@ void update_usb_status(struct smbchg_chip *chip, bool usb_present, bool force)
 		chip->usb_present = usb_present;
 		handle_usb_removal(chip);
 	}
+
+	/* update FG */
+	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
+			get_prop_batt_status(chip));
 unlock:
 	mutex_unlock(&chip->usb_status_lock);
 }
@@ -4170,7 +4186,8 @@ static int smbchg_battery_set_property(struct power_supply *psy,
 		rc = smbchg_safety_timer_enable(chip, val->intval);
 		break;
 	case POWER_SUPPLY_PROP_FLASH_ACTIVE:
-		rc = smbchg_otg_pulse_skip_enable(chip, val->intval);
+		rc = smbchg_otg_pulse_skip_disable(chip,
+				REASON_FLASH_ENABLED, val->intval);
 		break;
 	case POWER_SUPPLY_PROP_FORCE_TLIM:
 		rc = smbchg_force_tlim_en(chip, val->intval);
@@ -4271,7 +4288,7 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		val->intval = chip->safety_timer_en;
 		break;
 	case POWER_SUPPLY_PROP_FLASH_ACTIVE:
-		val->intval = chip->otg_pulse_skip_en;
+		val->intval = chip->otg_pulse_skip_dis;
 		break;
 	default:
 		return -EINVAL;
@@ -4841,6 +4858,10 @@ static irqreturn_t usbid_change_handler(int irq, void *_chip)
 		power_supply_set_usb_otg(chip->usb_psy, otg_present ? 1 : 0);
 	if (otg_present)
 		pr_smb(PR_STATUS, "OTG detected\n");
+
+	/* update FG */
+	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
+			get_prop_batt_status(chip));
 
 	return IRQ_HANDLED;
 }
@@ -6017,10 +6038,12 @@ static int smbchg_wa_config(struct smbchg_chip *chip)
 	case PMI8994:
 		chip->wa_flags |= SMBCHG_AICL_DEGLITCH_WA;
 	case PMI8950:
-		if (pmic_rev_id->rev4 < 2) /* PMI8950 1.0 */
+		if (pmic_rev_id->rev4 < 2) /* PMI8950 1.0 */ {
 			chip->wa_flags |= SMBCHG_AICL_DEGLITCH_WA;
-		else	/* rev > PMI8950 v1.0 */
-			chip->wa_flags |= SMBCHG_HVDCP_9V_EN_WA;
+		} else	{ /* rev > PMI8950 v1.0 */
+			chip->wa_flags |= SMBCHG_HVDCP_9V_EN_WA
+					| SMBCHG_USB100_WA;
+		}
 		break;
 	default:
 		pr_err("PMIC subtype %d not supported, WA flags not set\n",
