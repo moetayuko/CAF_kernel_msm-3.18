@@ -10,12 +10,3 @@ endif
 source "drivers/platform/goldfish/Kconfig"
 
 source "drivers/platform/chrome/Kconfig"
-
-config CHROMEOS
-	bool
-	depends on CHROMEOS_OF_FIRMWARE || (NVRAM && ACPI_CHROMEOS)
-
-	---help---
-	  Provides abstracted interfaces to the firmware features provided on
-	  ChromeOS devices. It depends on a lowlevel driver to implement the
-	  firmware interface on the platform.
