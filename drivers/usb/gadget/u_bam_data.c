@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -58,6 +58,7 @@ struct bam_data_ch_info {
 
 struct bam_data_port {
 	unsigned			port_num;
+	spinlock_t			port_lock;
 	struct data_port		*port_usb;
 	struct bam_data_ch_info		data_ch;
 
@@ -145,8 +146,9 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 	struct bam_data_port *port = container_of(w, struct bam_data_port,
 						  connect_w);
 	struct bam_data_ch_info *d = &port->data_ch;
-	u32 sps_params;
-	int ret;
+	u32		sps_params;
+	int		ret;
+	unsigned long	flags;
 
 	pr_debug("%s: Connect workqueue started", __func__);
 	usb_bam_reset_complete();
@@ -161,15 +163,19 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 		return;
 	}
 
+	spin_lock_irqsave(&port->port_lock, flags);
 	if (!port->port_usb) {
+		spin_unlock_irqrestore(&port->port_lock, flags);
 		pr_err("port_usb is NULL");
 		return;
 	}
 
 	if (!port->port_usb->out) {
+		spin_unlock_irqrestore(&port->port_lock, flags);
 		pr_err("port_usb->out (bulk out ep) is NULL");
 		return;
 	}
+	spin_unlock_irqrestore(&port->port_lock, flags);
 
 	d->rx_req = usb_ep_alloc_request(port->port_usb->out, GFP_KERNEL);
 	if (!d->rx_req)
@@ -227,6 +233,7 @@ static int bam2bam_data_port_alloc(int portno)
 
 	port->port_num = portno;
 
+	spin_lock_init(&port->port_lock);
 	INIT_WORK(&port->connect_w, bam2bam_data_connect_work);
 
 	/* data ch */
@@ -242,6 +249,7 @@ static int bam2bam_data_port_alloc(int portno)
 void bam_data_disconnect(struct data_port *gr, u8 port_num)
 {
 	struct bam_data_port	*port;
+	unsigned long flags;
 
 	pr_debug("dev:%p port#%d\n", gr, port_num);
 
@@ -257,6 +265,7 @@ void bam_data_disconnect(struct data_port *gr, u8 port_num)
 
 	port = bam2bam_data_ports[port_num];
 
+	spin_lock_irqsave(&port->port_lock, flags);
 	if (port->port_usb && port->port_usb->in &&
 	  port->port_usb->in->driver_data) {
 		/* disable endpoints */
@@ -268,6 +277,7 @@ void bam_data_disconnect(struct data_port *gr, u8 port_num)
 
 		port->port_usb = 0;
 	}
+	spin_unlock_irqrestore(&port->port_lock, flags);
 
 	if (usb_bam_client_ready(false))
 		pr_err("%s: usb_bam_client_ready failed\n", __func__);
@@ -279,6 +289,7 @@ int bam_data_connect(struct data_port *gr, u8 port_num,
 	struct bam_data_port	*port;
 	struct bam_data_ch_info	*d;
 	int			ret;
+	unsigned long		flags;
 
 	pr_debug("dev:%p port#%d\n", gr, port_num);
 
@@ -316,7 +327,9 @@ int bam_data_connect(struct data_port *gr, u8 port_num,
 	}
 	gr->out->driver_data = port;
 
+	spin_lock_irqsave(&port->port_lock, flags);
 	port->port_usb = gr;
+	spin_unlock_irqrestore(&port->port_lock, flags);
 
 	d->connection_idx = connection_idx;
 
