@@ -2622,6 +2622,11 @@ config MSM_CACHE_DUMP
 	  This allows for analysis of the caches in case cache corruption is
 	  suspected.
 
+config MSM_CPU_MAX_CLK_1DOT2GHZ
+	bool "CPU Max 1.2Ghz clk support"
+	help
+	  To support the Max 1.2Ghz MSM8960 Model.
+
 config MSM_CACHE_DUMP_ON_PANIC
 	bool "Dump caches on panic"
 	depends on MSM_CACHE_DUMP
