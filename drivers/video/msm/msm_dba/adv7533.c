@@ -155,6 +155,7 @@ struct adv7533 {
 	struct dss_module_power power_data;
 	bool hdcp_enabled;
 	bool cec_enabled;
+	bool is_power_on;
 	void *edid_data;
 	u8 edid_buf[EDID_SEG_SIZE];
 	struct workqueue_struct *workq;
@@ -202,8 +203,6 @@ static struct adv7533_reg_cfg adv7533_video_en[] = {
 	{I2C_ADDR_MAIN, 0x41, 0x10},
 	/* hdmi enable */
 	{I2C_ADDR_CEC_DSI, 0x03, 0x89},
-	/* hdmi mode, hdcp */
-	{I2C_ADDR_MAIN, 0xAF, 0x06},
 	/* color depth */
 	{I2C_ADDR_MAIN, 0x4C, 0x04},
 	/* down dither */
@@ -665,7 +664,7 @@ static int adv7533_rd_cec_msg(struct adv7533 *pdata, u8 *cec_buf, int msg_num)
 	if (!reg)
 		goto end;
 
-	ADV7533_READ(I2C_ADDR_CEC_DSI, 0x85, cec_buf, CEC_MSG_SIZE);
+	ADV7533_READ(I2C_ADDR_CEC_DSI, reg, cec_buf, CEC_MSG_SIZE);
 end:
 	return ret;
 }
@@ -985,7 +984,7 @@ static void adv7533_intr_work(struct work_struct *work)
 	}
 
 	/* EDID ready for read */
-	if (int_status & BIT(2)) {
+	if ((int_status & BIT(2)) && pdata->is_power_on) {
 		pr_debug("%s: EDID READY\n", __func__);
 
 		ret = adv7533_read_edid(pdata, sizeof(pdata->edid_buf),
@@ -1094,9 +1093,10 @@ end:
 	return pdata;
 }
 
-static int adv7533_cec_enable(struct adv7533 *pdata, bool cec_on)
+static int adv7533_cec_enable(void *client, bool cec_on, u32 flags)
 {
 	int ret = -EINVAL;
+	struct adv7533 *pdata = adv7533_get_platform_data(client);
 
 	if (!pdata) {
 		pr_err("%s: invalid platform data\n", __func__);
@@ -1120,6 +1120,43 @@ end:
 	return ret;
 }
 
+static int adv7533_check_hpd(void *client, u32 flags)
+{
+	int ret = -EINVAL;
+	struct adv7533 *pdata = adv7533_get_platform_data(client);
+	u8 reg_val = 0;
+	u8 intr_status;
+	int connected = 0;
+
+	if (!pdata) {
+		pr_err("%s: invalid platform data\n", __func__);
+		return ret;
+	}
+
+	/* Check if cable is already connected.
+	 * Since adv7533_irq line is edge triggered,
+	 * if cable is already connected by this time
+	 * it won't trigger HPD interrupt.
+	 */
+	mutex_lock(&pdata->ops_mutex);
+	ADV7533_READ(I2C_ADDR_MAIN, 0x42, &reg_val, 1);
+
+	connected  = (reg_val & BIT(6));
+	if (connected) {
+		pr_debug("%s: cable is connected\n", __func__);
+		/* Clear the interrupts before initiating EDID read */
+		ADV7533_READ(I2C_ADDR_MAIN, 0x96, &intr_status, 1);
+		ADV7533_WRITE(I2C_ADDR_MAIN, 0x96, intr_status);
+		adv7533_enable_interrupts(pdata, (CFG_EDID_INTERRUPTS |
+				CFG_HPD_INTERRUPTS));
+
+		adv7533_edid_read_init(pdata);
+	}
+end:
+	mutex_unlock(&pdata->ops_mutex);
+	return connected;
+}
+
 /* Device Operations */
 static int adv7533_power_on(void *client, bool on, u32 flags)
 {
@@ -1131,9 +1168,10 @@ static int adv7533_power_on(void *client, bool on, u32 flags)
 		return ret;
 	}
 
+	pr_debug("%s: %d\n", __func__, on);
 	mutex_lock(&pdata->ops_mutex);
 
-	if (on) {
+	if (on && !pdata->is_power_on) {
 		ADV7533_WRITE_ARRAY(adv7533_init_setup);
 
 		ret = adv7533_enable_interrupts(pdata, CFG_HPD_INTERRUPTS);
@@ -1142,20 +1180,14 @@ static int adv7533_power_on(void *client, bool on, u32 flags)
 				__func__, ret);
 			goto end;
 		}
-
-		ret = adv7533_cec_enable(pdata, true);
-		if (ret) {
-			pr_err("%s: Failed: enable CEC, err %d\n",
-				__func__, ret);
-			goto end;
-		}
-	} else {
-		ret = adv7533_cec_enable(pdata, false);
-		if (ret)
-			pr_err("%s:err disable CEC %d\n", __func__, ret);
-
+		pdata->is_power_on = true;
+	} else if (!on) {
 		/* power down hdmi */
 		ADV7533_WRITE(I2C_ADDR_MAIN, 0x41, 0x50);
+		pdata->is_power_on = false;
+
+		adv7533_notify_clients(&pdata->dev_info,
+			MSM_DBA_CB_HPD_DISCONNECT);
 	}
 end:
 	mutex_unlock(&pdata->ops_mutex);
@@ -1247,18 +1279,17 @@ static int adv7533_video_on(void *client, bool on,
 
 	mutex_lock(&pdata->ops_mutex);
 
-	/* configure lanes wrt resolution */
-	if (cfg->v_active == 1080)
-		lanes = 0x40;
-	else if (cfg->v_active == 720)
-		lanes = 0x30;
-	else
-		lanes = 0x10;
-
-	/* lane configuration, 4 lanes */
+	/* DSI lane configuration */
+	lanes = (cfg->num_of_input_lanes << 4);
 	ADV7533_WRITE(I2C_ADDR_CEC_DSI, 0x1C, lanes);
 
 	adv7533_video_setup(pdata, cfg);
+
+	/* hdmi/dvi mode */
+	if (cfg->hdmi_mode)
+		ADV7533_WRITE(I2C_ADDR_MAIN, 0xAF, 0x06);
+	else
+		ADV7533_WRITE(I2C_ADDR_MAIN, 0xAF, 0x04);
 
 	ADV7533_WRITE_ARRAY(adv7533_video_en);
 end:
@@ -1591,10 +1622,12 @@ static int adv7533_register_dba(struct adv7533 *pdata)
 	client_ops->video_on        = adv7533_video_on;
 	client_ops->configure_audio = adv7533_configure_audio;
 	client_ops->hdcp_enable     = adv7533_hdcp_enable;
+	client_ops->hdmi_cec_on     = adv7533_cec_enable;
 	client_ops->hdmi_cec_write  = adv7533_hdmi_cec_write;
 	client_ops->hdmi_cec_read   = adv7533_hdmi_cec_read;
 	client_ops->get_edid_size   = adv7533_get_edid_size;
 	client_ops->get_raw_edid    = adv7533_get_raw_edid;
+	client_ops->check_hpd	    = adv7533_check_hpd;
 
 	dev_ops->write_reg = adv7533_write_reg;
 	dev_ops->read_reg = adv7533_read_reg;

@@ -1150,8 +1150,8 @@ static int mdss_mdp_is_pipe_idle(struct mdss_mdp_pipe *pipe,
 		reg_val = readl_relaxed(mdata->mdp_base +
 			pipe->clk_status.reg_off);
 
-		if (reg_val & clk_status_idle_mask)
-			is_idle = false;
+		if ((reg_val & clk_status_idle_mask) == 0)
+			is_idle = true;
 
 		pr_debug("pipe#:%d clk_status:0x%x clk_status_idle_mask:0x%x\n",
 			pipe->num, reg_val, clk_status_idle_mask);
@@ -1160,13 +1160,24 @@ static int mdss_mdp_is_pipe_idle(struct mdss_mdp_pipe *pipe,
 	if (!ignore_force_on && (is_forced_on || !is_idle))
 		goto exit;
 
+	/*
+	 * skip vbif check for cursor pipes as the same xin-id is shared
+	 * between cursor0, cursor1 and dsi
+	 */
+	if (pipe->type == MDSS_MDP_PIPE_TYPE_CURSOR) {
+		if (ignore_force_on && is_forced_on)
+			is_idle = true;
+		goto exit;
+	}
+
 	vbif_idle_mask = BIT(pipe->xin_id + 16);
 	reg_val = MDSS_VBIF_READ(mdata, MMSS_VBIF_XIN_HALT_CTRL1, is_nrt_vbif);
 
 	if (reg_val & vbif_idle_mask)
 		is_idle = true;
 
-	pr_debug("pipe#:%d XIN_HALT_CTRL1: 0x%x\n", pipe->num, reg_val);
+	pr_debug("pipe#:%d XIN_HALT_CTRL1: 0x%x, vbif_idle_mask: 0x%x\n",
+			pipe->num, reg_val, vbif_idle_mask);
 
 exit:
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
@@ -1386,7 +1397,6 @@ static int mdss_mdp_image_setup(struct mdss_mdp_pipe *pipe,
 	struct mdss_rect dst, src;
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	bool rotation = false;
-	u32 panel_orientation = 0;
 
 	pr_debug("ctl: %d pnum=%d wh=%dx%d src={%d,%d,%d,%d} dst={%d,%d,%d,%d}\n",
 			pipe->mixer_left->ctl->num, pipe->num,
@@ -1462,15 +1472,6 @@ static int mdss_mdp_image_setup(struct mdss_mdp_pipe *pipe,
 			src.y = pipe->src.y + (pipe->src.y + pipe->src.h)
 				- (src.y + src.h);
 		}
-	}
-
-	if (!(pipe->mixer_left->rotator_mode)) {
-		panel_orientation = pipe->mixer_left->ctl->mfd->panel_orientation;
-		if (panel_orientation & MDP_FLIP_LR)
-			dst.x =  pipe->mixer_left->ctl->roi.w - dst.x - dst.w;
-
-		if (panel_orientation & MDP_FLIP_UD)
-			dst.y =  pipe->mixer_left->ctl->roi.h - dst.y - dst.h;
 	}
 
 	src_size = (src.h << 16) | src.w;

@@ -362,7 +362,7 @@ static struct afe_param_id_clip_bank_sel clip_bank_sel = {
 #define TOMTOM_MCLK_CLK_9P6MHZ 9600000
 
 #define TOMTOM_FORMATS_S16_S24_LE (SNDRV_PCM_FMTBIT_S16_LE | \
-			SNDRV_PCM_FORMAT_S24_LE)
+			SNDRV_PCM_FMTBIT_S24_LE)
 
 #define TOMTOM_FORMATS (SNDRV_PCM_FMTBIT_S16_LE)
 
@@ -5372,6 +5372,9 @@ static int tomtom_volatile(struct snd_soc_codec *ssc, unsigned int reg)
 	if ((reg >= TOMTOM_A_CDC_MBHC_EN_CTL) || (reg < 0x100))
 		return 1;
 
+	if (reg == TOMTOM_A_CDC_CLK_RX_RESET_CTL)
+		return 1;
+
 	/* IIR Coeff registers are not cacheable */
 	if ((reg >= TOMTOM_A_CDC_IIR1_COEF_B1_CTL) &&
 		(reg <= TOMTOM_A_CDC_IIR2_COEF_B2_CTL))
@@ -5417,6 +5420,13 @@ static int tomtom_volatile(struct snd_soc_codec *ssc, unsigned int reg)
 
 	if (reg == TOMTOM_A_SVASS_SPE_INBOX_TRG)
 		return 1;
+
+	if (reg == TOMTOM_A_QFUSE_STATUS)
+		return 1;
+
+	for (i = 0; i < ARRAY_SIZE(non_cacheable_reg); i++)
+		if (reg == non_cacheable_reg[i])
+			return 1;
 
 	return 0;
 }
@@ -6197,7 +6207,7 @@ static struct snd_soc_dai_driver tomtom_dai[] = {
 		.capture = {
 			.stream_name = "AIF4 MAD TX",
 			.rates = SNDRV_PCM_RATE_16000,
-			.formats = TOMTOM_FORMATS,
+			.formats = TOMTOM_FORMATS_S16_S24_LE,
 			.rate_min = 16000,
 			.rate_max = 16000,
 			.channels_min = 1,
@@ -8525,6 +8535,33 @@ static void tomtom_codec_hph_auto_pull_down(struct snd_soc_codec *codec,
 	}
 }
 
+static int tomtom_codec_enable_ext_mb_source(struct snd_soc_codec *codec,
+	bool turn_on, bool use_dapm)
+{
+	int ret = 0;
+
+	if (!use_dapm)
+		return ret;
+
+	if (turn_on)
+		ret = snd_soc_dapm_force_enable_pin(&codec->dapm,
+				"MICBIAS_REGULATOR");
+	else
+		ret = snd_soc_dapm_disable_pin(&codec->dapm,
+				"MICBIAS_REGULATOR");
+
+	snd_soc_dapm_sync(&codec->dapm);
+
+	if (ret)
+		dev_err(codec->dev, "%s: Failed to %s external micbias source\n",
+			__func__, turn_on ? "enable" : "disabled");
+	else
+		dev_dbg(codec->dev, "%s: %s external micbias source\n",
+			__func__, turn_on ? "Enabled" : "Disabled");
+
+	return ret;
+}
+
 static const struct wcd9xxx_mbhc_cb mbhc_cb = {
 	.get_cdc_type = tomtom_get_cdc_type,
 	.setup_zdet = tomtom_setup_zdet,
@@ -8535,6 +8572,7 @@ static const struct wcd9xxx_mbhc_cb mbhc_cb = {
 	.codec_rco_ctrl = tomtom_codec_internal_rco_ctrl,
 	.hph_auto_pulldown_ctrl = tomtom_codec_hph_auto_pull_down,
 	.get_hwdep_fw_cal = tomtom_get_hwdep_fw_cal,
+	.enable_mb_source = tomtom_codec_enable_ext_mb_source,
 };
 
 static const struct wcd9xxx_mbhc_intr cdc_intr_ids = {
@@ -8559,6 +8597,11 @@ static int tomtom_post_reset_cb(struct wcd9xxx *wcd9xxx)
 	codec = (struct snd_soc_codec *)(wcd9xxx->ssr_priv);
 	tomtom = snd_soc_codec_get_drvdata(codec);
 
+	/*
+	 * Delay is needed for settling time
+	 * for the register configuration
+	 */
+	msleep(50);
 	snd_soc_card_change_online_state(codec->card, 1);
 	clear_bit(BUS_DOWN, &tomtom->status_mask);
 

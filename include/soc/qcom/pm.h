@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2015, The Linux Foundation. All rights reserved.
  * Author: San Mehat <san@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -45,6 +45,7 @@ enum msm_pm_l2_scm_flag {
 	MSM_SCM_L2_OFF = 1,
 	MSM_SCM_L2_RET = 2,
 	MSM_SCM_L2_GDHS = 3,
+	MSM_SCM_L3_PC_OFF = 4,
 };
 
 #define MSM_PM_MODE(cpu, mode_nr)  ((cpu) * MSM_PM_SLEEP_MODE_NR + (mode_nr))
@@ -58,7 +59,6 @@ struct msm_pm_time_params {
 
 struct msm_pm_sleep_status_data {
 	void *base_addr;
-	uint32_t cpu_offset;
 	uint32_t mask;
 };
 

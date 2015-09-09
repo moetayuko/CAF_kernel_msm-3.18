@@ -1479,7 +1479,7 @@ static int hdmi_tx_init_features(struct hdmi_tx_ctrl *hdmi_ctrl,
 
 	/* Initialize EDID feature */
 	edid_init_data.kobj = hdmi_ctrl->kobj;
-	edid_init_data.ds_data = &hdmi_ctrl->ds_data;
+	edid_init_data.ds_data = hdmi_ctrl->ds_data;
 	edid_init_data.id = fbi->node;
 
 	hdmi_ctrl->feature_data[HDMI_TX_FEAT_EDID] =
@@ -4433,8 +4433,8 @@ static int hdmi_tx_get_dt_data(struct platform_device *pdev,
 
 	if (!pdata->cont_splash_enabled)
 		pdata->cont_splash_enabled =
-			of_property_read_bool(pdev->dev.of_node,
-			"qcom,cont-splash-enabled");
+			hdmi_ctrl->mdss_util->panel_intf_status(DISPLAY_2,
+			MDSS_PANEL_INTF_HDMI) ? true : false;
 
 	return rc;
 

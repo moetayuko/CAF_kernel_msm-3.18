@@ -1315,10 +1315,10 @@ static void msm_otg_exit_phy_retention(struct msm_otg *motg)
 		break;
 	case SNPS_FEMTO_PHY:
 		/*
-		 * Femto PHY must be POR reset to bring out
+		 * It is required to do USB block reset to bring Femto PHY out
 		 * of retention.
 		 */
-		msm_usb_phy_reset(motg);
+		msm_otg_reset(&motg->phy);
 		break;
 	default:
 		break;
@@ -1407,7 +1407,7 @@ lpm_start:
 			phy->state == OTG_STATE_B_PERIPHERAL;
 
 	/* Perform block reset to recover from UDC error events on disconnect */
-	if (!host_bus_suspend && !device_bus_suspend)
+	if (motg->err_event_seen)
 		msm_otg_reset(phy);
 
 	/* Enable line state difference wakeup fix for only device and host
@@ -1654,8 +1654,10 @@ phcd_retry:
 	}
 
 	if (device_may_wakeup(phy->dev)) {
-		enable_irq_wake(motg->async_irq);
-		enable_irq_wake(motg->irq);
+		if (host_bus_suspend || device_bus_suspend) {
+			enable_irq_wake(motg->async_irq);
+			enable_irq_wake(motg->irq);
+		}
 
 		if (motg->phy_irq)
 			enable_irq_wake(motg->phy_irq);
@@ -1858,8 +1860,10 @@ skip_phy_resume:
 	}
 
 	if (device_may_wakeup(phy->dev)) {
-		disable_irq_wake(motg->async_irq);
-		disable_irq_wake(motg->irq);
+		if (motg->host_bus_suspend || motg->device_bus_suspend) {
+			disable_irq_wake(motg->async_irq);
+			disable_irq_wake(motg->irq);
+		}
 
 		if (motg->phy_irq)
 			disable_irq_wake(motg->phy_irq);
@@ -2040,6 +2044,15 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 			mA > IDEV_ACA_CHG_LIMIT)
 		mA = IDEV_ACA_CHG_LIMIT;
 
+	dev_dbg(motg->phy.dev, "Requested curr from USB = %u, max-type-c:%u\n",
+					mA, motg->typec_current_max);
+	/* Save bc1.2 max_curr if type-c charger later moves to diff mode */
+	motg->bc1p2_current_max = mA;
+
+	/* Override mA if type-c charger used (use hvdcp/bc1.2 if it is 500) */
+	if (motg->typec_current_max > 500 && mA < motg->typec_current_max)
+		mA = motg->typec_current_max;
+
 	if (msm_otg_notify_chg_type(motg))
 		dev_err(motg->phy.dev,
 			"Failed notifying %d charger type to PMIC\n",
@@ -2091,6 +2104,7 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 	struct msm_otg *motg = container_of(otg->phy, struct msm_otg, phy);
 	struct msm_otg_platform_data *pdata = motg->pdata;
 	struct usb_hcd *hcd;
+	u32 val;
 
 	if (!otg->host)
 		return;
@@ -2106,6 +2120,11 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 			ulpi_write(otg->phy, OTG_COMP_DISABLE,
 				ULPI_SET(ULPI_PWR_CLK_MNG_REG));
 
+		if (pdata->enable_axi_prefetch) {
+			val = readl_relaxed(USB_HS_APF_CTRL);
+			val &= ~APF_CTRL_EN;
+			writel_relaxed(val, USB_HS_APF_CTRL);
+		}
 		usb_add_hcd(hcd, hcd->irq, IRQF_SHARED);
 	} else {
 		dev_dbg(otg->phy->dev, "host off\n");
@@ -2114,6 +2133,11 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 
 		wake_up(&motg->host_suspend_wait);
 		usb_remove_hcd(hcd);
+
+		if (pdata->enable_axi_prefetch)
+			writel_relaxed(readl_relaxed(USB_HS_APF_CTRL)
+					| (APF_CTRL_EN), USB_HS_APF_CTRL);
+
 		/* HCD core reset all bits of PORTSC. select ULPI phy */
 		writel_relaxed(0x80000000, USB_PORTSC);
 
@@ -4726,6 +4750,39 @@ otg_get_prop_usbin_voltage_now(struct msm_otg *motg)
 	}
 }
 
+static int msm_otg_pmic_dp_dm(struct msm_otg *motg, int value)
+{
+	int ret = 0;
+
+	switch (value) {
+	case POWER_SUPPLY_DP_DM_DPF_DMF:
+		if (!motg->rm_pulldown) {
+			ret = msm_hsusb_ldo_enable(motg, USB_PHY_REG_ON);
+			if (!ret) {
+				motg->rm_pulldown = true;
+				msm_otg_dbg_log_event(&motg->phy, "RM Pulldown",
+						motg->rm_pulldown, 0);
+			}
+		}
+		break;
+	case POWER_SUPPLY_DP_DM_DPR_DMR:
+		if (motg->rm_pulldown) {
+			ret = msm_hsusb_ldo_enable(motg, USB_PHY_REG_OFF);
+			if (!ret) {
+				motg->rm_pulldown = false;
+				msm_otg_dbg_log_event(&motg->phy, "RM Pulldown",
+						motg->rm_pulldown, 0);
+			}
+		}
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 static int otg_power_get_property_usb(struct power_supply *psy,
 				  enum power_supply_property psp,
 				  union power_supply_propval *val)
@@ -4744,10 +4801,13 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		val->intval = motg->current_max;
 		break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
+		val->intval = motg->typec_current_max;
+		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = !!test_bit(B_SESS_VLD, &motg->inputs);
 		break;
-	case POWER_SUPPLY_PROP_ALLOW_DETECTION:
+	case POWER_SUPPLY_PROP_DP_DM:
 		val->intval = motg->rm_pulldown;
 		break;
 	/* Reflect USB enumeration */
@@ -4784,16 +4844,9 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 		motg->id_state = val->intval ? USB_ID_GROUND : USB_ID_FLOAT;
 		queue_delayed_work(motg->otg_wq, &motg->id_status_work, 0);
 		break;
-	/* PMIC notification to remove pull down on Dp and Dm */
-	case POWER_SUPPLY_PROP_ALLOW_DETECTION:
-		if (motg->rm_pulldown == val->intval)
-			break;
-
-		motg->rm_pulldown = val->intval;
-		msm_otg_dbg_log_event(&motg->phy, "RM Pulldown",
-							motg->rm_pulldown, 0);
-		msm_hsusb_ldo_enable(motg, motg->rm_pulldown ?
-				USB_PHY_REG_ON : USB_PHY_REG_OFF);
+	/* PMIC notification for DP DM state */
+	case POWER_SUPPLY_PROP_DP_DM:
+		msm_otg_pmic_dp_dm(motg, val->intval);
 		break;
 	/* Process PMIC notification in PRESENT prop */
 	case POWER_SUPPLY_PROP_PRESENT:
@@ -4808,6 +4861,16 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		motg->current_max = val->intval;
+		break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
+		motg->typec_current_max = val->intval;
+		msm_otg_dbg_log_event(&motg->phy, "type-c charger",
+					val->intval, motg->bc1p2_current_max);
+		/* Update chg_current as per type-c charger detection on VBUS */
+		if (motg->chg_type != USB_INVALID_CHARGER) {
+			dev_dbg(motg->phy.dev, "update type-c charger\n");
+			msm_otg_notify_charger(motg, motg->bc1p2_current_max);
+		}
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		psy->type = val->intval;
@@ -4879,7 +4942,8 @@ static int otg_power_property_is_writeable_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-	case POWER_SUPPLY_PROP_ALLOW_DETECTION:
+	case POWER_SUPPLY_PROP_DP_DM:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_USB_OTG:
 		return 1;
 	default:
@@ -4899,10 +4963,11 @@ static enum power_supply_property otg_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_MAX,
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_ALLOW_DETECTION,
+	POWER_SUPPLY_PROP_DP_DM,
 	POWER_SUPPLY_PROP_USB_OTG,
 };
 
@@ -5062,6 +5127,7 @@ static struct platform_device *msm_otg_add_pdev(
 		ci_pdata.system_clk = otg_pdata->system_clk;
 		ci_pdata.pclk = otg_pdata->pclk;
 		ci_pdata.enable_streaming = otg_pdata->enable_streaming;
+		ci_pdata.enable_axi_prefetch = otg_pdata->enable_axi_prefetch;
 		ci_pdata.max_nominal_system_clk_rate =
 					motg->max_nominal_system_clk_rate;
 		ci_pdata.default_system_clk_rate = motg->core_clk_rate;
@@ -6129,7 +6195,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	 * pull-down during suspend without any additional
 	 * hardware re-work.
 	 */
-	if (motg->pdata->phy_dvdd_always_on)
+	if (motg->pdata->phy_type == SNPS_FEMTO_PHY)
 		motg->caps |= ALLOW_BUS_SUSPEND_WITHOUT_REWORK;
 
 	wake_lock(&motg->wlock);

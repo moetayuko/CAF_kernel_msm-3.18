@@ -169,6 +169,7 @@ static bool online_core;
 static bool cluster_info_probed;
 static bool cluster_info_nodes_called;
 static bool in_suspend, retry_in_progress;
+static bool mitigation_profile_enabled;
 static int *tsens_id_map;
 static int *zone_id_tsens_map;
 static DEFINE_MUTEX(vdd_rstr_mutex);
@@ -446,6 +447,36 @@ static ssize_t thermal_config_debugfs_write(struct file *file,
 		_flag = 0; \
 	} while (0)
 
+
+static uint32_t get_mask_from_core_handle(struct platform_device *pdev,
+						const char *key)
+{
+	struct device_node *core_phandle = NULL;
+	int i = 0, cpu = 0, cpu_cnt = 0;
+	uint32_t mask = 0;
+
+	if (!of_get_property(pdev->dev.of_node, key, &cpu_cnt)
+		|| cpu_cnt <= 0) {
+		pr_debug("Property %s not defined.\n", key);
+		return -ENODEV;
+	}
+	cpu_cnt /= sizeof(__be32);
+
+	core_phandle = of_parse_phandle(pdev->dev.of_node,
+			key, i++);
+	while (core_phandle && i <= cpu_cnt) {
+		for_each_possible_cpu(cpu) {
+			if (of_get_cpu_node(cpu, NULL) == core_phandle) {
+				mask |= BIT(cpu);
+				break;
+			}
+		}
+		core_phandle = of_parse_phandle(pdev->dev.of_node,
+			key, i++);
+	}
+
+	return mask;
+}
 
 static void get_cluster_mask(uint32_t cpu, cpumask_t *mask)
 {
@@ -5854,8 +5885,6 @@ static void probe_sensor_info(struct device_node *node,
 	}
 
 	for_each_child_of_node(np, child_node) {
-		const char *alias_name = NULL;
-
 		key = "qcom,sensor-type";
 		err = of_property_read_string(child_node,
 				key, &sensors[i].type);
@@ -5869,14 +5898,12 @@ static void probe_sensor_info(struct device_node *node,
 			goto read_node_fail;
 
 		key = "qcom,alias-name";
-		of_property_read_string(child_node, key, &alias_name);
-		if (alias_name && !strnstr(alias_name, "cpu",
-			strlen(alias_name)))
-			sensors[i].alias = alias_name;
+		of_property_read_string(child_node,
+				key, &sensors[i].alias);
 
 		key = "qcom,scaling-factor";
-		err = of_property_read_u32(child_node, key,
-				&sensors[i].scaling_factor);
+		err = of_property_read_u32(child_node,
+				key, &sensors[i].scaling_factor);
 		if (err || sensors[i].scaling_factor == 0) {
 			sensors[i].scaling_factor = SENSOR_SCALING_FACTOR;
 			err = 0;
@@ -6096,7 +6123,9 @@ static int probe_cc(struct device_node *node, struct msm_thermal_data *data,
 		struct platform_device *pdev)
 {
 	char *key = NULL;
+	uint32_t cpu_cnt = 0;
 	int ret = 0;
+	uint32_t cpu = 0;
 
 	if (num_possible_cpus() > 1) {
 		core_control_enabled = 1;
@@ -6120,6 +6149,16 @@ static int probe_cc(struct device_node *node, struct msm_thermal_data *data,
 	if (ret)
 		goto read_node_fail;
 
+	if (!mitigation_profile_enabled) {
+		key = "qcom,core-control-list";
+		ret = get_mask_from_core_handle(pdev, key);
+		if (ret <= 0)
+			goto read_node_fail;
+
+		data->core_control_mask = ret;
+		ret = 0;
+	}
+
 	key = "qcom,hotplug-temp";
 	ret = of_property_read_u32(node, key, &data->hotplug_temp_degC);
 	if (ret)
@@ -6130,6 +6169,23 @@ static int probe_cc(struct device_node *node, struct msm_thermal_data *data,
 			&data->hotplug_temp_hysteresis_degC);
 	if (ret)
 		goto hotplug_node_fail;
+
+	if (!mitigation_profile_enabled) {
+		key = "qcom,cpu-sensors";
+		cpu_cnt = of_property_count_strings(node, key);
+		if (cpu_cnt < num_possible_cpus()) {
+			pr_err("Wrong number of cpu sensors:%d\n", cpu_cnt);
+			ret = -EINVAL;
+			goto hotplug_node_fail;
+		}
+
+		for_each_possible_cpu(cpu) {
+			ret = of_property_read_string_index(node, key, cpu,
+					&cpus[cpu].sensor_type);
+			if (ret)
+				goto hotplug_node_fail;
+		}
+	}
 
 read_node_fail:
 	if (ret) {
@@ -6400,6 +6456,15 @@ static int probe_freq_mitigation(struct device_node *node,
 	ret = of_property_read_u32(node, key, &data->freq_limit);
 	if (ret)
 		goto PROBE_FREQ_EXIT;
+
+	if (!mitigation_profile_enabled) {
+		key = "qcom,freq-mitigation-control-list";
+		ret = get_mask_from_core_handle(pdev, key);
+		if (ret <= 0)
+			goto PROBE_FREQ_EXIT;
+		data->freq_mitig_control_mask = ret;
+		ret = 0;
+	}
 
 	freq_mitigation_enabled = 1;
 	snprintf(mit_config[MSM_LIST_MAX_NR + CPUFREQ_CONFIG].config_name,
@@ -6743,6 +6808,12 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 	if (ret)
 		goto fail;
 
+	key = "qcom,mitigation-profile-enable";
+	if (of_property_read_bool(node, key))
+		mitigation_profile_enabled = true;
+	else
+		mitigation_profile_enabled = false;
+
 	key = "qcom,disable-freq-mitigation";
 	if (!of_property_read_bool(node, key)) {
 
@@ -6770,6 +6841,16 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 		online_core = true;
 	else
 		online_core = false;
+
+	if (!mitigation_profile_enabled) {
+		key = "qcom,freq-control-list";
+		ret = get_mask_from_core_handle(pdev, key);
+		if (ret <= 0)
+			data.bootup_freq_control_mask = 0x0;
+		else
+			data.bootup_freq_control_mask = ret;
+		ret = 0;
+	}
 
 	probe_sensor_info(node, &data, pdev);
 	ret = probe_cc(node, &data, pdev);
@@ -6799,13 +6880,16 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 	ret = probe_ocr(node, &data, pdev);
 
 	update_cpu_topology(&pdev->dev);
-	ret = fetch_cpu_mitigaiton_info(&data, pdev);
-	if (ret) {
-		pr_err("Error fetching CPU mitigation information. err:%d\n",
-				ret);
-		goto probe_exit;
-	}
 
+	if (mitigation_profile_enabled) {
+		ret = fetch_cpu_mitigaiton_info(&data, pdev);
+		if (ret) {
+			pr_err(
+			"Error fetching CPU mitigation information. err:%d\n",
+			ret);
+			goto probe_exit;
+		}
+	}
 	/*
 	 * In case sysfs add nodes get called before probe function.
 	 * Need to make sure sysfs node is created again
@@ -6844,6 +6928,7 @@ fail:
 	if (ret)
 		pr_err("Failed reading node=%s, key=%s. err:%d\n",
 			node->full_name, key, ret);
+
 probe_exit:
 	return ret;
 }

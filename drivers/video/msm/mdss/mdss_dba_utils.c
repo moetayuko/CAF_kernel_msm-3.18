@@ -24,6 +24,7 @@
 /* standard cec buf size + 1 byte specific to driver */
 #define CEC_BUF_SIZE    (MAX_CEC_FRAME_SIZE + 1)
 #define MAX_SWITCH_NAME_SIZE        5
+#define MSM_DBA_MAX_PCLK 148500
 
 struct mdss_dba_utils_data {
 	struct msm_dba_ops ops;
@@ -155,11 +156,52 @@ static ssize_t mdss_dba_utils_sysfs_rda_connected(struct device *dev,
 	return ret;
 }
 
+static ssize_t mdss_dba_utils_sysfs_wta_hpd(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mdss_dba_utils_data *udata = NULL;
+	int rc, hpd;
+
+	udata = mdss_dba_utils_get_data(dev);
+	if (!udata) {
+		pr_debug("%s: invalid input\n", __func__);
+		return -EINVAL;
+	}
+
+	rc = kstrtoint(buf, 10, &hpd);
+	if (rc) {
+		pr_debug("%s: kstrtoint failed\n", __func__);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: set value: %d hpd state: %d\n", __func__,
+					hpd, udata->hpd_state);
+	if (!hpd) {
+		if (udata->ops.power_on)
+			udata->ops.power_on(udata->dba_data, false, 0);
+		return count;
+	}
+
+	/* power on downstream device */
+	if (udata->ops.power_on)
+		udata->ops.power_on(udata->dba_data, true, 0);
+
+	/* check if cable is connected to bridge chip */
+	if (udata->ops.check_hpd)
+		udata->ops.check_hpd(udata->dba_data, 0);
+
+	return count;
+}
+
 static DEVICE_ATTR(connected, S_IRUGO,
 		mdss_dba_utils_sysfs_rda_connected, NULL);
 
+static DEVICE_ATTR(hpd, S_IRUGO | S_IWUSR, NULL,
+		mdss_dba_utils_sysfs_wta_hpd);
+
 static struct attribute *mdss_dba_utils_fs_attrs[] = {
 	&dev_attr_connected.attr,
+	&dev_attr_hpd.attr,
 	NULL,
 };
 
@@ -217,6 +259,8 @@ static void mdss_dba_utils_dba_cb(void *data, enum msm_dba_callback_event event)
 
 	switch (event) {
 	case MSM_DBA_CB_HPD_CONNECT:
+		if (udata->hpd_state)
+			break;
 		if (udata->ops.get_raw_edid) {
 			ret = udata->ops.get_raw_edid(udata->dba_data,
 				udata->edid_buf_size, udata->edid_buf, 0);
@@ -238,6 +282,8 @@ static void mdss_dba_utils_dba_cb(void *data, enum msm_dba_callback_event event)
 		break;
 
 	case MSM_DBA_CB_HPD_DISCONNECT:
+		if (!udata->hpd_state)
+			break;
 		if (pluggable) {
 			mdss_dba_utils_send_audio_notification(udata, 0);
 			mdss_dba_utils_send_display_notification(udata, 0);
@@ -341,18 +387,8 @@ static int mdss_dba_utils_init_switch_dev(struct mdss_dba_utils_data *udata,
 		goto end;
 	}
 
-	pr_debug("fb_node %d\n", fb_node);
-
-	ret = snprintf(udata->disp_switch_name,
-		sizeof(udata->disp_switch_name),
-		"fb%d", fb_node);
-	if (!ret) {
-		DEV_ERR("%s: couldn't write display switch node\n", __func__);
-		goto end;
-	}
-
 	/* create switch device to update display modules */
-	udata->sdev_display.name = udata->disp_switch_name;
+	udata->sdev_display.name = "hdmi";
 	rc = switch_dev_register(&udata->sdev_display);
 	if (rc) {
 		pr_err("display switch registration failed\n");
@@ -406,6 +442,18 @@ int mdss_dba_utils_video_on(void *data, struct mdss_panel_info *pinfo)
 	video_cfg.h_pulse_width = pinfo->lcdc.h_pulse_width;
 	video_cfg.v_pulse_width = pinfo->lcdc.v_pulse_width;
 	video_cfg.pclk_khz = pinfo->clk_rate / 1000;
+	video_cfg.hdmi_mode = hdmi_edid_get_sink_mode(ud->edid_data);
+
+	/* Calculate number of DSI lanes configured */
+	video_cfg.num_of_input_lanes = 0;
+	if (pinfo->mipi.data_lane0)
+		video_cfg.num_of_input_lanes++;
+	if (pinfo->mipi.data_lane1)
+		video_cfg.num_of_input_lanes++;
+	if (pinfo->mipi.data_lane2)
+		video_cfg.num_of_input_lanes++;
+	if (pinfo->mipi.data_lane3)
+		video_cfg.num_of_input_lanes++;
 
 	if (ud->ops.video_on)
 		ret = ud->ops.video_on(ud->dba_data, true, &video_cfg, 0);
@@ -523,6 +571,8 @@ void *mdss_dba_utils_init(struct mdss_dba_utils_init_data *uid)
 
 	/* Initialize EDID feature */
 	edid_init_data.kobj = uid->kobj;
+	edid_init_data.ds_data.ds_registered = true;
+	edid_init_data.ds_data.ds_max_clk = MSM_DBA_MAX_PCLK;
 
 	/* register with edid module for parsing edid buffer */
 	udata->edid_data = hdmi_edid_init(&edid_init_data);
@@ -561,13 +611,8 @@ void *mdss_dba_utils_init(struct mdss_dba_utils_init_data *uid)
 	if (uid->pinfo) {
 		uid->pinfo->is_cec_supported = true;
 		uid->pinfo->cec_data = udata->cec_abst_data;
-	}
-
-	/* power on downstream device */
-	if (udata->ops.power_on) {
-		ret = udata->ops.power_on(udata->dba_data, true, 0);
-		if (ret)
-			goto error;
+		if (!uid->pinfo->is_prim_panel)
+			uid->pinfo->is_pluggable = true;
 	}
 
 	return udata;

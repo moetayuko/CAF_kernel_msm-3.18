@@ -322,6 +322,10 @@ struct mdss_data_type {
 	u32 bw_mode_bitmap;
 	u32 max_bw_settings_cnt;
 
+	struct mdss_max_bw_settings *max_per_pipe_bw_settings;
+	u32 mdss_per_pipe_bw_cnt;
+	u32 min_bw_per_pipe;
+
 	u32 bcolor0;
 	u32 bcolor1;
 	u32 bcolor2;
@@ -364,6 +368,7 @@ struct mdss_util_intf {
 	void (*iommu_unlock)(void);
 	void (*bus_bandwidth_ctrl)(int enable);
 	int (*bus_scale_set_quota)(int client, u64 ab_quota, u64 ib_quota);
+	int (*panel_intf_status)(u32 disp_num, u32 intf_type);
 	struct mdss_panel_cfg* (*panel_intf_type)(int intf_val);
 };
 

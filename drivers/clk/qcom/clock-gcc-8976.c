@@ -1310,6 +1310,7 @@ static struct clk_freq_tbl ftbl_sdcc1_apps_clk_src[] = {
 	F( 100000000,          gpll0,    8,    0,     0),
 	F( 177777778,          gpll0,  4.5,    0,     0),
 	F( 200000000,          gpll0,    4,    0,     0),
+	F( 342850000,      gpll4_out,  3.5,    0,     0),
 	F( 400000000,      gpll4_out,    3,    0,     0),
 	F_END
 };
@@ -3965,6 +3966,12 @@ static int msm_gcc_gfx_probe(struct platform_device *pdev)
 	regval = readl_relaxed(GCC_REG_BASE(GX_DOMAIN_MISC));
 	regval &= ~BIT(0);
 	writel_relaxed(regval, GCC_REG_BASE(GX_DOMAIN_MISC));
+
+	/* Configure Sleep and Wakeup cycles for OXILI clock */
+	regval = readl_relaxed(GCC_REG_BASE(OXILI_GFX3D_CBCR));
+	regval &= ~0xF0;
+	regval |= CLKFLAG_SLEEP_CYCLES << 4;
+	writel_relaxed(regval, GCC_REG_BASE(OXILI_GFX3D_CBCR));
 
 	dev_info(&pdev->dev, "Registered GCC GFX clocks.\n");
 

@@ -33,6 +33,7 @@
 #include <linux/gpio.h>
 #include <linux/regmap.h>
 #include "wsa881x-analog.h"
+#include "wsa881x-temp-sensor.h"
 #include "../msm/msm-audio-pinctrl.h"
 
 #define SPK_GAIN_12DB 4
@@ -57,22 +58,24 @@ struct wsa881x_pdata {
 	bool regmap_flag;
 	bool wsa_active;
 	int index;
-};
-
-static struct afe_clk_cfg mi2s_rx_clk = {
-	AFE_API_VERSION_I2S_CONFIG,
-	0,
-	Q6AFE_LPASS_OSR_CLK_9_P600_MHZ,
-	Q6AFE_LPASS_CLK_SRC_INTERNAL,
-	Q6AFE_LPASS_CLK_ROOT_DEFAULT,
-	Q6AFE_LPASS_MODE_CLK2_VALID,
-	0,
+	int (*enable_mclk)(struct snd_soc_card *, bool);
+	struct wsa881x_tz_priv tz_pdata;
+	int bg_cnt;
+	int clk_cnt;
+	int version;
+	struct mutex bg_lock;
+	struct mutex res_lock;
 };
 
 enum {
 	WSA881X_STATUS_PROBING,
 	WSA881X_STATUS_I2C,
 };
+
+static int32_t wsa881x_resource_acquire(struct snd_soc_codec *codec,
+						bool enable);
+
+const char *wsa_tz_names[] = {"wsa881x.0e", "wsa881x.0f"};
 
 struct wsa881x_pdata wsa_pdata[MAX_WSA881X_DEVICE];
 
@@ -336,22 +339,66 @@ static int wsa881x_i2c_get_client_index(struct i2c_client *client,
 	return ret;
 }
 
+static int wsa881x_temp_sensor_ctrl(struct snd_soc_codec *codec, bool enable)
+{
+	dev_dbg(codec->dev, "%s: enable:%d\n", __func__, enable);
+	snd_soc_update_bits(codec, WSA881X_TEMP_OP, (0x01 << 2),
+				(enable << 2));
+	return 0;
+}
+
 static int wsa881x_boost_ctrl(struct snd_soc_codec *codec, bool enable)
 {
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
 	pr_debug("%s: enable:%d\n", __func__, enable);
 	if (enable) {
-		snd_soc_update_bits(codec, WSA881X_ANA_CTL, 0x01, 0x01);
-		snd_soc_update_bits(codec, WSA881X_ANA_CTL, 0x04, 0x04);
-		snd_soc_update_bits(codec, WSA881X_BOOST_PS_CTL, 0x80, 0x00);
-		snd_soc_update_bits(codec, WSA881X_BOOST_PRESET_OUT1,
-							0xF0, 0xB0);
-		snd_soc_update_bits(codec, WSA881X_BOOST_ZX_CTL, 0x20, 0x00);
-		snd_soc_update_bits(codec, WSA881X_BOOST_EN_CTL, 0x80, 0x80);
+		if (!WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_ANA_CTL,
+								0x01, 0x01);
+			snd_soc_update_bits(codec, WSA881X_ANA_CTL,
+								0x04, 0x04);
+			snd_soc_update_bits(codec, WSA881X_BOOST_PS_CTL,
+								0x40, 0x00);
+			snd_soc_update_bits(codec, WSA881X_BOOST_PRESET_OUT1,
+								0xF0, 0xB0);
+			snd_soc_update_bits(codec, WSA881X_BOOST_ZX_CTL,
+								0x20, 0x00);
+			snd_soc_update_bits(codec, WSA881X_BOOST_EN_CTL,
+								0x80, 0x80);
+		} else {
+			snd_soc_update_bits(codec, WSA881X_BOOST_LOOP_STABILITY,
+							0x03, 0x03);
+			snd_soc_update_bits(codec, WSA881X_BOOST_MISC2_CTL,
+							0xFF, 0x14);
+			snd_soc_update_bits(codec, WSA881X_BOOST_START_CTL,
+							0x80, 0x80);
+			snd_soc_update_bits(codec, WSA881X_BOOST_START_CTL,
+							0x03, 0x00);
+			snd_soc_update_bits(codec,
+					WSA881X_BOOST_SLOPE_COMP_ISENSE_FB,
+					0x0C, 0x04);
+			snd_soc_update_bits(codec,
+					WSA881X_BOOST_SLOPE_COMP_ISENSE_FB,
+					0x03, 0x00);
+			snd_soc_update_bits(codec, WSA881X_BOOST_PRESET_OUT1,
+							0xF0, 0x70);
+			snd_soc_update_bits(codec, WSA881X_ANA_CTL, 0x03, 0x01);
+			snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN,
+								0x08, 0x08);
+			snd_soc_update_bits(codec, WSA881X_ANA_CTL, 0x04, 0x04);
+			snd_soc_update_bits(codec, WSA881X_BOOST_CURRENT_LIMIT,
+								0x0F, 0x08);
+			snd_soc_update_bits(codec, WSA881X_BOOST_EN_CTL,
+								0x80, 0x80);
+		}
 		/* For WSA8810, start-up time is 1500us as per qcrg sequence */
 		usleep_range(1500, 1510);
 	} else {
 		/* ENSURE: Class-D amp is shutdown. CLK is still on */
 		snd_soc_update_bits(codec, WSA881X_BOOST_EN_CTL, 0x80, 0x00);
+		/* boost settle time is 1500us as per qcrg sequence */
+		usleep_range(1500, 1510);
 	}
 	return 0;
 }
@@ -361,17 +408,49 @@ static int wsa881x_visense_txfe_ctrl(struct snd_soc_codec *codec, bool enable,
 				     u8 vsense_gain)
 {
 	u8 value = 0;
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: enable:%d\n", __func__, enable);
 
 	if (enable) {
-		value = ((isense2_gain << 6) || (isense1_gain << 4) ||
+		if (WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_OTP_REG_28,
+						0x3F, 0x3A);
+			snd_soc_update_bits(codec, WSA881X_BONGO_RESRV_REG1,
+						0xFF, 0xB2);
+			snd_soc_update_bits(codec, WSA881X_BONGO_RESRV_REG2,
+						0xFF, 0x05);
+		}
+		snd_soc_update_bits(codec, WSA881X_SPKR_PROT_FE_VSENSE_VCM,
+					0x08, 0x00);
+		if (WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_SPKR_PROT_ATEST2,
+							0x1C, 0x04);
+		} else {
+			snd_soc_update_bits(codec, WSA881X_SPKR_PROT_ATEST2,
+							0x08, 0x08);
+			snd_soc_update_bits(codec, WSA881X_SPKR_PROT_ATEST2,
+							0x02, 0x02);
+		}
+		value = ((isense2_gain << 6) | (isense1_gain << 4) |
 			(vsense_gain << 3));
 		snd_soc_update_bits(codec, WSA881X_SPKR_PROT_FE_GAIN,
 					0xF8, value);
 		snd_soc_update_bits(codec, WSA881X_SPKR_PROT_FE_GAIN,
 					0x01, 0x01);
 	} else {
+		if (WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec,
+				WSA881X_SPKR_PROT_FE_VSENSE_VCM, 0x10, 0x10);
+		else
+			snd_soc_update_bits(codec,
+				WSA881X_SPKR_PROT_FE_VSENSE_VCM, 0x08, 0x08);
+		/*
+		 * 200us sleep is needed after visense txfe disable as per
+		 * HW requirement.
+		 */
+		usleep_range(200, 210);
+
 		snd_soc_update_bits(codec, WSA881X_SPKR_PROT_FE_GAIN,
 					0x01, 0x00);
 	}
@@ -380,17 +459,15 @@ static int wsa881x_visense_txfe_ctrl(struct snd_soc_codec *codec, bool enable,
 
 static int wsa881x_visense_adc_ctrl(struct snd_soc_codec *codec, bool enable)
 {
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
 	pr_debug("%s: enable:%d\n", __func__, enable);
 	if (enable) {
-		snd_soc_update_bits(codec, WSA881X_ADC_SEL_IBIAS, 0x07, 0x04);
+		if (!WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec, WSA881X_ADC_SEL_IBIAS,
+							0x70, 0x40);
 		snd_soc_update_bits(codec, WSA881X_ADC_EN_SEL_IBIAS,
-							0x80, 0x80);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_SEL_IBIAS,
-							0x70, 0x60);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_SEL_IBIAS,
-							0x0C, 0x08);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_SEL_IBIAS,
-							0x03, 0x02);
+							0x07, 0x04);
 		snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_V, 0x80, 0x80);
 		snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_I, 0x80, 0x80);
 	} else {
@@ -402,8 +479,67 @@ static int wsa881x_visense_adc_ctrl(struct snd_soc_codec *codec, bool enable)
 	return 0;
 }
 
+static void wsa881x_bandgap_ctrl(struct snd_soc_codec *codec, bool enable)
+{
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
+	dev_dbg(codec->dev, "%s: enable:%d, bg_count:%d\n", __func__,
+		enable, wsa881x->bg_cnt);
+	mutex_lock(&wsa881x->bg_lock);
+	if (enable) {
+		++wsa881x->bg_cnt;
+		if (wsa881x->bg_cnt == 1) {
+			snd_soc_update_bits(codec, WSA881X_TEMP_OP,
+					    0x08, 0x08);
+			/* 400usec sleep is needed as per HW requirement */
+			usleep_range(400, 410);
+		}
+	} else {
+		--wsa881x->bg_cnt;
+		if (wsa881x->bg_cnt <= 0) {
+			WARN_ON(wsa881x->bg_cnt < 0);
+			wsa881x->bg_cnt = 0;
+			snd_soc_update_bits(codec, WSA881X_TEMP_OP, 0x08, 0x00);
+		}
+	}
+	mutex_unlock(&wsa881x->bg_lock);
+}
+
+static void wsa881x_clk_ctrl(struct snd_soc_codec *codec, bool enable)
+{
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
+	dev_dbg(codec->dev, "%s:ss enable:%d, clk_count:%d\n", __func__,
+		enable, wsa881x->clk_cnt);
+	mutex_lock(&wsa881x->res_lock);
+	if (enable) {
+		++wsa881x->clk_cnt;
+		if (wsa881x->clk_cnt == 1) {
+			snd_soc_write(codec, WSA881X_CDC_RST_CTL, 0x02);
+			snd_soc_write(codec, WSA881X_CDC_RST_CTL, 0x03);
+			snd_soc_write(codec, WSA881X_CLOCK_CONFIG, 0x01);
+			snd_soc_write(codec, WSA881X_CDC_DIG_CLK_CTL, 0x01);
+			snd_soc_write(codec, WSA881X_CDC_ANA_CLK_CTL, 0x01);
+		}
+	} else {
+		--wsa881x->clk_cnt;
+		if (wsa881x->clk_cnt <= 0) {
+			WARN_ON(wsa881x->clk_cnt < 0);
+			wsa881x->clk_cnt = 0;
+			snd_soc_write(codec, WSA881X_CDC_ANA_CLK_CTL, 0x00);
+			snd_soc_write(codec, WSA881X_CDC_DIG_CLK_CTL, 0x00);
+			if (WSA881X_IS_2_0(wsa881x->version))
+				snd_soc_update_bits(codec,
+					WSA881X_CDC_TOP_CLK_CTL, 0x01, 0x00);
+		}
+	}
+	mutex_unlock(&wsa881x->res_lock);
+}
+
 static int wsa881x_rdac_ctrl(struct snd_soc_codec *codec, bool enable)
 {
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
 	pr_debug("%s: enable:%d\n", __func__, enable);
 	if (enable) {
 		snd_soc_update_bits(codec, WSA881X_ANA_CTL, 0x08, 0x00);
@@ -412,18 +548,26 @@ static int wsa881x_rdac_ctrl(struct snd_soc_codec *codec, bool enable)
 		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x20, 0x00);
 		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x40, 0x40);
 		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x80, 0x80);
+		if (WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_CAL,
+								0x01, 0x01);
+			snd_soc_update_bits(codec, WSA881X_SPKR_OCP_CTL,
+								0x30, 0x30);
+			snd_soc_update_bits(codec, WSA881X_SPKR_OCP_CTL,
+								0x0C, 0x00);
+		}
 		snd_soc_update_bits(codec, WSA881X_SPKR_DRV_GAIN, 0xF0, 0x40);
 		snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL1, 0x01, 0x01);
 	} else {
 		/* Ensure class-D amp is off */
 		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x80, 0x00);
-		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x40, 0x00);
 	}
 	return 0;
 }
 
 static int wsa881x_spkr_pa_ctrl(struct snd_soc_codec *codec, bool enable)
 {
+	int ret = 0;
 	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: enable:%d\n", __func__, enable);
@@ -432,53 +576,69 @@ static int wsa881x_spkr_pa_ctrl(struct snd_soc_codec *codec, bool enable)
 		 * Ensure: Boost is enabled and stable, Analog input is up
 		 * and outputting silence
 		 */
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_I,
+		if (!WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_I,
 								0xFF, 0x01);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_V, 0xFF, 0x02);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_V,
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_V,
+								0x02, 0x02);
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_V,
 								0xFF, 0x10);
-		snd_soc_update_bits(codec, WSA881X_SPKR_PWRSTG_DBG, 0xA0, 0xA0);
-		snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN, 0x80, 0x80);
-		usleep_range(700, 710);
-		snd_soc_update_bits(codec, WSA881X_SPKR_PWRSTG_DBG, 0x00, 0x00);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_V,
+			snd_soc_update_bits(codec, WSA881X_SPKR_PWRSTG_DBG,
+								0xA0, 0xA0);
+			snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN,
+								0x80, 0x80);
+			usleep_range(700, 710);
+			snd_soc_update_bits(codec, WSA881X_SPKR_PWRSTG_DBG,
+								0x00, 0x00);
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_V,
 								0xFF, 0x00);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_V, 0xFF, 0x00);
-		snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_I,
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_MODU_V,
+								0x02, 0x00);
+			snd_soc_update_bits(codec, WSA881X_ADC_EN_DET_TEST_I,
 								0xFF, 0x00);
+		} else
+			snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN,
+								0x80, 0x80);
 		/* add 1000us delay as per qcrg */
 		usleep_range(1000, 1010);
 		snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN, 0x01, 0x01);
+		if (WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_CAL,
+								0x01, 0x00);
 		usleep_range(1000, 1010);
 		snd_soc_update_bits(codec, WSA881X_SPKR_DRV_GAIN, 0xF0,
 						(wsa881x->spk_pa_gain << 4));
+		if (wsa881x->visense_enable) {
+			ret = msm_gpioset_activate(CLIENT_WSA_BONGO_1,
+							"wsa_vi");
+			if (ret) {
+				pr_err("%s: gpio set cannot be activated %s\n",
+					__func__, "wsa_vi");
+				return ret;
+			}
+			wsa881x_visense_txfe_ctrl(codec, true,
+						0x00, 0x01, 0x00);
+			wsa881x_visense_adc_ctrl(codec, true);
+			wsa881x_temp_sensor_ctrl(codec, true);
+		}
 	} else {
 		/*
 		 * Ensure: Boost is still on, Stream from Analog input and
 		 * Speaker Protection has been stopped and input is at 0V
 		 */
+		if (WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_CAL,
+								0x01, 0x01);
+			usleep_range(1000, 1010);
+			snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_CAL,
+								0x01, 0x00);
+			msleep(20);
+			snd_soc_update_bits(codec, WSA881X_ANA_CTL,
+								0x03, 0x00);
+			usleep_range(200, 210);
+		}
 		snd_soc_update_bits(codec, WSA881X_SPKR_DRV_EN, 0x80, 0x00);
 	}
-	return 0;
-}
-
-static int wsa881x_bandgap_ctrl(struct snd_soc_codec *codec, bool enable)
-{
-	pr_debug("%s: enable:%d\n", __func__, enable);
-	if (enable) {
-		snd_soc_update_bits(codec, WSA881X_TEMP_OP, 0x08, 0x08);
-		usleep_range(400, 410);
-	} else {
-		snd_soc_update_bits(codec, WSA881X_TEMP_OP, 0x08, 0x00);
-	}
-	return 0;
-}
-
-static int wsa881x_temp_sensor_ctrl(struct snd_soc_codec *codec, bool enable)
-{
-	dev_dbg(codec->dev, "%s: enable:%d\n", __func__, enable);
-	snd_soc_update_bits(codec, WSA881X_TEMP_OP, (0x01 << 2),
-				(enable << 2));
 	return 0;
 }
 
@@ -569,48 +729,53 @@ static int wsa881x_rdac_event(struct snd_soc_dapm_widget *w,
 		if (ret) {
 			pr_err("%s: wsa startup failed ret: %d", __func__, ret);
 			return ret;
-		} else {
-			codec->cache_sync = true;
-			snd_soc_cache_sync(codec);
-			codec->cache_sync = false;
 		}
-		snd_soc_update_bits(codec, WSA881X_CDC_RST_CTL, 0x02, 0x02);
-		snd_soc_update_bits(codec, WSA881X_CDC_RST_CTL, 0x01, 0x01);
-		snd_soc_update_bits(codec, WSA881X_CLOCK_CONFIG, 0x01, 0x01);
+		wsa881x_clk_ctrl(codec, true);
 		snd_soc_update_bits(codec, WSA881X_SPKR_DAC_CTL, 0x02, 0x02);
-		snd_soc_update_bits(codec, WSA881X_CDC_DIG_CLK_CTL, 0x01, 0x01);
-		snd_soc_update_bits(codec, WSA881X_CDC_ANA_CLK_CTL, 0x01, 0x01);
-		snd_soc_update_bits(codec, WSA881X_BIAS_REF_CTRL, 0x0F, 0x08);
+		if (!WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec, WSA881X_BIAS_REF_CTRL,
+								0x0F, 0x08);
 		wsa881x_bandgap_ctrl(codec, true);
-		snd_soc_update_bits(codec, WSA881X_SPKR_BBM_CTL, 0x02, 0x02);
-		snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL1, 0x40, 0x40);
+		if (!WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec, WSA881X_SPKR_BBM_CTL,
+								0x02, 0x02);
+		snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL1, 0xC0, 0x80);
 		snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL1, 0x06, 0x06);
-		snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL2, 0x04, 0x04);
-		snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_INT, 0x09, 0x09);
+		if (!WSA881X_IS_2_0(wsa881x->version)) {
+			snd_soc_update_bits(codec, WSA881X_SPKR_MISC_CTL2,
+								0x04, 0x04);
+			snd_soc_update_bits(codec, WSA881X_SPKR_BIAS_INT,
+								0x09, 0x09);
+		}
 		snd_soc_update_bits(codec, WSA881X_SPKR_PA_INT, 0xF0, 0x20);
+		if (WSA881X_IS_2_0(wsa881x->version))
+			snd_soc_update_bits(codec, WSA881X_SPKR_PA_INT,
+								0x0E, 0x0E);
 		if (wsa881x->boost_enable)
 			wsa881x_boost_ctrl(codec, true);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		wsa881x_rdac_ctrl(codec, true);
-		if (wsa881x->visense_enable) {
-			wsa881x_visense_txfe_ctrl(codec, true,
-						0x00, 0x01, 0x00);
-			wsa881x_visense_adc_ctrl(codec, true);
-			wsa881x_temp_sensor_ctrl(codec, true);
-		}
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
+		wsa881x_rdac_ctrl(codec, false);
 		if (wsa881x->visense_enable) {
+			wsa881x_visense_adc_ctrl(codec, false);
 			wsa881x_visense_txfe_ctrl(codec, false,
 						0x00, 0x01, 0x00);
-			wsa881x_visense_adc_ctrl(codec, false);
+			ret = msm_gpioset_suspend(CLIENT_WSA_BONGO_1,
+							"wsa_vi");
+			if (ret) {
+				pr_err("%s: gpio set cannot be suspended %s\n",
+					__func__, "wsa_vi");
+				return ret;
+			}
 		}
-		wsa881x_rdac_ctrl(codec, false);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if (wsa881x->boost_enable)
 			wsa881x_boost_ctrl(codec, false);
+		wsa881x_clk_ctrl(codec, false);
 		wsa881x_bandgap_ctrl(codec, false);
 		ret = wsa881x_shutdown(wsa881x);
 		if (ret < 0) {
@@ -676,22 +841,23 @@ static const struct snd_soc_dapm_route wsa881x_audio_map[] = {
 static int wsa881x_startup(struct wsa881x_pdata *pdata)
 {
 	int ret = 0;
+	struct snd_soc_codec *codec = pdata->codec;
 
 	pr_debug("%s(): wsa startup\n", __func__);
-	mi2s_rx_clk.clk_val2 =
-			Q6AFE_LPASS_OSR_CLK_9_P600_MHZ;
-	ret = afe_set_lpass_clock(AFE_PORT_ID_PRIMARY_MI2S_RX,
-				  &mi2s_rx_clk);
-	if (ret < 0) {
-		pr_err("%s: clock failed enable %d\n",
-			__func__, ret);
-		return ret;
-	}
+
 	ret = msm_gpioset_activate(CLIENT_WSA_BONGO_1, "wsa_clk");
 	if (ret) {
 		pr_err("%s: gpio set cannot be activated %s\n",
 			__func__, "wsa_clk");
 		return ret;
+	}
+	if (pdata->enable_mclk) {
+		ret = pdata->enable_mclk(codec->card, true);
+		if (ret < 0) {
+			pr_err("%s: mclk enable failed %d\n",
+				__func__, ret);
+			return ret;
+		}
 	}
 	ret = wsa881x_reset(pdata, true);
 	return ret;
@@ -700,6 +866,7 @@ static int wsa881x_startup(struct wsa881x_pdata *pdata)
 static int wsa881x_shutdown(struct wsa881x_pdata *pdata)
 {
 	int ret = 0, reg;
+	struct snd_soc_codec *codec = pdata->codec;
 
 	pr_debug("%s(): wsa shutdown\n", __func__);
 	ret = wsa881x_reset(pdata, false);
@@ -708,15 +875,16 @@ static int wsa881x_shutdown(struct wsa881x_pdata *pdata)
 			__func__, ret);
 		return ret;
 	}
-	mi2s_rx_clk.clk_val2 =
-			Q6AFE_LPASS_OSR_CLK_DISABLE;
-	ret = afe_set_lpass_clock(AFE_PORT_ID_PRIMARY_MI2S_RX,
-				  &mi2s_rx_clk);
-	if (ret < 0) {
-		pr_err("%s: clock failed disable %d\n",
-			__func__, ret);
-		return ret;
+
+	if (pdata->enable_mclk) {
+		ret = pdata->enable_mclk(codec->card, false);
+		if (ret < 0) {
+			pr_err("%s: mclk disable failed %d\n",
+				__func__, ret);
+			return ret;
+		}
 	}
+
 	ret = msm_gpioset_suspend(CLIENT_WSA_BONGO_1, "wsa_clk");
 	if (ret) {
 		pr_err("%s: gpio set cannot be suspended %s\n",
@@ -728,11 +896,35 @@ static int wsa881x_shutdown(struct wsa881x_pdata *pdata)
 		for (reg = 0; reg < ARRAY_SIZE(wsa881x_ana_reg_defaults);
 				reg++) {
 			if (wsa881x_ana_reg_readable[reg])
-				snd_soc_cache_write(pdata->codec, reg,
+				snd_soc_cache_write(pdata->codec,
+					wsa881x_ana_reg_defaults[reg].reg,
 					wsa881x_ana_reg_defaults[reg].def);
 		}
 	}
 	return 0;
+}
+
+static int32_t wsa881x_resource_acquire(struct snd_soc_codec *codec,
+						bool enable)
+{
+	int ret = 0;
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
+	if (enable) {
+		ret = wsa881x_startup(wsa881x);
+		if (ret < 0) {
+			pr_err("%s: failed to startup\n", __func__);
+			return ret;
+		}
+	}
+	wsa881x_clk_ctrl(codec, enable);
+	wsa881x_bandgap_ctrl(codec, enable);
+	if (!enable) {
+		ret = wsa881x_shutdown(wsa881x);
+		if (ret < 0)
+			pr_err("%s: failed to shutdown\n", __func__);
+	}
+	return ret;
 }
 
 static int wsa881x_probe(struct snd_soc_codec *codec)
@@ -750,10 +942,20 @@ static int wsa881x_probe(struct snd_soc_codec *codec)
 			"client failed\n", __func__);
 		return ret;
 	}
-
+	mutex_init(&wsa_pdata[wsa881x_index].bg_lock);
+	mutex_init(&wsa_pdata[wsa881x_index].res_lock);
+	snprintf(wsa_pdata[wsa881x_index].tz_pdata.name, 100, "%s",
+			wsa_tz_names[wsa881x_index]);
 	wsa_pdata[wsa881x_index].codec = codec;
 	wsa_pdata[wsa881x_index].spk_pa_gain = SPK_GAIN_12DB;
+	wsa_pdata[wsa881x_index].codec = codec;
+	wsa_pdata[wsa881x_index].tz_pdata.codec = codec;
+	wsa_pdata[wsa881x_index].tz_pdata.dig_base = WSA881X_DIGITAL_BASE;
+	wsa_pdata[wsa881x_index].tz_pdata.ana_base = WSA881X_ANALOG_BASE;
+	wsa_pdata[wsa881x_index].tz_pdata.wsa_resource_acquire =
+						wsa881x_resource_acquire;
 	snd_soc_codec_set_drvdata(codec, &wsa_pdata[wsa881x_index]);
+	wsa881x_init_thermal(&wsa_pdata[wsa881x_index].tz_pdata);
 
 	if (codec->name_prefix) {
 		widget_name = kcalloc(WIDGET_NAME_MAX_SIZE, sizeof(char),
@@ -781,6 +983,13 @@ static int wsa881x_probe(struct snd_soc_codec *codec)
 
 static int wsa881x_remove(struct snd_soc_codec *codec)
 {
+	struct wsa881x_pdata *wsa881x = snd_soc_codec_get_drvdata(codec);
+
+	if (wsa881x->tz_pdata.tz_dev)
+		wsa881x_deinit_thermal(wsa881x->tz_pdata.tz_dev);
+
+	mutex_destroy(&wsa881x->bg_lock);
+	mutex_destroy(&wsa881x->res_lock);
 	return 0;
 }
 
@@ -865,6 +1074,19 @@ int wsa881x_get_presence_count(void)
 	return wsa881x_presence_count;
 }
 EXPORT_SYMBOL(wsa881x_get_presence_count);
+
+int wsa881x_set_mclk_callback(
+	int (*enable_mclk_callback)(struct snd_soc_card *, bool))
+{
+	int i;
+
+	for (i = 0; i < MAX_WSA881X_DEVICE; i++) {
+		if (wsa_pdata[i].status == WSA881X_STATUS_I2C)
+			wsa_pdata[i].enable_mclk = enable_mclk_callback;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(wsa881x_set_mclk_callback);
 
 static int check_wsa881x_presence(struct i2c_client *client)
 {
@@ -964,6 +1186,11 @@ static int wsa881x_i2c_probe(struct i2c_client *client,
 		client->dev.platform_data = pdata;
 		i2c_set_clientdata(client, pdata);
 		pdata->client[WSA881X_ANALOG_SLAVE] = client;
+		if (pdata->version == WSA881X_2_0)
+			wsa881x_update_regmap_2_0(
+					pdata->regmap[WSA881X_ANALOG_SLAVE],
+					WSA881X_ANALOG_SLAVE);
+
 		return ret;
 	} else if (pdata->status == WSA881X_STATUS_PROBING) {
 		pdata->index = wsa881x_index;
@@ -1020,6 +1247,15 @@ static int wsa881x_i2c_probe(struct i2c_client *client,
 						client->addr, ret);
 			wsa881x_probing_count++;
 			goto err1;
+		}
+		pdata->version = wsa881x_i2c_read_device(pdata,
+					WSA881X_CHIP_ID1);
+		pr_debug("%s: wsa881x version: %d\n", __func__, pdata->version);
+		if (pdata->version == WSA881X_2_0) {
+			wsa881x_update_reg_defaults_2_0();
+			wsa881x_update_regmap_2_0(
+					pdata->regmap[WSA881X_DIGITAL_SLAVE],
+					WSA881X_DIGITAL_SLAVE);
 		}
 		wsa881x_presence_count++;
 		wsa881x_probing_count++;

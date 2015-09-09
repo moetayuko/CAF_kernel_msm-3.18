@@ -105,13 +105,10 @@ enum {
 
 enum {
 	MODE_GPIO_NOT_VALID = 0,
+	MODE_SEL_SPLIT,
+	MODE_SEL_DSC_SINGLE,
 	MODE_GPIO_HIGH,
 	MODE_GPIO_LOW,
-};
-
-enum {
-	MODE_SEL_SPLIT = 0,
-	MODE_SEL_DSC_SINGLE,
 };
 
 struct mdss_rect {
@@ -385,6 +382,7 @@ struct dsc_desc {
 	int chunk_size;
 
 	int pkt_per_line;
+	int bytes_in_slice;
 	int bytes_per_pkt;
 	int eol_byte_num;
 	int pclk_per_line;	/* width */
@@ -491,7 +489,6 @@ struct mdss_panel_info {
 	int new_fps;
 	int panel_max_fps;
 	int panel_max_vtotal;
-	u32 mode_gpio_state;
 	u32 mode_sel_state;
 	u32 xstart_pix_align;
 	u32 width_pix_align;
@@ -538,6 +535,7 @@ struct mdss_panel_info {
 	struct lvds_panel_info lvds;
 	struct edp_panel_info edp;
 
+	bool is_dba_panel;
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
 };
@@ -740,16 +738,6 @@ static inline bool mdss_panel_is_power_on_ulp(int panel_power_state)
  * controller.
  */
 struct mdss_panel_cfg *mdss_panel_intf_type(int intf_val);
-
-/**
- * mdss_panel_get_boot_cfg() - checks if bootloader config present
- *
- * Function returns true if bootloader has configured the parameters
- * for primary controller and panel config data.
- *
- * returns true if bootloader configured, else false
- */
-int mdss_panel_get_boot_cfg(void);
 
 /**
  * mdss_is_ready() - checks if mdss is probed and ready

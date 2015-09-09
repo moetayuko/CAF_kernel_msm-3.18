@@ -83,12 +83,6 @@
 			label = "qseecom_mem";
 		};
 
-		audio_mem: audio_region@0 {
-			linux,reserve-contiguous-region;
-			reg = <0 0 0 0x314000>;
-			label = "audio_mem";
-		};
-
 		cont_splash_mem: splash_region@83000000 {
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
@@ -124,7 +118,7 @@
 #include "msm8952-ion.dtsi"
 #include "msm8952-iommu.dtsi"
 #include "msm8952-iommu-domains.dtsi"
-#include "msm8939-cpu.dtsi"
+#include "msm8952-cpu.dtsi"
 #include "msm8952-mdss.dtsi"
 #include "msm8952-pinctrl.dtsi"
 #include "msm8952-smp2p.dtsi"
@@ -153,6 +147,8 @@
 	};
 
 	clock_gcc: qcom,gcc@1800000 {
+		#address-cells = <1>;
+		#size-cells = <1>;
 		compatible = "qcom,gcc-8952";
 		reg = <0x1800000 0x80000>,
 			<0xb116000 0x00040>,
@@ -166,6 +162,15 @@
 		vdd_hf_dig-supply = <&pm8950_s2_level_ao>;
 		vdd_hf_pll-supply = <&pm8950_l7_ao>;
 		#clock-cells = <1>;
+		ranges;
+		qcom,spm@0 {
+			compatible = "qcom,gcc-spm-8952";
+			reg = <0x0b111200 0x100>,
+			      <0x0b011200 0x100>,
+			      <0x0b1d4000 0x100>;
+			reg-names = "spm_c0_base", "spm_c1_base",
+					"spm_cci_base";
+		};
 	};
 
 	clock_gcc_mdss: qcom,gcc-mdss@1ac8300 {
@@ -204,6 +209,7 @@
 		clock-names = "clk-c0-4", "clk-c0-5",
 				"clk-c1-4", "clk-c1-5",
 				"clk-cci-4", "clk-cci-5";
+		qcom,cpu-pcnoc-vote;
 		qcom,speed0-bin-v0-c0 =
 			<          0 0>,
 			<  400000000 1>,
@@ -288,6 +294,12 @@
 		clock-frequency = <32768>;
 	};
 
+	qcom,mpm2-sleep-counter@4a3000 {
+		compatible = "qcom,mpm2-sleep-counter";
+		reg = <0x4a3000 0x1000>;
+		clock-frequency = <32768>;
+	};
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <1 2 0xff08>,
@@ -300,7 +312,7 @@
 	cci_cache: qcom,cci {
 		compatible = "devfreq-simple-dev";
 		clock-names = "devfreq_clk";
-		clocks = <&clock_cpu clk_a53ssmux_cci>;
+		clocks = <&clock_cpu clk_cci_clk>;
 		governor = "cpufreq";
 		freq-tbl-khz =
 			<  200000 >,
@@ -396,15 +408,15 @@
 		clock-names = "l2_clk", "cpu0_clk", "cpu1_clk", "cpu2_clk",
 				"cpu3_clk", "cpu4_clk", "cpu5_clk",
 				"cpu6_clk", "cpu7_clk";
-		clocks = <&clock_cpu clk_a53ssmux_cci>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>;
+		clocks = <&clock_cpu clk_cci_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>;
 
 		qcom,governor-per-policy;
 
@@ -1158,7 +1170,6 @@
 		qcom,hsusb-otg-mode = <3>; /* OTG mode */
 		qcom,hsusb-otg-otg-control = <2>; /* PMIC */
 		qcom,dp-manual-pullup;
-		qcom,hsusb-otg-disable-reset;
 		qcom,hsusb-otg-mpm-dpsehv-int = <49>;
 		qcom,hsusb-otg-mpm-dmsehv-int = <58>;
 		qcom,phy-dvdd-always-on;
@@ -1175,9 +1186,9 @@
 		clocks = <&clock_gcc clk_gcc_usb_hs_ahb_clk>,
 			 <&clock_gcc clk_gcc_usb_hs_system_clk>,
 			 <&clock_gcc clk_gcc_usb2a_phy_sleep_clk>,
-			 <&clock_gcc clk_bimc_usb_a_clk>,
-			 <&clock_gcc clk_snoc_usb_a_clk>,
-			 <&clock_gcc clk_pnoc_usb_a_clk>,
+			 <&clock_gcc clk_bimc_usb_clk>,
+			 <&clock_gcc clk_snoc_usb_clk>,
+			 <&clock_gcc clk_pnoc_usb_clk>,
 			 <&clock_gcc clk_gcc_qusb2_phy_clk>,
 			 <&clock_gcc clk_gcc_usb2_hs_phy_only_clk>,
 			 <&clock_gcc clk_gcc_usb_hs_phy_cfg_ahb_clk>,
@@ -1313,8 +1324,8 @@
 
 	sdhc_1: sdhci@7824000 {
 		compatible = "qcom,sdhci-msm";
-		reg = <0x7824900 0x500>, <0x7824000 0x800>;
-		reg-names = "hc_mem", "core_mem";
+		reg = <0x7824900 0x500>, <0x7824000 0x800>, <0x7824E00 0x200>;
+		reg-names = "hc_mem", "core_mem", "cmdq_mem";
 
 		interrupts = <0 123 0>, <0 138 0>;
 		interrupt-names = "hc_irq", "pwr_irq";
@@ -1338,7 +1349,7 @@
 			<78 512 52286 160000>, /* 20 MB/s */
 			<78 512 65360 200000>, /* 25 MB/s */
 			<78 512 130718 400000>, /* 50 MB/s */
-			<78 512 261438 800000>, /* 100 MB/s */
+			<78 512 130718 400000>, /* 100 MB/s */
 			<78 512 261438 800000>, /* 200 MB/s */
 			<78 512 261438 800000>, /* 400 MB/s */
 			<78 512 1338562 4096000>; /* Max. bandwidth */
@@ -1353,6 +1364,7 @@
 		qcom,clk-rates = <400000 25000000 50000000 100000000 192000000 384000000>;
 		qcom,ice-clk-rates = <200000000 100000000>;
 		qcom,bus-speed-mode = "HS400_1p8v", "HS200_1p8v", "DDR_1p8v";
+		qcom,scaling-lower-bus-speed-mode = "DDR52";
 		status = "disabled";
 	};
 
@@ -2123,6 +2135,13 @@
 			qcom,msm-mi2s-rx-lines = <0>;
 			qcom,msm-mi2s-tx-lines = <3>;
 		};
+
+		dai_mi2s6: qcom,msm-dai-q6-mi2s-senary {
+			compatible = "qcom,msm-dai-q6-mi2s";
+			qcom,msm-dai-q6-mi2s-dev-id = <6>;
+			qcom,msm-mi2s-rx-lines = <0>;
+			qcom,msm-mi2s-tx-lines = <3>;
+		};
 	};
 
 	dai_hdmi: qcom,msm-dai-q6-hdmi {
@@ -2300,16 +2319,6 @@
 				"iface_clk", "bus_clk";
 		qcom,ce-opp-freq = <100000000>;
 	};
-};
-
-&l2ccc_0 {
-	qcom,vctl-node = <&cluster0_spm>;
-	qcom,use-acinactm;
-};
-
-&l2ccc_1 {
-	qcom,vctl-node = <&cluster1_spm>;
-	qcom,use-acinactm;
 };
 
 &gdsc_venus {

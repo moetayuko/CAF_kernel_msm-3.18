@@ -563,30 +563,21 @@
 			"cpu0_clk", "cpu1_clk", "cpu2_clk",
 			"cpu3_clk", "cpu4_clk", "cpu5_clk",
 			"cpu6_clk", "cpu7_clk", "l2_clk";
-		clocks = <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_bc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_lc>,
-			 <&clock_cpu clk_a53ssmux_cci>;
+		clocks = <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_bc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_a53_lc_clk>,
+			 <&clock_cpu clk_cci_clk>;
 
 		qcom,tz-flushes-cache;
 	};
 
-	qcom,cpu-sleep-status@b088008{
+	qcom,cpu-sleep-status{
 		compatible = "qcom,cpu-sleep-status";
-		reg = <0xb088008 0x100>,
-			<0xb098008 0x100>,
-			<0xb0a8008 0x100>,
-			<0xb0b8008 0x100>,
-			<0xb188008 0x100>,
-			<0xb198008 0x100>,
-			<0xb1a8008 0x100>,
-			<0xb1b8008 0x100>;
-		qcom,sleep-status-mask= <0x40000>;
 	};
 
 	qcom,rpm-log@29dc00 {

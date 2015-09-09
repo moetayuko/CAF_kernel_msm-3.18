@@ -79,6 +79,7 @@
 #define USB_MAX_TIMEOUT		25 /* 25msec timeout */
 #define EP_PRIME_CHECK_DELAY	(jiffies + msecs_to_jiffies(1000))
 #define MAX_PRIME_CHECK_RETRY	3 /*Wait for 3sec for EP prime failure */
+#define EXTRA_ALLOCATION_SIZE	256
 
 /* ctrl register bank access */
 static DEFINE_SPINLOCK(udc_lock);
@@ -3325,6 +3326,12 @@ static int ep_queue(struct usb_ep *ep, struct usb_request *req,
 		}
 	}
 
+	if (ep->endless && udc->gadget.speed == USB_SPEED_FULL) {
+		err("Queueing endless req is not supported for FS");
+		retval = -EINVAL;
+		goto done;
+	}
+
 	/* first nuke then test link, e.g. previous status has not sent */
 	if (!list_empty(&mReq->queue)) {
 		retval = -EBUSY;
@@ -3773,7 +3780,8 @@ static int ci13xxx_start(struct usb_gadget *gadget,
 	udc->status = usb_ep_alloc_request(&udc->ep0in.ep, GFP_KERNEL);
 	if (!udc->status)
 		return -ENOMEM;
-	udc->status_buf = kzalloc(2, GFP_KERNEL); /* for GET_STATUS */
+	udc->status_buf = kzalloc(2 + udc->gadget.extra_buf_alloc,
+				GFP_KERNEL); /* for GET_STATUS */
 	if (!udc->status_buf) {
 		usb_ep_free_request(&udc->ep0in.ep, udc->status);
 		return -ENOMEM;
@@ -4066,6 +4074,9 @@ static int udc_probe(struct ci13xxx_udc_driver *driver, struct device *dev,
 		udc->max_nominal_system_clk_rate =
 					pdata->max_nominal_system_clk_rate;
 		udc->default_system_clk_rate = pdata->default_system_clk_rate;
+		if (pdata->enable_axi_prefetch)
+			udc->gadget.extra_buf_alloc = EXTRA_ALLOCATION_SIZE;
+
 	}
 
 	if (udc->udc_driver->flags & CI13XXX_REQUIRE_TRANSCEIVER) {

@@ -1704,6 +1704,42 @@ static int mdss_mdp_register_sysfs(struct mdss_data_type *mdata)
 	return rc;
 }
 
+int mdss_panel_get_intf_status(u32 disp_num, u32 intf_type)
+{
+	int rc, intf_status = 0;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+
+	if (!mdss_res || !mdss_res->pan_cfg.init_done)
+		return -EPROBE_DEFER;
+
+	if (mdss_res->handoff_pending) {
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
+		intf_status = readl_relaxed(mdata->mdp_base +
+			MDSS_MDP_REG_DISP_INTF_SEL);
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
+		if (intf_type == MDSS_PANEL_INTF_DSI) {
+			if (disp_num == DISPLAY_1)
+				rc = (intf_status & MDSS_MDP_INTF_DSI0_SEL);
+			else if (disp_num == DISPLAY_2)
+				rc = (intf_status & MDSS_MDP_INTF_DSI1_SEL);
+			else
+				rc = 0;
+		} else if (intf_type == MDSS_PANEL_INTF_EDP) {
+			intf_status &= MDSS_MDP_INTF_EDP_SEL;
+			rc = (intf_status == MDSS_MDP_INTF_EDP_SEL);
+		} else if (intf_type == MDSS_PANEL_INTF_HDMI) {
+			intf_status &= MDSS_MDP_INTF_HDMI_SEL;
+			rc = (intf_status == MDSS_MDP_INTF_HDMI_SEL);
+		} else {
+			rc = 0;
+		}
+	} else {
+		rc = 0;
+	}
+
+	return rc;
+}
+
 static int mdss_mdp_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -1748,6 +1784,7 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	mdss_res->mdss_util->bus_scale_set_quota = mdss_bus_scale_set_quota;
 	mdss_res->mdss_util->bus_bandwidth_ctrl = mdss_bus_bandwidth_ctrl;
 	mdss_res->mdss_util->panel_intf_type = mdss_panel_intf_type;
+	mdss_res->mdss_util->panel_intf_status = mdss_panel_get_intf_status;
 
 	rc = msm_dss_ioremap_byname(pdev, &mdata->mdss_io, "mdp_phys");
 	if (rc) {
@@ -2439,10 +2476,17 @@ static int mdss_mdp_parse_dt_pipe(struct platform_device *pdev)
 			goto parse_fail;
 
 		rc = mdss_mdp_parse_dt_handler(pdev,
-			"qcom,mdss-pipe-dma-xin-id", xin_id,
+			"qcom,mdss-pipe-cursor-xin-id", xin_id,
 			mdata->ncursor_pipes);
 		if (rc)
 			goto parse_fail;
+
+		rc = mdss_mdp_parse_dt_pipe_clk_ctrl(pdev,
+			"qcom,mdss-pipe-cursor-clk-ctrl-offsets",
+			mdata->cursor_pipes, mdata->ncursor_pipes);
+		if (rc)
+			goto parse_fail;
+
 		/* set the fetch id to an invalid value */
 		for (i = 0; i < mdata->ncursor_pipes; i++)
 			ftch_id[i] = -1;
@@ -3025,6 +3069,62 @@ static void mdss_mdp_parse_max_bandwidth(struct platform_device *pdev)
 	mdata->max_bw_settings_cnt = max_bw_settings_cnt;
 }
 
+static void mdss_mdp_parse_per_pipe_bandwidth(struct platform_device *pdev) {
+
+	struct mdss_data_type *mdata = platform_get_drvdata(pdev);
+	struct mdss_max_bw_settings *max_bw_per_pipe_settings;
+	int max_bw_settings_cnt = 0;
+	const u32 *max_bw_settings;
+	u32 max_bw, min_bw, threshold, i = 0;
+
+	max_bw_settings = of_get_property(pdev->dev.of_node,
+			"qcom,max-bandwidth-per-pipe-kbps",
+			&max_bw_settings_cnt);
+
+	if (!max_bw_settings || !max_bw_settings_cnt) {
+		pr_debug("MDSS per pipe max bandwidth settings not found\n");
+		return;
+	}
+
+	/* Support targets where a common per pipe max bw is provided */
+	if ((max_bw_settings_cnt / sizeof(u32)) == 1) {
+		mdata->max_bw_per_pipe = be32_to_cpu(max_bw_settings[0]);
+		mdata->max_per_pipe_bw_settings = NULL;
+		pr_debug("Common per pipe max bandwidth provided\n");
+		return;
+	}
+
+	max_bw_settings_cnt /= 2 * sizeof(u32);
+
+	max_bw_per_pipe_settings = devm_kzalloc(&pdev->dev,
+		    sizeof(struct mdss_max_bw_settings) * max_bw_settings_cnt,
+		    GFP_KERNEL);
+	if (!max_bw_per_pipe_settings) {
+		pr_err("Memory allocation failed for max_bw_settings\n");
+		return;
+	}
+
+	mdss_mdp_parse_max_bw_array(max_bw_settings, max_bw_per_pipe_settings,
+					max_bw_settings_cnt);
+	mdata->max_per_pipe_bw_settings = max_bw_per_pipe_settings;
+	mdata->mdss_per_pipe_bw_cnt = max_bw_settings_cnt;
+
+	/* Calculate min and max allowed per pipe BW */
+	min_bw = mdata->max_bw_high;
+	max_bw = 0;
+
+	while (i < max_bw_settings_cnt) {
+		threshold = mdata->max_per_pipe_bw_settings[i].mdss_max_bw_val;
+		if (threshold > max_bw)
+			max_bw = threshold;
+		if (threshold < min_bw)
+			min_bw = threshold;
+		++i;
+	}
+	mdata->max_bw_per_pipe = max_bw;
+	mdata->min_bw_per_pipe = min_bw;
+}
+
 static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 {
 	struct mdss_data_type *mdata = platform_get_drvdata(pdev);
@@ -3167,11 +3267,7 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	if (rc)
 		pr_debug("max bandwidth (high) property not specified\n");
 
-	rc = of_property_read_u32(pdev->dev.of_node,
-		"qcom,max-bandwidth-per-pipe-kbps", &mdata->max_bw_per_pipe);
-	if (rc)
-		pr_debug("max bandwidth (per pipe) property not specified\n");
-
+	mdss_mdp_parse_per_pipe_bandwidth(pdev);
 
 	mdss_mdp_parse_max_bandwidth(pdev);
 
@@ -3423,19 +3519,6 @@ struct irq_info *mdss_intr_line()
 	return mdss_mdp_hw.irq_info;
 }
 EXPORT_SYMBOL(mdss_intr_line);
-
-int mdss_panel_get_boot_cfg(void)
-{
-	int rc;
-
-	if (!mdss_res || !mdss_res->pan_cfg.init_done)
-		return -EPROBE_DEFER;
-	if (mdss_res->handoff_pending)
-		rc = 1;
-	else
-		rc = 0;
-	return rc;
-}
 
 int mdss_mdp_wait_for_xin_halt(u32 xin_id, bool is_vbif_nrt)
 {

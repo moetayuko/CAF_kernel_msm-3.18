@@ -974,6 +974,9 @@ static int adreno_of_get_pdata(struct platform_device *pdev)
 	pdata->bus_control = of_property_read_bool(pdev->dev.of_node,
 						"qcom,bus-control");
 
+	pdata->popp_enable = of_property_read_bool(pdev->dev.of_node,
+						"qcom,popp-enable");
+
 	if (adreno_of_read_property(pdev->dev.of_node, "qcom,clk-map",
 		&pdata->clk_map))
 		goto err;
@@ -1453,7 +1456,9 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 	}
 
 	/* Clear the busy_data stats - we're starting over from scratch */
-	memset(&adreno_dev->busy_data, 0, sizeof(adreno_dev->busy_data));
+	adreno_dev->busy_data.gpu_busy = 0;
+	adreno_dev->busy_data.vbif_ram_cycles = 0;
+	adreno_dev->busy_data.vbif_starved_ram = 0;
 
 	/* Restore performance counter registers with saved values */
 	adreno_perfcounter_restore(adreno_dev);
@@ -2344,9 +2349,9 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 		return -ENOTTY;
 	}
 
-	/* Return -EINVAL if the context has been detached */
+	/* Return -ENOENT if the context has been detached */
 	if (kgsl_context_detached(context))
-		return -EINVAL;
+		return -ENOENT;
 
 	ret = adreno_drawctxt_wait(ADRENO_DEVICE(device), context,
 		timestamp, msecs);
