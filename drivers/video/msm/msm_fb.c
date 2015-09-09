@@ -1229,7 +1229,11 @@ static void __ref pump_up_the_jam(void)
 	int cpu = 0;
 	for_each_possible_cpu(cpu) {
 		cpu_up(cpu);
-		acpuclk_set_rate(cpu, 1512000, SETRATE_CPUFREQ);
+#if defined(CONFIG_MSM_CPU_MAX_CLK_1DOT2GHZ)
+		acpuclk_set_rate(cpu, 1188000, SETRATE_CPUFREQ);
+#else
+                acpuclk_set_rate(cpu, 1512000, SETRATE_CPUFREQ);
+#endif
 	}
 }
 
