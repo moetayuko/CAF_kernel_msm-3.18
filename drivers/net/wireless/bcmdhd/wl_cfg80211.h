@@ -620,6 +620,8 @@ struct bcm_cfg80211 {
 #ifdef WLFBT
 	uint8 fbt_key[FBT_KEYLEN];
 #endif
+
+	struct notifier_block netdev_notifier;
 };
 
 
