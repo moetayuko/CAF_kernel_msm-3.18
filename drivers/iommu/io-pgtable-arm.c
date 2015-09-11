@@ -142,7 +142,8 @@
 #define ARM_LPAE_TCR_SL0_MASK		0x3
 
 #define ARM_LPAE_TCR_T0SZ_SHIFT		0
-#define ARM_LPAE_TCR_SZ_MASK		0xf
+#define ARM_LPAE_TCR_T1SZ_SHIFT		16
+#define ARM_LPAE_TCR_SZ_MASK		0x3f
 
 #define ARM_LPAE_TCR_PS_SHIFT		16
 #define ARM_LPAE_TCR_PS_MASK		0x7
@@ -702,6 +703,14 @@ arm_64_lpae_alloc_pgtable_s1(struct io_pgtable_cfg *cfg, void *cookie)
 	}
 
 	reg |= (64ULL - cfg->ias) << ARM_LPAE_TCR_T0SZ_SHIFT;
+
+	/*
+	 * Some SMMU implementations check T1SZ in-spite of EPD1, which
+	 * can give rise to spurious range faults. Avoid this by setting
+	 * T1SZ to a valid range, even though we'll never use TTBR1.
+	 * This is benign for implementations that do the right thing.
+	 */
+	reg |= (64ULL - cfg->ias) << ARM_LPAE_TCR_T1SZ_SHIFT;
 
 	/* Disable speculative walks through TTBR1 */
 	reg |= ARM_LPAE_TCR_EPD1;
