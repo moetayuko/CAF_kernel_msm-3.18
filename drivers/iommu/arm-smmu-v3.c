@@ -268,7 +268,7 @@
 #define CTXDESC_CD_DWORDS		8
 #define CTXDESC_CD_0_TCR_T0SZ_SHIFT	0
 #define ARM64_TCR_T0SZ_SHIFT		0
-#define ARM64_TCR_T0SZ_MASK		0x1fUL
+#define ARM64_TCR_T0SZ_MASK		0x3fUL
 #define CTXDESC_CD_0_TCR_TG0_SHIFT	6
 #define ARM64_TCR_TG0_SHIFT		14
 #define ARM64_TCR_TG0_MASK		0x3UL
@@ -287,6 +287,9 @@
 #define CTXDESC_CD_0_TCR_EPD1_SHIFT	30
 #define ARM64_TCR_EPD1_SHIFT		23
 #define ARM64_TCR_EPD1_MASK		0x1UL
+#define CTXDESC_CD_0_TCR_T1SZ_SHIFT	16
+#define ARM64_TCR_T1SZ_SHIFT		16
+#define ARM64_TCR_T1SZ_MASK		0x3fUL
 
 #define CTXDESC_CD_0_ENDI		(1UL << 15)
 #define CTXDESC_CD_0_V			(1UL << 31)
@@ -897,6 +900,7 @@ static u64 arm_smmu_cpu_tcr_to_cd(u64 tcr)
 	val |= ARM_SMMU_TCR2CD(tcr, ORGN0);
 	val |= ARM_SMMU_TCR2CD(tcr, SH0);
 	val |= ARM_SMMU_TCR2CD(tcr, EPD0);
+	val |= ARM_SMMU_TCR2CD(tcr, T1SZ);
 	val |= ARM_SMMU_TCR2CD(tcr, EPD1);
 	val |= ARM_SMMU_TCR2CD(tcr, IPS);
 	val |= ARM_SMMU_TCR2CD(tcr, TBI0);
