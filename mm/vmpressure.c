@@ -351,7 +351,7 @@ void vmpressure(gfp_t gfp, struct mem_cgroup *memcg,
 	if (!memcg)
 		vmpressure_global(gfp, scanned, reclaimed);
 
-	if (IS_ENABLED(CONFIG_MEMCG))
+	if (IS_ENABLED(CONFIG_CGROUP_MEM_RES_CTLR))
 		vmpressure_memcg(gfp, memcg, scanned, reclaimed);
 }
 
