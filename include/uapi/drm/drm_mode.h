@@ -88,6 +88,7 @@ extern "C" {
 /* Content Protection Flags */
 #define DRM_MODE_CONTENT_PROTECTION_UNDESIRED   0
 #define DRM_MODE_CONTENT_PROTECTION_DESIRED     1
+#define DRM_MODE_CONTENT_PROTECTION_ENABLED     2
 
 /* Scaling mode options */
 #define DRM_MODE_SCALE_NONE		0 /* Unmodified timing (display or
