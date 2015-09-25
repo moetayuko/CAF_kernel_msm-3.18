@@ -702,6 +702,7 @@ DRM_ENUM_NAME_FN(drm_get_tv_subconnector_name,
 static struct drm_prop_enum_list drm_cp_enum_list[] = {
 	{ DRM_MODE_CONTENT_PROTECTION_UNDESIRED, "Undesired" },
 	{ DRM_MODE_CONTENT_PROTECTION_DESIRED, "Desired" },
+	{ DRM_MODE_CONTENT_PROTECTION_ENABLED, "Enabled" },
 };
 
 DRM_ENUM_NAME_FN(drm_get_content_protection_name, drm_cp_enum_list)
