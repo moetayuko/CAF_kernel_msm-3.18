@@ -1892,18 +1892,16 @@ static bool target_handle_task_attr(struct se_cmd *cmd)
 
 void target_execute_cmd(struct se_cmd *cmd)
 {
-	/*
-	 * Determine if frontend context caller is requesting the stopping of
-	 * this command for frontend exceptions.
-	 *
-	 * If the received CDB has aleady been aborted stop processing it here.
-	 */
-	spin_lock_irq(&cmd->t_state_lock);
-	if (__transport_check_aborted_status(cmd, 1)) {
-		spin_unlock_irq(&cmd->t_state_lock);
+	if (cmd->transport_state & CMD_T_ABORTED) {
 		target_handle_abort(cmd);
 		return;
 	}
+
+	/*
+	 * Determine if frontend context caller is requesting the stopping of
+	 * this command for frontend exceptions.
+	 */
+	spin_lock_irq(&cmd->t_state_lock);
 	if (cmd->transport_state & CMD_T_STOP) {
 		pr_debug("%s:%d CMD_T_STOP for ITT: 0x%08llx\n",
 			__func__, __LINE__, cmd->tag);
@@ -2993,12 +2991,6 @@ transport_send_check_condition_and_sense(struct se_cmd *cmd,
 	return cmd->se_tfo->queue_status(cmd);
 }
 EXPORT_SYMBOL(transport_send_check_condition_and_sense);
-
-bool transport_check_aborted_status(struct se_cmd *cmd, int send_status)
-{
-	return cmd->transport_state & CMD_T_ABORTED;
-}
-EXPORT_SYMBOL(transport_check_aborted_status);
 
 static void target_tmr_work(struct work_struct *work)
 {
