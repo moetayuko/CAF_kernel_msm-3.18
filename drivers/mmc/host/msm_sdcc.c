@@ -6035,9 +6035,12 @@ msmsdcc_probe(struct platform_device *pdev)
 			host->oldstat = plat->status(mmc_dev(host->mmc));
 		else
 			host->oldstat = msmsdcc_slot_status(host);
-
+                #if defined(CONFIG_MACH_COMANCHE)
+                host->eject = false;
+                #else
 		host->eject = !host->oldstat;
-	}
+	        #endif
+        }
 
 	if (plat->status_irq) {
 		ret = request_threaded_irq(plat->status_irq, NULL,

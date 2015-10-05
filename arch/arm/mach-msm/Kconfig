@@ -941,6 +941,13 @@ config MACH_APEXQ
         help
           Support for Samsung ApexQ device.
 
+config MACH_COMANCHE
+        depends on ARCH_MSM8960
+        default n
+        bool "MSM8960 Samsung COMANCHE"
+        help
+          Support for the Samsung COMANCHE(AT&T) device.
+
 config MACH_EXPRESS
         depends on ARCH_MSM8960
         default n

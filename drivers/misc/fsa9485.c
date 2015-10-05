@@ -184,7 +184,7 @@ static struct fsa9485_usbsw *local_usbsw;
 static int isDeskdockconnected;
 #endif
 
-#if !defined(CONFIG_MACH_COMANCHE) && !defined(CONFIG_MACH_JASPER) && !defined(CONFIG_MACH_GOGH)
+#if !defined(CONFIG_MACH_JASPER) && !defined(CONFIG_MACH_GOGH)
 static void DisableFSA9480Interrupts(void)
 {
 	struct i2c_client *client = local_usbsw->client;

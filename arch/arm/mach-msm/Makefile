@@ -303,6 +303,8 @@ obj-$(CONFIG_MACH_M2_DCM)       += board-m2-camera.o board-m2-display.o board-m2
 obj-$(CONFIG_MACH_M2_DCM)       += board-m2_dcm.o board-m2_dcm-gpiomux.o
 obj-$(CONFIG_MACH_APEXQ)    += board-mms-tsp.o board-apexq.o board-apexq-gpiomux.o board-apexq-battery.o board-8960-regulator.o board-8960-storage.o
 obj-$(CONFIG_MACH_APEXQ)    += board-apexq-camera.o board-m2-display.o board-m2-pmic.o
+obj-$(CONFIG_MACH_COMANCHE)    += board-mms-tsp.o board-comanche.o board-comanche-gpiomux.o board-comanche-battery.o board-8960-regulator.o board-8960-storage.o
+obj-$(CONFIG_MACH_COMANCHE)    += board-comanche-camera.o board-m2-display.o board-m2-pmic.o
 
 obj-$(CONFIG_MACH_EXPRESS) += board-8960-regulator.o board-8960-storage.o
 obj-$(CONFIG_MACH_EXPRESS) += board-apexq-battery.o board-apexq-camera.o
