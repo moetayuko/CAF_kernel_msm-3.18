@@ -20,3 +20,21 @@
 	compatible = "qcom,msm8976-mtp", "qcom,msm8976", "qcom,mtp";
 	qcom,board-id= <8 0>;
 };
+
+&blsp1_uart2 {
+        status = "ok";
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart_console_sleep>;
+};
+
+&usb_otg {
+        qcom,hsusb-otg-otg-control = <2>;
+};
+
+&pmi8950_fg {
+        status = "ok";
+};
+
+&pmi8950_charger {
+        status = "ok";
+};
