@@ -1326,6 +1326,23 @@
 					 bias-disable;
 			};
 		};
+                wsa-spkr-sd2 {
+                        qcom,pins = <&gp 134>;
+                        qcom,num-grp-pins = <1>;
+                        qcom,pin-func = <0>;
+                        label = "wsa-spkr-sd2";
+                        wsa_spkr_sd_act2: lines_on2 {
+                                         drive-strength = <8>;
+                                         output-high;
+                                         bias-pull-down;
+                        };
+
+                        wsa_spkr_sd_sus2: lines_off2 {
+                                         drive-strength = <2>;
+                                         output-low;
+                                         bias-disable;
+                        };
+                };
 
 		/* WSA CLK */
 		wsa_clk {

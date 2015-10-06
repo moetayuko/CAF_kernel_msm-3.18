@@ -1058,15 +1058,30 @@ static int wsa881x_pinctrl_init(struct wsa881x_priv *wsa881x,
 	if (IS_ERR(wsa881x->pinctrl_info.wsa_spkr_act)) {
 		pr_err("%s: Unable to get pinctrl disable state handle\n",
 							__func__);
-		return -EINVAL;
+		wsa881x->pinctrl_info.wsa_spkr_act = pinctrl_lookup_state(pinctrl,
+				"wsa_spkr_sd_act2");
+		if (IS_ERR(wsa881x->pinctrl_info.wsa_spkr_act)) {
+			pr_err("%s: Unable to get pinctrl disable state handle\n",
+					__func__);
+			return -EINVAL;
+		}
+
 	}
+
 	wsa881x->pinctrl_info.wsa_spkr_sus = pinctrl_lookup_state(pinctrl,
 		"wsa_spkr_sd_sus");
 	if (IS_ERR(wsa881x->pinctrl_info.wsa_spkr_sus)) {
 		pr_err("%s: Unable to get pinctrl disable state handle\n",
 							__func__);
-		return -EINVAL;
+		wsa881x->pinctrl_info.wsa_spkr_sus = pinctrl_lookup_state(pinctrl,
+				"wsa_spkr_sd_sus2");
+		if (IS_ERR(wsa881x->pinctrl_info.wsa_spkr_sus)) {
+			pr_err("%s: Unable to get pinctrl disable state handle\n",
+					__func__);
+			return -EINVAL;
+		}
 	}
+
 	return 0;
 }
 

@@ -306,10 +306,11 @@
 			wsa881x@20170211 {
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x20170211>;
-				pinctrl-names = "wsa_spkr_sd_act",
-						"wsa_spkr_sd_sus";
-				pinctrl-0 = <&wsa_spkr_sd_act>;
-				pinctrl-1 = <&wsa_spkr_sd_sus>;
+				pinctrl-names = "wsa_spkr_sd_act2",
+						"wsa_spkr_sd_sus2";
+				pinctrl-0 = <&wsa_spkr_sd_act2>;
+				pinctrl-1 = <&wsa_spkr_sd_sus2>;
+				qcom,spkr-sd-n-gpio = <&msm_gpio 134 0>;
 			};
 		};
 	};
