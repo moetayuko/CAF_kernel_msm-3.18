@@ -3111,7 +3111,7 @@ static int s5c73m3_check_fw(const struct msm_camera_sensor_info *data,
 	/* retVal = 0 : Same Version
 	    retVal < 0 : Phone Version is latest Version than sensorFW.
 	    retVal > 0 : Sensor Version is latest version than phoenFW. */
-	if (retVal <= 0 || download || s5c73m3_ctrl->fw_index == 0) {
+	if (1) {
 		if (s5c73m3_ctrl->fw_index == 0)
 			CAM_DBG_M("Loading From PhoneFW forced......\n");
 		else
@@ -3347,7 +3347,7 @@ static int s5c73m3_sensor_init_probe(const struct msm_camera_sensor_info *data)
 		/* retVal = 0 : Same Version
 		retVal < 0 : Phone Version is latest Version than sensorFW.
 		retVal > 0 : Sensor Version is latest version than phoenFW. */
-		if (retVal <= 0) {
+		if (1) {
 			cam_err("Loading From PhoneFW......\n");
 			s5c73m3_reset_module(false);
 			rc = s5c73m3_SPI_booting();
