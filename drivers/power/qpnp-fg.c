@@ -1717,7 +1717,6 @@ static int64_t get_batt_id(unsigned int battery_id_uv, u8 bid_info)
 	}
 
 	battery_id_ohm = div_u64(battery_id_uv, bias_ua[bid_info & 0x3]);
-
 	return battery_id_ohm;
 }
 
@@ -4419,6 +4418,7 @@ wait:
 		goto no_profile;
 	}
 
+	fg_batt_type = "qrd_skua_4v35_4450mAh";
 	profile_node = of_batterydata_get_best_profile(batt_node, "bms",
 							fg_batt_type);
 	if (!profile_node) {
