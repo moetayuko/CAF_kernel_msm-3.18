@@ -699,22 +699,6 @@ enum drm_connector_status drm_dp_aux_detect(struct drm_dp_aux *aux)
 	return connector_status_disconnected;
 }
 
-int drm_dp_aux_enable(struct drm_dp_aux *aux)
-{
-	struct tegra_dpaux *dpaux = to_dpaux(aux);
-
-	return tegra_dpaux_pad_config(dpaux, DPAUX_PADCTL_FUNC_AUX);
-}
-
-int drm_dp_aux_disable(struct drm_dp_aux *aux)
-{
-	struct tegra_dpaux *dpaux = to_dpaux(aux);
-
-	tegra_dpaux_pad_power_down(dpaux);
-
-	return 0;
-}
-
 int drm_dp_aux_prepare(struct drm_dp_aux *aux, u8 encoding)
 {
 	int err;
