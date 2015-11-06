@@ -2050,6 +2050,14 @@ static int mxt_acquire_irq(struct mxt_data *data)
 
 static void mxt_free_input_device(struct mxt_data *data)
 {
+#if defined(CONFIG_FB)
+        if (fb_unregister_client(&data->fb_notif))
+                dev_err(&data->client->dev,
+			"Error occurred while unregistering fb_notifier.\n");
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
+	unregister_early_suspend(&data->early_suspend);
+#endif
+
 	if (data->input_dev) {
 		input_unregister_device(data->input_dev);
 		data->input_dev = NULL;
@@ -3069,6 +3077,8 @@ static int mxt_enter_bootloader(struct mxt_data *data)
 	}
 
 	if (!data->in_bootloader) {
+		disable_irq(data->irq);
+
 		/* Change to the bootloader mode */
 		ret = mxt_t6_command(data, MXT_COMMAND_RESET,
 				     MXT_BOOT_VALUE, false);
@@ -3689,10 +3699,6 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		disable_irq(data->irq);
 	}
 
-	error = mxt_initialize(data);
-	if (error)
-		goto err_free_irq;
-
 	error = sysfs_create_group(&client->dev.kobj, &mxt_fw_attr_group);
 	if (error) {
 		dev_err(&client->dev, "Failure %d creating fw sysfs group\n",
@@ -3717,13 +3723,6 @@ err_free_mem:
 static int mxt_remove(struct i2c_client *client)
 {
 	struct mxt_data *data = i2c_get_clientdata(client);
-
-#if defined(CONFIG_FB)
-        if (fb_unregister_client(&data->fb_notif))
-                dev_err(&client->dev, "Error occurred while unregistering fb_notifier.\n");
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-	unregister_early_suspend(&data->early_suspend);
-#endif
 
 	sysfs_remove_group(&client->dev.kobj, &mxt_fw_attr_group);
 	mxt_sysfs_remove(data);
@@ -3791,9 +3790,8 @@ static int fb_notifier_callback(struct notifier_block *self,
         if (evdata && evdata->data && event == FB_EVENT_BLANK && data &&
                         data->client) {
                 blank = evdata->data;
-                if (*blank == FB_BLANK_UNBLANK) {
+                if (*blank == FB_BLANK_UNBLANK)
                         mxt_resume(&data->client->dev);
-		}
                 else if (*blank == FB_BLANK_POWERDOWN)
                         mxt_suspend(&data->client->dev);
         }
