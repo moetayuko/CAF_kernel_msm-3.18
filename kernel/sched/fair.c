@@ -5765,7 +5765,9 @@ again:
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
 
+#ifdef CONFIG_SMP
 	rq->misfit_task = !task_fits_capacity(p, rq->cpu);
+#endif /* CONFIG_SMP */
 
 	return p;
 simple:
