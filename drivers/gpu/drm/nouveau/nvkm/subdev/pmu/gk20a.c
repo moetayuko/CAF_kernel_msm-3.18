@@ -572,19 +572,24 @@ gk20a_pmu_dvfs_get_cur_state(struct gk20a_pmu_priv *priv, int *state)
 
 static int
 gk20a_pmu_dvfs_get_target_state(struct gk20a_pmu_priv *priv,
-				int *state, int load)
+				int *state, int avg_load, int load)
 {
 	struct gk20a_pmu_dvfs_data *data = priv->data;
 	struct nvkm_clk *clk = nvkm_clk(priv);
 	int cur_level, level;
+	static int inhibit = 0;
 
 	/* For GK20A, the performance level is directly mapped to pstate */
 	level = cur_level = clk->pstate;
 
+	if (inhibit > 0)
+		inhibit --;
+
 	if (load > data->p_load_max) {
 		level = min(clk->state_nr - 1, level + (clk->state_nr / 3));
-	} else {
-		level += ((load - data->p_load_target) * 10 /
+		inhibit = data->p_smooth;
+	} else if (inhibit <= 0) {
+		level += ((avg_load - data->p_load_target) * 10 /
 				data->p_load_target) / 2;
 		level = max(0, level);
 		level = min(clk->state_nr - 1, level);
@@ -663,7 +668,7 @@ gk20a_pmu_dvfs_work(struct nvkm_alarm *alarm)
 		goto resched;
 	}
 
-	if (gk20a_pmu_dvfs_get_target_state(priv, &state, data->avg_load)) {
+	if (gk20a_pmu_dvfs_get_target_state(priv, &state, data->avg_load, utilization)) {
 		nv_trace(priv, "set new state to %d\n", state);
 		gk20a_pmu_dvfs_target(priv, &state);
 	}
@@ -787,7 +792,7 @@ gk20a_pmu_copy_to_dmem(struct gk20a_pmu_priv *priv, u32 dst, u8 *src, u32 size,
 	data = nv_rd32(priv, (0x10a1c0 + (port * 8))) & addr_mask;
 	size = ALIGN(size, 4);
 	if (data != dst + size) {
-		nv_error(priv, "copy failed.... bytes written %d, expected %d",
+		nv_error(priv, "copy failed.... bytes written %d, expected %d\n",
 							      data - dst, size);
 	}
 	mutex_unlock(&priv->pmu_copy_lock);
@@ -867,7 +872,7 @@ gk20a_pmu_seq_acquire(struct gk20a_pmu_priv *priv,
 				PMU_MAX_NUM_SEQUENCES);
 	if (index >= PMU_MAX_NUM_SEQUENCES) {
 		nv_error(pmu,
-			"no free sequence available");
+			"no free sequence available\n");
 		mutex_unlock(&priv->pmu_seq_lock);
 		return -EAGAIN;
 	}
@@ -911,7 +916,7 @@ gk20a_pmu_queue_init(struct gk20a_pmu_priv *priv,
 	queue->mutex_id = id;
 	mutex_init(&queue->mutex);
 
-	nv_debug(pmu, "queue %d: index %d, offset 0x%08x, size 0x%08x",
+	nv_debug(pmu, "queue %d: index %d, offset 0x%08x, size 0x%08x\n",
 		id, queue->index, queue->offset, queue->size);
 
 	return 0;
@@ -1043,7 +1048,7 @@ gk20a_pmu_mutex_acquire(struct nvkm_pmu *pmu, u32 id, u32 *token)
 		if (WARN_ON(mutex->ref_cnt == 0))
 			return -EINVAL;
 
-		nv_debug(pmu, "already acquired by owner : 0x%08x", *token);
+		nv_debug(pmu, "already acquired by owner : 0x%08x\n", *token);
 		mutex->ref_cnt++;
 		return 0;
 	}
@@ -1058,7 +1063,7 @@ gk20a_pmu_mutex_acquire(struct nvkm_pmu *pmu, u32 id, u32 *token)
 		data = nv_rd32(pmu, 0x0010a488) & 0xff;
 		if (data == 0 || data == 0xff) {
 			nv_warn(pmu,
-				"fail to generate mutex token: val 0x%08x",
+				"fail to generate mutex token: val 0x%08x\n",
 				owner);
 			break; /* Break and returns -EBUSY */
 		}
@@ -1071,7 +1076,7 @@ gk20a_pmu_mutex_acquire(struct nvkm_pmu *pmu, u32 id, u32 *token)
 
 		if (owner == data) {
 			mutex->ref_cnt = 1;
-			nv_debug(pmu, "mutex acquired: id=%d, token=0x%x",
+			nv_debug(pmu, "mutex acquired: id=%d, token=0x%x\n",
 							mutex->index, *token);
 			*token = owner;
 			return 0;
@@ -1081,7 +1086,7 @@ gk20a_pmu_mutex_acquire(struct nvkm_pmu *pmu, u32 id, u32 *token)
 		 * in PMU. This time is sufficient/affordable for a task to
 		 * release acquired mutex.
 		 */
-		nv_debug(pmu, "fail to acquire mutex idx=0x%08x",
+		nv_debug(pmu, "fail to acquire mutex idx=0x%08x\n",
 							mutex->index);
 		nv_mask(pmu, 0x0010a48c, 0xff, owner & 0xff);
 		usleep_range(20, 40);
@@ -1114,7 +1119,7 @@ gk20a_pmu_mutex_release(struct nvkm_pmu *pmu, u32 id, u32 *token)
 
 	if (*token != owner) {
 		nv_error(pmu,
-			"requester 0x%08x NOT match owner 0x%08x",
+			"requester 0x%08x NOT match owner 0x%08x\n",
 			*token, owner);
 		return -EINVAL;
 	}
@@ -1126,7 +1131,7 @@ gk20a_pmu_mutex_release(struct nvkm_pmu *pmu, u32 id, u32 *token)
 
 	nv_mask(pmu, 0x0010a48c, 0xff, owner & 0xff);
 
-	nv_debug(pmu, "mutex released: id=%d, token=0x%x",
+	nv_debug(pmu, "mutex released: id=%d, token=0x%x\n",
 							  mutex->index, *token);
 
 	return 0;
@@ -1339,7 +1344,7 @@ gk20a_pmu_queue_open_write(struct gk20a_pmu_priv *priv,
 		return -EBUSY;
 
 	if (!gk20a_pmu_queue_has_room(priv, queue, size, &rewind)) {
-		nv_error(pmu, "queue full");
+		nv_error(pmu, "queue full\n");
 		gk20a_pmu_queue_unlock(priv, queue);
 		return -EAGAIN;
 	}
@@ -1531,7 +1536,7 @@ gk20a_pmu_validate_cmd(struct gk20a_pmu_priv *priv, struct pmu_cmd *cmd,
 			"queue_id=%d,\n"
 			"cmd_size=%d, cmd_unit_id=%d, msg=%p, msg_size=%d,\n"
 			"payload in=%p, in_size=%d, in_offset=%d,\n"
-			"payload out=%p, out_size=%d, out_offset=%d",
+			"payload out=%p, out_size=%d, out_offset=%d\n",
 			queue_id, cmd->hdr.size, cmd->hdr.unit_id,
 			msg, msg ? msg->hdr.unit_id : ~0,
 			&payload->in, payload->in.size, payload->in.offset,
@@ -1575,9 +1580,9 @@ gk20a_pmu_write_cmd(struct gk20a_pmu_priv *priv, struct pmu_cmd *cmd,
 
 	err = gk20a_pmu_queue_close(priv, queue, true);
 	if (err)
-		nv_error(pmu, "fail to close the queue %d", queue_id);
+		nv_error(pmu, "fail to close the queue %d\n", queue_id);
 
-	nv_debug(pmu, "cmd writing done");
+	nv_debug(pmu, "cmd writing done\n");
 
 	return 0;
 
@@ -1586,7 +1591,7 @@ clean_up:
 
 	err = gk20a_pmu_queue_close(priv, queue, true);
 	if (err)
-		nv_error(pmu, "fail to close the queue %d", queue_id);
+		nv_error(pmu, "fail to close the queue %d\n", queue_id);
 
 	return err;
 }
@@ -1715,7 +1720,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 	err = gk20a_pmu_queue_open_read(priv, queue);
 	if (err) {
 		nv_error(pmu,
-			"fail to open queue %d for read", queue->id);
+			"fail to open queue %d for read\n", queue->id);
 		*status = err;
 		return false;
 	}
@@ -1724,7 +1729,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 			PMU_MSG_HDR_SIZE, &bytes_read);
 	if (err || bytes_read != PMU_MSG_HDR_SIZE) {
 		nv_error(pmu,
-			"fail to read msg from queue %d", queue->id);
+			"fail to read msg from queue %d\n", queue->id);
 		*status = err | -EINVAL;
 		goto clean_up;
 	}
@@ -1736,7 +1741,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 				PMU_MSG_HDR_SIZE, &bytes_read);
 		if (err || bytes_read != PMU_MSG_HDR_SIZE) {
 			nv_error(pmu,
-				"fail to read msg from queue %d", queue->id);
+				"fail to read msg from queue %d\n", queue->id);
 			*status = err | -EINVAL;
 			goto clean_up;
 		}
@@ -1744,7 +1749,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 
 	if (!PMU_UNIT_ID_IS_VALID(msg->hdr.unit_id)) {
 		nv_error(pmu,
-			"read invalid unit_id %d from queue %d",
+			"read invalid unit_id %d from queue %d\n",
 			msg->hdr.unit_id, queue->id);
 			*status = -EINVAL;
 			goto clean_up;
@@ -1756,7 +1761,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 			read_size, &bytes_read);
 		if (err || bytes_read != read_size) {
 			nv_error(pmu,
-				"fail to read msg from queue %d", queue->id);
+				"fail to read msg from queue %d\n", queue->id);
 			*status = err;
 			goto clean_up;
 		}
@@ -1765,7 +1770,7 @@ gk20a_pmu_read_message(struct gk20a_pmu_priv *priv, struct pmu_queue *queue,
 	err = gk20a_pmu_queue_close(priv, queue, true);
 	if (err) {
 		nv_error(pmu,
-			"fail to close queue %d", queue->id);
+			"fail to close queue %d\n", queue->id);
 		*status = err;
 		return false;
 	}
@@ -1776,7 +1781,7 @@ clean_up:
 	err = gk20a_pmu_queue_close(priv, queue, false);
 	if (err)
 		nv_error(pmu,
-			"fail to close queue %d", queue->id);
+			"fail to close queue %d\n", queue->id);
 	return false;
 
 }
@@ -1792,13 +1797,13 @@ gk20a_pmu_response_handle(struct gk20a_pmu_priv *priv, struct pmu_msg *msg)
 	seq = &priv->seq[msg->hdr.seq_id];
 	if (seq->state != PMU_SEQ_STATE_USED &&
 	    seq->state != PMU_SEQ_STATE_CANCELLED) {
-		nv_error(pmu, "msg for an unknown sequence %d", seq->id);
+		nv_error(pmu, "msg for an unknown sequence %d\n", seq->id);
 		return -EINVAL;
 	}
 
 	if (msg->hdr.unit_id == PMU_UNIT_RC &&
 	    msg->msg.rc.msg_type == PMU_RC_MSG_TYPE_UNHANDLED_CMD) {
-		nv_error(pmu, "unhandled cmd: seq %d", seq->id);
+		nv_error(pmu, "unhandled cmd: seq %d\n", seq->id);
 	} else if (seq->state != PMU_SEQ_STATE_CANCELLED) {
 		if (seq->msg) {
 			if (seq->msg->hdr.size >= msg->hdr.size) {
@@ -1811,7 +1816,7 @@ gk20a_pmu_response_handle(struct gk20a_pmu_priv *priv, struct pmu_msg *msg)
 				}
 			} else {
 				nv_error(pmu,
-					"sequence %d msg buffer too small",
+					"sequence %d msg buffer too small\n",
 					seq->id);
 			}
 		}
@@ -1861,7 +1866,7 @@ gk20a_init_elcg_mode(struct nvkm_pmu *ppmu, u32 mode, u32 engine)
 		gate_ctrl |= 0x1;
 		break;
 	default:
-		nv_error(ppmu, "invalid elcg mode %d", mode);
+		nv_error(ppmu, "invalid elcg mode %d\n", mode);
 	}
 
 	gate_ctrl &= ~(0x1f << 8);
@@ -1962,7 +1967,10 @@ static void
 gk20a_pmu_handle_zbc_msg(struct nvkm_pmu *pmu, struct pmu_msg *msg,
 					    void *param, u32 handle, u32 status)
 {
+	struct gk20a_pmu_priv *priv = param;
+
 	nv_debug(pmu, "reply ZBC_TABLE_UPDATE\n");
+	schedule_work(&priv->pg_init);
 }
 
 static void
@@ -2392,6 +2400,7 @@ gk20a_pmu_setup_hw(struct work_struct *work)
 		nv_debug(pmu, "loaded zbc\n");
 		break;
 	case PMU_STATE_STARTED:
+		gk20a_pmu_enable_elpg(pmu);
 		nv_debug(pmu, "PMU booted\n");
 		break;
 	default:
@@ -2569,7 +2578,7 @@ gk20a_pmu_init_perfmon(struct gk20a_pmu_priv *priv)
 				      PMU_DMEM_ALLOC_ALIGNMENT);
 	if (err) {
 		nv_error(pmu,
-			"failed to allocate perfmon sample buffer");
+			"failed to allocate perfmon sample buffer\n");
 		return -ENOMEM;
 	}
 
@@ -2626,7 +2635,7 @@ gk20a_pmu_init_perfmon(struct gk20a_pmu_priv *priv)
 
 	nv_debug(pmu,
 		"payload in=%p, in_size=%d, in_offset=%d,\n"
-		"payload out=%p, out_size=%d, out_offset=%d",
+		"payload out=%p, out_size=%d, out_offset=%d\n",
 		&payload.in, payload.in.size, payload.in.offset,
 		&payload.out, payload.out.size, payload.out.offset);
 	nv_debug(pmu, "cmd post PMU_PERFMON_CMD_ID_INIT\n");
@@ -3159,9 +3168,9 @@ gk20a_pmu_init(struct nvkm_object *object)
 
 	gk20a_pmu_dvfs_init(priv);
 	pmu->fecs_secure_boot = false;
-	pmu->elcg_enabled = false;
-	pmu->slcg_enabled = false;
-	pmu->blcg_enabled = false;
+	pmu->elcg_enabled = true;
+	pmu->slcg_enabled = true;
+	pmu->blcg_enabled = true;
 
 	priv->pmu_setup_elpg = NULL;
 
@@ -3240,9 +3249,9 @@ gk20a_pmu_dtor(struct nvkm_object *object)
 }
 
 struct gk20a_pmu_dvfs_data gk20a_dvfs_data = {
-	.p_load_target = 70,
+	.p_load_target = 40,
 	.p_load_max = 78,
-	.p_smooth = 0,
+	.p_smooth = 5,
 };
 
 static int

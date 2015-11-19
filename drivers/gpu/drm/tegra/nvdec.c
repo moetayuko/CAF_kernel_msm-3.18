@@ -21,6 +21,7 @@
 #include <linux/clk.h>
 #include <linux/host1x.h>
 #include <linux/module.h>
+#include <linux/ote_protocol.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
@@ -74,6 +75,9 @@ struct nvdec {
 
 	/* Platform configuration */
 	struct nvdec_config *config;
+	struct mutex lock;
+	/* Flag to indicate both the ucodes are setup correctly */
+	bool ucode_setup;
 };
 
 static inline struct nvdec *to_nvdec(struct tegra_drm_client *client)
@@ -147,6 +151,9 @@ static int nvdec_power_on(struct device *dev)
 	if (err)
 		goto err_nvdec_kfuse_clk;
 
+	if (IS_ENABLED(CONFIG_TRUSTED_LITTLE_KERNEL))
+		te_restore_keyslots();
+
 	return 0;
 
 err_nvdec_kfuse_clk:
@@ -163,15 +170,6 @@ err_host1x_clk:
 err_falcon_power_on:
 	falcon_power_off(&nvdec->falcon_bl);
 	return err;
-}
-
-static void nvdec_reset(struct device *dev)
-{
-	struct nvdec *nvdec = dev_get_drvdata(dev);
-
-	nvdec_power_off(dev);
-	nvdec_power_on(dev);
-	falcon_boot(&nvdec->falcon_bl, NULL);
 }
 
 static int nvdec_init(struct host1x_client *client)
@@ -208,6 +206,9 @@ static int nvdec_init(struct host1x_client *client)
 	err = tegra_drm_register_client(dev->dev_private, drm);
 	if (err)
 		goto error_host1x_syncpt_free;
+
+	mutex_init(&nvdec->lock);
+	nvdec->ucode_setup = false;
 
 	return 0;
 
@@ -316,28 +317,35 @@ static void nvdec_wpr_setup(struct nvdec *nvdec)
 
 static int nvdec_read_ucode(struct nvdec *nvdec)
 {
-	int err;
+	int err = 0;
+
+	mutex_lock(&nvdec->lock);
+	if (nvdec->ucode_setup)
+		goto done;
 
 	if (IS_ENABLED(CONFIG_NVDEC_BOOTLOADER)) {
 		err = falcon_read_ucode(&nvdec->falcon_bl,
 					nvdec->config->ucode_name_bl);
 		if (err)
-			return err;
+			goto done;
 
 		err = falcon_read_ucode(&nvdec->falcon_ls,
 					nvdec->config->ucode_name_ls);
 		if (err)
-			return err;
+			goto done;
 
 		nvdec_wpr_setup(nvdec);
 	} else {
 		err = falcon_read_ucode(&nvdec->falcon_bl,
 					nvdec->config->ucode_name);
 		if (err)
-			return err;
+			goto done;
 	}
+	nvdec->ucode_setup = true;
 
-	return 0;
+done:
+	mutex_unlock(&nvdec->lock);
+	return err;
 }
 
 static int nvdec_open_channel(struct tegra_drm_client *client,
@@ -385,6 +393,32 @@ static int nvdec_is_addr_reg(struct device *dev, u32 class, u32 offset)
 	 */
 
 	return 0;
+}
+
+static void nvdec_reset(struct device *dev)
+{
+	int err;
+	struct nvdec *nvdec = dev_get_drvdata(dev);
+
+	err = nvdec_power_off(dev);
+	if (err) {
+		dev_err(dev, "failed to power off during reset\n");
+		return;
+	}
+
+	err = nvdec_power_on(dev);
+	if (err) {
+		dev_err(dev, "failed to power on during reset\n");
+		return;
+	}
+
+	err = nvdec_read_ucode(nvdec);
+	if (err) {
+		dev_err(dev, "failed to read ucode during reset\n");
+		return;
+	}
+
+	falcon_boot(&nvdec->falcon_bl, NULL);
 }
 
 static const struct tegra_drm_client_ops nvdec_ops = {
@@ -657,6 +691,8 @@ static int nvdec_remove(struct platform_device *pdev)
 		falcon_exit(&nvdec->falcon_ls);
 
 	falcon_exit(&nvdec->falcon_bl);
+
+	nvdec->ucode_setup = false;
 
 	return err;
 }

@@ -73,7 +73,6 @@ pvrsrvkm-y += \
  handle_idr.o \
  mm.o \
  module_common.o \
- mtk_module.o \
  osconnection_server.o \
  osfunc.o \
  ossecure_export.o \
@@ -85,6 +84,8 @@ pvrsrvkm-y += \
  pvr_debug.o \
  pvr_debugfs.o \
  pvr_drm.o \
+ pvr_dvfs_device.o \
+ pvr_dvfs_governor.o \
  devicemem.o \
  devicemem_utils.o \
  hash.o \
@@ -93,10 +94,7 @@ pvrsrvkm-y += \
  sync.o \
  tlclient.o \
  uniq_key_splay_tree.o \
- rgx_compat_bvnc.o \
- mt8173/mt8173_mfgdvfs.o \
- mt8173/mt8173_mfgsys.o \
- mt8173/mt8173_sysconfig.o
+ rgx_compat_bvnc.o
 pvrsrvkm-$(CONFIG_DRM_POWERVR_ROGUE_DEBUG) += \
  client_devicememhistory_bridge.o \
  server_devicememhistory_bridge.o \
@@ -113,9 +111,6 @@ pvrsrvkm-$(CONFIG_DRM_POWERVR_ROGUE_KERNEL_SRVINIT) += \
  rgxsrvinit_script.o \
  os_srvinit_param.o \
  srvinit_km.o
-pvrsrvkm-$(CONFIG_DRM_POWERVR_ROGUE_DVFS) += \
- pvr_dvfs_device.o \
- pvr_dvfs_governor.o
 pvrsrvkm-$(CONFIG_X86) += osfunc_x86.o
 pvrsrvkm-$(CONFIG_ARM64) += osfunc_arm64.o
 pvrsrvkm-$(CONFIG_EVENT_TRACING) += trace_events.o

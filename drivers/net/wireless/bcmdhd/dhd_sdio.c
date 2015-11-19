@@ -250,8 +250,6 @@ typedef struct dhd_bus {
 
 	void		*glomd;			/* Packet containing glomming descriptor */
 	void		*glom;			/* Packet chain for glommed superframe */
-	uint		glomerr;		/* Glom packet read errors */
-
 	uint8		*rxbuf;			/* Buffer for receiving control packets */
 	uint		rxblen;			/* Allocated length of rxbuf */
 	uint8		*rxctl;			/* Aligned pointer into rxbuf */
@@ -488,7 +486,7 @@ do { \
 	if (retryvar) { \
 		bus->regfails += (retryvar-1); \
 		if (retryvar > retry_limit) { \
-			DHD_ERROR(("%s: FAILED" #regvar "READ, LINE %d\n", \
+			DHD_ERROR(("%s: FAILED " #regvar " READ, LINE %d\n", \
 			           __FUNCTION__, __LINE__)); \
 			regvar = 0; \
 		} \
@@ -1005,6 +1003,10 @@ dhdsdio_clk_devsleep_iovar(dhd_bus_t *bus, bool on)
 		DHD_TRACE(("%s: clk before sleep: 0x%x\n", __FUNCTION__,
 			bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_1,
 			SBSDIO_FUNC1_CHIPCLKCSR, &err)));
+
+		/* Dongle would not reponse to CMD19 in sleep so block retune */
+		bcmsdh_retune_hold(bus->sdh, TRUE);
+
 #ifdef USE_CMD14
 		err = bcmsdh_sleep(bus->sdh, TRUE);
 #else
@@ -1104,6 +1106,9 @@ dhdsdio_clk_devsleep_iovar(dhd_bus_t *bus, bool on)
 				err = BCME_NODEVICE;
 			}
 		}
+
+		/* Unblock retune */
+		bcmsdh_retune_hold(bus->sdh, FALSE);
 	}
 
 	/* Update if successful */
@@ -3133,11 +3138,13 @@ printbuf:
 	if (sdpcm_shared.flags & (SDPCM_SHARED_ASSERT | SDPCM_SHARED_TRAP)) {
 		DHD_ERROR(("%s: %s\n", __FUNCTION__, strbuf.origbuf));
 	}
+#if 0 /* broken due to crosbug.com/p/46070 */
 	/* save core dump or write to a file */
 	if (bus->dhd->memdump_enabled) {
 		dhdsdio_mem_dump(bus);
 		dhd_dbg_send_urgent_evt(bus->dhd, NULL, 0);
 	}
+#endif
 
 done:
 	if (mbuffer)
@@ -4851,23 +4858,17 @@ dhdsdio_rxglom(dhd_bus_t *bus, uint8 rxseq, int pkt_wake)
 		bus->f2rxdata++;
 		ASSERT(errcode != BCME_PENDING);
 
-		/* On failure, kill the superframe, allow a couple retries */
+		/* On failure, kill the superframe */
 		if (errcode < 0) {
 			DHD_ERROR(("%s: glom read of %d bytes failed: %d\n",
 			           __FUNCTION__, dlen, errcode));
 			bus->dhd->rx_errors++;
-
-			if (bus->glomerr++ < 3) {
-				dhdsdio_rxfail(bus, TRUE, TRUE);
-			} else {
-				bus->glomerr = 0;
-				dhdsdio_rxfail(bus, TRUE, FALSE);
-				dhd_os_sdlock_rxq(bus->dhd);
-				PKTFREE(osh, bus->glom, FALSE);
-				dhd_os_sdunlock_rxq(bus->dhd);
-				bus->rxglomfail++;
-				bus->glom = NULL;
-			}
+			dhdsdio_rxfail(bus, TRUE, FALSE);
+			dhd_os_sdlock_rxq(bus->dhd);
+			PKTFREE(osh, bus->glom, FALSE);
+			dhd_os_sdunlock_rxq(bus->dhd);
+			bus->rxglomfail++;
+			bus->glom = NULL;
 			return 0;
 		}
 
@@ -4977,20 +4978,13 @@ dhdsdio_rxglom(dhd_bus_t *bus, uint8 rxseq, int pkt_wake)
 		}
 
 		if (errcode) {
-			/* Terminate frame on error, request a couple retries */
-			if (bus->glomerr++ < 3) {
-				/* Restore superframe header space */
-				PKTPUSH(osh, pfirst, sfdoff);
-				dhdsdio_rxfail(bus, TRUE, TRUE);
-			} else {
-				bus->glomerr = 0;
-				dhdsdio_rxfail(bus, TRUE, FALSE);
-				dhd_os_sdlock_rxq(bus->dhd);
-				PKTFREE(osh, bus->glom, FALSE);
-				dhd_os_sdunlock_rxq(bus->dhd);
-				bus->rxglomfail++;
-				bus->glom = NULL;
-			}
+			/* Terminate frame on error */
+			dhdsdio_rxfail(bus, TRUE, FALSE);
+			dhd_os_sdlock_rxq(bus->dhd);
+			PKTFREE(osh, bus->glom, FALSE);
+			dhd_os_sdunlock_rxq(bus->dhd);
+			bus->rxglomfail++;
+			bus->glom = NULL;
 			bus->nextlen = 0;
 			return 0;
 		}
@@ -5543,7 +5537,8 @@ dhdsdio_readframes(dhd_bus_t *bus, uint maxframes, bool *finished)
 		if (sdret < 0) {
 			DHD_ERROR(("%s: RXHEADER FAILED: %d\n", __FUNCTION__, sdret));
 			bus->rx_hdrfail++;
-			dhdsdio_rxfail(bus, TRUE, TRUE);
+			dhdsdio_rxfail(bus, TRUE, FALSE);
+			memset(bus->rxhdr, 0, SDPCM_HDRLEN);
 			continue;
 		}
 

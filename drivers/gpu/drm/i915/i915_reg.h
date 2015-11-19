@@ -4641,6 +4641,7 @@ enum skl_disp_power_wells {
 
 #define CBR1_VLV			(VLV_DISPLAY_BASE + 0x70400)
 #define  CBR_PND_DEADLINE_DISABLE	(1<<31)
+#define  CBR_PWM_CLOCK_MUX_SELECT	(1<<30)
 
 /* FIFO watermark sizes etc */
 #define G4X_FIFO_LINE_SIZE	64
@@ -4942,6 +4943,7 @@ enum skl_disp_power_wells {
 #define SWF30			(dev_priv->info.display_mmio_offset + 0x72414)
 #define SWF31			(dev_priv->info.display_mmio_offset + 0x72418)
 #define SWF32			(dev_priv->info.display_mmio_offset + 0x7241c)
+#define SWF_ILK(i)	(0x4F000 + (i) * 4)
 
 /* Pipe B */
 #define _PIPEBDSL		(dev_priv->info.display_mmio_offset + 0x71000)
@@ -6311,9 +6313,11 @@ enum skl_disp_power_wells {
 #define  FDI_PHASE_SYNC_OVR(pipe) (1<<(FDIA_PHASE_SYNC_SHIFT_OVR - ((pipe) * 2)))
 #define  FDI_PHASE_SYNC_EN(pipe) (1<<(FDIA_PHASE_SYNC_SHIFT_EN - ((pipe) * 2)))
 #define  FDI_BC_BIFURCATION_SELECT	(1 << 12)
+#define  SPT_PWM_GRANULARITY		(1<<0)
 #define SOUTH_CHICKEN2		0xc2004
 #define  FDI_MPHY_IOSFSB_RESET_STATUS	(1<<13)
 #define  FDI_MPHY_IOSFSB_RESET_CTL	(1<<12)
+#define  LPT_PWM_GRANULARITY		(1<<5)
 #define  DPLS_EDP_PPS_FIX_DIS		(1<<0)
 
 #define _FDI_RXA_CHICKEN         0xc200c

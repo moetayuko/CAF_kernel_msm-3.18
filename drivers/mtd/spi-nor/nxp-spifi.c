@@ -149,8 +149,7 @@ static int nxp_spifi_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 	return nxp_spifi_wait_for_cmd(spifi);
 }
 
-static int nxp_spifi_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf,
-			       int len, int write_enable)
+static int nxp_spifi_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 {
 	struct nxp_spifi *spifi = nor->priv;
 	u32 cmd;
@@ -331,6 +330,7 @@ static int nxp_spifi_setup_flash(struct nxp_spifi *spifi,
 	writel(ctrl, spifi->io_base + SPIFI_CTRL);
 
 	spifi->nor.dev   = spifi->dev;
+	spifi->nor.flash_node = np;
 	spifi->nor.priv  = spifi;
 	spifi->nor.read  = nxp_spifi_read;
 	spifi->nor.write = nxp_spifi_write;

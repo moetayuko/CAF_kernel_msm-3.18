@@ -94,7 +94,7 @@
 #define TEGRA210_CLK_CSITE 73
 /* 74 */
 /* 75 */
-/* 76 */
+#define TEGRA210_CLK_LA 76
 /* 77 */
 #define TEGRA210_CLK_SOC_THERM 78
 #define TEGRA210_CLK_DTV 79
@@ -430,7 +430,7 @@
 /* 397 */
 /* 398 */
 /* 399 */
-/* 400 */
+#define TEGRA210_CLK_CBUS 400
 #define TEGRA210_CLK_C2BUS 401
 #define TEGRA210_CLK_C3BUS 402
 #define TEGRA210_CLK_VIC03_CBUS 403

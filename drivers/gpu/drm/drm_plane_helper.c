@@ -91,13 +91,14 @@ static int get_connectors_for_crtc(struct drm_crtc *crtc,
 	 */
 	WARN_ON(!drm_modeset_is_locked(&dev->mode_config.connection_mutex));
 
-	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
+	drm_for_each_connector(connector, dev) {
 		if (connector->encoder && connector->encoder->crtc == crtc) {
 			if (connector_list != NULL && count < num_connectors)
 				*(connector_list++) = connector;
 
 			count++;
 		}
+	}
 
 	return count;
 }
@@ -413,9 +414,9 @@ int drm_plane_helper_commit(struct drm_plane *plane,
 			    struct drm_plane_state *plane_state,
 			    struct drm_framebuffer *old_fb)
 {
-	struct drm_plane_helper_funcs *plane_funcs;
+	const struct drm_plane_helper_funcs *plane_funcs;
 	struct drm_crtc *crtc[2];
-	struct drm_crtc_helper_funcs *crtc_funcs[2];
+	const struct drm_crtc_helper_funcs *crtc_funcs[2];
 	int i, ret = 0;
 
 	plane_funcs = plane->helper_private;

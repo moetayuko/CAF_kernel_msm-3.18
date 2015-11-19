@@ -96,6 +96,7 @@ struct mmc_data;
  * @quirks: Set of quirks that apply to specific versions of the IP.
  * @irq_flags: The flags to be passed to request_irq.
  * @irq: The irq value to be passed to request_irq.
+ * @sdio_id0: Number of slot0 in the SDIO interrupt registers.
  *
  * Locking
  * =======
@@ -135,7 +136,6 @@ struct dw_mci {
 	struct mmc_command	stop_abort;
 	unsigned int		prev_blksz;
 	unsigned char		timing;
-	struct workqueue_struct	*card_workqueue;
 
 	/* DMA interface members*/
 	int			use_dma;
@@ -154,7 +154,6 @@ struct dw_mci {
 	u32			stop_cmdr;
 	u32			dir_status;
 	struct tasklet_struct	tasklet;
-	struct work_struct	card_work;
 	unsigned long		pending_events;
 	unsigned long		completed_events;
 	enum dw_mci_state	state;
@@ -193,6 +192,8 @@ struct dw_mci {
 	bool			vqmmc_enabled;
 	unsigned long		irq_flags; /* IRQ flags */
 	int			irq;
+
+	int			sdio_id0;
 };
 
 /* DMA ops for Internal/External DMAC interface */

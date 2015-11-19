@@ -43,6 +43,7 @@
 #include <linux/spinlock.h>
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
+#include <linux/wakeup_reason.h>
 #include <dt-bindings/soc/tegra-pmc.h>
 
 #include <soc/tegra/common.h>
@@ -460,6 +461,8 @@ struct pmc_lp0_wakeup {
 static struct pmc_lp0_wakeup tegra_lp0_wakeup;
 static u32 io_dpd_reg, io_dpd2_reg;
 #endif
+
+static u32 bootrom_i2c_header;
 
 static struct tegra_pmc *pmc = &(struct tegra_pmc) {
 	.base = NULL,
@@ -1890,6 +1893,7 @@ static void tegra_pmc_wake_syscore_resume(void)
 		if (!desc || !desc->action || !desc->action->name) {
 			pr_info("Resume caused by PMC WAKE%d, irq %d\n",
 				wake->wake_mask_offset, wake->irq_num);
+			log_wakeup_reason(wake->irq_num);
 			continue;
 		}
 
@@ -1969,6 +1973,12 @@ static void tegra_pmc_resume(void)
 	}
 
 	tegra_pmc_writel(0x0, PMC_SCRATCH41);
+
+	/*
+	 * SCRATCH250 (containing the BootROM I2C header) gets cleared
+	 * in LP0.  Restore it here.
+	 */
+	tegra_pmc_writel(bootrom_i2c_header, PMC_SCRATCH250);
 }
 
 static void set_core_power_timers(void)
@@ -2510,6 +2520,7 @@ static void tegra_pmc_init_bootrom_i2c(struct tegra_pmc *pmc)
 		(order_base_2(clear_delay) <<
 		 PMC_SCRATCH250_BUS_CLEAR_DELAY_SHIFT);
 	tegra_pmc_writel(value, PMC_SCRATCH250);
+	bootrom_i2c_header = value;
 
 	dev_info(pmc->dev, "bootrom i2c command blocks initialized\n");
 
@@ -2858,6 +2869,23 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static int __maybe_unused tegra_pmc_pm_suspend(struct device *dev)
+{
+	/*
+	 * HACK: This works around a hang at resume time on certain boards
+	 * for some unknown reason.
+	 */
+	return tegra_pmc_unpowergate(TEGRA_POWERGATE_DFD);
+}
+
+static int __maybe_unused tegra_pmc_pm_resume(struct device *dev)
+{
+	return tegra_pmc_powergate(TEGRA_POWERGATE_DFD);
+}
+
+static SIMPLE_DEV_PM_OPS(tegra_pmc_pm_ops, tegra_pmc_pm_suspend,
+			 tegra_pmc_pm_resume);
+
 static const char * const tegra20_powergates[] = {
 	[TEGRA_POWERGATE_CPU] = "cpu",
 	[TEGRA_POWERGATE_3D] = "3d",
@@ -3061,6 +3089,7 @@ static struct platform_driver tegra_pmc_driver = {
 		.name = "tegra-pmc",
 		.suppress_bind_attrs = true,
 		.of_match_table = tegra_pmc_match,
+		.pm = &tegra_pmc_pm_ops,
 	},
 	.probe = tegra_pmc_probe,
 };

@@ -773,19 +773,19 @@ static int tcp_metrics_fill_info(struct sk_buff *msg,
 
 	switch (tm->tcpm_daddr.family) {
 	case AF_INET:
-		if (nla_put_be32(msg, TCP_METRICS_ATTR_ADDR_IPV4,
-				tm->tcpm_daddr.addr.a4) < 0)
+		if (nla_put_in_addr(msg, TCP_METRICS_ATTR_ADDR_IPV4,
+				    tm->tcpm_daddr.addr.a4) < 0)
 			goto nla_put_failure;
-		if (nla_put_be32(msg, TCP_METRICS_ATTR_SADDR_IPV4,
-				tm->tcpm_saddr.addr.a4) < 0)
+		if (nla_put_in_addr(msg, TCP_METRICS_ATTR_SADDR_IPV4,
+				    tm->tcpm_saddr.addr.a4) < 0)
 			goto nla_put_failure;
 		break;
 	case AF_INET6:
-		if (nla_put(msg, TCP_METRICS_ATTR_ADDR_IPV6, 16,
-			    tm->tcpm_daddr.addr.a6) < 0)
+		if (nla_put_in6_addr(msg, TCP_METRICS_ATTR_ADDR_IPV6,
+				     (struct in6_addr *) &tm->tcpm_daddr.addr.a6) < 0)
 			goto nla_put_failure;
-		if (nla_put(msg, TCP_METRICS_ATTR_SADDR_IPV6, 16,
-			    tm->tcpm_saddr.addr.a6) < 0)
+		if (nla_put_in6_addr(msg, TCP_METRICS_ATTR_SADDR_IPV6,
+				     (struct in6_addr *) &tm->tcpm_saddr.addr.a6) < 0)
 			goto nla_put_failure;
 		break;
 	default:
@@ -932,7 +932,7 @@ static int __parse_nl_addr(struct genl_info *info, struct inetpeer_addr *addr,
 	a = info->attrs[v4];
 	if (a) {
 		addr->family = AF_INET;
-		addr->addr.a4 = nla_get_be32(a);
+		addr->addr.a4 = nla_get_in_addr(a);
 		if (hash)
 			*hash = (__force unsigned int) addr->addr.a4;
 		return 0;
@@ -942,7 +942,7 @@ static int __parse_nl_addr(struct genl_info *info, struct inetpeer_addr *addr,
 		if (nla_len(a) != sizeof(struct in6_addr))
 			return -EINVAL;
 		addr->family = AF_INET6;
-		memcpy(addr->addr.a6, nla_data(a), sizeof(addr->addr.a6));
+		*(struct in6_addr *)addr->addr.a6 = nla_get_in6_addr(a);
 		if (hash)
 			*hash = ipv6_addr_hash((struct in6_addr *) addr->addr.a6);
 		return 0;

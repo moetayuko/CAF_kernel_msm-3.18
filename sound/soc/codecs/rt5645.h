@@ -39,8 +39,8 @@
 #define RT5645_STO1_ADC_DIG_VOL			0x1c
 #define RT5645_MONO_ADC_DIG_VOL			0x1d
 #define RT5645_ADC_BST_VOL1			0x1e
-/* Mixer - D-D */
 #define RT5645_ADC_BST_VOL2			0x20
+/* Mixer - D-D */
 #define RT5645_STO1_ADC_MIXER			0x27
 #define RT5645_MONO_ADC_MIXER			0x28
 #define RT5645_AD_DA_MIXER			0x29
@@ -315,12 +315,14 @@
 #define RT5645_STO1_ADC_R_BST_SFT		12
 #define RT5645_STO1_ADC_COMP_MASK		(0x3 << 10)
 #define RT5645_STO1_ADC_COMP_SFT		10
-#define RT5645_STO2_ADC_L_BST_MASK		(0x3 << 8)
-#define RT5645_STO2_ADC_L_BST_SFT		8
-#define RT5645_STO2_ADC_R_BST_MASK		(0x3 << 6)
-#define RT5645_STO2_ADC_R_BST_SFT		6
-#define RT5645_STO2_ADC_COMP_MASK		(0x3 << 4)
-#define RT5645_STO2_ADC_COMP_SFT		4
+
+/* ADC Boost Volume Control (0x20) */
+#define RT5645_MONO_ADC_L_BST_MASK		(0x3 << 14)
+#define RT5645_MONO_ADC_L_BST_SFT		14
+#define RT5645_MONO_ADC_R_BST_MASK		(0x3 << 12)
+#define RT5645_MONO_ADC_R_BST_SFT		12
+#define RT5645_MONO_ADC_COMP_MASK		(0x3 << 10)
+#define RT5645_MONO_ADC_COMP_SFT		10
 
 /* Stereo2 ADC Mixer Control (0x26) */
 #define RT5645_STO2_ADC_SRC_MASK		(0x1 << 15)
@@ -619,14 +621,14 @@
 #define RT5645_G_OM_L_SM_L_SFT			6
 #define RT5645_M_BST1_L_SM_L			(0x1 << 5)
 #define RT5645_M_BST1_L_SM_L_SFT		5
-#define RT5645_M_IN_L_SM_L			(0x1 << 3)
-#define RT5645_M_IN_L_SM_L_SFT			3
-#define RT5645_M_DAC_L1_SM_L			(0x1 << 1)
-#define RT5645_M_DAC_L1_SM_L_SFT		1
-#define RT5645_M_DAC_L2_SM_L			(0x1 << 2)
-#define RT5645_M_DAC_L2_SM_L_SFT		2
 #define RT5645_M_BST3_L_SM_L			(0x1 << 4)
 #define RT5645_M_BST3_L_SM_L_SFT		4
+#define RT5645_M_IN_L_SM_L			(0x1 << 3)
+#define RT5645_M_IN_L_SM_L_SFT			3
+#define RT5645_M_DAC_L2_SM_L			(0x1 << 2)
+#define RT5645_M_DAC_L2_SM_L_SFT		2
+#define RT5645_M_DAC_L1_SM_L			(0x1 << 1)
+#define RT5645_M_DAC_L1_SM_L_SFT		1
 
 /* SPK Right Mixer Control (0x47) */
 #define RT5645_G_RM_R_SM_R_MASK			(0x3 << 14)
@@ -641,14 +643,14 @@
 #define RT5645_G_OM_R_SM_R_SFT			6
 #define RT5645_M_BST2_R_SM_R			(0x1 << 5)
 #define RT5645_M_BST2_R_SM_R_SFT		5
-#define RT5645_M_IN_R_SM_R			(0x1 << 3)
-#define RT5645_M_IN_R_SM_R_SFT			3
-#define RT5645_M_DAC_R1_SM_R			(0x1 << 1)
-#define RT5645_M_DAC_R1_SM_R_SFT		1
-#define RT5645_M_DAC_R2_SM_R			(0x1 << 2)
-#define RT5645_M_DAC_R2_SM_R_SFT		2
 #define RT5645_M_BST3_R_SM_R			(0x1 << 4)
 #define RT5645_M_BST3_R_SM_R_SFT		4
+#define RT5645_M_IN_R_SM_R			(0x1 << 3)
+#define RT5645_M_IN_R_SM_R_SFT			3
+#define RT5645_M_DAC_R2_SM_R			(0x1 << 2)
+#define RT5645_M_DAC_R2_SM_R_SFT		2
+#define RT5645_M_DAC_R1_SM_R			(0x1 << 1)
+#define RT5645_M_DAC_R1_SM_R_SFT		1
 
 /* SPOLMIX Control (0x48) */
 #define RT5645_M_DAC_L1_SPM_L			(0x1 << 15)
@@ -673,12 +675,12 @@
 #define RT5645_SPK_G_CLSD_SFT			0
 
 /* Mono Output Mixer Control (0x4c) */
+#define RT5645_G_MONOMIX_MASK			(0x1 << 10)
+#define RT5645_G_MONOMIX_SFT			10
 #define RT5645_M_OV_L_MM			(0x1 << 9)
 #define RT5645_M_OV_L_MM_SFT			9
 #define RT5645_M_DAC_L2_MA			(0x1 << 8)
 #define RT5645_M_DAC_L2_MA_SFT			8
-#define RT5645_G_MONOMIX_MASK			(0x1 << 10)
-#define RT5645_G_MONOMIX_SFT			10
 #define RT5645_M_BST2_MM			(0x1 << 4)
 #define RT5645_M_BST2_MM_SFT			4
 #define RT5645_M_DAC_R1_MM			(0x1 << 3)
