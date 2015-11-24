@@ -2,7 +2,7 @@
 STC311x Fuel Gauge / Gas Gauge / Battery monitoring
 
 
-This repository contain the Linux drivers for STC3117 battery monitoring IC.
+This repository contains the Linux drivers for STC3117 battery monitoring IC from STMicroelectronics.
 
 
 ---------------------------------
