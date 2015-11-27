@@ -31,6 +31,14 @@
 	gpio = <&pio 88 GPIO_ACTIVE_HIGH>;
 };
 
+&cpu2 {
+	proc-supply = <&mt6311_vcpu_reg>;
+};
+
+&cpu3 {
+	proc-supply = <&mt6311_vcpu_reg>;
+};
+
 &gpio_keys {
 	/delete-property/pinctrl-names;
 	/delete-property/pinctrl-0;
