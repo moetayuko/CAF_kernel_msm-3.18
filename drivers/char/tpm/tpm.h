@@ -179,6 +179,8 @@ struct tpm_chip {
 	acpi_handle acpi_dev_handle;
 	char ppi_version[TPM_PPI_VERSION_LEN + 1];
 #endif /* CONFIG_ACPI */
+
+	struct notifier_block shutdown_nb;
 };
 
 #define to_tpm_chip(d) container_of(d, struct tpm_chip, dev)
