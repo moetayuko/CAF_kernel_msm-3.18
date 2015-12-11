@@ -132,6 +132,8 @@ int STC31xx_RelaxTmrSet(int CurrentThreshold);
 
 #define STC311x_REG_OCVTAB               0x30
 #define OCVTAB_SIZE                      16      /* OCVTAB size of STC311x */
+#define STC3117_REG_SOCTAB               0x50
+#define SOCTAB_SIZE                      16
 
 #define VCOUNT				 0       /* counter value for 1st current/temp measurements */
 
@@ -599,12 +601,14 @@ static void STC311x_SetParam(void)
 		for (ii=0;ii<OCVTAB_SIZE;ii++)
 		{
 			if (BattData.OCVValue[ii]!=0) //avoid non-initialized values
-				STC31xx_WriteWord(STC311x_REG_OCVTAB+ii*2, 
+			{
+				STC31xx_WriteWord(STC311x_REG_OCVTAB + ii*2, 
 					BattData.OCVValue[ii]*100/55); //=OCV_mV/0.55 =OCV_mV/(55/100) =OCV_mV*(100/55)
+			}
 		}
 		
 		if (BattData.SOCValue[1]!=0) //avoid non-initialized values
-			STC31xx_Write(OCVTAB_SIZE, STC311x_REG_OCVTAB+OCVTAB_SIZE*2, (unsigned char *) BattData.SOCValue);
+			STC31xx_Write(SOCTAB_SIZE, STC3117_REG_SOCTAB, (unsigned char *) BattData.SOCValue);
 	}
 
 	/* set alm level if different from default */
@@ -2185,7 +2189,7 @@ static void __exit stc311x_exit(void)
 module_exit(stc311x_exit);
 
 MODULE_AUTHOR("STMICROELECTRONICS");
-MODULE_DESCRIPTION("STC311x Fuel Gauge");
+MODULE_DESCRIPTION("STC3117 Fuel Gauge");
 MODULE_LICENSE("GPL");
 
 
