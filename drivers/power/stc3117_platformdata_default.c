@@ -50,21 +50,21 @@ static struct stc311x_platform_data stc3117_data = {
 	.CapDerating[0] = 0,   /* capacity de-rating in 0.1%, for temp = 60°C */
 
 	.SOCValue[0] = 0x00,    /* SOC=0% - default SOC axis for battery OCV curve */
-	.SOCValue[1] = 0x01,    /* SOC=3% - default SOC axis for battery OCV curve */
-	.SOCValue[2] = 0x03,    /* SOC=6% - default SOC axis for battery OCV curve */
-	.SOCValue[3] = 0x05,    /* SOC=10% - default SOC axis for battery OCV curve */
-	.SOCValue[4] = 0x07,    /* SOC=15% - default SOC axis for battery OCV curve */
-	.SOCValue[5] = 0x0A,    /* SOC=20% - default SOC axis for battery OCV curve */
-	.SOCValue[6] = 0x0C,    /* SOC=25% - default SOC axis for battery OCV curve */
-	.SOCValue[7] = 0x0F,    /* SOC=30% - default SOC axis for battery OCV curve */
-	.SOCValue[8] = 0x14,    /* SOC=40% - default SOC axis for battery OCV curve */
-	.SOCValue[9] = 0x19,    /* SOC=50% - default SOC axis for battery OCV curve */
-	.SOCValue[10] = 0x1E,    /* SOC=60% - default SOC axis for battery OCV curve */
-	.SOCValue[11] = 0x20,    /* SOC=65% - default SOC axis for battery OCV curve */
-	.SOCValue[12] = 0x23,    /* SOC=70% - default SOC axis for battery OCV curve */
-	.SOCValue[13] = 0x28,    /* SOC=80% - default SOC axis for battery OCV curve */
-	.SOCValue[14] = 0x2D,    /* SOC=90% - default SOC axis for battery OCV curve */
-	.SOCValue[15] = 0x32,    /* SOC=100% - default SOC axis for battery OCV curve */
+	.SOCValue[1] = 0x06,    /* SOC=3% - default SOC axis for battery OCV curve */
+	.SOCValue[2] = 0x0C,    /* SOC=6% - default SOC axis for battery OCV curve */
+	.SOCValue[3] = 0x14,    /* SOC=10% - default SOC axis for battery OCV curve */
+	.SOCValue[4] = 0x1E,    /* SOC=15% - default SOC axis for battery OCV curve */
+	.SOCValue[5] = 0x28,    /* SOC=20% - default SOC axis for battery OCV curve */
+	.SOCValue[6] = 0x32,    /* SOC=25% - default SOC axis for battery OCV curve */
+	.SOCValue[7] = 0x3C,    /* SOC=30% - default SOC axis for battery OCV curve */
+	.SOCValue[8] = 0x50,    /* SOC=40% - default SOC axis for battery OCV curve */
+	.SOCValue[9] = 0x64,    /* SOC=50% - default SOC axis for battery OCV curve */
+	.SOCValue[10] = 0x78,    /* SOC=60% - default SOC axis for battery OCV curve */
+	.SOCValue[11] = 0x82,    /* SOC=65% - default SOC axis for battery OCV curve */
+	.SOCValue[12] = 0x8C,    /* SOC=70% - default SOC axis for battery OCV curve */
+	.SOCValue[13] = 0xA0,    /* SOC=80% - default SOC axis for battery OCV curve */
+	.SOCValue[14] = 0xB4,    /* SOC=90% - default SOC axis for battery OCV curve */
+	.SOCValue[15] = 0xC8,    /* SOC=100% - default SOC axis for battery OCV curve */
 	
 	.OCVValue[0] = 3300,    /* default battery OCV curve (at 0%) : OCV=3.3V */
 	.OCVValue[1] = 3541,    /* default battery OCV curve (at 3%) : OCV=3.54V */
