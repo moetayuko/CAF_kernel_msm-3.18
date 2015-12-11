@@ -1161,7 +1161,7 @@ static bool missed_irq(struct drm_i915_private *dev_priv,
 	return test_bit(ring->id, &dev_priv->gpu_error.missed_irq_rings);
 }
 
-static int __i915_spin_request(struct drm_i915_gem_request *req)
+static int __i915_spin_request(struct drm_i915_gem_request *req, int state)
 {
 	unsigned long timeout;
 
@@ -1172,6 +1172,9 @@ static int __i915_spin_request(struct drm_i915_gem_request *req)
 	while (!need_resched()) {
 		if (i915_gem_request_completed(req, true))
 			return 0;
+
+		if (signal_pending_state(state, current))
+			break;
 
 		if (time_after_eq(jiffies, timeout))
 			break;
@@ -1212,6 +1215,7 @@ int __i915_wait_request(struct drm_i915_gem_request *req,
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	const bool irq_test_in_progress =
 		ACCESS_ONCE(dev_priv->gpu_error.test_irq_rings) & intel_ring_flag(ring);
+	int state = interruptible ? TASK_INTERRUPTIBLE : TASK_UNINTERRUPTIBLE;
 	DEFINE_WAIT(wait);
 	unsigned long timeout_expire;
 	s64 before, now;
@@ -1236,7 +1240,7 @@ int __i915_wait_request(struct drm_i915_gem_request *req,
 	before = ktime_get_raw_ns();
 
 	/* Optimistic spin for the next jiffie before touching IRQs */
-	ret = __i915_spin_request(req);
+	ret = __i915_spin_request(req, state);
 	if (ret == 0)
 		goto out;
 
@@ -1248,8 +1252,7 @@ int __i915_wait_request(struct drm_i915_gem_request *req,
 	for (;;) {
 		struct timer_list timer;
 
-		prepare_to_wait(&ring->irq_queue, &wait,
-				interruptible ? TASK_INTERRUPTIBLE : TASK_UNINTERRUPTIBLE);
+		prepare_to_wait(&ring->irq_queue, &wait, state);
 
 		/* We need to check whether any gpu reset happened in between
 		 * the caller grabbing the seqno and now ... */
@@ -1267,7 +1270,7 @@ int __i915_wait_request(struct drm_i915_gem_request *req,
 			break;
 		}
 
-		if (interruptible && signal_pending(current)) {
+		if (signal_pending_state(state, current)) {
 			ret = -ERESTARTSYS;
 			break;
 		}
