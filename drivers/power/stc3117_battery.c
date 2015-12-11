@@ -78,7 +78,7 @@ int STC31xx_RelaxTmrSet(int CurrentThreshold);
 #define APP_MIN_VOLTAGE	    3000  /* application cut-off voltage                    */
 #define TEMP_MIN_ADJ		(-5)  /* minimum temperature for gain adjustment */
 
-#define VMTEMPTABLE        { 85, 90, 100, 160, 320, 440, 840 }  /* normalized VM_CNF at 60, 40, 25, 10, 0, -10°C, -20°C */
+#define VM_TEMPERAT_TABLE        { 85, 90, 100, 160, 320, 440, 840 }  /* normalized VM_CNF at 60, 40, 25, 10, 0, -10°C, -20°C */
 
 #define AVGFILTER           4  /* average filter constant */
 
@@ -172,9 +172,9 @@ int STC31xx_RelaxTmrSet(int CurrentThreshold);
 
 /* Private constants ---------------------------------------------------------*/
 
-#define NTEMP 7
-static const int TempTable[NTEMP] = {60, 40, 25, 10, 0, -10, -20} ;   /* temperature table from 60°C to -20°C (descending order!) */
-static const int DefVMTempTable[NTEMP] = VMTEMPTABLE;
+#define TEMPERAT_SIZE 7
+static const int TemperatureTable[TEMPERAT_SIZE] = {60, 40, 25, 10, 0, -10, -20} ;   /* temperature table from 60°C to -20°C (descending order!) */
+static const int DefVMTempTable[TEMPERAT_SIZE] = VM_TEMPERAT_TABLE;
 
 /* Private variables ---------------------------------------------------------*/
 
@@ -193,6 +193,7 @@ typedef struct  {
 	int RemTime;        /* battery remaining operating time during discharge (min) */
 	int State;          /* charge (>0)/discharge(<0) state */
 	int CalStat;        /* Internal status */
+	
 	/* -- parameters -- */
 	int Vmode;       /* 1=Voltage mode, 0=mixed mode */
 	int Alm_SOC;     /* SOC alm level */
@@ -205,8 +206,8 @@ typedef struct  {
 	int RelaxCurrent; /* current for relaxation (< C/20) */
 	int Adaptive;     /* adaptive mode */
 	int CapDerating[7];   /* capacity derating in 0.1%, for temp = 60, 40, 25, 10,   0, -10, -20 °C */
-	int OCVValue[16];    /* OCV curve values */
-	int SOCValue[16];    /* SOC curve values */
+	int OCVValue[OCVTAB_SIZE];    /* OCV curve values */
+	int SOCValue[OCVTAB_SIZE];    /* SOC curve values */
 	int ExternalTemperature;
 	int ForceExternalTemperature;
 	int Ropt;  
@@ -227,6 +228,7 @@ typedef struct  {
 	int RelaxTimer;  /* current relax timer value */
 	int CC_adj;      /* CC adj */
 	int VM_adj;      /* VM adj */
+	
 	/* results & internals */
 	int SOC;         /* compensated SOC in 0.1% */
 	int AvgSOC;      /* in 0.1% */
@@ -242,6 +244,7 @@ typedef struct  {
 	int LastTemperature;
 	int BattOnline;	// BATD
 	int IDCode;
+	
 	/* parameters */
 	int Alm_SOC;     /* SOC alm level in % */
 	int Alm_Vbat;    /* Vbat alm level in mV */
@@ -253,10 +256,10 @@ typedef struct  {
 	int CurrentFactor;
 	int CRateFactor;
 	int RelaxThreshold;   /* current threshold for VM (mA)  */
-	int VM_TempTable[NTEMP];
-	int CapacityDerating[NTEMP];
-	int  OCVValue[OCVTAB_SIZE];
-	unsigned char SOCValue[OCVTAB_SIZE];
+	int VM_TemperaTable[TEMPERAT_SIZE];
+	int CapacityDerating[TEMPERAT_SIZE];
+	int  OCVValue[OCVTAB_SIZE];  //(mV)
+	unsigned char SOCValue[OCVTAB_SIZE];  //(%)
 	int  Ropt;
 	int  Nropt;
 
@@ -553,7 +556,7 @@ static int STC31xx_WriteWord(int RegAddress, int Value)
 /* -------------------------------------------------------------------------- */
 
 /* #define CurrentFactor  (24084/SENSERESISTOR)         LSB=5.88uV/R= ~24084/R/4096 - convert to mA  */
-#define VoltageFactor  9011                          /* LSB=2.20mV ~9011/4096 - convert to mV         */
+#define VOLTAGE_FACTOR  9011                          /* LSB=2.20mV ~9011/4096 - convert to mV         */
 
 
 
@@ -592,25 +595,36 @@ static void STC311x_SetParam(void)
 	STC31xx_WriteByte(STC311x_REG_MODE,0x01);  /*   set GG_RUN=0 before changing algo parameters */
 
 	/* init OCV curve */
-	for (ii=0;ii<OCVTAB_SIZE;ii++)
-		if (BattData.OCVValue[ii]!=0) STC31xx_WriteWord(STC311x_REG_OCVTAB+ii*2, BattData.OCVValue[ii]*100/55);
-	if (BattData.SOCValue[1]!=0) STC31xx_Write(OCVTAB_SIZE, STC311x_REG_OCVTAB+OCVTAB_SIZE*2, (unsigned char *) BattData.SOCValue);
+	{
+		for (ii=0;ii<OCVTAB_SIZE;ii++)
+		{
+			if (BattData.OCVValue[ii]!=0) //avoid non-initialized values
+				STC31xx_WriteWord(STC311x_REG_OCVTAB+ii*2, 
+					BattData.OCVValue[ii]*100/55); //=OCV_mV/0.55 =OCV_mV/(55/100) =OCV_mV*(100/55)
+		}
+		
+		if (BattData.SOCValue[1]!=0) //avoid non-initialized values
+			STC31xx_Write(OCVTAB_SIZE, STC311x_REG_OCVTAB+OCVTAB_SIZE*2, (unsigned char *) BattData.SOCValue);
+	}
 
 	/* set alm level if different from default */
 	if (BattData.Alm_SOC !=0 )   
 		STC31xx_WriteByte(STC311x_REG_ALARM_SOC,BattData.Alm_SOC*2); 
 	if (BattData.Alm_Vbat !=0 ) 
 	{
-		value= ((BattData.Alm_Vbat << 9) / VoltageFactor); /* LSB=8*2.44mV */
+		value= ((BattData.Alm_Vbat << 9) / VOLTAGE_FACTOR); /* LSB=8*2.44mV */
 		STC31xx_WriteByte(STC311x_REG_ALARM_VOLTAGE, value);
 	}
 
 	/* relaxation timer */
 	if (BattData.RelaxThreshold !=0 )  
 	{
-		value= ((BattData.RelaxThreshold << 9) / BattData.CurrentFactor);   /* LSB=8*5.88uV/Rsense */
-		value = value & 0x7f;
-		STC31xx_WriteByte(STC311x_REG_CURRENT_THRES,value); 
+		if(BattData.CurrentFactor != 0) //avoid divide by 0
+		{
+			value= ((BattData.RelaxThreshold << 9) / BattData.CurrentFactor);   /* LSB=8*5.88uV/Rsense */
+			value = value & 0x7f;
+			STC31xx_WriteByte(STC311x_REG_CURRENT_THRES,value); 
+		}
 	}
 
 	/* set parameters if different from default, only if a restart is done (battery change) */
@@ -653,7 +667,13 @@ static int STC311x_Startup(void)
 	curr=STC31xx_ReadWord(STC311x_REG_CURRENT);  
 	curr &= 0x3fff;   /* mask unused bits */
 	if (curr>=0x2000) curr -= 0x4000;  /* convert to signed value */  
-	ocv = ocv - BattData.Rint * curr * 588 / BattData.Rsense / 55000 ;
+	
+	if(BattData.Rsense != 0) //avoid divide by 0
+	{
+		ocv = ocv - BattData.Rint * curr * 588 / BattData.Rsense / 55000 ;
+	}
+	else
+		return -1;
 
 	/* rewrite ocv to start SOC with updated OCV curve */
 	STC31xx_WriteWord(STC311x_REG_OCV,ocv);
@@ -884,7 +904,7 @@ static int STC311x_ReadBatteryData(STC311x_BattDataTypeDef *BattData)
 	value=data[9]; value = (value<<8) + data[8];
 	value &= 0x0fff; /* mask unused bits */
 	if (value>=0x0800) value -= 0x1000;  /* convert to signed value */
-	value = conv(value,VoltageFactor);  /* result in mV */
+	value = conv(value,VOLTAGE_FACTOR);  /* result in mV */
 	BattData->Voltage = value;  /* result in mV */
 
 	/* temperature */
@@ -910,7 +930,7 @@ static int STC311x_ReadBatteryData(STC311x_BattDataTypeDef *BattData)
 	value=data[14]; value = (value<<8) + data[13];
 	value &= 0x3fff; /* mask unused bits */
 	if (value>=0x02000) value -= 0x4000;  /* convert to signed value */
-	value = conv(value,VoltageFactor);  
+	value = conv(value,VOLTAGE_FACTOR);  
 	value = (value+2) / 4;  /* divide by 4 with rounding */
 	BattData->OCV = value;  /* result in mV */
 
@@ -970,6 +990,9 @@ static int interpolate(int x, int n, int const *tabx, int const *taby )
 	int index;
 	int y;
 
+	if(n<0) return 0;
+	
+	
 	if (x >= tabx[0])
 		y = taby[0];
 	else if (x <= tabx[n-1])
@@ -979,10 +1002,18 @@ static int interpolate(int x, int n, int const *tabx, int const *taby )
 		/*  find interval */
 		for (index= 1;index<n;index++)
 			if (x > tabx[index]) break;
+		
 		/*  interpolate */
-		y = (taby[index-1] - taby[index]) * (x - tabx[index]) * 2 / (tabx[index-1] - tabx[index]);
-		y = (y+1) / 2;
-		y += taby[index];
+		if(( tabx[index-1] - tabx[index]) != 0) //avoid divide by 0
+		{
+			y = (taby[index-1] - taby[index]) * (x - tabx[index]) * 2 / (tabx[index-1] - tabx[index]);
+			y = (y+1) / 2;
+			y += taby[index];
+		}
+		else
+		{
+			y = taby[index];
+		}
 	}    
 	return y;
 }
@@ -1054,19 +1085,23 @@ static void Init_RAM(void)
 
 
 /* compensate SOC with temperature, SOC in 0.1% units */
-static int CompensateSOC(int value, int temp)
+static int CompensateSOC(int value, int temperature)
 {
-	int r, v;
-
-	r=0;    
+	int r=0;
+	int v=0;
+	int temperature_degree = temperature/10;
+ 
 #ifdef TEMPCOMP_SOC
-	r=interpolate(temp/10,NTEMP,TempTable,BattData.CapacityDerating);  /* for APP_TYP_CURRENT */
-#endif       
-	v = (long) (value-r) * MAX_SOC * 2 / (MAX_SOC-r);   /* compensate */
-	v = (v+1)/2;  /* rounding */
-	if (v < 0) v = 0;
-	if (v > MAX_SOC) v = MAX_SOC;
+	r=interpolate(temperature_degree, TEMPERAT_SIZE, TemperatureTable, BattData.CapacityDerating);  /* for APP_TYP_CURRENT */
+#endif
 
+	if( (MAX_SOC-r) != 0) //avoid divide by 0
+	{
+		v = (long) (value-r) * MAX_SOC * 2 / (MAX_SOC-r);   /* compensate */
+		v = (v+1)/2;  /* rounding */
+		if (v < 0) v = 0;
+		if (v > MAX_SOC) v = MAX_SOC;
+	}
 	return(v);
 }
 
@@ -1147,12 +1182,13 @@ static void MM_FSM(void)
 }
 
 
-static void CompensateVM(int temp)
+static void CompensateVM(int temperature)
 {
 	int r;
+	int temperature_degree = temperature/10;
 
 #ifdef TEMPCOMP_SOC
-	r=interpolate(temp/10,NTEMP,TempTable,BattData.VM_TempTable);
+	r=interpolate( temperature_degree, TEMPERAT_SIZE, TemperatureTable, BattData.VM_TemperaTable);
 	GG_Ram.reg.VM_cnf = (BattData.VM_cnf * r) / 100;
 	STC311x_SaveVMCnf();  /* save new VM cnf values to STC311x */
 #endif    
@@ -1225,8 +1261,8 @@ void SOC_correction (GasGauge_DataTypeDef *GG)
 	else if (BattData.SOC>100) Var3=300;
 	else Var3=400;
 
-	Var1= 256*BattData.AvgCurrent*A_Var3/Var3/CURRENT_TH;
-	Var1= 32768 * GAIN / (256+Var1*Var1/256) / 10;
+	Var1= 256*BattData.AvgCurrent * A_Var3 /Var3 /CURRENT_TH;
+	Var1= 32768 * GAIN / (256+ Var1*Var1 /256) / 10;
 	Var1 = (Var1+1)/2;
 	if (Var1==0) Var1=1;
 	if (Var1>=VAR1MAX) Var1=VAR1MAX-1;
@@ -1242,7 +1278,11 @@ void SOC_correction (GasGauge_DataTypeDef *GG)
 	if ( (BattData.AvgCurrent < -CURRENT_TH) || (BattData.AvgCurrent > CURRENT_TH) ) 
 	{
 		if (Var2<VAR2MAX)  Var2++;
-		BattData.Ropt = BattData.Ropt + ( 1000 * (BattData.Voltage-BattData.OCV) / BattData.AvgCurrent - BattData.Ropt / Var2);
+		
+		if( (BattData.AvgCurrent != 0) && (Var2 != 0) ) //avoid divide by 0
+		{
+			BattData.Ropt = BattData.Ropt + ( 1000 * (BattData.Voltage-BattData.OCV) / BattData.AvgCurrent - BattData.Ropt / Var2);
+		}
 		BattData.Nropt = Var2;
 	}
 	if (Var2>0)
@@ -1311,20 +1351,21 @@ int GasGauge_Start(GasGauge_DataTypeDef *GG)
 
 	if (BattData.Rsense==0) BattData.Rsense=10;  /* default value in case, to avoid divide by 0 */
 	BattData.CurrentFactor=24084/BattData.Rsense;    /* LSB=5.88uV/R= ~24084/R/4096 - convert to mA  */
+	
 	BattData.CRateFactor=36*BattData.Cnom;        /* LSB=0.008789.Cnom= 36*Cnom/4096 - convert to mA  */
 
 	if (BattData.CC_cnf==0) BattData.CC_cnf=395;  /* default values */
 	if (BattData.VM_cnf==0) BattData.VM_cnf=321;
 
-	for (i=0;i<NTEMP;i++)
+	for (i=0;i<TEMPERAT_SIZE;i++)
 		BattData.CapacityDerating[i] = GG->CapDerating[i]; 
 	for (i=0;i<OCVTAB_SIZE;i++)
 	{
 		BattData.OCVValue[i] = GG->OCVValue[i]; 
 		BattData.SOCValue[i] = GG->SOCValue[i]; 
 	}	
-	for (i=0;i<NTEMP;i++)
-		BattData.VM_TempTable[i] = DefVMTempTable[i];    
+	for (i=0;i<TEMPERAT_SIZE;i++)
+		BattData.VM_TemperaTable[i] = DefVMTempTable[i];    
 
 	BattData.Ropt = 0;
 	BattData.Nropt = 0;
@@ -1501,7 +1542,7 @@ int GasGauge_Task(GasGauge_DataTypeDef *GG)
 			BattData.AvgVoltage = BattData.Voltage;
 			BattData.AvgCurrent = BattData.Current;
 			BattData.AvgTemperature = BattData.Temperature;
-			BattData.AvgSOC = CompensateSOC(BattData.SOC,BattData.Temperature);  /* in 0.1% unit  */
+			BattData.AvgSOC = CompensateSOC(BattData.SOC, BattData.Temperature);  /* in 0.1% unit  */
 			BattData.AccVoltage = BattData.AvgVoltage*AVGFILTER;
 			BattData.AccCurrent = BattData.AvgCurrent*AVGFILTER;
 			BattData.AccTemperature = BattData.AvgTemperature*AVGFILTER;
@@ -1602,9 +1643,12 @@ int GasGauge_Task(GasGauge_DataTypeDef *GG)
 		if (GG->AvgCurrent<APP_MIN_CURRENT)
 		{
 			GG->State=BATT_DISCHARG;
-			value = GG->ChargeValue * 60 / (-GG->AvgCurrent);  /* in minutes */
-			if (value<0) value=0;
-			GG->RemTime = value; 
+			if(GG->AvgCurrent != 0) //avoid divide by 0
+			{
+				value = GG->ChargeValue * 60 / (-GG->AvgCurrent);  /* in minutes */
+				if (value<0) value=0;
+				GG->RemTime = value; 
+			}
 		}
 		else 
 		{
@@ -1767,7 +1811,7 @@ int STC31xx_AlarmSetVoltageThreshold(int VoltThresh)
 
 	BattData.Alm_Vbat =VoltThresh;
 
-	value= ((BattData.Alm_Vbat << 9) / VoltageFactor); /* LSB=8*2.44mV */
+	value= ((BattData.Alm_Vbat << 9) / VOLTAGE_FACTOR); /* LSB=8*2.44mV */
 	res = STC31xx_WriteByte(STC311x_REG_ALARM_VOLTAGE, value);
 	if (res!= OK) return (res);
 
@@ -1808,7 +1852,7 @@ int STC31xx_RelaxTmrSet(int CurrentThreshold)
 	int res, value;
 
 	BattData.RelaxThreshold = CurrentThreshold;
-	if (BattData.CurrentFactor!=0) 
+	if (BattData.CurrentFactor != 0) //avoid divide by 0
 	{
 		value= ((BattData.RelaxThreshold << 9) / BattData.CurrentFactor);   /* LSB=8*5.88uV/Rsense */
 		value = value & 0x7f;
@@ -1872,7 +1916,7 @@ static void stc311x_work(struct work_struct *work)
 {
 	struct stc311x_chip *chip;
 	GasGauge_DataTypeDef GasGaugeData;
-	int res,Loop;
+	int res,i;
 
 	chip = container_of(work, struct stc311x_chip, work.work);
 
@@ -1890,12 +1934,15 @@ static void stc311x_work(struct work_struct *work)
 		GasGaugeData.Rsense = chip->pdata->Rsense;      /* sense resistor mOhms*/
 		GasGaugeData.RelaxCurrent = chip->pdata->RelaxCurrent; /* current for relaxation in mA (< C/20) */
 		GasGaugeData.Adaptive = chip->pdata->Adaptive;     /* 1=Adaptive mode enabled, 0=Adaptive mode disabled */
+		
 		/* capacity derating in 0.1%, for temp = 60, 40, 25, 10,   0, -10 °C */
-		for(Loop=0;Loop<NTEMP;Loop++)
-			GasGaugeData.CapDerating[Loop] = chip->pdata->CapDerating[Loop];   
-		/* OCV curve adjustment */
-		for(Loop=0;Loop<16;Loop++)
-			GasGaugeData.OCVValue[Loop] = chip->pdata->OCVValue[Loop];    
+		for(i=0;i<TEMPERAT_SIZE;i++)
+			GasGaugeData.CapDerating[i] = chip->pdata->CapDerating[i];   
+		
+		/* OCV curve*/
+		for(i=0;i<OCVTAB_SIZE;i++)
+			GasGaugeData.OCVValue[i] = chip->pdata->OCVValue[i];    
+		
 		GasGaugeData.ExternalTemperature = chip->pdata->ExternalTemperature(); /*External temperature fonction, return °C*/
 		GasGaugeData.ForceExternalTemperature = chip->pdata->ForceExternalTemperature; /* 1=External temperature, 0=STC3117 temperature */
 	}
@@ -1936,7 +1983,7 @@ static int __devinit stc311x_probe(struct i2c_client *client,
 {
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct stc311x_chip *chip;
-	int ret,res,Loop;
+	int ret,res,i;
 
 	GasGauge_DataTypeDef GasGaugeData;
 
@@ -2002,12 +2049,14 @@ static int __devinit stc311x_probe(struct i2c_client *client,
 		GasGaugeData.Rsense = chip->pdata->Rsense;      /* sense resistor mOhms*/
 		GasGaugeData.RelaxCurrent = chip->pdata->RelaxCurrent; /* current for relaxation in mA (< C/20) */
 		GasGaugeData.Adaptive = chip->pdata->Adaptive;     /* 1=Adaptive mode enabled, 0=Adaptive mode disabled */
+		
 		/* capacity derating in 0.1%, for temp = 60, 40, 25, 10,   0, -10 °C */
-		for(Loop=0;Loop<NTEMP;Loop++)
-			GasGaugeData.CapDerating[Loop] = chip->pdata->CapDerating[Loop];   
+		for(i=0;i<TEMPERAT_SIZE;i++)
+			GasGaugeData.CapDerating[i] = chip->pdata->CapDerating[i];   
+		
 		/* OCV curve adjustment */
-		for(Loop=0;Loop<16;Loop++)
-			GasGaugeData.OCVValue[Loop] = chip->pdata->OCVValue[Loop];    
+		for(i=0;i<OCVTAB_SIZE;i++)
+			GasGaugeData.OCVValue[i] = chip->pdata->OCVValue[i];    
 		GasGaugeData.ExternalTemperature = chip->pdata->ExternalTemperature(); /*External temperature fonction, return °C*/
 		GasGaugeData.ForceExternalTemperature = chip->pdata->ForceExternalTemperature; /* 1=External temperature, 0=STC3117 temperature */
 	}
