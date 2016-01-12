@@ -22,6 +22,7 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/pm_runtime.h>
+#include <drm/mediatek_drm.h>
 
 #include "mtk_cec.h"
 #include "mtk_drm_crtc.h"
@@ -222,6 +223,14 @@ static const struct vm_operations_struct mtk_drm_gem_vm_ops = {
 	.close = drm_gem_vm_close,
 };
 
+static const struct drm_ioctl_desc mtk_ioctls[] = {
+	DRM_IOCTL_DEF_DRV(MTK_GEM_CREATE, mtk_gem_create_ioctl,
+			  DRM_UNLOCKED | DRM_AUTH | DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MTK_GEM_MAP_OFFSET,
+			  mtk_gem_map_offset_ioctl,
+			  DRM_UNLOCKED | DRM_AUTH | DRM_RENDER_ALLOW),
+};
+
 static const struct file_operations mtk_drm_fops = {
 	.owner = THIS_MODULE,
 	.open = drm_open,
@@ -237,7 +246,7 @@ static const struct file_operations mtk_drm_fops = {
 
 static struct drm_driver mtk_drm_driver = {
 	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_PRIME |
-			   DRIVER_ATOMIC,
+			   DRIVER_ATOMIC | DRIVER_RENDER,
 	.unload = mtk_drm_unload,
 
 	.get_vblank_counter = drm_vblank_count,
@@ -257,6 +266,8 @@ static struct drm_driver mtk_drm_driver = {
 	.gem_prime_get_sg_table = mtk_gem_prime_get_sg_table,
 	.gem_prime_import_sg_table = mtk_gem_prime_import_sg_table,
 	.gem_prime_mmap = mtk_drm_gem_mmap_buf,
+	.ioctls = mtk_ioctls,
+	.num_ioctls = ARRAY_SIZE(mtk_ioctls),
 	.fops = &mtk_drm_fops,
 
 	.name = DRIVER_NAME,
