@@ -5579,6 +5579,10 @@ again:
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
 
+#ifdef CONFIG_SMP
+	rq->misfit_task = !task_fits_max(p, rq->cpu);
+#endif
+
 	return p;
 simple:
 	cfs_rq = &rq->cfs;
@@ -5600,9 +5604,17 @@ simple:
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
 
+#ifdef CONFIG_SMP
+	rq->misfit_task = !task_fits_max(p, rq->cpu);
+#endif
+
 	return p;
 
 idle:
+#ifdef CONFIG_SMP
+	rq->misfit_task = 0;
+#endif
+
 	new_tasks = idle_balance(rq);
 	/*
 	 * Because idle_balance() releases (and re-acquires) rq->lock, it is
@@ -6313,6 +6325,7 @@ static unsigned long task_h_load(struct task_struct *p)
 
 enum group_type {
 	group_other = 0,
+	group_misfit_task,
 	group_imbalanced,
 	group_overloaded,
 };
@@ -6332,6 +6345,7 @@ struct sg_lb_stats {
 	unsigned int group_weight;
 	enum group_type group_type;
 	int group_no_capacity;
+	int group_misfit_task; /* A cpu has a task too big for its capacity */
 #ifdef CONFIG_NUMA_BALANCING
 	unsigned int nr_numa_running;
 	unsigned int nr_preferred_running;
@@ -6649,6 +6663,9 @@ static enum group_type group_classify(struct lb_env *env,
 	if (sg_imbalanced(group))
 		return group_imbalanced;
 
+	if (sgs->group_misfit_task)
+		return group_misfit_task;
+
 	return group_other;
 }
 
@@ -6700,8 +6717,11 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		if (!nr_running && idle_cpu(i))
 			sgs->idle_cpus++;
 
-		if (cpu_overutilized(i))
+		if (cpu_overutilized(i)) {
 			*overutilized = true;
+			if (!sgs->group_misfit_task && rq->misfit_task)
+				sgs->group_misfit_task = capacity_of(i);
+		}
 	}
 
 	/* Adjust by relative CPU capacity of the group */
@@ -8286,6 +8306,8 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 #ifdef CONFIG_SMP
 	if (!rq->rd->overutilized && cpu_overutilized(task_cpu(curr)))
 		rq->rd->overutilized = true;
+
+	rq->misfit_task = !task_fits_max(curr, rq->cpu);
 #endif
 }
 
