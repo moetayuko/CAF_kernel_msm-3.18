@@ -554,7 +554,7 @@ struct pm_domain_data;
  *			suspended or some invalid state.
  */
 
-enum wakeup_type {
+enum pm_wakeup_type {
 	WAKEUP_UNKNOWN = 0,
 	WAKEUP_AUTOMATIC,
 	WAKEUP_USER,
@@ -589,7 +589,7 @@ struct dev_pm_info {
 	struct completion	completion;
 	struct wakeup_source	*wakeup;
 	void			*wakeup_data;
-	enum wakeup_type	wakeup_source_type;
+	enum pm_wakeup_type	wakeup_source_type;
 	bool			wakeup_path:1;
 	bool			syscore:1;
 	bool			no_pm_callbacks:1;	/* Owned by the PM core */
