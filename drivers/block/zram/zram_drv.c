@@ -1123,7 +1123,7 @@ static ssize_t reset_store(struct device *dev,
 	return len;
 }
 
-static int zram_open(struct block_device *bdev, fmode_t mode)
+int zram_open(struct block_device *bdev, fmode_t mode)
 {
 	struct zram *zram;
 	int open_count;
@@ -1158,14 +1158,12 @@ static int zram_open(struct block_device *bdev, fmode_t mode)
 	return 0;
 
 out_busy_dec_nr_opens:
-	pr_warning("open attempted while zram%d claimed (count: %d)\n",
-			zram->disk->first_minor, open_count);
 	atomic_dec(&zram->nr_opens);
 out_busy:
 	return -EBUSY;
 }
 
-static void zram_release(struct gendisk *disk, fmode_t mode)
+void zram_release(struct gendisk *disk, fmode_t mode)
 {
 	struct zram *zram = disk->private_data;
 	atomic_dec(&zram->nr_opens);
