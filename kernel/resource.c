@@ -948,6 +948,7 @@ static void __init __reserve_region_with_split(struct resource *root,
 	res->start = start;
 	res->end = end;
 	res->flags = IORESOURCE_BUSY;
+	res->desc = IORES_DESC_NONE;
 
 	while (1) {
 
@@ -982,6 +983,7 @@ static void __init __reserve_region_with_split(struct resource *root,
 				next_res->start = conflict->end + 1;
 				next_res->end = end;
 				next_res->flags = IORESOURCE_BUSY;
+				next_res->desc = IORES_DESC_NONE;
 			}
 		} else {
 			res->start = conflict->end + 1;
@@ -1075,6 +1077,7 @@ struct resource * __request_region(struct resource *parent,
 	res->end = start + n - 1;
 	res->flags = resource_type(parent) | resource_ext_type(parent);
 	res->flags |= IORESOURCE_BUSY | flags;
+	res->desc = IORES_DESC_NONE;
 
 	write_lock(&resource_lock);
 
@@ -1269,6 +1272,7 @@ int release_mem_region_adjustable(struct resource *parent,
 			new_res->start = end + 1;
 			new_res->end = res->end;
 			new_res->flags = res->flags;
+			new_res->desc = res->desc;
 			new_res->parent = res->parent;
 			new_res->sibling = res->sibling;
 			new_res->child = NULL;
@@ -1444,6 +1448,7 @@ static int __init reserve_setup(char *str)
 			res->start = io_start;
 			res->end = io_start + io_num - 1;
 			res->flags = IORESOURCE_BUSY;
+			res->desc = IORES_DESC_NONE;
 			res->child = NULL;
 			if (request_resource(res->start >= 0x10000 ? &iomem_resource : &ioport_resource, res) == 0)
 				reserved = x+1;
