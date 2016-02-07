@@ -708,7 +708,7 @@ static DEVICE_ATTR(raw_data, S_IRUGO, lightsensor_lux_show, NULL);
 static irqreturn_t cm36651_irq_thread_fn(int irq, void *data)
 {
 	struct cm36651_data *cm36651 = data;
-	u8 val;
+	u8 val = 1;
 	u8 ps_data = 0;
 
 	val = gpio_get_value_cansleep(cm36651->pdata->irq);
@@ -777,7 +777,7 @@ static int cm36651_setup_reg(struct cm36651_data *cm36651)
 
 static int cm36651_setup_irq(struct cm36651_data *cm36651)
 {
-	int rc;
+	int rc = -EIO;
 	struct cm36651_platform_data *pdata = cm36651->pdata;
 
 	rc = gpio_request(pdata->irq, "gpio_proximity_out");
