@@ -6,6 +6,7 @@
 #include <linux/static_key.h>
 #include <linux/context_tracking.h>
 #include "sched.h"
+#include "win_stats.h"
 
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
@@ -50,6 +51,7 @@ void irqtime_account_irq(struct task_struct *curr)
 	unsigned long flags;
 	s64 delta;
 	int cpu;
+	bool account = true;
 
 	if (!sched_clock_irqtime)
 		return;
@@ -71,8 +73,13 @@ void irqtime_account_irq(struct task_struct *curr)
 		__this_cpu_add(cpu_hardirq_time, delta);
 	else if (in_serving_softirq() && curr != this_cpu_ksoftirqd())
 		__this_cpu_add(cpu_softirq_time, delta);
+	else
+		account = false;
 
 	irq_time_write_end();
+
+	if (account)
+		sched_account_irqtime(cpu, curr, delta, sched_clock_cpu(cpu));
 	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(irqtime_account_irq);

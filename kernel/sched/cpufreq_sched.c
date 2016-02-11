@@ -188,8 +188,18 @@ void cpufreq_sched_set_cap(int cpu, unsigned long capacity)
 	 *
 	 * If this cpu is not the new maximum then bail
 	 */
+#if 0
+	// TJK: this is broken because the max might have been saved in the
+	// percpu data, but if it was requested when throttled, we would 
+	// have bailed w/o actually setting the frequency
 	if (capacity_max > capacity)
 		goto out;
+	if (capacity_max > capacity)
+		goto out;
+#else
+	if (capacity_max > capacity)
+		capacity = capacity_max;
+#endif
 
 	/* Convert the new maximum capacity request into a cpu frequency */
 	freq_new = (capacity * gd->max) / capacity_orig_of(cpu);

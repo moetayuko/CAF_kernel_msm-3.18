@@ -12,6 +12,7 @@
 #include "cpupri.h"
 #include "cpudeadline.h"
 #include "cpuacct.h"
+#include "win_sched.h"
 
 struct rq;
 struct cpuidle_state;
@@ -668,6 +669,7 @@ struct rq {
 	struct cpuidle_state *idle_state;
 	int idle_state_idx;
 #endif
+	struct hmp_rq hmp_rq;
 };
 
 static inline int cpu_of(struct rq *rq)

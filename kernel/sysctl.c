@@ -279,6 +279,8 @@ static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
 #endif
 
+extern int use_window_lt;
+
 static struct ctl_table kern_table[] = {
 	{
 		.procname	= "sched_child_runs_first",
@@ -299,6 +301,13 @@ static struct ctl_table kern_table[] = {
 	{
 		.procname	= "sched_capacity_margin",
 		.data		= &sysctl_sched_capacity_margin,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "use_window_lt",
+		.data		= &use_window_lt,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,

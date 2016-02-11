@@ -93,7 +93,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
-
+#include "win_stats.h"
 
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 {
@@ -1086,6 +1086,7 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 			p->sched_class->migrate_task_rq(p, new_cpu);
 		p->se.nr_migrations++;
 		perf_sw_event(PERF_COUNT_SW_CPU_MIGRATIONS, 1, NULL, 0);
+		fixup_busy_time(p, new_cpu);
 	}
 
 	__set_task_cpu(p, new_cpu);
@@ -1720,6 +1721,8 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 {
 	unsigned long flags;
 	int cpu, success = 0;
+	u64 wallclock;
+	struct rq *rq;
 
 	/*
 	 * If we are going to wake up a thread waiting for CONDITION we
@@ -1749,6 +1752,13 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * Pairs with the smp_wmb() in finish_lock_switch().
 	 */
 	smp_rmb();
+
+	rq = cpu_rq(task_cpu(p));
+	raw_spin_lock(&rq->lock);
+	wallclock = sched_ktime_clock();
+	update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
+	update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
+	raw_spin_unlock(&rq->lock);
 
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
 	p->state = TASK_WAKING;
@@ -1799,8 +1809,12 @@ static void try_to_wake_up_local(struct task_struct *p)
 	if (!(p->state & TASK_NORMAL))
 		goto out;
 
-	if (!task_on_rq_queued(p))
+	if (!task_on_rq_queued(p)) {
+		u64 wallclock = sched_ktime_clock();
+		update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
+		update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
 		ttwu_activate(rq, p, ENQUEUE_WAKEUP);
+	}
 
 	ttwu_do_wakeup(rq, p, 0);
 	ttwu_stat(p, smp_processor_id(), 0);
@@ -2600,13 +2614,17 @@ void scheduler_tick(void)
 	int cpu = smp_processor_id();
 	struct rq *rq = cpu_rq(cpu);
 	struct task_struct *curr = rq->curr;
+	u64 wallclock;
 
 	sched_clock_tick();
 
 	raw_spin_lock(&rq->lock);
+	set_window_start(rq);
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
 	update_cpu_load_active(rq);
+	wallclock = sched_ktime_clock();
+	update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
 	raw_spin_unlock(&rq->lock);
 
 	perf_event_task_tick();
@@ -2827,6 +2845,7 @@ static void __sched __schedule(void)
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
+	u64 wallclock;
 
 need_resched:
 	preempt_disable();
@@ -2880,7 +2899,9 @@ need_resched:
 
 	next = pick_next_task(rq, prev);
 	clear_tsk_need_resched(prev);
-	//TJK clear_preempt_need_resched();
+	wallclock = sched_ktime_clock();
+	update_task_ravg(prev, rq, PUT_PREV_TASK, wallclock, 0);
+	update_task_ravg(next, rq, PICK_NEXT_TASK, wallclock, 0);
 	rq->skip_clock_update = 0;
 
 	if (likely(prev != next)) {
@@ -8245,7 +8266,7 @@ static int cpu_notify_on_migrate_write_u64(struct cgroup *cgrp,
 }
 #endif
 
-#ifdef CONFIG_SCHED_HMP
+#ifdef TJK_CONFIG_SCHED_HMP
 
 static u64 cpu_upmigrate_discourage_read_u64(struct cgroup *cgrp,
 					  struct cftype *cft)
@@ -8569,7 +8590,7 @@ static struct cftype cpu_files[] = {
 		.write_u64 = cpu_notify_on_migrate_write_u64,
 	},
 #endif
-#ifdef CONFIG_SCHED_HMP
+#ifdef TJK_CONFIG_SCHED_HMP
 	{
 		.name = "upmigrate_discourage",
 		.read_u64 = cpu_upmigrate_discourage_read_u64,

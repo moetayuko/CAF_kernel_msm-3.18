@@ -34,6 +34,7 @@
 #include <trace/events/sched.h>
 
 #include "sched.h"
+#include "win_stats.h"
 #include "tune.h"
 
 #ifndef TJK_HMP
@@ -4024,6 +4025,7 @@ static inline void hrtick_update(struct rq *rq)
 #endif
 
 unsigned int __read_mostly sysctl_sched_capacity_margin = 1280; /* ~20% margin */
+unsigned int __read_mostly use_window_lt = 0;
 
 static bool cpu_overutilized(int cpu);
 static unsigned long get_cpu_usage(int cpu);
@@ -4918,7 +4920,13 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
 
 static inline unsigned long task_utilization(struct task_struct *p)
 {
-	return p->se.avg.utilization_avg_contrib;
+	// pelt
+	if (!use_window_lt)
+		return p->se.avg.utilization_avg_contrib;
+
+	// window-based accounting
+	return ((long)p->ravg.demand * 1024) / 10000000;
+
 }
 
 #ifdef CONFIG_SCHED_TUNE

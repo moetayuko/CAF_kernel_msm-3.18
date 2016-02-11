@@ -294,6 +294,23 @@ TRACE_EVENT(sched_update_task_ravg,
 #endif
 		)
 );
+#endif // HMP
+
+TRACE_EVENT(sched_tjk,
+	TP_PROTO(char *s, int i, int j),
+	TP_ARGS(s, i, j),
+	TP_STRUCT__entry(
+		__array(	char,	tag,   TASK_COMM_LEN	)
+		__field(	 int,	i			)
+		__field(	 int,	j			)
+	),
+	TP_fast_assign(
+		memcpy(__entry->tag, s, TASK_COMM_LEN);
+		__entry->i = i;
+		__entry->j = j;
+	),
+	TP_printk("TJK: %s %d %d", __entry->tag, __entry->i, __entry->j)
+);
 
 TRACE_EVENT(sched_update_history,
 
@@ -309,9 +326,9 @@ TRACE_EVENT(sched_update_history,
 		__field(	 int,	samples			)
 		__field(enum task_event,	evt		)
 		__field(unsigned int,	demand			)
+		__field(unsigned long,	ndemand			)
+		__field(unsigned long,	eas_util			)
 		__array(	 u32,	hist, RAVG_HIST_SIZE_MAX)
-		__field(unsigned int,	nr_big_tasks		)
-		__field(unsigned int,	nr_small_tasks		)
 		__field(	 int,	cpu			)
 	),
 
@@ -322,22 +339,23 @@ TRACE_EVENT(sched_update_history,
 		__entry->samples        = samples;
 		__entry->evt            = evt;
 		__entry->demand         = p->ravg.demand;
+		__entry->ndemand        = ((long)p->ravg.demand * 1024) / 10000000;
+		__entry->eas_util       = p->se.avg.utilization_avg_contrib;
 		memcpy(__entry->hist, p->ravg.sum_history,
 					RAVG_HIST_SIZE_MAX * sizeof(u32));
-		__entry->nr_big_tasks   = rq->hmp_stats.nr_big_tasks;
-		__entry->nr_small_tasks = rq->hmp_stats.nr_small_tasks;
 		__entry->cpu            = rq->cpu;
 	),
 
-	TP_printk("%d (%s): runtime %u samples %d event %s demand %u (hist: %u %u %u %u %u) cpu %d nr_big %u nr_small %u",
+	TP_printk("%d (%s): runtime %u samples %d event %s(%d) demand %u ndemand %lu easutil %lu (hist: %u %u %u %u %u) cpu %d nr_big %u nr_small %u",
 		__entry->pid, __entry->comm,
 		__entry->runtime, __entry->samples,
-		task_event_names[__entry->evt],
-		__entry->demand, __entry->hist[0],
+		task_event_names[__entry->evt], __entry->evt,
+		__entry->demand, __entry->ndemand, __entry->eas_util, __entry->hist[0],
 		__entry->hist[1], __entry->hist[2], __entry->hist[3],
-		__entry->hist[4], __entry->cpu, __entry->nr_big_tasks,
-		__entry->nr_small_tasks)
+		__entry->hist[4], __entry->cpu,
+		0, 0)
 );
+#ifdef CONFIG_TJK_HMP
 
 TRACE_EVENT(sched_reset_all_window_stats,
 

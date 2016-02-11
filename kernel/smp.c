@@ -14,8 +14,11 @@
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
 #include <linux/sched.h>
+#include <trace/events/power.h>
 
 #include "smpboot.h"
+#include "sched/sched.h"
+#include "sched/win_stats.h"
 
 enum {
 	CSD_FLAG_LOCK		= 0x01,
@@ -772,7 +775,14 @@ static int cpufreq_callback(struct notifier_block *nb,
 
 	if (val == CPUFREQ_PRECHANGE) {
 		scale_freq_capacity(cpu, freq->new, max);
-		// TJK: fix tracing: trace_cpu_capacity(capacity_curr_of(cpu), cpu);
+		trace_cpu_capacity(capacity_curr_of(cpu), cpu);
+	}
+	if (val == CPUFREQ_POSTCHANGE) {
+		unsigned long flags;
+		struct rq *rq = cpu_rq(cpu);
+		raw_spin_lock_irqsave(&rq->lock, flags);
+		update_task_ravg(rq->curr, rq, TASK_UPDATE, sched_ktime_clock(), 0);
+		raw_spin_unlock_irqrestore(&rq->lock, flags);
 	}
 
 	return NOTIFY_OK;
