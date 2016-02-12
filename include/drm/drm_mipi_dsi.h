@@ -145,6 +145,19 @@ enum mipi_dsi_pixel_format {
 	MIPI_DSI_FMT_RGB565,
 };
 
+ /**
+ * struct mipi_dsi_device_info - template for creating a mipi_dsi_device
+ * @channel: DSI virtual channel assigned to peripheral
+ * @node: pointer to OF device node
+ *
+ * This is populated and passed to mipi_dsi_device_new to create a new
+ * DSI device
+ */
+struct mipi_dsi_device_info {
+	u32 channel;
+	struct device_node *node;
+};
+
 /**
  * struct mipi_dsi_device - DSI peripheral device
  * @host: DSI host for this peripheral
@@ -169,6 +182,9 @@ static inline struct mipi_dsi_device *to_mipi_dsi_device(struct device *dev)
 	return container_of(dev, struct mipi_dsi_device, dev);
 }
 
+struct mipi_dsi_device *
+mipi_dsi_device_register_full(struct mipi_dsi_host *host,
+			      const struct mipi_dsi_device_info *info);
 struct mipi_dsi_device *of_find_mipi_dsi_device_by_node(struct device_node *np);
 int mipi_dsi_attach(struct mipi_dsi_device *dsi);
 int mipi_dsi_detach(struct mipi_dsi_device *dsi);
