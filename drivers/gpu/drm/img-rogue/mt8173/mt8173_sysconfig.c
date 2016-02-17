@@ -378,7 +378,7 @@ PVRSRV_ERROR SysDevInit(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 	gsDevice.ui32RegsSize = mfg->rgx_size;
 
 #ifdef PVR_DVFS
-	gsDevice.sDVFS.sDVFSDeviceCfg.bIdleReq = IMG_FALSE;
+	gsDevice.sDVFS.sDVFSDeviceCfg.bIdleReq = IMG_TRUE;
 	gsDevice.sDVFS.sDVFSDeviceCfg.pfnSetFrequency = SetFrequency;
 	gsDevice.sDVFS.sDVFSDeviceCfg.pfnSetVoltage = SetVoltage;
 	gsDevice.sDVFS.sDVFSDeviceCfg.ui32PollMs = MTK_DVFS_SWITCH_INTERVAL;
