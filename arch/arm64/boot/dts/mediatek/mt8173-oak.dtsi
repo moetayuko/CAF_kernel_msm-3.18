@@ -194,6 +194,8 @@
 		compatible = "elan,ekth3000";
 		interrupt-parent = <&pio>;
 		interrupts = <124 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&trackpad_irq>;
 		reg = <0x15>;
 		vcc-supply = <&mt6397_vgp6_reg>;
 		wakeup-source;
@@ -504,6 +506,14 @@
 				 <MT8173_PIN_104_MSDC2_CLK__FUNC_SPI_MO_1_>,
 				 <MT8173_PIN_105_MSDC2_CMD__FUNC_SPI_CS_1_>;
 			bias-disable;
+		};
+	};
+
+	trackpad_irq: trackpad_irq {
+		pins1 {
+			pinmux = <MT8173_PIN_117_URXD3__FUNC_GPIO117>;
+			input-enable;
+			bias-pull-up;
 		};
 	};
 
