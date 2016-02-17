@@ -20,6 +20,19 @@
 	compatible = "google,oak-rev4", "google,oak", "mediatek,mt8173";
 };
 
+&anx7814 {
+	reset-gpios = <&pio 98 GPIO_ACTIVE_HIGH>;
+};
+
+&anx7814_pins {
+	pins1 {
+		pinmux = <MT8173_PIN_33_DAICLK__FUNC_GPIO33>,
+			 <MT8173_PIN_35_DAIPCMOUT__FUNC_GPIO35>,
+			 <MT8173_PIN_36_DAISYNC__FUNC_GPIO36>,
+			 <MT8173_PIN_98_URTS1__FUNC_GPIO98>;
+	};
+};
+
 &aud_i2s2 {
 	pins1 {
 		pinmux = <MT8173_PIN_128_I2S0_LRCK__FUNC_I2S1_WS>,
