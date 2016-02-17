@@ -25,6 +25,7 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 #include <soc/mediatek/smi.h>
 #include <dt-bindings/memory/mt8173-larb-port.h>
 
