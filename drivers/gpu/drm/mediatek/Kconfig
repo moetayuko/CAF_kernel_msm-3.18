@@ -3,6 +3,8 @@ config DRM_MEDIATEK
 	depends on DRM
 	depends on ARCH_MEDIATEK || (ARM && COMPILE_TEST)
 	select DRM_KMS_HELPER
+	select DRM_MIPI_DSI
+	select DRM_PANEL
 	select IOMMU_DMA
 	select MTK_SMI
 	help
