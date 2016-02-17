@@ -27,6 +27,7 @@
 #include <linux/iova.h>
 #include <linux/mm.h>
 #include <linux/scatterlist.h>
+#include <linux/slab.h>
 #include <linux/vmalloc.h>
 
 int iommu_dma_init(void)
