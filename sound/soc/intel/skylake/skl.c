@@ -28,9 +28,6 @@
 #include <linux/firmware.h>
 #include <sound/pcm.h>
 #include "../common/sst-acpi.h"
-#include <sound/hda_register.h>
-#include <sound/hdaudio.h>
-#include <sound/hda_i915.h>
 #include "skl.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
@@ -484,27 +481,6 @@ static int skl_create(struct pci_dev *pci,
 	return 0;
 }
 
-static int skl_i915_init(struct hdac_bus *bus)
-{
-	int err;
-
-	/* the HDMI codec is in GPU so we need to ensure that it is powered
-	 * up and ready for probe
-	 */
-	err = snd_hdac_i915_init(bus);
-	if (err < 0)
-		return err;
-
-	err = snd_hdac_display_power(bus, true);
-	if (err < 0) {
-		dev_err(bus->dev, "Cannot turn on display power on i915\n");
-		return err;
-	}
-	snd_hdac_set_codec_wakeup(bus, true);
-
-	return err;
-}
-
 static int skl_first_init(struct hdac_ext_bus *ebus)
 {
 	struct skl *skl = ebus_to_skl(ebus);
@@ -568,12 +544,6 @@ static int skl_first_init(struct hdac_ext_bus *ebus)
 	skl_init_pci(skl);
 
 	skl_init_chip(bus, true);
-
-	err = skl_i915_init(bus);
-	if (err < 0)
-		return err;
-
-	snd_hdac_set_codec_wakeup(bus, false);
 
 	/* codec detection */
 	if (!bus->codec_mask) {
@@ -647,12 +617,6 @@ static int skl_probe(struct pci_dev *pci,
 	if (err < 0)
 		goto out_unregister;
 
-	err = snd_hdac_display_power(bus, false);
-	if (err < 0) {
-		dev_err(bus->dev, "Cannot turn off display power on i915\n");
-		return err;
-	}
-
 	/*configure PM */
 	pm_runtime_put_noidle(bus->dev);
 	pm_runtime_allow(bus->dev);
@@ -703,8 +667,6 @@ static void skl_remove(struct pci_dev *pci)
 {
 	struct hdac_ext_bus *ebus = pci_get_drvdata(pci);
 	struct skl *skl = ebus_to_skl(ebus);
-
-	snd_hdac_i915_exit(&ebus->bus);
 
 	if (skl->tplg)
 		release_firmware(skl->tplg);
