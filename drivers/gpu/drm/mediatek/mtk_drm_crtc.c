@@ -503,6 +503,18 @@ int mtk_drm_crtc_create(struct drm_device *drm_dev,
 	int ret;
 	int i;
 
+	for (i = 0; i < path_len; i++) {
+		enum mtk_ddp_comp_id comp_id = path[i];
+		struct device_node *node;
+
+		node = priv->comp_node[comp_id];
+		if (!node) {
+			dev_info(dev, "Component %d is disabled or missing\n",
+				 comp_id);
+			return -ENOENT;
+		}
+	}
+
 	mtk_crtc = devm_kzalloc(dev, sizeof(*mtk_crtc), GFP_KERNEL);
 	if (!mtk_crtc)
 		return -ENOMEM;
@@ -526,13 +538,6 @@ int mtk_drm_crtc_create(struct drm_device *drm_dev,
 		struct device_node *node;
 
 		node = priv->comp_node[comp_id];
-		if (!node) {
-			dev_err(dev, "Component %d is disabled or missing\n",
-				comp_id);
-			ret = -ENODEV;
-			goto unprepare;
-		}
-
 		comp = priv->ddp_comp[comp_id];
 		if (!comp) {
 			dev_err(dev, "Component %s not initialized\n",

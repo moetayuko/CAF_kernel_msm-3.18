@@ -164,16 +164,16 @@ static int mtk_drm_kms_init(struct drm_device *drm)
 		goto err_config_cleanup;
 
 	/*
-	 * We currently support two fixed data streams, each statically
-	 * assigned to a crtc:
+	 * We currently support two fixed data streams, each optional,
+	 * and each statically assigned to a crtc:
 	 * OVL0 -> COLOR0 -> AAL -> OD -> RDMA0 -> UFOE -> DSI0 ...
 	 */
 	ret = mtk_drm_crtc_create(drm, mtk_ddp_main, ARRAY_SIZE(mtk_ddp_main));
-	if (ret < 0)
+	if (ret < 0 && ret != -ENOENT)
 		goto err_component_unbind;
 	/* ... and OVL1 -> COLOR1 -> GAMMA -> RDMA1 -> DPI0. */
 	ret = mtk_drm_crtc_create(drm, mtk_ddp_ext, ARRAY_SIZE(mtk_ddp_ext));
-	if (ret < 0)
+	if (ret < 0 && ret != -ENOENT)
 		goto err_component_unbind;
 
 	/*
