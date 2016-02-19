@@ -28,8 +28,16 @@
 	status = "disabled";
 };
 
+&gpio_keys {
+	/delete-property/pinctrl-names;
+	/delete-property/pinctrl-0;
+
+	/delete-node/tablet_mode;
+	/delete-node/volume_down;
+	/delete-node/volume_up;
+};
+
 &gpu {
-	mfgsys-power-supply = <&da9211_vgpu_reg>;
 	operating-points = <
 		253500 1000000
 		299000 1000000
@@ -39,34 +47,57 @@
 	>;
 };
 
-&i2c1 {
-	da9211: da9211@68 {
-		compatible = "dlg,da9211";
-		reg = <0x68>;
+&i2c0 {
+	rt5676: audio-codec@2c {
+		compatible = "realtek,rt5676";
+		reg = <0x2c>;
+		interrupt-parent = <&pio>;
+		interrupts = <2 IRQ_TYPE_EDGE_BOTH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rt5676_irq>;
+	};
+};
 
-		regulators {
-			da9211_vcpu_reg: BUCKA {
-				regulator-name = "VBUCKA";
-				regulator-min-microvolt = < 700000>;
-				regulator-max-microvolt = <1310000>;
-				regulator-min-microamp	= <2000000>;
-				regulator-max-microamp	= <4400000>;
-				regulator-ramp-delay = <10000>;
-				regulator-always-on;
-			};
+&i2c3 {
+	/delete-node/touchscreen@10;
+};
 
-			da9211_vgpu_reg: BUCKB {
-				regulator-name = "VBUCKB";
-				regulator-min-microvolt = < 700000>;
-				regulator-max-microvolt = <1310000>;
-				regulator-min-microamp	= <2000000>;
-				regulator-max-microamp	= <3000000>;
-				regulator-ramp-delay = <10000>;
-			};
+&mmc1 {
+	/delete-property/wp-gpios;
+};
+
+&mmc1_pins_default {
+	/delete-node/pins_wp;
+};
+
+&mmc3_pins_default {
+	pins_pdn {
+		pinmux = <MT8173_PIN_100_MSDC2_DAT0__FUNC_GPIO100>;
+		output-high;
+	};
+};
+
+&pio {
+	/delete-node/gpio_keys_node;
+
+	rt5676_irq: rt5676_irq {
+		pins1 {
+			pinmux = <MT8173_PIN_2_EINT2__FUNC_GPIO2>;
+			bias-pull-down;
 		};
 	};
 };
 
-&mt6311 {
-	status = "disabled";
+&sdio_fixed_3v3 {
+	gpio = <&pio 100 GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+};
+
+&sound {
+	compatible = "mediatek,mt8173-rt5650-rt5676";
+	mediatek,audio-codec = <&rt5650 &rt5676>;
+};
+
+&trackpad {
+	interrupts = <124 IRQ_TYPE_LEVEL_LOW>;
 };

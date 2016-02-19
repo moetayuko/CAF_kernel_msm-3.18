@@ -51,7 +51,7 @@
 		regulator-max-microvolt = <1800000>;
 		startup-delay-us = <1000>;
 		enable-active-high;
-		gpio = <&pio 88 GPIO_ACTIVE_HIGH>;
+		gpio = <&pio 32 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&bl_fixed_pins>;
 	};
@@ -73,8 +73,10 @@
 		};
 	};
 
-	gpio-keys {
+	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_keys_pins>;
 
 		lid {
 			label = "Lid";
@@ -92,6 +94,29 @@
 			debounce-interval = <1>;
 			gpio-key,wakeup;
 		};
+
+		tablet_mode {
+			label = "Tablet_mode";
+			gpios = <&pio 121 GPIO_ACTIVE_HIGH>;
+			linux,code = <1>; /* SW_TABLET_MODE */
+			linux,input-type = <5>; /* EV_SW */
+			debounce-interval = <1>;
+			gpio-key,wakeup;
+		};
+
+		volume_down {
+			label = "Volume_down";
+			gpios = <&pio 124 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			debounce-interval = <100>;
+		};
+
+		volume_up {
+			label = "Volume_up";
+			gpios = <&pio 123 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <100>;
+		};
 	};
 
 	sdio_fixed_3v3: fixedregulator@0 {
@@ -99,13 +124,12 @@
 		regulator-name = "3V3";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		gpio = <&pio 100 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
+		gpio = <&pio 85 GPIO_ACTIVE_HIGH>;
 	};
 
-	sound {
-		compatible = "mediatek,mt8173-rt5650-rt5676";
-		mediatek,audio-codec = <&rt5650 &rt5676>;
+	sound: sound {
+		compatible = "mediatek,mt8173-rt5650";
+		mediatek,audio-codec = <&rt5650>;
 		mediatek,platform = <&afe>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&aud_i2s2>;
@@ -113,7 +137,7 @@
 };
 
 &gpu {
-	mfgsys-power-supply = <&mt6397_vgpu_reg>;
+	mfgsys-power-supply = <&da9211_vgpu_reg>;
 	operating-points = <
 		253500 1000000
 		299000 1000000
@@ -137,37 +161,34 @@
 		pinctrl-0 = <&rt5650_irq>;
 		realtek,jd-mode = <3>;
 	};
-
-	rt5676: audio-codec@2c {
-		compatible = "realtek,rt5676";
-		reg = <0x2c>;
-		interrupt-parent = <&pio>;
-		interrupts = <2 IRQ_TYPE_EDGE_BOTH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&rt5676_irq>;
-	};
 };
 
 &i2c1 {
 	clock-frequency = <1500000>;
 	status = "okay";
 
-	mt6311: mt6311@6b {
-		compatible = "mediatek,mt6311";
-		reg = <0x6b>;
+	da9211: da9211@68 {
+		compatible = "dlg,da9211";
+		reg = <0x68>;
 
 		regulators {
-			mt6311_vcpu_reg: VDVFS {
-				regulator-name = "VDVFS";
-				regulator-min-microvolt = < 600000>;
-				regulator-max-microvolt = <1400000>;
+			da9211_vcpu_reg: BUCKA {
+				regulator-name = "VBUCKA";
+				regulator-min-microvolt = < 700000>;
+				regulator-max-microvolt = <1310000>;
+				regulator-min-microamp  = <2000000>;
+				regulator-max-microamp  = <4400000>;
 				regulator-ramp-delay = <10000>;
 				regulator-always-on;
 			};
-			mt6311_ldo_reg: VBIASN {
-				regulator-name = "VBIASN";
-				regulator-min-microvolt = <200000>;
-				regulator-max-microvolt = <800000>;
+
+			da9211_vgpu_reg: BUCKB {
+				regulator-name = "VBUCKB";
+				regulator-min-microvolt = < 700000>;
+				regulator-max-microvolt = <1310000>;
+				regulator-min-microamp  = <2000000>;
+				regulator-max-microamp  = <3000000>;
+				regulator-ramp-delay = <10000>;
 			};
 		};
 	};
@@ -185,6 +206,13 @@
 
 &i2c3 {
 	status = "okay";
+
+	touchscreen: touchscreen@10 {
+		compatible = "elan,ekth3500";
+		reg = <0x10>;
+		interrupt-parent = <&pio>;
+		interrupts = <88 IRQ_TYPE_EDGE_FALLING>;
+	};
 };
 
 &i2c4 {
@@ -193,7 +221,7 @@
 	trackpad: trackpad@15 {
 		compatible = "elan,ekth3000";
 		interrupt-parent = <&pio>;
-		interrupts = <124 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <117 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&trackpad_irq>;
 		reg = <0x15>;
@@ -232,6 +260,7 @@
 	sd-uhs-sdr50;
 	sd-uhs-sdr104;
 	cd-gpios = <&pio 1 GPIO_ACTIVE_HIGH>;
+	wp-gpios = <&pio 42 GPIO_ACTIVE_HIGH>;
 	vmmc-supply = <&mt6397_vmch_reg>;
 	vqmmc-supply = <&mt6397_vmc_reg>;
 };
@@ -280,7 +309,7 @@
 
 	bl_fixed_pins: bl_fixed_pins {
 		pins1 {
-			pinmux = <MT8173_PIN_88_SRCLKENAI__FUNC_GPIO88>;
+			pinmux = <MT8173_PIN_32_UTXD2__FUNC_GPIO32>;
 			output-low;
 		};
 	};
@@ -296,6 +325,19 @@
 		pins1 {
 			pinmux = <MT8173_PIN_87_DISP_PWM0__FUNC_DISP_PWM0>;
 			output-low;
+		};
+	};
+
+	gpio_keys_pins: gpio_keys_pins {
+		volume_pins {
+			pinmux = <MT8173_PIN_123_KPCOL1__FUNC_GPIO123>,
+				 <MT8173_PIN_124_KPCOL2__FUNC_GPIO124>;
+			bias-pull-up;
+		};
+
+		tablet_mode_pins {
+			pinmux = <MT8173_PIN_121_KPROW2__FUNC_GPIO121>;
+			bias-pull-up;
 		};
 	};
 
@@ -346,6 +388,12 @@
 			pinmux = <MT8173_PIN_1_EINT1__FUNC_GPIO1>;
 			bias-pull-up;
 		};
+
+		pins_wp {
+			pinmux = <MT8173_PIN_42_DSI_TE__FUNC_GPIO42>;
+			input-enable;
+			bias-pull-up;
+		};
 	};
 
 	mmc3_pins_default: mmc3default {
@@ -373,8 +421,8 @@
 		};
 
 		pins_pdn {
-			pinmux = <MT8173_PIN_100_MSDC2_DAT0__FUNC_GPIO100>;
-			output-high;
+			pinmux = <MT8173_PIN_85_AUD_DAT_MOSI__FUNC_GPIO85>;
+			output-low;
 		};
 	};
 
@@ -483,13 +531,6 @@
 	rt5650_irq: rt5650_irq {
 		pins1 {
 			pinmux = <MT8173_PIN_3_EINT3__FUNC_GPIO3>;
-			bias-pull-down;
-		};
-	};
-
-	rt5676_irq: rt5676_irq {
-		pins1 {
-			pinmux = <MT8173_PIN_2_EINT2__FUNC_GPIO2>;
 			bias-pull-down;
 		};
 	};
@@ -749,7 +790,7 @@
 };
 
 &scpsys {
-	mfg_async-supply = <&mt6397_vgpu_reg>;
+	mfg_async-supply = <&da9211_vgpu_reg>;
 };
 
 &spi {

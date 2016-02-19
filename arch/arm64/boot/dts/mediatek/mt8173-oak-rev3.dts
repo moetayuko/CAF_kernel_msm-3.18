@@ -30,3 +30,99 @@
 &bl_fixed_reg {
 	gpio = <&pio 29 GPIO_ACTIVE_HIGH>;
 };
+
+&gpio_keys {
+	/delete-property/pinctrl-names;
+	/delete-property/pinctrl-0;
+
+	/delete-node/tablet_mode;
+	/delete-node/volume_down;
+	/delete-node/volume_up;
+};
+
+&gpu {
+	mfgsys-power-supply = <&mt6397_vgpu_reg>;
+};
+
+&i2c0 {
+	rt5676: audio-codec@2c {
+		compatible = "realtek,rt5676";
+		reg = <0x2c>;
+		interrupt-parent = <&pio>;
+		interrupts = <2 IRQ_TYPE_EDGE_BOTH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rt5676_irq>;
+	};
+};
+
+&i2c1 {
+	/delete-node/da9211@68;
+
+	mt6311: mt6311@6b {
+		compatible = "mediatek,mt6311";
+		reg = <0x6b>;
+
+		regulators {
+			mt6311_vcpu_reg: VDVFS {
+				regulator-name = "VDVFS";
+				regulator-min-microvolt = < 600000>;
+				regulator-max-microvolt = <1400000>;
+				regulator-ramp-delay = <10000>;
+				regulator-always-on;
+			};
+			mt6311_ldo_reg: VBIASN {
+				regulator-name = "VBIASN";
+				regulator-min-microvolt = <200000>;
+				regulator-max-microvolt = <800000>;
+			};
+		};
+	};
+};
+
+&i2c3 {
+	/delete-node/touchscreen@10;
+};
+
+&mmc1 {
+	/delete-property/wp-gpios;
+};
+
+&mmc1_pins_default {
+	/delete-node/pins_wp;
+};
+
+&mmc3_pins_default {
+	pins_pdn {
+		pinmux = <MT8173_PIN_100_MSDC2_DAT0__FUNC_GPIO100>;
+		output-high;
+	};
+};
+
+&pio {
+	/delete-node/gpio_keys_node;
+
+	rt5676_irq: rt5676_irq {
+		pins1 {
+			pinmux = <MT8173_PIN_2_EINT2__FUNC_GPIO2>;
+			bias-pull-down;
+		};
+	};
+};
+
+&scpsys {
+	mfg_async-supply = <&mt6397_vgpu_reg>;
+};
+
+&sdio_fixed_3v3 {
+	gpio = <&pio 100 GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+};
+
+&sound {
+	compatible = "mediatek,mt8173-rt5650-rt5676";
+	mediatek,audio-codec = <&rt5650 &rt5676>;
+};
+
+&trackpad {
+	interrupts = <124 IRQ_TYPE_LEVEL_LOW>;
+};
