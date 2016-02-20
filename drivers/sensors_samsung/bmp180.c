@@ -202,7 +202,6 @@ static int bmp180_get_pressure_data_body(struct bmp180_data *barom)
 		return -1;
 	}
 
-#ifdef FACTORY_TEST
 	x1 = ((raw_temperature - barom->bmp180_eeprom_vals.AC6)
 			* barom->bmp180_eeprom_vals.AC5) >> 15;
 	x2 = (barom->bmp180_eeprom_vals.MC << 11)
@@ -215,7 +214,6 @@ static int bmp180_get_pressure_data_body(struct bmp180_data *barom)
 	}
 	input_report_rel(barom->input_dev, REL_Z, temperature);
 	input_sync(barom->input_dev);
-#endif
 
 	if (bmp180_get_raw_pressure(barom, &raw_pressure)) {
 		pr_err("%s: Fail to read uncompensated pressure\n",
@@ -356,10 +354,10 @@ static int bmp180_input_init(struct bmp180_data *barom)
 	/* reference altitude */
 	input_set_capability(barom->input_dev, EV_REL, REL_Y);
 
+#endif
+
 	/* temperature */
 	input_set_capability(barom->input_dev, EV_REL, REL_Z);
-
-#endif
 
 	pr_debug("%s: registering barometer input device\n", __func__);
 
