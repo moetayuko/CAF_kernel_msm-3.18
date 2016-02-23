@@ -60,10 +60,16 @@ struct io_pgtable_cfg {
 	 * IO_PGTABLE_QUIRK_TLBI_ON_MAP: If the format forbids caching invalid
 	 *	(unmapped) entries but the hardware might do so anyway, perform
 	 *	TLB maintenance when mapping as well as when unmapping.
+	 *
+	 * IO_PGTABLE_QUIRK_MTK_4GB_EXT: Mediatek extend bit9 in the lvl1 and
+	 *	lvl2 descriptor of the Short-descriptor as the 4GB mode.
+	 *	Note that: Bit9 in the lvl1 is "IMPLEMENTATION DEFINED", while
+	 *	it is AP[2] in the lvl2.
 	 */
 	#define IO_PGTABLE_QUIRK_ARM_NS		BIT(0)
 	#define IO_PGTABLE_QUIRK_NO_PERMS	BIT(1)
 	#define IO_PGTABLE_QUIRK_TLBI_ON_MAP	BIT(2)
+	#define IO_PGTABLE_QUIRK_MTK_4GB_EXT	BIT(3)
 	unsigned long			quirks;
 	unsigned long			pgsize_bitmap;
 	unsigned int			ias;
