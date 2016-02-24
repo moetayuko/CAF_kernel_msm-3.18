@@ -199,6 +199,7 @@ static void mtk_plane_atomic_update(struct drm_plane *plane,
 	drm_rect_intersect(&dest, &clip);
 
 	gem = mtk_fb_get_gem_obj(state->base.fb);
+	drm_framebuffer_reference(state->base.fb);
 	mtk_gem = to_mtk_gem_obj(gem);
 	mtk_plane_enable(mtk_plane, true, mtk_gem->dma_addr, &dest);
 }

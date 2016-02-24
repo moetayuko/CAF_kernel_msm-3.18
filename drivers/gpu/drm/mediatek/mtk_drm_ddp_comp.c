@@ -21,9 +21,23 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <drm/drmP.h>
+#include <soc/mediatek/cmdq.h>
+
 #include "mtk_drm_drv.h"
 #include "mtk_drm_plane.h"
 #include "mtk_drm_ddp_comp.h"
+
+static phys_addr_t addr_va2pa(void __iomem *va)
+{
+	struct page *pg = vmalloc_to_page(va);
+
+	return (page_to_pfn(pg) << PAGE_SHIFT) + ((unsigned long)va & 0xfff);
+}
+
+#define cmdq_write(handle, val, reg) \
+		cmdq_rec_write((handle), (val), addr_va2pa(reg))
+#define cmdq_write_mask(handle, val, reg, mask) \
+		cmdq_rec_write_mask((handle), (val), addr_va2pa(reg), (mask))
 
 #define DISP_OD_EN				0x0000
 #define DISP_OD_INTEN				0x0008
@@ -46,34 +60,36 @@
 #define	COLOR_SEQ_SEL		BIT(13)
 
 static void mtk_color_config(struct mtk_ddp_comp *comp, unsigned int w,
-			     unsigned int h, unsigned int vrefresh)
+			     unsigned int h, unsigned int vrefresh,
+			     struct cmdq_rec *handle)
 {
-	writel(w, comp->regs + DISP_COLOR_WIDTH);
-	writel(h, comp->regs + DISP_COLOR_HEIGHT);
+	cmdq_write(handle, w, comp->regs + DISP_COLOR_WIDTH);
+	cmdq_write(handle, h, comp->regs + DISP_COLOR_HEIGHT);
 }
 
-static void mtk_color_start(struct mtk_ddp_comp *comp)
+static void mtk_color_start(struct mtk_ddp_comp *comp, struct cmdq_rec *handle)
 {
-	writel(COLOR_BYPASS_ALL | COLOR_SEQ_SEL,
+	cmdq_write(handle, COLOR_BYPASS_ALL | COLOR_SEQ_SEL,
 	       comp->regs + DISP_COLOR_CFG_MAIN);
-	writel(0x1, comp->regs + DISP_COLOR_START);
+	cmdq_write(handle, 0x1, comp->regs + DISP_COLOR_START);
 }
 
 static void mtk_od_config(struct mtk_ddp_comp *comp, unsigned int w,
-			  unsigned int h, unsigned int vrefresh)
+			  unsigned int h, unsigned int vrefresh,
+			  struct cmdq_rec *handle)
 {
-	writel(w << 16 | h, comp->regs + DISP_OD_SIZE);
+	cmdq_write(handle, w << 16 | h, comp->regs + DISP_OD_SIZE);
 }
 
-static void mtk_od_start(struct mtk_ddp_comp *comp)
+static void mtk_od_start(struct mtk_ddp_comp *comp, struct cmdq_rec *handle)
 {
-	writel(OD_RELAY_MODE, comp->regs + DISP_OD_CFG);
-	writel(1, comp->regs + DISP_OD_EN);
+	cmdq_write(handle, OD_RELAY_MODE, comp->regs + DISP_OD_CFG);
+	cmdq_write(handle, 1, comp->regs + DISP_OD_EN);
 }
 
-static void mtk_ufoe_start(struct mtk_ddp_comp *comp)
+static void mtk_ufoe_start(struct mtk_ddp_comp *comp, struct cmdq_rec *handle)
 {
-	writel(UFO_BYPASS, comp->regs + DISP_REG_UFO_START);
+	cmdq_write(handle, UFO_BYPASS, comp->regs + DISP_REG_UFO_START);
 }
 
 static const struct mtk_ddp_comp_funcs ddp_color = {
@@ -176,6 +192,7 @@ int mtk_ddp_comp_init(struct device *dev, struct device_node *node,
 		comp->clk = NULL;
 
 	type = mtk_ddp_matches[comp_id].type;
+	comp->type = type;
 
 	/* Only DMA capable components need the LARB property */
 	comp->larb_dev = NULL;
