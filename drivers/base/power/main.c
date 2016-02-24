@@ -1743,8 +1743,10 @@ void device_pm_check_callbacks(struct device *dev)
 {
 	spin_lock_irq(&dev->power.lock);
 	dev->power.no_pm_callbacks =
-		(!dev->bus || pm_ops_is_empty(dev->bus->pm)) &&
-		(!dev->class || pm_ops_is_empty(dev->class->pm)) &&
+		(!dev->bus || (!dev->bus->resume && !dev->bus->suspend &&
+			       pm_ops_is_empty(dev->bus->pm))) &&
+		(!dev->class || (!dev->class->resume && !dev->class->suspend &&
+				 pm_ops_is_empty(dev->class->pm))) &&
 		(!dev->type || pm_ops_is_empty(dev->type->pm)) &&
 		(!dev->pm_domain || pm_ops_is_empty(&dev->pm_domain->ops)) &&
 		(!dev->driver || pm_ops_is_empty(dev->driver->pm));
