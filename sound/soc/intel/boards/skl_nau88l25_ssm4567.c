@@ -538,6 +538,8 @@ static struct snd_soc_dai_link skylake_dais[] = {
 		.codecs = ssm4567_codec_components,
 		.num_codecs = ARRAY_SIZE(ssm4567_codec_components),
 		.params = &skl_ssm4567_loop_params,
+		.cpu_loopback = true,
+
 	},
 
 	/* Back End DAI links */
