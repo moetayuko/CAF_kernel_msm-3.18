@@ -20,6 +20,17 @@
 	compatible = "google,oak-rev3", "google,oak", "mediatek,mt8173";
 };
 
+&aud_i2s2 {
+	pins1 {
+		pinmux = <MT8173_PIN_128_I2S0_LRCK__FUNC_I2S1_WS>,
+			 <MT8173_PIN_129_I2S0_BCK__FUNC_I2S1_BCK>,
+			 <MT8173_PIN_130_I2S0_MCK__FUNC_I2S1_MCK>,
+			 <MT8173_PIN_131_I2S0_DATA0__FUNC_I2S1_DO_1>,
+			 <MT8173_PIN_132_I2S0_DATA1__FUNC_I2S2_DI_2>;
+		bias-pull-down;
+	};
+};
+
 &bl_fixed_pins {
 	pins1 {
 		pinmux = <MT8173_PIN_29_UCTS2__FUNC_GPIO29>;
@@ -182,6 +193,10 @@
 &ps8640 {
 	sleep-gpios = <&pio 116 GPIO_ACTIVE_HIGH>;
 };
+
+/delete-node/&rt5514;
+
+/delete-node/&rt5514_irq;
 
 &scpsys {
 	mfg_async-supply = <&mt6397_vgpu_reg>;
