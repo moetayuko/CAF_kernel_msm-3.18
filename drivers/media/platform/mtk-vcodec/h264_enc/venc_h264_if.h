@@ -18,7 +18,7 @@
 #ifndef _VENC_H264_IF_H_
 #define _VENC_H264_IF_H_
 
-#include "venc_drv_base.h"
+#include "../venc_drv_base.h"
 
 /**
  * enum venc_h264_vpu_work_buf - h264 encoder buffer index

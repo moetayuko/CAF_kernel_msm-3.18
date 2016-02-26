@@ -16,7 +16,7 @@
 #ifndef _VDEC_VP8_IF_H_
 #define _VDEC_VP8_IF_H_
 
-#include "vdec_drv_base.h"
+#include "../vdec_drv_base.h"
 
 #define VP8_MAX_FRM_BUFF_NUM				5
 #define VP8_HW_DATA_SZ					272

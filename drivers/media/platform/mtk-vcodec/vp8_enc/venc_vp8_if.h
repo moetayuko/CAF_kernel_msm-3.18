@@ -17,7 +17,7 @@
 #ifndef _VENC_VP8_IF_H_
 #define _VENC_VP8_IF_H_
 
-#include "venc_drv_base.h"
+#include "../venc_drv_base.h"
 
 /**
  * enum venc_vp8_vpu_work_buf - vp8 encoder buffer index

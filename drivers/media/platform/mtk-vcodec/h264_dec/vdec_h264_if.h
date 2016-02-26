@@ -15,7 +15,7 @@
 #ifndef _VDEC_H264_IF_H_
 #define _VDEC_H264_IF_H_
 
-#include "vdec_drv_base.h"
+#include "../vdec_drv_base.h"
 
 #define H264_MAX_FB_NUM				17
 #define NAL_TYPE(value)				((value) & 0x1F)
