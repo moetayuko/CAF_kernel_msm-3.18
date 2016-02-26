@@ -1,6 +1,7 @@
 config DRM_PARADE_PS8640
 	tristate "Parade PS8640 MIPI DSI to eDP Converter"
-	depends on OF && I2C
+	depends on DRM
+	depends on OF
 	select DRM_KMS_HELPER
 	select DRM_MIPI_DSI
 	select DRM_PANEL
