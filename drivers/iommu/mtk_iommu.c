@@ -670,7 +670,7 @@ static int mtk_iommu_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int mtk_iommu_suspend(struct device *dev)
+static int __maybe_unused mtk_iommu_suspend(struct device *dev)
 {
 	struct mtk_iommu_data *data = dev_get_drvdata(dev);
 	struct mtk_iommu_suspend_reg *reg = &data->reg;
@@ -685,7 +685,7 @@ static int mtk_iommu_suspend(struct device *dev)
 	return 0;
 }
 
-static int mtk_iommu_resume(struct device *dev)
+static int __maybe_unused mtk_iommu_resume(struct device *dev)
 {
 	struct mtk_iommu_data *data = dev_get_drvdata(dev);
 	struct mtk_iommu_suspend_reg *reg = &data->reg;
