@@ -30,6 +30,9 @@
 #include "vdec_drv_if.h"
 #include "mtk_vpu.h"
 
+module_param(mtk_v4l2_dbg_level, int, S_IRUGO | S_IWUSR);
+module_param(mtk_vcodec_dbg, bool, S_IRUGO | S_IWUSR);
+
 
 /* Wake up context wait_queue */
 static void wake_up_ctx(struct mtk_vcodec_ctx *ctx, unsigned int reason)
@@ -47,11 +50,15 @@ static irqreturn_t mtk_vcodec_dec_irq_handler(int irq, void *priv)
 	unsigned int dec_done_status = 0;
 
 	if (dev->curr_ctx == -1) {
-	  mtk_v4l2_err("curr_ctx = -1");
-	  return IRQ_HANDLED;
+		mtk_v4l2_err("curr_ctx = -1");
+		return IRQ_HANDLED;
 	}
 
-	ctx = dev->ctx[dev->curr_ctx];
+	list_for_each_entry(ctx, &dev->ctx_list, list) {
+		if (ctx->idx == dev->curr_ctx)
+			break;
+	}
+
 	if (ctx == NULL) {
 		mtk_v4l2_err("mtk_vcodec_dec_irq_handler +   curr_ctx  = NULL\n");
 		return IRQ_HANDLED;
@@ -102,21 +109,16 @@ static int fops_vcodec_open(struct file *file)
 		goto err_alloc;
 	}
 
-	if (dev->num_instances >= MTK_VCODEC_MAX_INSTANCES) {
-		mtk_v4l2_err("Too many open contexts %d\n", dev->num_instances);
-		ret = -EBUSY;
-		goto err_no_ctx;
-	}
-
-	ctx->idx = ffz(dev->instance_mask[0]);
+	ctx->idx = ffz(dev->instance_mask);
 	v4l2_fh_init(&ctx->fh, video_devdata(file));
 	file->private_data = &ctx->fh;
 	v4l2_fh_add(&ctx->fh);
+	INIT_LIST_HEAD(&ctx->list);
 	ctx->dev = dev;
 
 	if (vfd == dev->vfd_dec) {
 		ctx->type = MTK_INST_DECODER;
-		mtk_vcodec_dec_set_default_params(ctx);
+
 		/* Setup ctrl handler */
 		ret = mtk_vdec_ctrls_setup(ctx);
 		if (ret) {
@@ -131,6 +133,7 @@ static int fops_vcodec_open(struct file *file)
 				       ret);
 			goto err_ctx_init;
 		}
+		mtk_vcodec_dec_set_default_params(ctx);
 	} else {
 		mtk_v4l2_err("Invalid vfd !\n");
 		ret = -ENOENT;
@@ -140,9 +143,8 @@ static int fops_vcodec_open(struct file *file)
 	init_waitqueue_head(&ctx->queue);
 	dev->num_instances++;
 
-	if (dev->num_instances == 1) {
+	if (v4l2_fh_is_singular(&ctx->fh)) {
 		mtk_vcodec_dec_pw_on(&dev->pm);
-
 		ret = vpu_load_firmware(dev->vpu_plat_dev);
 		if (ret < 0) {
 			mtk_v4l2_err("vpu_load_firmware failed!\n");
@@ -162,23 +164,24 @@ static int fops_vcodec_open(struct file *file)
 			       dev->dec_capability);
 	}
 
-	set_bit(ctx->idx, &dev->instance_mask[0]);
-	dev->ctx[ctx->idx] = ctx;
+	set_bit(ctx->idx, &dev->instance_mask);
+	list_add(&ctx->list, &dev->ctx_list);
 	mutex_unlock(&dev->dev_mutex);
-	mtk_v4l2_debug(0, "%s decoder [%d]", dev_name(&dev->plat_dev->dev), ctx->idx);
+	mtk_v4l2_debug(0, "%s decoder [%d]", dev_name(&dev->plat_dev->dev),
+					ctx->idx);
 
 	return ret;
 
 	/* Deinit when failure occurred */
 err_load_fw:
-	dev->num_instances--;
 	v4l2_m2m_ctx_release(ctx->m2m_ctx);
-err_ctx_init:
-	mtk_vdec_ctrls_free(ctx);
-err_ctrls_setup:
 	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
-err_no_ctx:
+	dev->num_instances--;
+
+err_ctx_init:
+err_ctrls_setup:
+	mtk_vdec_ctrls_free(ctx);
 	devm_kfree(&dev->plat_dev->dev, ctx);
 err_alloc:
 	mutex_unlock(&dev->dev_mutex);
@@ -198,11 +201,11 @@ static int fops_vcodec_release(struct file *file)
 	mtk_vdec_ctrls_free(ctx);
 	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
-	dev->ctx[ctx->idx] = NULL;
+	list_del_init(&ctx->list);
 	dev->num_instances--;
 	if (dev->num_instances == 0)
 		mtk_vcodec_dec_pw_off(&dev->pm);
-	clear_bit(ctx->idx, &dev->instance_mask[0]);
+	clear_bit(ctx->idx, &dev->instance_mask);
 	devm_kfree(&dev->plat_dev->dev, ctx);
 	mutex_unlock(&dev->dev_mutex);
 	return 0;
@@ -240,20 +243,16 @@ static const struct v4l2_file_operations mtk_vcodec_fops = {
 
 static void mtk_vcodec_dec_reset_handler(void *priv)
 {
-	int i;
 	struct mtk_vcodec_dev *dev = priv;
 	struct mtk_vcodec_ctx *ctx;
 
 	mtk_v4l2_debug(0, "Watchdog timeout!!");
 
 	mutex_lock(&dev->dev_mutex);
-	for(i = 0; i < MTK_VCODEC_MAX_INSTANCES; i++) {
-		ctx = dev->ctx[i];
-		if (ctx) {
-			ctx->state = MTK_STATE_ABORT;
-			mtk_v4l2_debug(0, "[%d] Change to state MTK_STATE_ABORT", ctx->idx);
-		}
-
+	list_for_each_entry(ctx, &dev->ctx_list, list) {
+		ctx->state = MTK_STATE_ABORT;
+		mtk_v4l2_debug(0, "[%d] Change to state MTK_STATE_ERROR",
+					   ctx->idx);
 	}
 	mutex_unlock(&dev->dev_mutex);
 }
@@ -270,6 +269,7 @@ static int mtk_vcodec_probe(struct platform_device *pdev)
 	if (!dev)
 		return -ENOMEM;
 
+	INIT_LIST_HEAD(&dev->ctx_list);
 	dev->plat_dev = pdev;
 	dev->vpu_plat_dev = vpu_get_plat_device(dev->plat_dev);
 	if (dev->vpu_plat_dev == NULL) {
@@ -277,8 +277,8 @@ static int mtk_vcodec_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	vpu_wdt_reg_handler(dev->vpu_plat_dev, mtk_vcodec_dec_reset_handler, dev,
-			    VPU_RST_DEC);
+	vpu_wdt_reg_handler(dev->vpu_plat_dev, mtk_vcodec_dec_reset_handler,
+				dev, VPU_RST_DEC);
 
 	ret = mtk_vcodec_init_dec_pm(dev);
 	if (ret < 0) {
@@ -355,13 +355,6 @@ static int mtk_vcodec_probe(struct platform_device *pdev)
 	video_set_drvdata(vfd_dec, dev);
 	dev->vfd_dec = vfd_dec;
 	platform_set_drvdata(pdev, dev);
-	ret = video_register_device(vfd_dec, VFL_TYPE_GRABBER, 0);
-	if (ret) {
-		mtk_v4l2_err("Failed to register video device\n");
-		goto err_dec_reg;
-	}
-	mtk_v4l2_debug(0, "decoder registered as /dev/video%d\n",
-			 vfd_dec->num);
 
 	dev->alloc_ctx = vb2_dma_contig_init_ctx(&pdev->dev);
 	if (IS_ERR(dev->alloc_ctx)) {
@@ -386,16 +379,24 @@ static int mtk_vcodec_probe(struct platform_device *pdev)
 		goto err_event_workq;
 	}
 
+	ret = video_register_device(vfd_dec, VFL_TYPE_GRABBER, 0);
+	if (ret) {
+		mtk_v4l2_err("Failed to register video device\n");
+		goto err_dec_reg;
+	}
+	mtk_v4l2_debug(0, "decoder registered as /dev/video%d\n",
+			 vfd_dec->num);
+
 	return 0;
 
+err_dec_reg:
+	destroy_workqueue(dev->decode_workqueue);
 err_event_workq:
 	v4l2_m2m_release(dev->m2m_dev_dec);
 err_dec_mem_init:
 	vb2_dma_contig_cleanup_ctx(dev->alloc_ctx);
 err_vb2_ctx_init:
 	video_unregister_device(vfd_dec);
-err_dec_reg:
-	video_device_release(vfd_dec);
 err_dec_alloc:
 	v4l2_device_unregister(&dev->v4l2_dev);
 err_res:
@@ -410,7 +411,7 @@ static const struct of_device_id mtk_vcodec_match[] = {
 
 MODULE_DEVICE_TABLE(of, mtk_vcodec_match);
 
-static int mtk_vcodec_remove(struct platform_device *pdev)
+static int mtk_vcodec_dec_remove(struct platform_device *pdev)
 {
 	struct mtk_vcodec_dev *dev = platform_get_drvdata(pdev);
 
@@ -422,10 +423,8 @@ static int mtk_vcodec_remove(struct platform_device *pdev)
 	if (dev->alloc_ctx)
 		vb2_dma_contig_cleanup_ctx(dev->alloc_ctx);
 
-	if (dev->vfd_dec) {
+	if (dev->vfd_dec)
 		video_unregister_device(dev->vfd_dec);
-		video_device_release(dev->vfd_dec);
-	}
 
 	v4l2_device_unregister(&dev->v4l2_dev);
 	mtk_vcodec_release_dec_pm(dev);
@@ -464,9 +463,9 @@ static const struct dev_pm_ops mtk_vcodec_vdec_pm_ops = {
 			   NULL)
 };
 
-static struct platform_driver mtk_vcodec_driver = {
+static struct platform_driver mtk_vcodec_dec_driver = {
 	.probe	= mtk_vcodec_probe,
-	.remove	= mtk_vcodec_remove,
+	.remove	= mtk_vcodec_dec_remove,
 	.driver	= {
 		.name	= MTK_VCODEC_DEC_NAME,
 		.owner	= THIS_MODULE,
@@ -475,7 +474,7 @@ static struct platform_driver mtk_vcodec_driver = {
 	},
 };
 
-module_platform_driver(mtk_vcodec_driver);
+module_platform_driver(mtk_vcodec_dec_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Mediatek video codec V4L2 driver");

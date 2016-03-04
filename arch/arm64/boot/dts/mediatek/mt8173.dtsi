@@ -1315,9 +1315,9 @@
 				 <&topckgen CLK_TOP_VENC_SEL>,
 				 <&topckgen CLK_TOP_UNIVPLL1_D2>,
 				 <&topckgen CLK_TOP_VENC_LT_SEL>;
-			clock-names = "vencpll_d2",
+			clock-names = "venc_sel_src",
 				      "venc_sel",
-				      "univpll1_d2",
+				      "venc_lt_sel_src",
 				      "venc_lt_sel";
 		};
 

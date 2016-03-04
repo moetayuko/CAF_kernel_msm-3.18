@@ -30,7 +30,6 @@
 
 int vdec_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
 {
-
 	switch (fourcc) {
 	case V4L2_PIX_FMT_H264:
 		ctx->dec_if = get_h264_dec_comm_if();
@@ -63,8 +62,6 @@ int vdec_if_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 	mtk_vcodec_dec_clock_on(&ctx->dev->pm);
 	ret = ctx->dec_if->init(ctx, bs, &ctx->drv_handle, pic);
 	mtk_vcodec_dec_clock_off(&ctx->dev->pm);
-	if (ret)
-	        ctx->drv_handle = 0;
 	mtk_vdec_unlock(ctx);
 
 	return ret;

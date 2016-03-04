@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: Tiffany Lin <tiffany.lin@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
@@ -61,7 +61,7 @@ int mtk_vcodec_init_enc_pm(struct mtk_vcodec_dev *mtkdev)
 	pdev = mtkdev->plat_dev;
 	pm->dev = &pdev->dev;
 
-	pm->vencpll_d2 = devm_clk_get(&pdev->dev, "vencpll_d2");
+	pm->vencpll_d2 = devm_clk_get(&pdev->dev, "venc_sel_src");
 	if (pm->vencpll_d2 == NULL) {
 		mtk_v4l2_err("devm_clk_get vencpll_d2 fail");
 		ret = -1;
@@ -73,7 +73,7 @@ int mtk_vcodec_init_enc_pm(struct mtk_vcodec_dev *mtkdev)
 		ret = -1;
 	}
 
-	pm->univpll1_d2 = devm_clk_get(&pdev->dev, "univpll1_d2");
+	pm->univpll1_d2 = devm_clk_get(&pdev->dev, "venc_lt_sel_src");
 	if (pm->univpll1_d2 == NULL) {
 		mtk_v4l2_err("devm_clk_get univpll1_d2 fail");
 		ret = -1;
@@ -96,7 +96,6 @@ void mtk_vcodec_release_enc_pm(struct mtk_vcodec_dev *mtkdev)
 void mtk_vcodec_enc_clock_on(struct mtk_vcodec_pm *pm)
 {
 	int ret;
-
 
 	ret = clk_prepare_enable(pm->venc_sel);
 	if (ret)

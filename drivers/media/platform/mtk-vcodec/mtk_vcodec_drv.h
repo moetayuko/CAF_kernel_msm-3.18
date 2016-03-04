@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: PC Chen <pc.chen@mediatek.com>
 *         Tiffany Lin <tiffany.lin@mediatek.com>
 *
@@ -25,10 +25,7 @@
 
 #include "mtk_vcodec_util.h"
 
-#define MTK_VCODEC_MAX_INSTANCES		11
-#define MTK_VCODEC_MAX_ENCODER_INSTANCES	3
 
-#define MTK_VCODEC_MAX_FRAME_SIZE	0x800000
 #define MTK_VIDEO_MAX_FRAME		32
 #define MTK_MAX_CTRLS			20
 
@@ -36,7 +33,7 @@
 #define MTK_VCODEC_DEC_NAME		"mtk-vcodec-dec"
 #define MTK_VCODEC_ENC_NAME		"mtk-vcodec-enc"
 #define MTK_PLATFORM_STR		"platform:mt8173"
-#define MTK_VPU_FW_VERSION		"0.2.11"
+#define MTK_VPU_FW_VERSION		"0.2.12"
 
 #define MTK_VENC_IRQ_STATUS_SPS          0x1
 #define MTK_VENC_IRQ_STATUS_PPS          0x2
@@ -116,10 +113,6 @@ enum mtk_encode_param {
 	MTK_ENCODE_PARAM_FRAME_TYPE = (1 << 3),
 };
 
-/**
- * enum mtk_fmt_type - Type of the pixelformat
- * @MTK_FMT_FRAME - mtk vcodec raw frame
- */
 enum mtk_fmt_type {
 	MTK_FMT_DEC		= 0,
 	MTK_FMT_ENC		= 1,
@@ -136,7 +129,8 @@ struct mtk_video_fmt {
 };
 
 /**
- * struct mtk_codec_framesizes - Structure used to store information about framesizes
+ * struct mtk_codec_framesizes - Structure used to store information about
+							framesizes
  */
 struct mtk_codec_framesizes {
 	u32 fourcc;
@@ -153,8 +147,6 @@ enum mtk_q_type {
 
 /**
  * struct mtk_q_data - Structure used to store information about queue
- * @colorspace	reserved for encoder
- * @field		reserved for encoder
  */
 struct mtk_q_data {
 	unsigned int		width;
@@ -168,19 +160,19 @@ struct mtk_q_data {
 
 /**
  * struct mtk_enc_params - General encoding parameters
- * @bitrate - target bitrate
- * @num_b_frame - number of b frames between p-frame
- * @rc_frame - frame based rate control
- * @rc_mb - macroblock based rate control
- * @seq_hdr_mode - H.264 sequence header is encoded separately or joined with the first frame
- * @gop_size - group of picture size, it's used as the intra frame period
- * @framerate_num - frame rate numerator
- * @framerate_denom - frame rate denominator
- * @h264_max_qp - Max value for H.264 quantization parameter
- * @h264_profile - V4L2 defined H.264 profile
- * @h264_level - V4L2 defined H.264 level
- * @force_intra - force/insert intra frame
- * @skip_frame - encode in skip frame mode that use minimum number of bits
+ * @bitrate:	target bitrate
+ * @num_b_frame:	number of b frames between p-frame
+ * @rc_frame:	frame based rate control
+ * @rc_mb:	macroblock based rate control
+ * @seq_hdr_mode:	H.264 sequence header is encoded separately or joined
+ *					with the first frame
+ * @gop_size:	group of picture size, it's used as the intra frame period
+ * @framerate_num:	frame rate numerator
+ * @framerate_denom:	frame rate denominator
+ * @h264_max_qp:	Max value for H.264 quantization parameter
+ * @h264_profile:	V4L2 defined H.264 profile
+ * @h264_level:	V4L2 defined H.264 level
+ * @force_intra:	force/insert intra frame
  */
 struct mtk_enc_params {
 	unsigned int	bitrate;
@@ -246,6 +238,7 @@ struct vdec_pic_info {
  *
  * @type:		type of the instance - decoder or encoder
  * @dev:		pointer to the mtk_vcodec_dev of the device
+ * @list:	link to ctx_list of mtk_vcodec_dev
  * @fh:			struct v4l2_fh
  * @m2m_ctx:		pointer to the v4l2_m2m_ctx of the context
  * @q_data:		store information of input and output queue
@@ -258,10 +251,6 @@ struct vdec_pic_info {
  * @enc_if:		hoooked encoder driver interface
  * @drv_handle:		driver handle for specific decode/encode instance
  *
- * @picinfo:		store width/height of image and buffer and planes' size for decoder
- *			and encoder
- * @dpb_count:		count of the DPB buffers required by MTK Vcodec hw
- *
  * @int_cond:		variable used by the waitqueue
  * @int_type:		type of the last interrupt
  * @queue:		waitqueue that can be used to wait for this context to
@@ -269,16 +258,16 @@ struct vdec_pic_info {
  * @irq_status:		irq status
  *
  * @ctrl_hdl:		handler for v4l2 framework
- * @ctrls:		array of controls, used when adding controls to the
- *			v4l2 control framework
  *
  * @decode_work:		worker for the decoding
  * @encode_work:	worker for the encoding
- * @last_decoded_picinfo: 	pic information get from latest decode
+ * @last_decoded_picinfo:	pic information get from latest decode
  */
 struct mtk_vcodec_ctx {
 	enum mtk_instance_type type;
 	struct mtk_vcodec_dev *dev;
+	struct list_head	list;
+
 	struct v4l2_fh fh;
 	struct v4l2_m2m_ctx *m2m_ctx;
 	struct mtk_q_data q_data[2];
@@ -300,7 +289,6 @@ struct mtk_vcodec_ctx {
 	unsigned int irq_status;
 
 	struct v4l2_ctrl_handler ctrl_hdl;
-	struct v4l2_ctrl *ctrls[MTK_MAX_CTRLS];
 
 	struct work_struct decode_work;
 	struct work_struct encode_work;
@@ -335,15 +323,15 @@ struct mtk_vcodec_ctx {
  * @m2m_dev_dec:	m2m device for decoder
  * @m2m_dev_enc:	m2m device for encoder
  * @plat_dev:		platform device
- * @alloc_ctx:		VB2 allocator context
+ * @vpu_plat_dev:	mtk vpu platform device
+ * @alloc_ctx:	VB2 allocator context
  *			(for allocations without kernel mapping).
- * @ctx:		array of driver contexts
- *
- * @curr_ctx:		The context that is waiting for codec hardware
+ * @ctx_list:	list of struct mtk_vcodec_ctx
+ * @curr_ctx:	The context that is waiting for codec hardware
  *
  * @reg_base:		Mapped address of MTK Vcodec registers.
  *
- * @instance_mask:	used to mark which contexts are opened
+ * @instance_mask:	used to mark which index id are used
  * @num_instances:	counter of active MTK Vcodec instances
  *
  * @decode_workqueue:	decode work queue
@@ -373,13 +361,14 @@ struct mtk_vcodec_dev {
 	struct v4l2_m2m_dev	*m2m_dev_dec;
 	struct v4l2_m2m_dev	*m2m_dev_enc;
 	struct platform_device	*plat_dev;
-	struct platform_device 	*vpu_plat_dev;
+	struct platform_device	*vpu_plat_dev;
 	struct vb2_alloc_ctx	*alloc_ctx;
-	struct mtk_vcodec_ctx	*ctx[MTK_VCODEC_MAX_INSTANCES];
+	struct list_head	ctx_list;
+
 	int curr_ctx;
 	void __iomem		*reg_base[NUM_MAX_VCODEC_REG_BASE];
 
-	unsigned long	instance_mask[BITS_TO_LONGS(MTK_VCODEC_MAX_INSTANCES)];
+	unsigned long	instance_mask;
 	int			num_instances;
 
 	struct workqueue_struct *decode_workqueue;
@@ -400,32 +389,6 @@ struct mtk_vcodec_dev {
 	struct mtk_vcodec_pm	pm;
 	unsigned int		dec_capability;
 	unsigned int		enc_capability;
-};
-
-/**
- * struct mtk_vcodec_ctrl - information about controls to be registered.
- * @id:			Control ID.
- * @type:		Type of the control.
- * @name:		Human readable name of the control.
- * @minimum:		Minimum value of the control.
- * @maximum:		Maximum value of the control.
- * @step:		Control value increase step.
- * @menu_skip_mask:	Mask of invalid menu positions.
- * @default_value:	Initial value of the control.
- * @is_volatile:	Control is volatile.
- *
- * See also struct v4l2_ctrl_config.
- */
-struct mtk_vcodec_ctrl {
-	u32			id;
-	enum v4l2_ctrl_type	type;
-	u8			name[32];
-	s32			minimum;
-	s32			maximum;
-	s32			step;
-	u32			menu_skip_mask;
-	s32			default_value;
-	u8			is_volatile;
 };
 
 static inline struct mtk_vcodec_ctx *fh_to_ctx(struct v4l2_fh *fh)

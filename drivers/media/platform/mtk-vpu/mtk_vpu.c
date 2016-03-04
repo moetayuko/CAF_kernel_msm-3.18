@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: Andrew-CT Chen <andrew-ct.chen@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
@@ -92,7 +92,7 @@ enum vpu_fw_type {
  */
 struct vpu_mem {
 	void *va;
-	dma_addr_t pa;
+	phys_addr_t pa;
 };
 
 /**
@@ -137,8 +137,10 @@ struct vpu_wdt {
  *
  * @signaled:		the signal of vpu initialization completed
  * @fw_ver:		VPU firmware version
- * @dec_capability:	decoder capability
- * @enc_capability:	encoder capability
+ * @dec_capability:	decoder capability which is not used for now and
+ *			the value is reserved for future use
+ * @enc_capability:	encoder capability which is not used for now and
+ *			the value is reserved for future use
  * @wq:			wait queue for VPU initialization status
  */
 struct vpu_run {
@@ -195,12 +197,12 @@ struct share_obj {
  *			it has to wait until VP8 decode completes.
  * @wdt_refcnt		WDT reference count to make sure the watchdog can be
  *			disabled if no other client is using VPU service
- * @ipi_ack_signaled:	The ACKs for registered IPI function sending
- *			interrupt to VPU
  * @ack_wq:		The wait queue for each codec and mdp. When sleeping
  *			processes wake up, they will check the condition
- *			"ipi_ack_signaled" to run the corresponding action or
+ *			"ipi_id_ack" to run the corresponding action or
  *			go back to sleep.
+ * @ipi_id_ack:		The ACKs for registered IPI function sending
+ *			interrupt to VPU
  *
  */
 struct mtk_vpu {
@@ -217,7 +219,7 @@ struct mtk_vpu {
 	bool enable_4GB;
 #endif
 	struct mutex vpu_mutex; /* for protecting vpu data data structure */
-	atomic_t wdt_refcnt;
+	u32 wdt_refcnt;
 	wait_queue_head_t ack_wq;
 	bool ipi_id_ack[IPI_MAX];
 };
@@ -240,10 +242,12 @@ static inline bool vpu_running(struct mtk_vpu *vpu)
 void vpu_clock_disable(struct mtk_vpu *vpu)
 {
 	/* Disable VPU watchdog */
-	if (atomic_dec_and_test(&vpu->wdt_refcnt))
+	mutex_lock(&vpu->vpu_mutex);
+	if (!--vpu->wdt_refcnt)
 		vpu_cfg_writel(vpu,
 			       vpu_cfg_readl(vpu, VPU_WDT_REG) & ~(1L << 31),
 			       VPU_WDT_REG);
+	mutex_unlock(&vpu->vpu_mutex);
 
 	clk_disable(vpu->clk);
 }
@@ -256,12 +260,12 @@ int vpu_clock_enable(struct mtk_vpu *vpu)
 	if (ret)
 		return ret;
 	/* Enable VPU watchdog */
-	if (!atomic_read(&vpu->wdt_refcnt))
+	mutex_lock(&vpu->vpu_mutex);
+	if (!vpu->wdt_refcnt++)
 		vpu_cfg_writel(vpu,
 			       vpu_cfg_readl(vpu, VPU_WDT_REG) | (1L << 31),
 			       VPU_WDT_REG);
-
-	atomic_inc(&vpu->wdt_refcnt);
+	mutex_unlock(&vpu->vpu_mutex);
 
 	return ret;
 }
@@ -278,7 +282,7 @@ int vpu_ipi_register(struct platform_device *pdev,
 		return -EPROBE_DEFER;
 	}
 
-	if (id < IPI_MAX && handler) {
+	if (id >= 0 && id < IPI_MAX && handler) {
 		ipi_desc = vpu->ipi_desc;
 		ipi_desc[id].name = name;
 		ipi_desc[id].handler = handler;
@@ -286,9 +290,11 @@ int vpu_ipi_register(struct platform_device *pdev,
 		return 0;
 	}
 
-	dev_err(&pdev->dev, "register vpu ipi with invalid arguments\n");
+	dev_err(&pdev->dev, "register vpu ipi id %d with invalid arguments\n",
+		id);
 	return -EINVAL;
 }
+EXPORT_SYMBOL_GPL(vpu_ipi_register);
 
 int vpu_ipi_send(struct platform_device *pdev,
 		 enum ipi_id id, void *buf,
@@ -358,13 +364,13 @@ int vpu_ipi_send(struct platform_device *pdev,
 	return 0;
 
 mut_unlock:
-	vpu->ipi_id_ack[id] = false;
 	mutex_unlock(&vpu->vpu_mutex);
 clock_disable:
 	vpu_clock_disable(vpu);
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(vpu_ipi_send);
 
 static void vpu_wdt_reset_func(struct work_struct *ws)
 {
@@ -374,15 +380,15 @@ static void vpu_wdt_reset_func(struct work_struct *ws)
 	int index, ret;
 
 	dev_info(vpu->dev, "vpu reset\n");
-	mutex_lock(&vpu->vpu_mutex);
 	ret = vpu_clock_enable(vpu);
 	if (ret) {
 		dev_err(vpu->dev, "[VPU] wdt enables clock failed %d\n", ret);
 		return;
 	}
+	mutex_lock(&vpu->vpu_mutex);
 	vpu_cfg_writel(vpu, 0x0, VPU_RESET);
-	vpu_clock_disable(vpu);
 	mutex_unlock(&vpu->vpu_mutex);
+	vpu_clock_disable(vpu);
 
 	for (index = 0; index < VPU_RST_MAX; index++) {
 		if (handler[index].reset_func) {
@@ -404,7 +410,7 @@ int vpu_wdt_reg_handler(struct platform_device *pdev,
 		return -EPROBE_DEFER;
 	}
 
-	if (id < VPU_RST_MAX && wdt_reset != NULL) {
+	if (id >= 0 && id < VPU_RST_MAX && wdt_reset) {
 		dev_dbg(vpu->dev, "wdt register id %d\n", id);
 		mutex_lock(&vpu->vpu_mutex);
 		handler[id].reset_func = wdt_reset;
@@ -416,6 +422,7 @@ int vpu_wdt_reg_handler(struct platform_device *pdev,
 	dev_err(vpu->dev, "register vpu wdt handler failed\n");
 	return -EINVAL;
 }
+EXPORT_SYMBOL_GPL(vpu_wdt_reg_handler);
 
 unsigned int vpu_get_vdec_hw_capa(struct platform_device *pdev)
 {
@@ -423,6 +430,7 @@ unsigned int vpu_get_vdec_hw_capa(struct platform_device *pdev)
 
 	return vpu->run.dec_capability;
 }
+EXPORT_SYMBOL_GPL(vpu_get_vdec_hw_capa);
 
 unsigned int vpu_get_venc_hw_capa(struct platform_device *pdev)
 {
@@ -430,6 +438,7 @@ unsigned int vpu_get_venc_hw_capa(struct platform_device *pdev)
 
 	return vpu->run.enc_capability;
 }
+EXPORT_SYMBOL_GPL(vpu_get_venc_hw_capa);
 
 void *vpu_mapping_dm_addr(struct platform_device *pdev,
 			  u32 dtcm_dmem_addr)
@@ -447,6 +456,7 @@ void *vpu_mapping_dm_addr(struct platform_device *pdev,
 
 	return vpu->extmem[D_FW].va + (dtcm_dmem_addr - VPU_DTCM_SIZE);
 }
+EXPORT_SYMBOL_GPL(vpu_mapping_dm_addr);
 
 struct platform_device *vpu_get_plat_device(struct platform_device *pdev)
 {
@@ -469,6 +479,7 @@ struct platform_device *vpu_get_plat_device(struct platform_device *pdev)
 
 	return vpu_pdev;
 }
+EXPORT_SYMBOL_GPL(vpu_get_plat_device);
 
 /* load vpu program/data memory */
 static int load_requested_vpu(struct mtk_vpu *vpu,
@@ -539,17 +550,17 @@ int vpu_load_firmware(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	mutex_lock(&vpu->vpu_mutex);
-
 	ret = vpu_clock_enable(vpu);
 	if (ret) {
 		dev_err(dev, "enable clock failed %d\n", ret);
-		goto OUT_LOAD_FW;
+		return ret;
 	}
 
+	mutex_lock(&vpu->vpu_mutex);
+
 	if (vpu_running(vpu)) {
-		vpu_clock_disable(vpu);
 		mutex_unlock(&vpu->vpu_mutex);
+		vpu_clock_disable(vpu);
 		dev_warn(dev, "vpu is running already\n");
 		return 0;
 	}
@@ -590,11 +601,12 @@ int vpu_load_firmware(struct platform_device *pdev)
 	dev_info(dev, "vpu is ready. Fw version %s\n", run->fw_ver);
 
 OUT_LOAD_FW:
-	vpu_clock_disable(vpu);
 	mutex_unlock(&vpu->vpu_mutex);
+	vpu_clock_disable(vpu);
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(vpu_load_firmware);
 
 int vpu_compare_version(struct platform_device *pdev,
 			const char *expected_version)
@@ -642,6 +654,7 @@ int vpu_compare_version(struct platform_device *pdev,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(vpu_compare_version);
 
 static void vpu_init_ipi_handler(void *data, unsigned int len, void *priv)
 {
@@ -687,7 +700,7 @@ static ssize_t vpu_debug_read(struct file *file, char __user *user_buf,
 	vpu_clock_disable(vpu);
 
 	if (running) {
-		len = sprintf(buf, "VPU is running\n\n"
+		len = snprintf(buf, sizeof(buf), "VPU is running\n\n"
 		"FW Version: %s\n"
 		"PC: 0x%x\n"
 		"WDT: 0x%x\n"
@@ -696,7 +709,7 @@ static ssize_t vpu_debug_read(struct file *file, char __user *user_buf,
 		vpu->run.fw_ver, pc, wdt,
 		host_to_vpu, vpu_to_host);
 	} else {
-		len = sprintf(buf, "VPU not running\n");
+		len = snprintf(buf, sizeof(buf), "VPU not running\n");
 	}
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
@@ -781,7 +794,6 @@ static int vpu_ipi_init(struct mtk_vpu *vpu)
 	vpu->send_buf = vpu->recv_buf + 1;
 	memset(vpu->recv_buf, 0, sizeof(struct share_obj));
 	memset(vpu->send_buf, 0, sizeof(struct share_obj));
-	mutex_init(&vpu->vpu_mutex);
 
 	return 0;
 }
@@ -807,8 +819,7 @@ static irqreturn_t vpu_irq_handler(int irq, void *priv)
 		vpu_ipi_handler(vpu);
 	} else {
 		dev_err(vpu->dev, "vpu watchdog timeout! 0x%x", vpu_to_host);
-		if (vpu->wdt.wq)
-			queue_work(vpu->wdt.wq, &vpu->wdt.ws);
+		queue_work(vpu->wdt.wq, &vpu->wdt.ws);
 	}
 
 	/* VPU won't send another interrupt until we set VPU_TO_HOST to 0. */
@@ -872,6 +883,7 @@ static int mtk_vpu_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	INIT_WORK(&vpu->wdt.ws, vpu_wdt_reset_func);
+	mutex_init(&vpu->vpu_mutex);
 
 	ret = vpu_clock_enable(vpu);
 	if (ret) {

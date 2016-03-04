@@ -15,9 +15,10 @@
 #ifndef _VDEC_H264_IF_H_
 #define _VDEC_H264_IF_H_
 
-#include "../vdec_drv_base.h"
+#include "vdec_drv_base.h"
 
 #define H264_MAX_FB_NUM				17
+#define HDR_PARSING_BUF_SZ			1024
 #define NAL_TYPE(value)				((value) & 0x1F)
 
 /**
@@ -70,6 +71,7 @@ struct vdec_h264_dec_info {
  *                        between VPU and Host.
  *                        The memory is allocated by VPU and mapping to Host
  *                        in vpu_dec_init()
+ * @hdr_buf     : Header parsing buffer
  * @ppl_buf_dma : HW working buffer ppl dma address
  * @mv_buf_dma  : HW working buffer mv dma address
  * @list_free   : free frame buffer ring list
@@ -79,6 +81,7 @@ struct vdec_h264_dec_info {
  * @crop        : crop information
  */
 struct vdec_h264_vsi {
+	unsigned char hdr_buf[HDR_PARSING_BUF_SZ];
 	uint64_t ppl_buf_dma;
 	uint64_t mv_buf_dma[H264_MAX_FB_NUM];
 	struct h264_ring_fb_list list_free;
@@ -90,15 +93,13 @@ struct vdec_h264_vsi {
 
 /**
  * struct vdec_h264_vpu_inst - VPU instance for H264 decode
- * @hdr_bs_buf  : Header bit-stream buffer
- * @h_drv	: handle to VPU driver
+ * @inst_addr	: VPU decoder instance addr
  * @signaled    : 1 - Host has received ack message from VPU, 0 - not recevie
  * @failure     : VPU execution result status
  * @wq          : Wait queue to wait VPU message ack
  */
 struct vdec_h264_vpu_inst {
-	unsigned char *hdr_bs_buf;
-	unsigned int h_drv;
+	unsigned int inst_addr;
 	unsigned int signaled;
 	int failure;
 	wait_queue_head_t wq;

@@ -1,7 +1,8 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Daniel Hsiao <daniel.hsiao@mediatek.com>
- *         Jungchang Tsao <jungchang.tsao@mediatek.com>
+ *		Jungchang Tsao <jungchang.tsao@mediatek.com>
+ *		Tiffany Lin <tiffany.lin@mediatek.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify
@@ -46,17 +47,8 @@ enum venc_start_opt {
 };
 
 /*
- * enum venc_drv_msg - The type of encode frame status used in venc_if_encode()
- * @VENC_MESSAGE_OK: encode ok
- * @VENC_MESSAGE_ERR: encode error
- */
-enum venc_drv_msg {
-	VENC_MESSAGE_OK,
-	VENC_MESSAGE_ERR,
-};
-
-/*
- * enum venc_set_param_type - The type of set parameter used in venc_if_set_param()
+ * enum venc_set_param_type - The type of set parameter used in
+ *						      venc_if_set_param()
  * (VPU related: If you change the order, you must also update the VPU codes.)
  * @VENC_SET_PARAM_ENC: set encoder parameters
  * @VENC_SET_PARAM_FORCE_INTRA: set force intra frame
@@ -79,7 +71,8 @@ enum venc_set_param_type {
 };
 
 /*
- * struct venc_enc_prm - encoder settings for VENC_SET_PARAM_ENC used in venc_if_set_param()
+ * struct venc_enc_prm - encoder settings for VENC_SET_PARAM_ENC used in
+ *					  venc_if_set_param()
  * @input_fourcc: input fourcc
  * @h264_profile: V4L2 defined H.264 profile
  * @h264_level: V4L2 defined H.264 level
@@ -89,7 +82,9 @@ enum venc_set_param_type {
  * @buf_height: buffer height
  * @frm_rate: frame rate
  * @intra_period: intra frame period
- * @bitrate: target bitrate in kbps
+ * @bitrate: target bitrate in bps
+ * @gop_size: group of picture size
+ * @sizeimage: image size for each plane
  */
 struct venc_enc_prm {
 	enum venc_yuv_fmt input_fourcc;
@@ -102,6 +97,7 @@ struct venc_enc_prm {
 	unsigned int frm_rate;
 	unsigned int intra_period;
 	unsigned int bitrate;
+	unsigned int gop_size;
 	unsigned int sizeimage[MTK_VCODEC_MAX_PLANES];
 };
 
@@ -119,12 +115,10 @@ struct venc_frm_buf {
 
 /*
  * struct venc_done_result - This is return information used in venc_if_encode()
- * @msg: message, such as success or error code
  * @bs_size: output bitstream size
  * @is_key_frm: output is key frame or not
  */
 struct venc_done_result {
-	enum venc_drv_msg msg;
 	unsigned int bs_size;
 	bool is_key_frm;
 };
@@ -133,33 +127,31 @@ struct venc_done_result {
  * venc_if_create - Create the driver handle
  * @ctx: device context
  * @fourcc: encoder output format
- * @handle: driver handle
  * Return: 0 if creating handle successfully, otherwise it is failed.
  */
 int venc_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc);
 
 /*
  * venc_if_release - Release the driver handle
- * @handle: driver handle
+ * @ctx: device context
  * Return: 0 if releasing handle successfully, otherwise it is failed.
  */
 int venc_if_release(struct mtk_vcodec_ctx *ctx);
 
 /*
  * venc_if_set_param - Set parameter to driver
- * @handle: driver handle
+ * @ctx: device context
  * @type: set type
  * @in: input parameter
- * @out: output parameter
  * Return: 0 if setting param successfully, otherwise it is failed.
  */
 int venc_if_set_param(struct mtk_vcodec_ctx *ctx,
 		      enum venc_set_param_type type,
-		      void *in);
+		      struct venc_enc_prm *in);
 
 /*
  * venc_if_encode - Encode frame
- * @handle: driver handle
+ * @ctx: device context
  * @opt: encode frame option
  * @frm_buf: input frame buffer information
  * @bs_buf: output bitstream buffer infomraiton

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: PC Chen <pc.chen@mediatek.com>
 *         Tiffany Lin <tiffany.lin@mediatek.com>
 *
@@ -28,7 +28,7 @@ struct mtk_vcodec_mem {
 extern int mtk_v4l2_dbg_level;
 extern bool mtk_vcodec_dbg;
 
-#define DEBUG 	1
+#define DEBUG	1
 
 #if defined(DEBUG)
 

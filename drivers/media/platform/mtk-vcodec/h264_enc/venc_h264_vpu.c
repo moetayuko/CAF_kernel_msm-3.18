@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Jungchang Tsao <jungchang.tsao@mediatek.com>
  *         Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
@@ -21,9 +21,9 @@
 #include "venc_h264_vpu.h"
 #include "venc_ipi_msg.h"
 
-static unsigned int h264_get_profile(unsigned int profile)
+static unsigned int h264_get_profile(struct venc_h264_inst *inst,
+				     unsigned int profile)
 {
-	/* (Baseline=66, Main=77, High=100) */
 	switch (profile) {
 	case V4L2_MPEG_VIDEO_H264_PROFILE_BASELINE:
 		return 66;
@@ -31,15 +31,25 @@ static unsigned int h264_get_profile(unsigned int profile)
 		return 77;
 	case V4L2_MPEG_VIDEO_H264_PROFILE_HIGH:
 		return 100;
+	case V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_BASELINE:
+		mtk_vcodec_err(inst, "unsupported CONSTRAINED_BASELINE");
+		return 0;
+	case V4L2_MPEG_VIDEO_H264_PROFILE_EXTENDED:
+		mtk_vcodec_err(inst, "unsupported EXTENDED");
+		return 0;
 	default:
+		mtk_vcodec_debug(inst, "unsupported profile %d", profile);
 		return 100;
 	}
 }
 
-static unsigned int h264_get_level(unsigned int level)
+static unsigned int h264_get_level(struct venc_h264_inst *inst,
+				   unsigned int level)
 {
-	/* (UpTo4.1(HighProfile)) */
 	switch (level) {
+	case V4L2_MPEG_VIDEO_H264_LEVEL_1B:
+		mtk_vcodec_err(inst, "unsupported 1B");
+		return 0;
 	case V4L2_MPEG_VIDEO_H264_LEVEL_1_0:
 		return 10;
 	case V4L2_MPEG_VIDEO_H264_LEVEL_1_1:
@@ -65,6 +75,7 @@ static unsigned int h264_get_level(unsigned int level)
 	case V4L2_MPEG_VIDEO_H264_LEVEL_4_1:
 		return 41;
 	default:
+		mtk_vcodec_debug(inst, "unsupported level %d", level);
 		return 31;
 	}
 }
@@ -73,9 +84,9 @@ static void handle_h264_enc_init_msg(struct venc_h264_inst *inst, void *data)
 {
 	struct venc_vpu_ipi_msg_init *msg = data;
 
-	inst->vpu_inst.id = msg->inst_id;
-	inst->vpu_inst.drv = (struct venc_h264_vpu_drv *)vpu_mapping_dm_addr(
-		inst->dev, msg->inst_id);
+	inst->vpu_inst.id = msg->vpu_inst_addr;
+	inst->vpu_inst.vsi = (struct venc_h264_vsi *)vpu_mapping_dm_addr(
+		inst->dev, msg->vpu_inst_addr);
 }
 
 static void handle_h264_enc_encode_msg(struct venc_h264_inst *inst, void *data)
@@ -84,7 +95,7 @@ static void handle_h264_enc_encode_msg(struct venc_h264_inst *inst, void *data)
 
 	inst->vpu_inst.state = msg->state;
 	inst->vpu_inst.bs_size = msg->bs_size;
-	inst->is_key_frm = msg->key_frame;
+	inst->is_key_frm = msg->is_key_frm;
 }
 
 static void h264_enc_vpu_ipi_handler(void *data, unsigned int len, void *priv)
@@ -123,12 +134,18 @@ static int h264_enc_vpu_send_msg(struct venc_h264_inst *inst, void *msg,
 	int status;
 
 	mtk_vcodec_debug_enter(inst);
+
 	status = vpu_ipi_send(inst->dev, IPI_VENC_H264, msg, len);
 	if (status) {
-		mtk_vcodec_err(inst, "vpu_ipi_send msg %x len %d fail %d",
-			       *(unsigned int *)msg, len, status);
+		uint32_t msg_id = *(uint32_t *)msg;
+
+		mtk_vcodec_err(inst, "vpu_ipi_send msg_id %x len %d fail %d",
+			       msg_id, len, status);
 		return -EINVAL;
 	}
+	if (inst->vpu_inst.failure)
+		return -EINVAL;
+
 	mtk_vcodec_debug_leave(inst);
 
 	return 0;
@@ -155,8 +172,7 @@ int h264_enc_vpu_init(struct venc_h264_inst *inst)
 
 	out.msg_id = AP_IPIMSG_H264_ENC_INIT;
 	out.venc_inst = (unsigned long)inst;
-	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out)) ||
-	    inst->vpu_inst.failure) {
+	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
 		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_INIT fail");
 		return -EINVAL;
 	}
@@ -166,35 +182,34 @@ int h264_enc_vpu_init(struct venc_h264_inst *inst)
 	return 0;
 }
 
-int h264_enc_vpu_set_param(struct venc_h264_inst *inst, unsigned int id,
-			   void *param)
+int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
+			   enum venc_set_param_type id,
+			   struct venc_enc_prm *enc_param)
 {
 	struct venc_ap_ipi_msg_set_param out;
 
 	mtk_vcodec_debug(inst, "id %d ->", id);
 
 	out.msg_id = AP_IPIMSG_H264_ENC_SET_PARAM;
-	out.inst_id = inst->vpu_inst.id;
+	out.vpu_inst_addr = inst->vpu_inst.id;
 	out.param_id = id;
 	switch (id) {
 	case VENC_SET_PARAM_ENC: {
-		struct venc_enc_prm *enc_param = (struct venc_enc_prm *)param;
-
-		inst->vpu_inst.drv->config.input_fourcc =
+		inst->vpu_inst.vsi->config.input_fourcc =
 			enc_param->input_fourcc;
-		inst->vpu_inst.drv->config.bitrate = enc_param->bitrate;
-		inst->vpu_inst.drv->config.pic_w = enc_param->width;
-		inst->vpu_inst.drv->config.pic_h = enc_param->height;
-		inst->vpu_inst.drv->config.buf_w = enc_param->buf_width;
-		inst->vpu_inst.drv->config.buf_h = enc_param->buf_height;
-		inst->vpu_inst.drv->config.intra_period =
+		inst->vpu_inst.vsi->config.bitrate = enc_param->bitrate;
+		inst->vpu_inst.vsi->config.pic_w = enc_param->width;
+		inst->vpu_inst.vsi->config.pic_h = enc_param->height;
+		inst->vpu_inst.vsi->config.buf_w = enc_param->buf_width;
+		inst->vpu_inst.vsi->config.buf_h = enc_param->buf_height;
+		inst->vpu_inst.vsi->config.intra_period =
 			enc_param->intra_period;
-		inst->vpu_inst.drv->config.framerate = enc_param->frm_rate;
-		inst->vpu_inst.drv->config.profile =
-			h264_get_profile(enc_param->h264_profile);
-		inst->vpu_inst.drv->config.level =
-			h264_get_level(enc_param->h264_level);
-		inst->vpu_inst.drv->config.wfd = 0;
+		inst->vpu_inst.vsi->config.framerate = enc_param->frm_rate;
+		inst->vpu_inst.vsi->config.profile =
+			h264_get_profile(inst, enc_param->h264_profile);
+		inst->vpu_inst.vsi->config.level =
+			h264_get_level(inst, enc_param->h264_level);
+		inst->vpu_inst.vsi->config.wfd = 0;
 		out.data_item = 0;
 		break;
 	}
@@ -203,22 +218,24 @@ int h264_enc_vpu_set_param(struct venc_h264_inst *inst, unsigned int id,
 		break;
 	case VENC_SET_PARAM_ADJUST_BITRATE:
 		out.data_item = 1;
-		out.data[0] = *(unsigned int *)param;
+		out.data[0] = enc_param->bitrate;
 		break;
 	case VENC_SET_PARAM_ADJUST_FRAMERATE:
 		out.data_item = 1;
-		out.data[0] = *(unsigned int *)param;
+		out.data[0] = enc_param->frm_rate;
 		break;
 	case VENC_SET_PARAM_I_FRAME_INTERVAL:
 		out.data_item = 1;
-		out.data[0] = *(unsigned int *)param;
+		out.data[0] = enc_param->gop_size;
 		break;
 	case VENC_SET_PARAM_SKIP_FRAME:
 		out.data_item = 0;
 		break;
+	default:
+		mtk_vcodec_err(inst, "id %d not supported", id);
+		return -EINVAL;
 	}
-	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out)) ||
-	    inst->vpu_inst.failure) {
+	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
 		mtk_vcodec_err(inst,
 			       "AP_IPIMSG_H264_ENC_SET_PARAM %d fail", id);
 		return -EINVAL;
@@ -238,8 +255,9 @@ int h264_enc_vpu_encode(struct venc_h264_inst *inst, unsigned int bs_mode,
 
 	mtk_vcodec_debug(inst, "bs_mode %d ->", bs_mode);
 
+	memset(&out, 0, sizeof(out));
 	out.msg_id = AP_IPIMSG_H264_ENC_ENCODE;
-	out.inst_id = inst->vpu_inst.id;
+	out.vpu_inst_addr = inst->vpu_inst.id;
 	out.bs_mode = bs_mode;
 	if (frm_buf) {
 		if ((frm_buf->fb_addr.dma_addr % 16 == 0) &&
@@ -252,20 +270,12 @@ int h264_enc_vpu_encode(struct venc_h264_inst *inst, unsigned int bs_mode,
 			mtk_vcodec_err(inst, "dma_addr not align to 16");
 			return -EINVAL;
 		}
-	} else {
-		out.input_addr[0] = 0;
-		out.input_addr[1] = 0;
-		out.input_addr[2] = 0;
 	}
 	if (bs_buf) {
 		out.bs_addr = bs_buf->dma_addr;
 		out.bs_size = bs_buf->size;
-	} else {
-		out.bs_addr = 0;
-		out.bs_size = 0;
 	}
-	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out)) ||
-	    inst->vpu_inst.failure) {
+	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
 		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_ENCODE %d fail",
 			       bs_mode);
 		return -EINVAL;
@@ -296,9 +306,8 @@ int h264_enc_vpu_deinit(struct venc_h264_inst *inst)
 	mtk_vcodec_debug_enter(inst);
 
 	out.msg_id = AP_IPIMSG_H264_ENC_DEINIT;
-	out.inst_id = inst->vpu_inst.id;
-	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out)) ||
-	    inst->vpu_inst.failure) {
+	out.vpu_inst_addr = inst->vpu_inst.id;
+	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
 		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_DEINIT fail");
 		return -EINVAL;
 	}

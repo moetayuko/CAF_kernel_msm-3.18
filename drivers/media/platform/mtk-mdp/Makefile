@@ -1,8 +1,9 @@
-obj-$(CONFIG_VIDEO_MEDIATEK_MDP) += \
-    mtk_mdp_core.o \
-    mtk_mdp_m2m.o \
-    mtk_mdp_regs.o \
-    mtk_mdp_vpu.o
+mtk-mdp-y += mtk_mdp_core.o
+mtk-mdp-y += mtk_mdp_m2m.o
+mtk-mdp-y += mtk_mdp_regs.o
+mtk-mdp-y += mtk_mdp_vpu.o
+
+obj-$(CONFIG_VIDEO_MEDIATEK_MDP) += mtk-mdp.o
 
 ccflags-y += \
     -I$(srctree)/drivers \

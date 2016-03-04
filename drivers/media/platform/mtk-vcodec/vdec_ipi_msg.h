@@ -37,12 +37,12 @@ enum vdec_ipi_msgid {
 
 /**
  * struct vdec_ap_ipi_cmd - generic AP to VPU ipi command format
- * @msg_id      : vdec_ipi_msgid
- * @h_drv       : handle to VPU driver
+ * @msg_id		: vdec_ipi_msgid
+ * @vpu_inst_addr	: VPU decoder instance address
  */
 struct vdec_ap_ipi_cmd {
 	uint32_t msg_id;
-	uint32_t h_drv;
+	uint32_t vpu_inst_addr;
 };
 
 /**
@@ -55,6 +55,20 @@ struct vdec_vpu_ipi_ack {
 	uint32_t msg_id;
 	int32_t status;
 	uint64_t vdec_inst;
+};
+
+/**
+ * struct vdec_ipi_init_ack - for VPU_IPIMSG_DEC_INIT_ACK
+ * @msg_id        : VPU_IPIMSG_DEC_INIT_ACK
+ * @status        : VPU exeuction result
+ * @vdec_inst     : AP video decoder instance address
+ * @vpu_inst_addr : VPU decoder instance address
+ */
+struct vdec_ipi_init_ack {
+	uint32_t msg_id;
+	int32_t status;
+	uint64_t vdec_inst;
+	uint32_t vpu_inst_addr;
 };
 
 #endif

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: Tiffany Lin <tiffany.lin@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
@@ -21,8 +21,7 @@
 /* timeout is ms */
 int mtk_vcodec_wait_for_done_ctx(void *data, int command, unsigned int timeout,
 				 int interrupt);
-int mtk_vcodec_wait_for_done_dev(void *data, int command, unsigned int timeout,
-				 int interrupt);
+
 
 void mtk_vcodec_clean_dev_int_flags(void *data);
 

@@ -225,7 +225,7 @@ struct vdec_fb *vp9_rm_from_fb_disp_list(struct vdec_vp9_inst
 bool vp9_add_to_fb_use_list(struct vdec_vp9_inst *handle,
 			    struct vdec_fb *fb);
 struct vdec_fb *vp9_rm_from_fb_use_list(struct vdec_vp9_inst
-					*handle, void * addr);
+					*handle, void *addr);
 bool vp9_add_to_fb_free_list(struct vdec_vp9_inst *handle,
 			     struct vdec_fb *fb);
 struct vdec_fb *vp9_rm_from_fb_free_list(struct vdec_vp9_inst

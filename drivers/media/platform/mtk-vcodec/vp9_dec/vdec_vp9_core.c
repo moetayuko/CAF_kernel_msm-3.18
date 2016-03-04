@@ -34,9 +34,9 @@ static int vp9_setup_buf(struct vdec_vp9_inst *inst)
 	drv->mv_buf.pa = (unsigned long)inst->work_buf.mv_buf.dma_addr;
 	drv->mv_buf.sz = (unsigned long)inst->work_buf.mv_buf.size;
 
-	if ((drv->mv_buf.va == 0) || (drv->mv_buf.pa == 0) || (drv->mv_buf.sz == 0))
+	if ((drv->mv_buf.va == 0) || (drv->mv_buf.pa == 0) ||
+		(drv->mv_buf.sz == 0))
 		return -EINVAL;
-
 
 	mtk_vcodec_debug(inst, "VP9_MV_BUF_Addr: 0x%lX (0x%lX)",
 		     drv->mv_buf.va, drv->mv_buf.pa);
@@ -88,9 +88,8 @@ static bool vp9_realloc_work_buf(struct vdec_vp9_inst *inst)
 		     inst->work_buf.frmbuf_width,
 		     inst->work_buf.frmbuf_height);
 
-	if((inst->frm_hdr.width > 4096) ||
-		(inst->frm_hdr.height > 2304))
-	{
+	if ((inst->frm_hdr.width > 4096) ||
+		(inst->frm_hdr.height > 2304)) {
 		mtk_vcodec_err(inst, "Invalid w/h %d/%d",
 			inst->frm_hdr.width,
 			inst->frm_hdr.height);
@@ -143,7 +142,8 @@ static void vp9_swap_frm_bufs(struct vdec_vp9_inst *inst)
 
 	if (frm_to_show->fb != inst->cur_fb) {
 		if ((frm_to_show->fb != NULL) &&
-			(inst->cur_fb->base_y.size >= frm_to_show->fb->base_y.size )) {
+			(inst->cur_fb->base_y.size >=
+				frm_to_show->fb->base_y.size)) {
 			memcpy((void *)inst->cur_fb->base_y.va,
 				(void *)frm_to_show->fb->base_y.va,
 				inst->work_buf.frmbuf_width *
@@ -316,9 +316,8 @@ bool vp9_init_proc(struct vdec_vp9_inst *inst,
 	inst->work_buf.frmbuf_height = pic_info->buf_h;
 
 	/* ----> HW limitation */
-	if((inst->frm_hdr.width > 4096) ||
-		(inst->frm_hdr.height > 2304))
-	{
+	if ((inst->frm_hdr.width > 4096) ||
+		(inst->frm_hdr.height > 2304)) {
 		mtk_vcodec_err(inst, "Invalid w/h %d/%d",
 			inst->frm_hdr.width,
 			inst->frm_hdr.height);
@@ -498,9 +497,8 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 	mem->size = inst->vpu.drv->buf_sz_y_bs +
 		    inst->vpu.drv->buf_len_sz_y;
 
-	if((inst->frm_hdr.width > 4096) ||
-		(inst->frm_hdr.height > 2304))
-	{
+	if ((inst->frm_hdr.width > 4096) ||
+		(inst->frm_hdr.height > 2304)) {
 		mtk_vcodec_err(inst, "Invalid w/h %d/%d",
 			inst->frm_hdr.width,
 			inst->frm_hdr.height);
@@ -512,8 +510,10 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 		return -1;
 	}
 
-	mtk_vcodec_debug(inst, "allocate sf_ref_buf y_buf = 0x%lx, %d",mem->size,
-			inst->work_buf.frmbuf_width * inst->work_buf.frmbuf_height);
+	mtk_vcodec_debug(inst, "allocate sf_ref_buf y_buf = 0x%lx, %d",
+			mem->size,
+			inst->work_buf.frmbuf_width *
+			inst->work_buf.frmbuf_height);
 
 	drv->sf_ref_fb[i].fb.base_y.va =
 				inst->work_buf.sf_ref_buf[i].base_y.va;
@@ -531,8 +531,10 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 		return -1;
 	}
 
-	mtk_vcodec_debug(inst, "allocate sf_ref_buf c_buf = 0x%lx, %d",mem->size,
-			inst->work_buf.frmbuf_width * inst->work_buf.frmbuf_height /2);
+	mtk_vcodec_debug(inst, "allocate sf_ref_buf c_buf = 0x%lx, %d",
+			mem->size,
+			inst->work_buf.frmbuf_width *
+			inst->work_buf.frmbuf_height / 2);
 
 	drv->sf_ref_fb[i].fb.base_c.va =
 				inst->work_buf.sf_ref_buf[i].base_c.va;
@@ -666,7 +668,7 @@ bool vp9_add_to_fb_use_list(struct vdec_vp9_inst *inst,
 }
 
 struct vdec_fb *vp9_rm_from_fb_use_list(struct vdec_vp9_inst
-					*inst, void * addr)
+					*inst, void *addr)
 {
 	struct vdec_fb *fb;
 	struct vdec_fb_node *node;
@@ -748,6 +750,6 @@ void vp9_reset(struct vdec_vp9_inst *inst)
 	if (0 != vp9_dec_vpu_reset(inst))
 		mtk_vcodec_debug(inst, "vp9_dec_vpu_reset failed");
 
-	if(vp9_setup_buf(inst))
+	if (vp9_setup_buf(inst))
 		mtk_vcodec_debug(inst, "vp9_setup_buf failed");
 }

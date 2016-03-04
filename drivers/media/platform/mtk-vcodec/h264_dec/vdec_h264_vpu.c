@@ -49,35 +49,19 @@ struct vdec_h264_ipi_init {
 };
 
 /**
- * struct vdec_h264_ipi_init_ack - for VPU_IPIMSG_DEC_INIT_ACK
- * @msg_id      : VPU_IPIMSG_DEC_INIT_ACK
- * @status      : VPU exeuction result
- * @vdec_inst   : AP vdec_h264_inst address
- * @h_drv	: Handle to VPU driver
- * @shmem_addr  : VPU shared memory address (VPU is 32-bit)
- */
-struct vdec_h264_ipi_init_ack {
-	uint32_t msg_id;
-	int32_t status;
-	uint64_t vdec_inst;
-	uint32_t h_drv;
-	uint32_t shmem_addr[VDEC_SHMEM_MAX];
-};
-
-/**
  * struct vdec_h264_ipi_dec_start - for AP_IPIMSG_DEC_START
- * @msg_id       : AP_IPIMSG_DEC_START
- * @h_drv	 : Handle to VPU driver
- * @bs_sz        : Bit-stream buffer size
- * @nal_start    : NALU first byte
- * @bs_dma       : Input bit-stream buffer dma address
- * @y_fb_dma     : Y frame buffer dma address
- * @c_fb_dma     : C frame buffer dma address
- * @vdec_fb_va   : VDEC frame buffer struct virtual address
+ * @msg_id        : AP_IPIMSG_DEC_START
+ * @vpu_inst_addr : VPU decoder instance addr
+ * @bs_sz         : Bit-stream buffer size
+ * @nal_start     : NALU first byte
+ * @bs_dma        : Input bit-stream buffer dma address
+ * @y_fb_dma      : Y frame buffer dma address
+ * @c_fb_dma      : C frame buffer dma address
+ * @vdec_fb_va    : VDEC frame buffer struct virtual address
  */
 struct vdec_h264_ipi_dec_start {
 	uint32_t msg_id;
-	uint32_t h_drv;
+	uint32_t vpu_inst_addr;
 	uint32_t bs_sz;
 	uint32_t nal_start;
 	uint64_t bs_dma;
@@ -86,27 +70,18 @@ struct vdec_h264_ipi_dec_start {
 	uint64_t vdec_fb_va;
 };
 
-static void handle_init_ack_msg(struct vdec_h264_ipi_init_ack *msg)
+static void handle_init_ack_msg(struct vdec_ipi_init_ack *msg)
 {
 	struct vdec_h264_inst *inst = (struct vdec_h264_inst *)msg->vdec_inst;
-	u32 vpu_addr;
-	void *shmem_va[VDEC_SHMEM_MAX];
-	int i;
 
 	mtk_vcodec_debug(inst, "+ vdec_inst = 0x%llx", msg->vdec_inst);
 
 	/* mapping VPU address to kernel virtual address */
-	for (i = 0; i < VDEC_SHMEM_MAX; i++) {
-		vpu_addr = (unsigned long)msg->shmem_addr[i];
-		shmem_va[i] = vpu_mapping_dm_addr(inst->dev, vpu_addr);
-		mtk_vcodec_debug(inst, "shmem[%d] va=%p\n", i, shmem_va[i]);
-	}
+	inst->vsi = (struct vdec_h264_vsi *)vpu_mapping_dm_addr(
+		    inst->dev, msg->vpu_inst_addr);
+	inst->vpu.inst_addr = msg->vpu_inst_addr;
 
-	inst->vsi = (struct vdec_h264_vsi *)shmem_va[VDEC_SHMEM_VSI];
-	inst->vpu.hdr_bs_buf = (unsigned char *)shmem_va[VDEC_SHMEM_HDR_BS];
-	inst->vpu.h_drv = msg->h_drv;
-
-	mtk_vcodec_debug(inst, "- h_drv = 0x%x", inst->vpu.h_drv);
+	mtk_vcodec_debug(inst, "- inst_addr = 0x%x", inst->vpu.inst_addr);
 }
 
 /*
@@ -167,6 +142,26 @@ static int h264_dec_vpu_send_msg(struct vdec_h264_inst *inst,
 	return err;
 }
 
+static int h264_dec_send_ap_ipi(struct vdec_h264_inst *inst,
+				unsigned int msg_id)
+{
+	struct vdec_ap_ipi_cmd msg;
+	int err = 0;
+
+	mtk_vcodec_debug(inst, "+ id=%X", msg_id);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_id = msg_id;
+	msg.vpu_inst_addr = inst->vpu.inst_addr;
+
+	err = h264_dec_vpu_send_msg(inst, &msg, sizeof(msg));
+	if (!err && inst->vpu.failure != 0)
+		err = inst->vpu.failure;
+
+	mtk_vcodec_debug(inst, "- id=%X ret=%d", msg_id, err);
+	return err;
+}
+
 int vdec_h264_vpu_init(struct vdec_h264_inst *inst, uint64_t bs_dma,
 		       uint32_t bs_sz)
 {
@@ -216,40 +211,20 @@ int vdec_h264_vpu_dec_start(struct vdec_h264_inst *inst, uint32_t bs_sz,
 	mtk_vcodec_debug(inst, "+ type=%d sz=%d", NAL_TYPE(nal_start), bs_sz);
 
 	memset(&msg, 0, sizeof(msg));
-	msg.msg_id	= AP_IPIMSG_DEC_START;
-	msg.h_drv	= inst->vpu.h_drv;
-	msg.bs_sz	= bs_sz;
-	msg.nal_start   = nal_start;
-	msg.bs_dma	= bs_dma;
-	msg.y_fb_dma	= y_fb_dma;
-	msg.c_fb_dma	= c_fb_dma;
-	msg.vdec_fb_va  = vdec_fb_va;
+	msg.msg_id		= AP_IPIMSG_DEC_START;
+	msg.vpu_inst_addr	= inst->vpu.inst_addr;
+	msg.bs_sz		= bs_sz;
+	msg.nal_start		= nal_start;
+	msg.bs_dma		= bs_dma;
+	msg.y_fb_dma		= y_fb_dma;
+	msg.c_fb_dma		= c_fb_dma;
+	msg.vdec_fb_va		= vdec_fb_va;
 
 	err = h264_dec_vpu_send_msg(inst, (void *)&msg, sizeof(msg));
 	if (!err && inst->vpu.failure != 0)
 		err = inst->vpu.failure;
 
 	mtk_vcodec_debug(inst, "- ret=%d", err);
-	return err;
-}
-
-static int h264_dec_send_ap_ipi(struct vdec_h264_inst *inst,
-				unsigned int msg_id)
-{
-	struct vdec_ap_ipi_cmd msg;
-	int err = 0;
-
-	mtk_vcodec_debug(inst, "+ id=%X", msg_id);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.msg_id = msg_id;
-	msg.h_drv = inst->vpu.h_drv;
-
-	err = h264_dec_vpu_send_msg(inst, &msg, sizeof(msg));
-	if (!err && inst->vpu.failure != 0)
-		err = inst->vpu.failure;
-
-	mtk_vcodec_debug(inst, "- id=%X ret=%d", msg_id, err);
 	return err;
 }
 

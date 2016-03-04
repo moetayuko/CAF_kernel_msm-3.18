@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Jungchang Tsao <jungchang.tsao@mediatek.com>
  *         Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
@@ -18,7 +18,7 @@
 #ifndef _VENC_H264_IF_H_
 #define _VENC_H264_IF_H_
 
-#include "../venc_drv_base.h"
+#include "venc_drv_base.h"
 
 /**
  * enum venc_h264_vpu_work_buf - h264 encoder buffer index
@@ -33,10 +33,6 @@ enum venc_h264_vpu_work_buf {
 	VENC_H264_VPU_WORK_BUF_MV_INFO_1,
 	VENC_H264_VPU_WORK_BUF_MV_INFO_2,
 	VENC_H264_VPU_WORK_BUF_SKIP_FRAME,
-	VENC_H264_VPU_WORK_BUF_SRC_LUMA,
-	VENC_H264_VPU_WORK_BUF_SRC_CHROMA,
-	VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CB,
-	VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CR,
 	VENC_H264_VPU_WORK_BUF_MAX,
 };
 
@@ -53,12 +49,15 @@ enum venc_h264_bs_mode {
  * struct venc_h264_vpu_config - Structure for h264 encoder configuration
  * @input_fourcc: input fourcc
  * @bitrate: target bitrate (in bps)
- * @pic_w: picture width
+ * @pic_w: picture width. Picture size is visible stream resolution, in pixels,
+ *         to be used for display purposes; must be smaller or equal to buffer
+ *         size.
  * @pic_h: picture height
- * @buf_w: buffer width
+ * @buf_w: buffer width. Buffer size is stream resolution in pixels aligned to
+ *         hardware requirements.
  * @buf_h: buffer height
  * @intra_period: intra frame period
- * @framerate: frame rate
+ * @framerate: frame rate in fps
  * @profile: as specified in standard
  * @level: as specified in standard
  * @wfd: WFD mode 1:on, 0:off
@@ -92,7 +91,7 @@ struct venc_h264_vpu_buf {
 };
 
 /*
- * struct venc_h264_vpu_drv - Structure for VPU driver control and info share
+ * struct venc_h264_vsi - Structure for VPU driver control and info share
  * This structure is allocated in VPU side and shared to AP side.
  * @config: h264 encoder configuration
  * @work_bufs: working buffer information in VPU side
@@ -102,10 +101,12 @@ struct venc_h264_vpu_buf {
  * struct mtk_vcodec_mem, then invoke mtk_vcodec_mem_alloc to allocate
  * the buffer. After that, bypass the 'dma_addr' to the 'iova' field here for
  * register setting in VPU side.
+ * @sizeimage: image size for each plane
  */
-struct venc_h264_vpu_drv {
+struct venc_h264_vsi {
 	struct venc_h264_vpu_config config;
 	struct venc_h264_vpu_buf work_bufs[VENC_H264_VPU_WORK_BUF_MAX];
+	unsigned int sizeimage[MTK_VCODEC_MAX_PLANES];
 };
 
 /*
@@ -118,7 +119,7 @@ struct venc_h264_vpu_drv {
  * @wait_int: flag to wait interrupt done (0: for skip frame case, 1: normal
  *	      case)
  * @id: VPU instance id
- * @drv: driver structure allocated by VPU side and shared to AP side for
+ * @vsi: driver structure allocated by VPU side and shared to AP side for
  *	 control and info share
  */
 struct venc_h264_vpu_inst {
@@ -129,7 +130,7 @@ struct venc_h264_vpu_inst {
 	int bs_size;
 	int wait_int;
 	unsigned int id;
-	struct venc_h264_vpu_drv *drv;
+	struct venc_h264_vsi *vsi;
 };
 
 /*

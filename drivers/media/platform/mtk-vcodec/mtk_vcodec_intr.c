@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
+* Copyright (c) 2016 MediaTek Inc.
 * Author: Tiffany Lin <tiffany.lin@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
@@ -26,6 +26,7 @@ void mtk_vcodec_clean_dev_int_flags(void *data)
 	dev->int_cond = 0;
 	dev->int_type = 0;
 }
+EXPORT_SYMBOL(mtk_vcodec_clean_dev_int_flags);
 
 int mtk_vcodec_wait_for_done_ctx(void *data, int command,
 				 unsigned int timeout_ms, int interrupt)
@@ -48,7 +49,7 @@ int mtk_vcodec_wait_for_done_ctx(void *data, int command,
 				(ctx->int_type == command)),
 				 timeout_jiff);
 	}
-	if (0 == ret) {
+	if (!ret) {
 		status = -1;	/* timeout */
 		mtk_v4l2_err("[%d] cmd=%d, ctx->type=%d, wait_event_interruptible_timeout time=%ums out %d %d!",
 				ctx->idx, ctx->type, command, timeout_ms,
@@ -65,38 +66,7 @@ int mtk_vcodec_wait_for_done_ctx(void *data, int command,
 
 	return status;
 }
+EXPORT_SYMBOL(mtk_vcodec_wait_for_done_ctx);
 
-int mtk_vcodec_wait_for_done_dev(void *data, int command,
-				 unsigned int timeout, int interrupt)
-{
-	wait_queue_head_t *waitqueue;
-	long timeout_jiff, ret;
-	int status = 0;
-	struct mtk_vcodec_dev *dev = (struct mtk_vcodec_dev *)data;
 
-	waitqueue = (wait_queue_head_t *)&dev->queue;
-	timeout_jiff = msecs_to_jiffies(timeout);
-	if (interrupt) {
-		ret = wait_event_interruptible_timeout(*waitqueue,
-				(dev->int_cond &&
-				(dev->int_type == command)),
-				timeout_jiff);
-	} else {
-		ret = wait_event_timeout(*waitqueue,
-				(dev->int_cond &&
-				(dev->int_type == command)),
-				timeout_jiff);
-	}
-	if (0 == ret) {
-		status = -1;	/* timeout */
-		mtk_v4l2_err("wait_event_interruptible_timeout time=%lu out %d %d!",
-				timeout_jiff, dev->int_cond, dev->int_type);
-	} else if (-ERESTARTSYS == ret) {
-		mtk_v4l2_err("wait_event_interruptible_timeout interrupted by a signal %d %d",
-				dev->int_cond, dev->int_type);
-		status = -1;
-	}
-	dev->int_cond = 0;
-	dev->int_type = 0;
-	return status;
-}
+

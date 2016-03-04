@@ -35,30 +35,16 @@ struct vdec_vp8_ipi_init {
 	uint64_t vdec_inst;
 };
 
-/**
- * struct vdec_vp8_ipi_init_ack - for VPU_IPIMSG_DEC_INIT_ACK
- * @msg_id      : VPU_IPIMSG_DEC_INIT_ACK
- * @status      : VPU exeuction result
- * @vdec_inst   : AP vdec_vp8_inst address
- * @h_drv	: Handle to VPU driver
- */
-struct vdec_vp8_ipi_init_ack {
-	uint32_t msg_id;
-	int32_t status;
-	uint64_t vdec_inst;
-	uint32_t h_drv;
-};
-
 static void handle_init_ack_msg(struct vdec_vp8_inst *inst, void *data)
 {
-	struct vdec_vp8_ipi_init_ack *msg = data;
+	struct vdec_ipi_init_ack *msg = data;
 
-	inst->vpu.h_drv = msg->h_drv;
+	inst->vpu.inst_addr = msg->vpu_inst_addr;
 	inst->vsi = (struct vdec_vp8_vsi *)vpu_mapping_dm_addr(
-		    inst->dev, msg->h_drv);
+		    inst->dev, msg->vpu_inst_addr);
 
-	mtk_vcodec_debug(inst, "h_drv %x map to %p\n", inst->vpu.h_drv,
-			 inst->vsi);
+	mtk_vcodec_debug(inst, "inst_addr %x map to %p\n",
+			 inst->vpu.inst_addr, inst->vsi);
 }
 
 /*
@@ -156,7 +142,7 @@ static int vp8_dec_send_ap_ipi(struct vdec_vp8_inst *inst, unsigned int msg_id)
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_id = msg_id;
-	msg.h_drv = inst->vpu.h_drv;
+	msg.vpu_inst_addr = inst->vpu.inst_addr;
 
 	err = vp8_dec_vpu_send_msg(inst, &msg, sizeof(msg));
 	if (!err && inst->vpu.failure != 0)

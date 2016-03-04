@@ -16,7 +16,7 @@
 #ifndef _VDEC_VP8_IF_H_
 #define _VDEC_VP8_IF_H_
 
-#include "../vdec_drv_base.h"
+#include "vdec_drv_base.h"
 
 #define VP8_MAX_FRM_BUFF_NUM				5
 #define VP8_HW_DATA_SZ					272
@@ -87,13 +87,13 @@ struct vdec_vp8_hw_reg_base {
  * @wq_hd	: Wait queue to wait VPU message ack
  * @signaled	: 1 - Host has received ack message from VPU, 0 - not recevie
  * @failure	: VPU execution result status
- * @h_drv	: handle to VPU driver
+ * @inst_addr	: VPU decoder instance addr
  */
 struct vdec_vp8_vpu_inst {
 	wait_queue_head_t wq_hd;
 	int signaled;
 	int failure;
-	unsigned int h_drv;
+	unsigned int inst_addr;
 };
 
 /* frame buffer (fb) list

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Jungchang Tsao <jungchang.tsao@mediatek.com>
  *         Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
@@ -19,8 +19,9 @@
 #define _VENC_H264_VPU_H_
 
 int h264_enc_vpu_init(struct venc_h264_inst *inst);
-int h264_enc_vpu_set_param(struct venc_h264_inst *inst, unsigned int id,
-			   void *param);
+int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
+			   enum venc_set_param_type id,
+			   struct venc_enc_prm *param);
 int h264_enc_vpu_encode(struct venc_h264_inst *inst, unsigned int bs_mode,
 			struct venc_frm_buf *frm_buf,
 			struct mtk_vcodec_mem *bs_buf,

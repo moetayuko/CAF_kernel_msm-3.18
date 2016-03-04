@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
  *
@@ -18,8 +18,9 @@
 #define _VENC_VP8_VPU_H_
 
 int vp8_enc_vpu_init(struct venc_vp8_inst *inst);
-int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst, unsigned int id,
-			  void *param);
+int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst,
+			  enum venc_set_param_type id,
+			  struct venc_enc_prm *param);
 int vp8_enc_vpu_encode(struct venc_vp8_inst *inst,
 		       struct venc_frm_buf *frm_buf,
 		       struct mtk_vcodec_mem *bs_buf);

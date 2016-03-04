@@ -1,7 +1,8 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Daniel Hsiao <daniel.hsiao@mediatek.com>
- *         Jungchang Tsao <jungchang.tsao@mediatek.com>
+ *		Jungchang Tsao <jungchang.tsao@mediatek.com>
+ *		Tiffany Lin <tiffany.lin@mediatek.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify
@@ -49,7 +50,7 @@ struct venc_common_if {
 	 * @in: [in] buffer to store the parameter
 	 */
 	int (*set_param)(unsigned long handle, enum venc_set_param_type type,
-			 void *in);
+			 struct venc_enc_prm *in);
 
 	/**
 	 * (*deinit)() - deinitialize driver.
@@ -57,6 +58,5 @@ struct venc_common_if {
 	 */
 	int (*deinit)(unsigned long handle);
 };
-
 
 #endif

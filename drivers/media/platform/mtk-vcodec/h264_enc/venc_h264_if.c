@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Jungchang Tsao <jungchang.tsao@mediatek.com>
  *         Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
@@ -29,6 +29,9 @@
 #include "venc_h264_if.h"
 #include "venc_h264_vpu.h"
 
+static const char h264_filler_marker[] = {0x0, 0x0, 0x0, 0x1, 0xc};
+
+#define H264_FILLER_MARKER_SIZE ARRAY_SIZE(h264_filler_marker)
 #define VENC_PIC_BITSTREAM_BYTE_CNT 0x0098
 
 enum venc_h264_irq_status {
@@ -59,23 +62,19 @@ static void h264_enc_free_work_buf(struct venc_h264_inst *inst)
 	 */
 	for (i = 0; i < VENC_H264_VPU_WORK_BUF_MAX; i++) {
 		if (i != VENC_H264_VPU_WORK_BUF_SKIP_FRAME)
-			if (inst->work_bufs[i].va != NULL)
-				mtk_vcodec_mem_free(inst->ctx,
-						    &inst->work_bufs[i]);
+			mtk_vcodec_mem_free(inst->ctx, &inst->work_bufs[i]);
 	}
 
-	if (inst->pps_buf.va != NULL)
-		mtk_vcodec_mem_free(inst->ctx, &inst->pps_buf);
+	mtk_vcodec_mem_free(inst->ctx, &inst->pps_buf);
 
 	mtk_vcodec_debug_leave(inst);
 }
 
-static int h264_enc_alloc_work_buf(struct venc_h264_inst *inst, void *param)
+static int h264_enc_alloc_work_buf(struct venc_h264_inst *inst)
 {
 	int i;
 	int ret = 0;
-	struct venc_h264_vpu_buf *wb = inst->vpu_inst.drv->work_bufs;
-	struct venc_enc_prm *enc_param = param;
+	struct venc_h264_vpu_buf *wb = inst->vpu_inst.vsi->work_bufs;
 
 	mtk_vcodec_debug_enter(inst);
 
@@ -96,75 +95,51 @@ static int h264_enc_alloc_work_buf(struct venc_h264_inst *inst, void *param)
 		 * address and do some memcpy access to move to bitstream buffer
 		 * assigned by v4l2 layer.
 		 */
-		if (i == VENC_H264_VPU_WORK_BUF_RC_CODE) {
-			void *tmp_va;
-
-			tmp_va = vpu_mapping_dm_addr(inst->dev, wb[i].vpua);
-			inst->work_bufs[i].size = wb[i].size;
-			if (mtk_vcodec_mem_alloc(inst->ctx,
-						 &inst->work_bufs[i])) {
-				mtk_vcodec_err(inst,
-					       "cannot allocate buf %d", i);
-				ret = -ENOMEM;
-				goto err_alloc;
-			}
-			memcpy(inst->work_bufs[i].va, tmp_va, wb[i].size);
-			wb[i].iova = inst->work_bufs[i].dma_addr;
-		} else if (i == VENC_H264_VPU_WORK_BUF_SKIP_FRAME) {
-			inst->work_bufs[i].size = wb[i].size;
+		inst->work_bufs[i].size = wb[i].size;
+		if (i == VENC_H264_VPU_WORK_BUF_SKIP_FRAME) {
 			inst->work_bufs[i].va = vpu_mapping_dm_addr(
 				inst->dev, wb[i].vpua);
 			inst->work_bufs[i].dma_addr = 0;
-			wb[i].iova = inst->work_bufs[i].dma_addr;
-		} else if (i == VENC_H264_VPU_WORK_BUF_SRC_LUMA ||
-			   i == VENC_H264_VPU_WORK_BUF_SRC_CHROMA ||
-			   i == VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CB ||
-			   i == VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CR) {
-			inst->work_bufs[i].size = wb[i].size;
-			inst->work_bufs[i].dma_addr = 0;
-			inst->work_bufs[i].va = NULL;
-			wb[i].iova = inst->work_bufs[i].dma_addr;
 		} else {
-			inst->work_bufs[i].size = wb[i].size;
-			if (mtk_vcodec_mem_alloc(inst->ctx,
-						 &inst->work_bufs[i])) {
+			ret = mtk_vcodec_mem_alloc(inst->ctx,
+						   &inst->work_bufs[i]);
+			if (ret) {
 				mtk_vcodec_err(inst,
 					       "cannot allocate buf %d", i);
-				ret = -ENOMEM;
 				goto err_alloc;
 			}
-			wb[i].iova = inst->work_bufs[i].dma_addr;
+			/*
+			 * This RC_CODE is pre-allocated by VPU and saved in VPU
+			 * addr. So we need use memcpy to copy RC_CODE from VPU
+			 * addr into IO virtual addr in 'iova' field for reg
+			 * setting in VPU side.
+			 */
+			if (i == VENC_H264_VPU_WORK_BUF_RC_CODE) {
+				void *tmp_va;
+
+				tmp_va = vpu_mapping_dm_addr(inst->dev,
+							     wb[i].vpua);
+				memcpy(inst->work_bufs[i].va, tmp_va,
+				       wb[i].size);
+			}
 		}
-		mtk_vcodec_debug(inst, "buf[%d] va=0x%p iova=0x%p size=0x%lx",
+		wb[i].iova = inst->work_bufs[i].dma_addr;
+
+		mtk_vcodec_debug(inst,
+				 "work_buf[%d] va=0x%p iova=0x%p size=0x%lx",
 				 i, inst->work_bufs[i].va,
 				 (void *)inst->work_bufs[i].dma_addr,
 				 inst->work_bufs[i].size);
 	}
 
-	if (enc_param->input_fourcc == VENC_YUV_FORMAT_NV12 ||
-	    enc_param->input_fourcc == VENC_YUV_FORMAT_NV21) {
-		enc_param->sizeimage[0] =
-			inst->work_bufs[VENC_H264_VPU_WORK_BUF_SRC_LUMA].size;
-		enc_param->sizeimage[1] =
-			inst->work_bufs[VENC_H264_VPU_WORK_BUF_SRC_CHROMA].size;
-		enc_param->sizeimage[2] = 0;
-	} else {
-		enc_param->sizeimage[0] =
-			inst->work_bufs[VENC_H264_VPU_WORK_BUF_SRC_LUMA].size;
-		enc_param->sizeimage[1] =
-			inst->work_bufs[VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CB].size;
-		enc_param->sizeimage[2] =
-			inst->work_bufs[VENC_H264_VPU_WORK_BUF_SRC_CHROMA_CR].size;
-	}
-
 	/* the pps_buf is used by AP side only */
 	inst->pps_buf.size = 128;
-	if (mtk_vcodec_mem_alloc(inst->ctx,
-				 &inst->pps_buf)) {
+	ret = mtk_vcodec_mem_alloc(inst->ctx, &inst->pps_buf);
+	if (ret) {
 		mtk_vcodec_err(inst, "cannot allocate pps_buf");
-		ret = -ENOMEM;
 		goto err_alloc;
 	}
+
 	mtk_vcodec_debug_leave(inst);
 
 	return ret;
@@ -180,11 +155,11 @@ static unsigned int h264_enc_wait_venc_done(struct venc_h264_inst *inst)
 	unsigned int irq_status = 0;
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)inst->ctx;
 
-	mtk_vcodec_wait_for_done_ctx(ctx, MTK_INST_IRQ_RECEIVED,
-				     WAIT_INTR_TIMEOUT, true);
-	irq_status = ctx->irq_status;
-	mtk_vcodec_debug(inst, "irq_status %x <-", irq_status);
-
+	if (!mtk_vcodec_wait_for_done_ctx(ctx, MTK_INST_IRQ_RECEIVED,
+					  WAIT_INTR_TIMEOUT, true)) {
+		irq_status = ctx->irq_status;
+		mtk_vcodec_debug(inst, "irq_status %x <-", irq_status);
+	}
 	return irq_status;
 }
 
@@ -242,6 +217,28 @@ static int h264_encode_pps(struct venc_h264_inst *inst,
 	return ret;
 }
 
+static int h264_encode_header(struct venc_h264_inst *inst,
+			      struct mtk_vcodec_mem *bs_buf,
+			      unsigned int *bs_size)
+{
+	int ret = 0;
+	unsigned int bs_size_sps;
+	unsigned int bs_size_pps;
+
+	ret = h264_encode_sps(inst, bs_buf, &bs_size_sps);
+	if (ret)
+		return ret;
+
+	ret = h264_encode_pps(inst, &inst->pps_buf, &bs_size_pps);
+	if (ret)
+		return ret;
+
+	memcpy(bs_buf->va + bs_size_sps, inst->pps_buf.va, bs_size_pps);
+	*bs_size = bs_size_sps + bs_size_pps;
+
+	return ret;
+}
+
 static int h264_encode_frame(struct venc_h264_inst *inst,
 			     struct venc_frm_buf *frm_buf,
 			     struct mtk_vcodec_mem *bs_buf,
@@ -269,11 +266,11 @@ static int h264_encode_frame(struct venc_h264_inst *inst,
 	irq_status = h264_enc_wait_venc_done(inst);
 	if (irq_status != H264_IRQ_STATUS_ENC_FRM_INT) {
 		mtk_vcodec_err(inst, "irq_status=%d failed", irq_status);
-		return -EINVAL;
+		return -EIO;
 	}
 
-	*bs_size = h264_read_reg(inst,
-				 VENC_PIC_BITSTREAM_BYTE_CNT);
+	*bs_size = h264_read_reg(inst, VENC_PIC_BITSTREAM_BYTE_CNT);
+
 	++inst->frm_cnt;
 	mtk_vcodec_debug(inst, "frm %d bs size %d key_frm %d <-",
 			 inst->frm_cnt,
@@ -287,16 +284,15 @@ static void h264_encode_filler(struct venc_h264_inst *inst, void *buf,
 {
 	unsigned char *p = buf;
 
-	*p++ = 0x0;
-	*p++ = 0x0;
-	*p++ = 0x0;
-	*p++ = 0x1;
-	*p++ = 0xc;
-	size -= 5;
-	while (size) {
-		*p++ = 0xff;
-		size -= 1;
+	if (size < H264_FILLER_MARKER_SIZE) {
+		mtk_vcodec_err(inst, "filler size too small %d", size);
+		return;
 	}
+
+	memcpy(p, h264_filler_marker, ARRAY_SIZE(h264_filler_marker));
+	size -= H264_FILLER_MARKER_SIZE;
+	p += H264_FILLER_MARKER_SIZE;
+	memset(p, 0xff, size);
 }
 
 static int h264_enc_init(struct mtk_vcodec_ctx *ctx, unsigned long *handle)
@@ -313,13 +309,15 @@ static int h264_enc_init(struct mtk_vcodec_ctx *ctx, unsigned long *handle)
 	inst->hw_base = mtk_vcodec_get_reg_addr(inst->ctx, VENC_SYS);
 
 	mtk_vcodec_debug_enter(inst);
+
 	ret = h264_enc_vpu_init(inst);
+
+	mtk_vcodec_debug_leave(inst);
+
 	if (ret)
 		kfree(inst);
 	else
 		(*handle) = (unsigned long)inst;
-
-	mtk_vcodec_debug_leave(inst);
 
 	return ret;
 }
@@ -340,23 +338,13 @@ static int h264_enc_encode(unsigned long handle,
 
 	switch (opt) {
 	case VENC_START_OPT_ENCODE_SEQUENCE_HEADER: {
-		unsigned int bs_size_sps;
-		unsigned int bs_size_pps;
+		unsigned int bs_size_hdr;
 
-		memset(bs_buf->va, 0x38, 20);
-		ret = h264_encode_sps(inst, bs_buf, &bs_size_sps);
+		ret = h264_encode_header(inst, bs_buf, &bs_size_hdr);
 		if (ret)
 			goto encode_err;
 
-		memset(inst->pps_buf.va, 0x49, 20);
-		ret = h264_encode_pps(inst, &inst->pps_buf, &bs_size_pps);
-		if (ret)
-			goto encode_err;
-
-		memcpy(bs_buf->va + bs_size_sps,
-		       inst->pps_buf.va,
-		       bs_size_pps);
-		result->bs_size = bs_size_sps + bs_size_pps;
+		result->bs_size = bs_size_hdr;
 		result->is_key_frm = false;
 		break;
 	}
@@ -364,11 +352,10 @@ static int h264_enc_encode(unsigned long handle,
 	case VENC_START_OPT_ENCODE_FRAME: {
 		int hdr_sz;
 		int hdr_sz_ext;
-		int bs_alignment = 128;
 		int filler_sz = 0;
+		const int bs_alignment = 128;
 		struct mtk_vcodec_mem tmp_bs_buf;
-		unsigned int bs_size_sps;
-		unsigned int bs_size_pps;
+		unsigned int bs_size_hdr;
 		unsigned int bs_size_frm;
 
 		if (!inst->prepend_hdr) {
@@ -381,21 +368,16 @@ static int h264_enc_encode(unsigned long handle,
 		}
 
 		mtk_vcodec_debug(inst, "h264_encode_frame prepend SPS/PPS");
-		ret = h264_encode_sps(inst, bs_buf, &bs_size_sps);
+
+		ret = h264_encode_header(inst, bs_buf, &bs_size_hdr);
 		if (ret)
 			goto encode_err;
 
-		ret = h264_encode_pps(inst, &inst->pps_buf, &bs_size_pps);
-		if (ret)
-			goto encode_err;
-
-		memcpy(bs_buf->va + bs_size_sps, inst->pps_buf.va, bs_size_pps);
-
-		hdr_sz = bs_size_sps + bs_size_pps;
+		hdr_sz = bs_size_hdr;
 		hdr_sz_ext = (hdr_sz & (bs_alignment - 1));
 		if (hdr_sz_ext) {
 			filler_sz = bs_alignment - hdr_sz_ext;
-			if (hdr_sz_ext + 5 > bs_alignment)
+			if (hdr_sz_ext + H264_FILLER_MARKER_SIZE > bs_alignment)
 				filler_sz += bs_alignment;
 			h264_encode_filler(inst, bs_buf->va + hdr_sz,
 					   filler_sz);
@@ -411,6 +393,7 @@ static int h264_enc_encode(unsigned long handle,
 			goto encode_err;
 
 		result->bs_size = hdr_sz + filler_sz + bs_size_frm;
+
 		mtk_vcodec_debug(inst, "hdr %d filler %d frame %d bs %d",
 				 hdr_sz, filler_sz, bs_size_frm,
 				 result->bs_size);
@@ -427,10 +410,6 @@ static int h264_enc_encode(unsigned long handle,
 	}
 
 encode_err:
-	if (ret)
-		result->msg = VENC_MESSAGE_ERR;
-	else
-		result->msg = VENC_MESSAGE_OK;
 
 	disable_irq(ctx->dev->enc_irq);
 	mtk_vcodec_debug(inst, "opt %d <-", opt);
@@ -439,52 +418,34 @@ encode_err:
 }
 
 static int h264_enc_set_param(unsigned long handle,
-			      enum venc_set_param_type type, void *in)
+			      enum venc_set_param_type type,
+			      struct venc_enc_prm *enc_prm)
 {
+	int i;
 	int ret = 0;
 	struct venc_h264_inst *inst = (struct venc_h264_inst *)handle;
-	struct venc_enc_prm *enc_prm;
 
 	mtk_vcodec_debug(inst, "->type=%d", type);
 
 	switch (type) {
 	case VENC_SET_PARAM_ENC:
-		enc_prm = in;
 		ret = h264_enc_vpu_set_param(inst, type, enc_prm);
 		if (ret)
 			break;
-		if (inst->work_buf_allocated == 1) {
+		if (inst->work_buf_allocated) {
 			h264_enc_free_work_buf(inst);
-			inst->work_buf_allocated = 0;
+			inst->work_buf_allocated = false;
 		}
-		if (inst->work_buf_allocated == 0) {
-			ret = h264_enc_alloc_work_buf(inst, enc_prm);
-			if (ret)
-				break;
-			inst->work_buf_allocated = 1;
+		ret = h264_enc_alloc_work_buf(inst);
+		if (ret)
+			break;
+		inst->work_buf_allocated = true;
+		for (i = 0; i < MTK_VCODEC_MAX_PLANES; i++) {
+			enc_prm->sizeimage[i] =
+				inst->vpu_inst.vsi->sizeimage[i];
+			mtk_vcodec_debug(inst, "sizeimage[%d] size=0x%x", i,
+					 enc_prm->sizeimage[i]);
 		}
-		break;
-
-	case VENC_SET_PARAM_FORCE_INTRA:
-		ret = h264_enc_vpu_set_param(inst, type, 0);
-		break;
-
-	case VENC_SET_PARAM_ADJUST_BITRATE:
-		enc_prm = in;
-		ret = h264_enc_vpu_set_param(inst, type, &enc_prm->bitrate);
-		break;
-
-	case VENC_SET_PARAM_ADJUST_FRAMERATE:
-		enc_prm = in;
-		ret = h264_enc_vpu_set_param(inst, type, &enc_prm->frm_rate);
-		break;
-
-	case VENC_SET_PARAM_I_FRAME_INTERVAL:
-		ret = h264_enc_vpu_set_param(inst, type, in);
-		break;
-
-	case VENC_SET_PARAM_SKIP_FRAME:
-		ret = h264_enc_vpu_set_param(inst, type, 0);
 		break;
 
 	case VENC_SET_PARAM_PREPEND_HEADER:
@@ -493,8 +454,7 @@ static int h264_enc_set_param(unsigned long handle,
 		break;
 
 	default:
-		mtk_vcodec_err(inst, "type %d not supported", type);
-		ret = -EINVAL;
+		ret = h264_enc_vpu_set_param(inst, type, enc_prm);
 		break;
 	}
 

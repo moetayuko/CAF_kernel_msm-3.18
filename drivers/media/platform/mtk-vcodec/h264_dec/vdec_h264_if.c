@@ -25,14 +25,12 @@
 #define IDR_SLICE				0x05
 #define H264_PPS				0x08
 
-#define BUF_HDR_PARSING_SZ			1024
 #define BUF_PREDICTION_SZ			(32 * 1024)
 #define BUF_PP_SZ				(30 * 4096)
 #define BUF_LD_SZ				(15 * 4096)
 
 #define MB_UNIT_SZ				16
 #define HW_MB_STORE_SZ				64
-
 
 static unsigned int get_mv_buf_size(unsigned int width, unsigned int height)
 {
@@ -262,12 +260,12 @@ static int vdec_h264_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 			 nal_type);
 
 	if (nal_type == H264_PPS) {
-		if (buf_sz > BUF_HDR_PARSING_SZ) {
+		if (buf_sz > HDR_PARSING_BUF_SZ) {
 			err = -EILSEQ;
 			goto err_free_fb_out;
 		}
 		buf_sz -= idx;
-		memcpy(inst->vpu.hdr_bs_buf, buf+idx, buf_sz);
+		memcpy(inst->vsi->hdr_buf, buf + idx, buf_sz);
 	}
 
 	err = vdec_h264_vpu_dec_start(inst, buf_sz, nal_start,
@@ -323,7 +321,7 @@ static void vdec_h264_get_fb(struct vdec_h264_inst *inst,
 
 	if (list->count == 0) {
 		mtk_vcodec_debug(inst, "[FB] there is no %s fb",
-				disp_list ? "disp" : "free");
+				 disp_list ? "disp" : "free");
 		*out_fb = NULL;
 		return;
 	}
@@ -337,9 +335,9 @@ static void vdec_h264_get_fb(struct vdec_h264_inst *inst,
 
 	*out_fb = fb;
 	mtk_vcodec_debug(inst, "[FB] get %s fb st=%d poc=%d %llx",
-			disp_list ? "disp" : "free",
-			fb->status, list->fb_list[list->read_idx].poc,
-			list->fb_list[list->read_idx].vdec_fb_va);
+			 disp_list ? "disp" : "free",
+			 fb->status, list->fb_list[list->read_idx].poc,
+			 list->fb_list[list->read_idx].vdec_fb_va);
 
 	list->read_idx = (list->read_idx == H264_MAX_FB_NUM - 1) ?
 			 0 : list->read_idx + 1;

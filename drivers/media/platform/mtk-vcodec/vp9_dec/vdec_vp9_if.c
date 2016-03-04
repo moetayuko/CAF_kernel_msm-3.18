@@ -140,7 +140,8 @@ static int vdec_vp9_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 	ipi_data[1] = *((unsigned int *)(bs->va + 4));
 	ipi_data[2] = *((unsigned int *)(bs->va + 8));
 	if (0 != vp9_dec_vpu_init(inst, (unsigned int *)ipi_data, 3)) {
-		mtk_vcodec_err(inst, "[E]vp9_dec_vpu_init - %d", inst->vpu.h_drv);
+		mtk_vcodec_err(inst, "[E]vp9_dec_vpu_init - %d",
+						inst->vpu.h_drv);
 		goto err_deinit_inst;
 	}
 

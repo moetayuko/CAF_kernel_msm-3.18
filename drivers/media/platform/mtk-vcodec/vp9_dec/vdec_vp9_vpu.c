@@ -50,7 +50,7 @@ static void handle_init_ack_msg(struct vdec_vp9_inst *inst, void *data)
 		inst->dev, msg->md32_id);
 
 	mtk_vcodec_debug(inst, "h_drv %x map to drv %p", inst->vpu.h_drv,
-		     inst->vpu.drv);
+			 inst->vpu.drv);
 }
 
 static void vp9_dec_vpu_ipi_handler(void *data, unsigned int len, void *priv)
@@ -78,7 +78,6 @@ static void vp9_dec_vpu_ipi_handler(void *data, unsigned int len, void *priv)
 		break;
 	}
 	inst->vpu.signaled = 1;
-
 }
 
 static int vp9_dec_vpu_send_msg(struct vdec_vp9_inst *inst, void *msg,
@@ -95,7 +94,6 @@ static int vp9_dec_vpu_send_msg(struct vdec_vp9_inst *inst, void *msg,
 	}
 
 	return err;
-
 }
 
 int vp9_dec_vpu_init(void *vdec_inst, unsigned int *data, unsigned int items)
@@ -121,7 +119,7 @@ int vp9_dec_vpu_init(void *vdec_inst, unsigned int *data, unsigned int items)
 
 	if (items > sizeof(out.data) / sizeof(out.data[0])) {
 		mtk_vcodec_err(inst, "vp9_dec_vpu_init: max %d data items",
-			     (int)(sizeof(out.data) / sizeof(out.data[0])));
+			       (int)(sizeof(out.data) / sizeof(out.data[0])));
 		return -EINVAL;
 	}
 
@@ -152,7 +150,7 @@ static int vp9_dec_send_ap_ipi(void *vdec_inst, unsigned int msg_id)
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_id = msg_id;
-	msg.h_drv = inst->vpu.h_drv;
+	msg.vpu_inst_addr = inst->vpu.h_drv;
 
 	err = vp9_dec_vpu_send_msg(inst, &msg, sizeof(msg));
 	if (!err && inst->vpu.failure != 0)
@@ -161,7 +159,6 @@ static int vp9_dec_send_ap_ipi(void *vdec_inst, unsigned int msg_id)
 	mtk_vcodec_debug(inst, "- id=%X ret=%d", msg_id, err);
 	return err;
 }
-
 
 int vp9_dec_vpu_start(void *vdec_inst)
 {

@@ -277,8 +277,6 @@ static int vdec_vp8_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 	if (!inst)
 		return -ENOMEM;
 
-	*h_vdec = (unsigned long)inst;
-
 	inst->ctx = ctx;
 	inst->dev = mtk_vcodec_get_plat_dev(ctx);
 	mtk_vcodec_debug(inst, "bs va=%p dma=%llx sz=0x%lx", bs->va,
@@ -301,6 +299,8 @@ static int vdec_vp8_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 
 	get_hw_reg_base(inst);
 	mtk_vcodec_debug(inst, "VP8 Instance >> %p", inst);
+
+	*h_vdec = (unsigned long)inst;
 	return 0;
 
 error_free_buf:

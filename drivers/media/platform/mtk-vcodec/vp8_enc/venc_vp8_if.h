@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2016 MediaTek Inc.
  * Author: Daniel Hsiao <daniel.hsiao@mediatek.com>
  *         PoChun Lin <pochun.lin@mediatek.com>
  *
@@ -17,7 +17,7 @@
 #ifndef _VENC_VP8_IF_H_
 #define _VENC_VP8_IF_H_
 
-#include "../venc_drv_base.h"
+#include "venc_drv_base.h"
 
 /**
  * enum venc_vp8_vpu_work_buf - vp8 encoder buffer index
@@ -30,16 +30,12 @@ enum venc_vp8_vpu_work_buf {
 	VENC_VP8_VPU_WORK_BUF_CHROMA2,
 	VENC_VP8_VPU_WORK_BUF_CHROMA3,
 	VENC_VP8_VPU_WORK_BUF_MV_INFO,
-	VENC_VP8_VPU_WORK_BUF_BS_HD,
+	VENC_VP8_VPU_WORK_BUF_BS_HEADER,
 	VENC_VP8_VPU_WORK_BUF_PROB_BUF,
 	VENC_VP8_VPU_WORK_BUF_RC_INFO,
 	VENC_VP8_VPU_WORK_BUF_RC_CODE,
 	VENC_VP8_VPU_WORK_BUF_RC_CODE2,
 	VENC_VP8_VPU_WORK_BUF_RC_CODE3,
-	VENC_VP8_VPU_WORK_BUF_SRC_LUMA,
-	VENC_VP8_VPU_WORK_BUF_SRC_CHROMA,
-	VENC_VP8_VPU_WORK_BUF_SRC_CHROMA_CB,
-	VENC_VP8_VPU_WORK_BUF_SRC_CHROMA_CR,
 	VENC_VP8_VPU_WORK_BUF_MAX,
 };
 
@@ -47,12 +43,15 @@ enum venc_vp8_vpu_work_buf {
  * struct venc_vp8_vpu_config - Structure for vp8 encoder configuration
  * @input_fourcc: input fourcc
  * @bitrate: target bitrate (in bps)
- * @pic_w: picture width
+ * @pic_w: picture width. Picture size is visible stream resolution, in pixels,
+ *         to be used for display purposes; must be smaller or equal to buffer
+ *         size.
  * @pic_h: picture height
- * @buf_w: buffer width (with 16 alignment)
+ * @buf_w: buffer width (with 16 alignment). Buffer size is stream resolution
+ *         in pixels aligned to hardware requirements.
  * @buf_h: buffer height (with 16 alignment)
  * @intra_period: intra frame period
- * @framerate: frame rate
+ * @framerate: frame rate in fps
  * @ts_mode: temporal scalability mode (0: disable, 1: enable)
  *	     support three temporal layers - 0: 7.5fps 1: 7.5fps 2: 15fps.
  */
@@ -83,7 +82,7 @@ struct venc_vp8_vpu_buf {
 };
 
 /*
- * struct venc_vp8_vpu_drv - Structure for VPU driver control and info share
+ * struct venc_vp8_vsi - Structure for VPU driver control and info share
  * This structure is allocated in VPU side and shared to AP side.
  * @config: vp8 encoder configuration
  * @work_bufs: working buffer information in VPU side
@@ -93,10 +92,12 @@ struct venc_vp8_vpu_buf {
  * struct mtk_vcodec_mem, then invoke mtk_vcodec_mem_alloc to allocate
  * the buffer. After that, bypass the 'dma_addr' to the 'iova' field here for
  * register setting in VPU side.
+ * @sizeimage: image size for each plane
  */
-struct venc_vp8_vpu_drv {
+struct venc_vp8_vsi {
 	struct venc_vp8_vpu_config config;
 	struct venc_vp8_vpu_buf work_bufs[VENC_VP8_VPU_WORK_BUF_MAX];
+	unsigned int sizeimage[MTK_VCODEC_MAX_PLANES];
 };
 
 /*
@@ -106,7 +107,7 @@ struct venc_vp8_vpu_drv {
  * @failure: flag to show vpu cmd succeeds or not
  * @state: enum venc_ipi_msg_enc_state
  * @id: VPU instance id
- * @drv: driver structure allocated by VPU side and shared to AP side for
+ * @vsi: driver structure allocated by VPU side and shared to AP side for
  *	 control and info share
  */
 struct venc_vp8_vpu_inst {
@@ -115,7 +116,7 @@ struct venc_vp8_vpu_inst {
 	int failure;
 	int state;
 	unsigned int id;
-	struct venc_vp8_vpu_drv *drv;
+	struct venc_vp8_vsi *vsi;
 };
 
 /*
