@@ -797,7 +797,10 @@ static struct cmdq_task *cmdq_core_acquire_task(struct cmdq_command *cmd_desc,
 	task->reorder = 0;
 	task->thread = CMDQ_INVALID_THREAD;
 	task->irq_flag = 0x0;
-	task->cb = *cb;
+	if (cb)
+		task->cb = *cb;
+	else
+		memset(&task->cb, 0, sizeof(task->cb));
 	task->command_size = cmd_desc->block_size;
 
 	/* store caller info for debug */
