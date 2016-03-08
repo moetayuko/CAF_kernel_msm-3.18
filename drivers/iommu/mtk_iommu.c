@@ -12,23 +12,27 @@
  * GNU General Public License for more details.
  */
 #include <linux/bootmem.h>
+#include <linux/bug.h>
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/device.h>
 #include <linux/dma-iommu.h>
+#include <linux/err.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
 #include <linux/list.h>
-#include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_iommu.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <soc/mediatek/smi.h>
+#include <linux/spinlock.h>
+#include <asm/barrier.h>
 #include <dt-bindings/memory/mt8173-larb-port.h>
+#include <soc/mediatek/smi.h>
 
 #include "io-pgtable.h"
 
