@@ -1096,7 +1096,7 @@ static void xpad_deinit_input(struct usb_xpad *xpad)
 	input_unregister_device(xpad->dev);
 }
 
-static int xpad_init_input(struct usb_xpad *xpad)
+static int xpad_init_input(struct usb_interface *intf, struct usb_xpad *xpad)
 {
 	struct input_dev *input_dev;
 	int i, error;
@@ -1110,7 +1110,7 @@ static int xpad_init_input(struct usb_xpad *xpad)
 	input_dev->name = xpad->name;
 	input_dev->phys = xpad->phys;
 	usb_to_input_id(xpad->udev, &input_dev->id);
-	input_dev->dev.parent = &xpad->intf->dev;
+	input_dev->dev.parent = &intf->dev;
 
 	input_set_drvdata(input_dev, xpad);
 
@@ -1233,7 +1233,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	}
 
 	xpad->udev = udev;
-	xpad->intf = intf;
 	xpad->mapping = xpad_device[i].mapping;
 	xpad->xtype = xpad_device[i].xtype;
 	xpad->name = xpad_device[i].name;
@@ -1273,7 +1272,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 	usb_set_intfdata(intf, xpad);
 
-	error = xpad_init_input(xpad);
+	error = xpad_init_input(intf, xpad);
 	if (error)
 		goto err_deinit_output;
 
