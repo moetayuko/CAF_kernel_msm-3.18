@@ -13,9 +13,10 @@
  */
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/device.h>
 #include <linux/err.h>
 #include <linux/io.h>
-#include <linux/of_address.h>
+#include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
