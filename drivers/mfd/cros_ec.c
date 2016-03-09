@@ -402,6 +402,7 @@ u32 cros_ec_get_host_event(struct cros_ec_device *ec_dev)
 	host_event = get_unaligned_le32(&ec_dev->event_data.data.host_event);
 	return host_event;
 }
+EXPORT_SYMBOL(cros_ec_get_host_event);
 
 static irqreturn_t ec_irq_thread(int irq, void *data)
 {
