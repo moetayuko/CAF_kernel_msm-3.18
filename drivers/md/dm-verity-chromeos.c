@@ -83,26 +83,6 @@ static int chromeos_invalidate_kernel_submit(struct bio *bio,
 	return 0;
 }
 
-static char *get_info_from_cmdline(const char *key, char *uuid, int maxlen)
-{
-	const char *dev;
-	const char *end;
-	int len;
-
-	dev = strstr(saved_command_line, key);
-	if (!dev)
-		return NULL;
-	len = strlen(key);
-	dev = &dev[len];
-	end = strchr(dev, ' ');
-	len = end - dev;
-	if (len >= maxlen)
-		return NULL;
-	memcpy(uuid, dev, len);
-	uuid[len] = '\0';
-	return uuid;
-}
-
 static dev_t get_boot_dev_from_root_dev(struct block_device *root_bdev)
 {
 	/* Very basic sanity checking. This should be better. */
@@ -114,26 +94,28 @@ static dev_t get_boot_dev_from_root_dev(struct block_device *root_bdev)
 	return MKDEV(MAJOR(root_bdev->bd_dev), MINOR(root_bdev->bd_dev) - 1);
 }
 
+static char kern_guid[48];
+
 /* get_boot_dev is bassed on dm_get_device_by_uuid in dm_bootcache. */
 static dev_t get_boot_dev(void)
 {
 	const char partuuid[] = "PARTUUID=";
-	char uuid[2 * sizeof(partuuid) + 36];	/* Room for 2 PARTUUIDs */
+	char uuid[sizeof(partuuid) + 36];
 	char *uuid_str;
 	dev_t devt = 0;
 
-	uuid_str = get_info_from_cmdline(" kern_guid=",
-			&uuid[sizeof(partuuid) - 1],
-			sizeof(uuid) - sizeof(partuuid));
-	if (!uuid_str) {
+	if (!strlen(kern_guid)) {
 		DMERR("Couldn't get uuid, try root dev");
 		return 0;
 	}
 
-	if (strncmp(uuid_str, partuuid, strlen(partuuid)) != 0) {
+	if (strncmp(kern_guid, partuuid, strlen(partuuid))) {
 		/* Not prefixed with "PARTUUID=", so add it */
-		memcpy(uuid, partuuid, sizeof(partuuid) - 1);
+		strcpy(uuid, partuuid);
+		strlcat(uuid, kern_guid, sizeof(uuid));
 		uuid_str = uuid;
+	} else {
+		uuid_str = kern_guid;
 	}
 	devt = name_to_dev_t(uuid_str);
 	if (!devt)
@@ -412,3 +394,8 @@ module_exit(dm_verity_chromeos_exit);
 MODULE_AUTHOR("Will Drewry <wad@chromium.org>");
 MODULE_DESCRIPTION("chromeos-specific error handler for dm-verity");
 MODULE_LICENSE("GPL");
+
+/* Declare parameter with no module prefix */
+#undef MODULE_PARAM_PREFIX
+#define MODULE_PARAM_PREFIX	""
+module_param_string(kern_guid, kern_guid, sizeof(kern_guid), 0);
