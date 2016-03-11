@@ -447,7 +447,7 @@ static void mtk_drm_crtc_disable(struct drm_crtc *crtc)
 	int i;
 
 	DRM_DEBUG_DRIVER("%s %d\n", __func__, crtc->base.id);
-	if (WARN_ON(!mtk_crtc->enabled))
+	if (!mtk_crtc->enabled)
 		return;
 
 	/* Set all pending plane state to disabled */
