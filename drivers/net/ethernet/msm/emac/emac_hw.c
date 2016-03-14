@@ -791,16 +791,17 @@ int emac_hw_clear_sgmii_intr_status(struct emac_hw *hw, u32 irq_bits)
 		if (!(status & irq_bits))
 			break;
 	}
+
+	emac_reg_w32(hw, EMAC_SGMII_PHY, EMAC_SGMII_PHY_IRQ_CMD, 0);
+	emac_reg_w32(hw, EMAC_SGMII_PHY, EMAC_SGMII_PHY_INTERRUPT_CLEAR, 0);
+	wmb(); /* ensure the settings are flushed to HW */
+
 	if (status & irq_bits) {
 		emac_err(hw->adpt,
 			 "failed to clear SGMII irq: status 0x%x bits 0x%x\n",
 			 status, irq_bits);
 		return -EIO;
 	}
-
-	emac_reg_w32(hw, EMAC_SGMII_PHY, EMAC_SGMII_PHY_IRQ_CMD, 0);
-	emac_reg_w32(hw, EMAC_SGMII_PHY, EMAC_SGMII_PHY_INTERRUPT_CLEAR, 0);
-	wmb();
 
 	return 0;
 }
