@@ -981,7 +981,7 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 	switch (error) {
 	case -EILSEQ:
 		/* response crc error, retry the r/w cmd */
-		pr_err("%s: %s sending %s command, card status %#x\n",
+		pr_debug("%s: %s sending %s command, card status %#x\n",
 			req->rq_disk->disk_name, "response CRC error",
 			name, status);
 		return ERR_RETRY;
