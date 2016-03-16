@@ -2748,8 +2748,11 @@ static int mwifiex_cfg80211_suspend(struct wiphy *wiphy,
 
 	for (i = 0; i < adapter->priv_num; i++) {
 		priv = adapter->priv[i];
-		if (priv && priv->netdev)
+		if (priv && priv->netdev) {
 			mwifiex_stop_net_dev_queue(priv->netdev, adapter);
+			if (netif_carrier_ok(priv->netdev))
+				netif_carrier_off(priv->netdev);
+		}
 	}
 
 	for (i = 0; i < retry_num; i++) {
@@ -2818,8 +2821,11 @@ static int mwifiex_cfg80211_resume(struct wiphy *wiphy)
 
 	for (i = 0; i < adapter->priv_num; i++) {
 		priv = adapter->priv[i];
-		if (priv && priv->netdev)
+		if (priv && priv->netdev) {
+			if (!netif_carrier_ok(priv->netdev))
+				netif_carrier_on(priv->netdev);
 			mwifiex_wake_up_net_dev_queue(priv->netdev, adapter);
+		}
 	}
 
 	priv = mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_STA);
