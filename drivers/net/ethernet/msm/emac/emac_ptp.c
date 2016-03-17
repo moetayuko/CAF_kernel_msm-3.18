@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,6 +16,7 @@
 #include <linux/phy.h>
 #include <linux/net_tstamp.h>
 #include <linux/of.h>
+#include <linux/platform_device.h>
 #include "emac.h"
 #include "emac_hw.h"
 #include "emac_ptp.h"
@@ -393,16 +394,33 @@ static void emac_ptp_rtc_ns_sync(struct emac_hw *hw)
 	spin_unlock_irqrestore(&hw->ptp_lock, flag);
 }
 
+static irqreturn_t pps_isr(int irq, void *data)
+{
+	struct emac_adapter *adpt = data;
+	struct emac_hw *hw = &adpt->hw;
+
+	adpt->ptp_irq_stats.pps++;
+	emac_dbg(adpt, intr, "received pps_isr\n");
+
+	if (CHK_HW_FLAG(PTP_EN))
+		emac_ptp_rtc_ns_sync(&adpt->hw);
+
+	return IRQ_HANDLED;
+}
+
 int emac_ptp_config(struct emac_hw *hw)
 {
+	struct emac_adapter *adpt = hw->adpt;
 	struct timespec ts;
 	int ret = 0;
 	unsigned long flag;
 
 	spin_lock_irqsave(&hw->ptp_lock, flag);
 
-	if (CHK_HW_FLAG(PTP_EN))
-		goto unlock_out;
+	if (CHK_HW_FLAG(PTP_EN)) {
+		spin_unlock_irqrestore(&hw->ptp_lock, flag);
+		return ret;
+	}
 
 	hw->frac_ns_adj = get_frac_ns_adj_from_tbl(hw);
 	ret = emac_hw_1588_core_enable(hw,
@@ -416,17 +434,26 @@ int emac_ptp_config(struct emac_hw *hw)
 	getnstimeofday(&ts);
 	rtc_settime(hw, &ts);
 
-	hw->adpt->irq_info[0].mask |= PTP_INT;
-	hw->ptp_intr_mask = PPS_IN;
+	adpt->irq_info[0].mask |= hw->ptp_intr_mask;
 
 unlock_out:
 	spin_unlock_irqrestore(&hw->ptp_lock, flag);
 
+	if (!ret && adpt->pps_irq >= 0) {
+		ret = request_irq(adpt->pps_irq,
+				  pps_isr,
+				  IRQF_TRIGGER_RISING | IRQF_SHARED,
+				  adpt->netdev->name,
+				  adpt);
+		if (ret < 0)
+			emac_err(adpt, "failed to request pp2s irq\n");
+	}
 	return ret;
 }
 
 int emac_ptp_stop(struct emac_hw *hw)
 {
+	struct emac_adapter *adpt = hw->adpt;
 	int ret = 0;
 	unsigned long flag;
 
@@ -435,10 +462,12 @@ int emac_ptp_stop(struct emac_hw *hw)
 	if (CHK_HW_FLAG(PTP_EN))
 		ret = emac_hw_1588_core_disable(hw);
 
-	hw->ptp_intr_mask = 0;
-	hw->adpt->irq_info[0].mask &= ~PTP_INT;
+	adpt->irq_info[0].mask &= ~hw->ptp_intr_mask;
 
 	spin_unlock_irqrestore(&hw->ptp_lock, flag);
+
+	if (adpt->pps_irq >= 0)
+		free_irq(adpt->pps_irq, adpt);
 
 	return ret;
 }
@@ -459,16 +488,20 @@ int emac_ptp_set_linkspeed(struct emac_hw *hw, u32 link_speed)
 
 void emac_ptp_intr(struct emac_hw *hw)
 {
-	u32 isr, status;
+	struct emac_adapter *adpt = hw->adpt;
+	u32 isr, status, mask;
 
 	isr = emac_reg_r32(hw, EMAC_1588, EMAC_P1588_PTP_EXPANDED_INT_STATUS);
-	status = isr & hw->ptp_intr_mask;
+	mask = emac_reg_r32(hw, EMAC_1588, EMAC_P1588_PTP_EXPANDED_INT_MASK);
+	status = isr & mask;
 
-	emac_dbg(hw->adpt, intr, "receive ptp interrupt: isr 0x%x\n", isr);
+	adpt->ptp_irq_stats.ptp++;
+	emac_dbg(adpt, intr, "receive ptp interrupt: isr 0x%x\n", isr);
 
-	if (status & PPS_IN)
+	if (status & PPS_IN) {
+		adpt->ptp_irq_stats.pps_in++;
 		emac_ptp_rtc_ns_sync(hw);
-
+	}
 }
 
 static int emac_ptp_settime(struct emac_hw *hw, const struct timespec *ts)
@@ -824,6 +857,23 @@ static int emac_ptp_sysfs_frac_ns_adj_set(
 	return count;
 }
 
+static int emac_ptp_sysfs_ptp_irq_stats_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	struct emac_adapter *adpt = netdev_priv(to_net_dev(dev));
+	int count = PAGE_SIZE;
+	int retval;
+
+	retval = scnprintf(buf, count,
+			   "%10u %10u %10u\n",
+			   adpt->ptp_irq_stats.ptp,
+			   adpt->ptp_irq_stats.pps_in,
+			   adpt->ptp_irq_stats.pps);
+	return retval;
+}
+
 static struct device_attribute ptp_sysfs_devattr[] = {
 	__ATTR(cmd, 0222, NULL, emac_ptp_sysfs_cmd),
 	__ATTR(tstamp, 0444, emac_ptp_sysfs_tstamp_show, NULL),
@@ -835,6 +885,7 @@ static struct device_attribute ptp_sysfs_devattr[] = {
 	       emac_ptp_sysfs_frac_ns_adj_set),
 	__ATTR(ptp_mode, 0666, emac_ptp_sysfs_mode_show,
 	       emac_ptp_sysfs_mode_set),
+	__ATTR(ptp_irq_stats, 0444, emac_ptp_sysfs_ptp_irq_stats_show, NULL),
 	__ATTR_NULL
 };
 
@@ -865,6 +916,7 @@ static void emac_ptp_of_get_property(struct emac_adapter *adpt)
 	struct emac_hw *hw = &adpt->hw;
 	struct device *parent = adpt->netdev->dev.parent;
 	struct device_node *node = parent->of_node;
+	struct platform_device *pdev = to_platform_device(parent);
 	const int *tbl;
 	struct emac_ptp_frac_ns_adj *adj_tbl = NULL;
 	int size, tbl_size;
@@ -903,7 +955,12 @@ static void emac_ptp_of_get_property(struct emac_adapter *adpt)
 
 	hw->frac_ns_adj_tbl = adj_tbl;
 	hw->frac_ns_adj_tbl_sz = tbl_size;
-	return;
+
+	adpt->pps_irq = platform_get_irq_byname(pdev, "pps_irq");
+	if (adpt->pps_irq < 0) {
+		hw->ptp_expanded_intr_mask = PPS_IN;
+		hw->ptp_intr_mask = PTP_INT;
+	}
 }
 
 int emac_ptp_init(struct net_device *netdev)
