@@ -75,6 +75,7 @@ struct cros_ec_dev {
 	struct cdev cdev;
 	struct cros_ec_device *ec_dev;
 	struct device *dev;
+	bool has_kb_wake_angle;
 	u16 cmd_offset;
 	u32 features[2];
 };

@@ -107,13 +107,9 @@ static ssize_t store_ec_reboot(struct device *dev,
 	msg.command = EC_CMD_REBOOT_EC + ec->cmd_offset;
 	msg.outdata = (uint8_t *)&param;
 	msg.outsize = sizeof(param);
-	ret = cros_ec_cmd_xfer(ec->ec_dev, &msg);
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, &msg);
 	if (ret < 0)
 		return ret;
-	if (msg.result != EC_RES_SUCCESS) {
-		dev_dbg(&ec->class_dev, "EC result %d\n", msg.result);
-		return -EINVAL;
-	}
 
 	return count;
 }
@@ -136,12 +132,9 @@ static ssize_t show_ec_version(struct device *dev,
 	msg.command = EC_CMD_GET_VERSION + ec->cmd_offset;
 	msg.indata = (uint8_t *)&r_ver;
 	msg.insize = sizeof(r_ver);
-	ret = cros_ec_cmd_xfer(ec->ec_dev, &msg);
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, &msg);
 	if (ret < 0)
 		return ret;
-	if (msg.result != EC_RES_SUCCESS)
-		return scnprintf(buf, PAGE_SIZE,
-				 "ERROR: EC returned %d\n", msg.result);
 
 	/* Strings should be null-terminated, but let's be sure. */
 	r_ver.version_string_ro[sizeof(r_ver.version_string_ro) - 1] = '\0';
@@ -228,12 +221,9 @@ static ssize_t show_ec_flashinfo(struct device *dev,
 	msg.command = EC_CMD_FLASH_INFO + ec->cmd_offset;
 	msg.indata = (uint8_t *)&resp;
 	msg.insize = sizeof(resp);
-	ret = cros_ec_cmd_xfer(ec->ec_dev, &msg);
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, &msg);
 	if (ret < 0)
 		return ret;
-	if (msg.result != EC_RES_SUCCESS)
-		return scnprintf(buf, PAGE_SIZE,
-				 "ERROR: EC returned %d\n", msg.result);
 
 	return scnprintf(buf, PAGE_SIZE,
 			 "FlashSize %d\nWriteSize %d\n"
@@ -242,20 +232,97 @@ static ssize_t show_ec_flashinfo(struct device *dev,
 			 resp.erase_block_size, resp.protect_block_size);
 }
 
+/* Keyboard wake angle control */
+static ssize_t show_kb_wake_angle(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct ec_response_motion_sense resp;
+	struct ec_params_motion_sense req;
+	struct cros_ec_command msg = { 0 };
+	int ret;
+	struct cros_ec_dev *ec = container_of(
+			dev, struct cros_ec_dev, class_dev);
+
+	msg.command = EC_CMD_MOTION_SENSE_CMD + ec->cmd_offset;
+	msg.version = 2;
+	req.cmd = MOTIONSENSE_CMD_KB_WAKE_ANGLE;
+	req.kb_wake_angle.data = EC_MOTION_SENSE_NO_VALUE;
+	msg.outdata = (uint8_t *)&req;
+	msg.outsize = sizeof(req);
+	msg.indata = (uint8_t *)&resp;
+	msg.insize = sizeof(resp);
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, &msg);
+	if (ret < 0)
+		return ret;
+	return scnprintf(buf, PAGE_SIZE, "%d\n", resp.kb_wake_angle.ret);
+}
+
+static ssize_t store_kb_wake_angle(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct ec_response_motion_sense resp;
+	struct ec_params_motion_sense req;
+	struct cros_ec_command msg = { 0 };
+	int ret;
+	struct cros_ec_dev *ec = container_of(
+			dev, struct cros_ec_dev, class_dev);
+	uint16_t angle;
+
+	ret = kstrtou16(buf, 0, &angle);
+	if (ret)
+		return ret;
+
+	msg.command = EC_CMD_MOTION_SENSE_CMD + ec->cmd_offset;
+	msg.version = 2;
+	req.cmd = MOTIONSENSE_CMD_KB_WAKE_ANGLE;
+	req.kb_wake_angle.data = angle;
+	msg.outdata = (uint8_t *)&req;
+	msg.outsize = sizeof(req);
+	msg.indata = (uint8_t *)&resp;
+	msg.insize = sizeof(resp);
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, &msg);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
 /* Module initialization */
 
 static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_ec_reboot, store_ec_reboot);
 static DEVICE_ATTR(version, S_IRUGO, show_ec_version, NULL);
 static DEVICE_ATTR(flashinfo, S_IRUGO, show_ec_flashinfo, NULL);
+static DEVICE_ATTR(kb_wake_angle, S_IWUSR | S_IRUGO,
+		   show_kb_wake_angle, store_kb_wake_angle);
+
 
 static struct attribute *__ec_attrs[] = {
+	&dev_attr_kb_wake_angle.attr,
 	&dev_attr_reboot.attr,
 	&dev_attr_version.attr,
 	&dev_attr_flashinfo.attr,
 	NULL,
 };
 
+static umode_t cros_ec_ctrl_visible(struct kobject *kobj,
+				    struct attribute *a, int n)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct cros_ec_dev *ec = container_of(
+			dev, struct cros_ec_dev, class_dev);
+
+	if (a == &dev_attr_kb_wake_angle.attr) {
+		if (ec->has_kb_wake_angle)
+			return a->mode;
+		else
+			return 0;
+	} else {
+		return a->mode;
+	}
+}
+
 struct attribute_group cros_ec_attr_group = {
 	.attrs = __ec_attrs,
+	.is_visible = cros_ec_ctrl_visible,
 };
 
