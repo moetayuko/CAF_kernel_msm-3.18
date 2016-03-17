@@ -137,6 +137,8 @@ RESERVE_BRK(shared_info_page_brk, PAGE_SIZE);
 __read_mostly int xen_have_vector_callback;
 EXPORT_SYMBOL_GPL(xen_have_vector_callback);
 
+static struct notifier_block xen_cpu_notifier;
+
 /*
  * Point at some empty memory to start with. We map the real shared_info
  * page as soon as fixmap is up and running.
@@ -1619,6 +1621,7 @@ asmlinkage __visible void __init xen_start_kernel(void)
 	xen_initial_gdt = &per_cpu(gdt_page, 0);
 
 	xen_smp_init();
+	register_cpu_notifier(&xen_cpu_notifier);
 
 #ifdef CONFIG_ACPI_NUMA
 	/*
@@ -1802,17 +1805,49 @@ static void __init init_hvm_pv_info(void)
 	xen_domain_type = XEN_HVM_DOMAIN;
 }
 
-static int xen_hvm_cpu_notify(struct notifier_block *self, unsigned long action,
-			      void *hcpu)
+static int xen_cpu_notify(struct notifier_block *self, unsigned long action,
+			  void *hcpu)
 {
 	int cpu = (long)hcpu;
+	int rc;
+
 	switch (action) {
 	case CPU_UP_PREPARE:
-		xen_vcpu_setup(cpu);
-		if (xen_have_vector_callback) {
-			if (xen_feature(XENFEAT_hvm_safe_pvclock))
-				xen_setup_timer(cpu);
+		if (xen_hvm_domain()) {
+			/*
+			 * This can happen if CPU was offlined earlier and
+			 * offlining timed out in common_cpu_die().
+			 */
+			if (cpu_report_state(cpu) == CPU_DEAD_FROZEN) {
+				xen_smp_intr_free(cpu);
+				xen_uninit_lock_cpu(cpu);
+			}
+
+			xen_vcpu_setup(cpu);
 		}
+
+		if (xen_pv_domain() ||
+		    (xen_have_vector_callback &&
+		     xen_feature(XENFEAT_hvm_safe_pvclock)))
+			xen_setup_timer(cpu);
+
+		rc = xen_smp_intr_init(cpu);
+		if (rc) {
+			WARN(1, "xen_smp_intr_init() for CPU %d failed: %d\n",
+			     cpu, rc);
+			return NOTIFY_BAD;
+		}
+
+		break;
+	case CPU_ONLINE:
+		xen_init_lock_cpu(cpu);
+		break;
+	case CPU_UP_CANCELED:
+		xen_smp_intr_free(cpu);
+		if (xen_pv_domain() ||
+		    (xen_have_vector_callback &&
+		     xen_feature(XENFEAT_hvm_safe_pvclock)))
+			xen_teardown_timer(cpu);
 		break;
 	default:
 		break;
@@ -1820,8 +1855,8 @@ static int xen_hvm_cpu_notify(struct notifier_block *self, unsigned long action,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block xen_hvm_cpu_notifier = {
-	.notifier_call	= xen_hvm_cpu_notify,
+static struct notifier_block xen_cpu_notifier = {
+	.notifier_call	= xen_cpu_notify,
 };
 
 #ifdef CONFIG_KEXEC_CORE
@@ -1853,7 +1888,7 @@ static void __init xen_hvm_guest_init(void)
 	if (xen_feature(XENFEAT_hvm_callback_vector))
 		xen_have_vector_callback = 1;
 	xen_hvm_smp_init();
-	register_cpu_notifier(&xen_hvm_cpu_notifier);
+	register_cpu_notifier(&xen_cpu_notifier);
 	xen_unplug_emulated_devices();
 	x86_init.irqs.intr_init = xen_init_IRQ;
 	xen_hvm_init_time_ops();
