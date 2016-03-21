@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -421,5 +421,9 @@ void bam_pipe_timer_reset(void *base, u32 pipe);
  *
  */
 u32 bam_pipe_timer_get_count(void *base, u32 pipe);
+
+bool bam_pipe_check_pipe_empty(void *base, u32 pipe);
+u32 bam_get_pipe_event_reg_offset(void *base, u32 pipe);
+u32 bam_get_pipe_sw_offset_reg_offset(void *base, u32 pipe);
 
 #endif				/* _BAM_H_ */

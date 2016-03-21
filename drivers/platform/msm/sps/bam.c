@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1493,6 +1493,19 @@ void bam_pipe_halt(void *base, u32 pipe, bool halt)
 	else
 		bam_write_reg_field(base, P_HALT, pipe, P_HALT_P_HALT, 0);
 }
+
+/* get pipe event reg offset */
+u32 bam_get_pipe_event_reg_offset(void *base, u32 pipe)
+{
+	return bam_get_register_offset(P_EVNT_REG, pipe);
+}
+
+/* get pipe sw offset register  offset */
+u32 bam_get_pipe_sw_offset_reg_offset(void *base, u32 pipe)
+{
+	return bam_get_register_offset(P_SW_OFSTS, pipe);
+}
+
 
 /* output the content of BAM-level registers */
 void print_bam_reg(void *virt_addr)

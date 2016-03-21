@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1348,7 +1348,11 @@ int sps_connect(struct sps_pipe *h, struct sps_connect *connect)
 		sps_disconnect(h);
 		goto exit_err;
 	}
-
+	pipe->bam_pipe_event_reg_offset =
+		bam_get_pipe_event_reg_offset(&bam->base, pipe->pipe_index);
+	pipe->bam_pipe_sw_offset_reg_offset =
+		bam_get_pipe_sw_offset_reg_offset(&bam->base, pipe->pipe_index);
+	pipe->write_desc_offset_cached = false;
 exit_err:
 	mutex_unlock(&sps->lock);
 
@@ -1575,6 +1579,8 @@ static int sps_check_iovec_flags(u32 flags)
  * Perform a DMA transfer on an SPS connection end point
  *
  */
+static bool _skip_check_error = true;
+
 int sps_transfer(struct sps_pipe *h, struct sps_transfer *transfer)
 {
 	struct sps_pipe *pipe = h;
@@ -1583,7 +1589,8 @@ int sps_transfer(struct sps_pipe *h, struct sps_transfer *transfer)
 	struct sps_iovec *iovec;
 	int i;
 
-	SPS_DBG("sps:%s.", __func__);
+	if (_skip_check_error)
+		goto start;
 
 	if (h == NULL) {
 		SPS_ERR("sps:%s:pipe is NULL.\n", __func__);
@@ -1617,12 +1624,12 @@ int sps_transfer(struct sps_pipe *h, struct sps_transfer *transfer)
 
 		iovec++;
 	}
-
+start:
 	bam = sps_bam_lock(pipe);
 	if (bam == NULL)
 		return SPS_ERROR;
 
-	result = sps_bam_pipe_transfer(bam, pipe->pipe_index, transfer);
+	result = sps_bam_pipe_transfer(bam, pipe, transfer);
 
 	sps_bam_unlock(bam);
 
@@ -1655,7 +1662,7 @@ int sps_transfer_one(struct sps_pipe *h, phys_addr_t addr, u32 size,
 	if (bam == NULL)
 		return SPS_ERROR;
 
-	result = sps_bam_pipe_transfer_one(bam, pipe->pipe_index,
+	result = sps_bam_pipe_transfer_one(bam, pipe,
 				SPS_GET_LOWER_ADDR(addr), size, user,
 				DESC_FLAG_WORD(flags, addr));
 
@@ -1751,7 +1758,7 @@ int sps_get_free_count(struct sps_pipe *h, u32 *count)
 	if (bam == NULL)
 		return SPS_ERROR;
 
-	result = sps_bam_get_free_count(bam, pipe->pipe_index, count);
+	result = sps_bam_get_free_count(bam, pipe, count);
 	sps_bam_unlock(bam);
 
 	return result;
@@ -2005,8 +2012,7 @@ int sps_get_unused_desc_num(struct sps_pipe *h, u32 *desc_num)
 	if (bam == NULL)
 		return SPS_ERROR;
 
-	result = sps_bam_pipe_get_unused_desc_num(bam, pipe->pipe_index,
-						desc_num);
+	result = sps_bam_pipe_get_unused_desc_num(bam, pipe, desc_num);
 
 	sps_bam_unlock(bam);
 
