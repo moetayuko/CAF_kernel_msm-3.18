@@ -19,17 +19,9 @@
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_util.h"
 
-void mtk_vcodec_clean_dev_int_flags(void *data)
-{
-	struct mtk_vcodec_dev *dev = (struct mtk_vcodec_dev *)data;
 
-	dev->int_cond = 0;
-	dev->int_type = 0;
-}
-EXPORT_SYMBOL(mtk_vcodec_clean_dev_int_flags);
-
-int mtk_vcodec_wait_for_done_ctx(void *data, int command,
-				 unsigned int timeout_ms, int interrupt)
+int mtk_vcodec_wait_for_done_ctx(struct mtk_vcodec_ctx  *data, int command,
+				 unsigned int timeout_ms)
 {
 	wait_queue_head_t *waitqueue;
 	long timeout_jiff, ret;
@@ -38,17 +30,12 @@ int mtk_vcodec_wait_for_done_ctx(void *data, int command,
 
 	waitqueue = (wait_queue_head_t *)&ctx->queue;
 	timeout_jiff = msecs_to_jiffies(timeout_ms);
-	if (interrupt) {
-		ret = wait_event_interruptible_timeout(*waitqueue,
+
+	ret = wait_event_interruptible_timeout(*waitqueue,
 				(ctx->int_cond &&
 				(ctx->int_type == command)),
 				timeout_jiff);
-	} else {
-		ret = wait_event_timeout(*waitqueue,
-				(ctx->int_cond &&
-				(ctx->int_type == command)),
-				 timeout_jiff);
-	}
+
 	if (!ret) {
 		status = -1;	/* timeout */
 		mtk_v4l2_err("[%d] cmd=%d, ctx->type=%d, wait_event_interruptible_timeout time=%ums out %d %d!",
@@ -67,6 +54,4 @@ int mtk_vcodec_wait_for_done_ctx(void *data, int command,
 	return status;
 }
 EXPORT_SYMBOL(mtk_vcodec_wait_for_done_ctx);
-
-
 

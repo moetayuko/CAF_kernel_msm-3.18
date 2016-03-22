@@ -50,7 +50,7 @@ enum venc_vp8_vpu_work_buf {
  * @buf_w: buffer width (with 16 alignment). Buffer size is stream resolution
  *         in pixels aligned to hardware requirements.
  * @buf_h: buffer height (with 16 alignment)
- * @intra_period: intra frame period
+ * @gop_size: group of picture size (key frame)
  * @framerate: frame rate in fps
  * @ts_mode: temporal scalability mode (0: disable, 1: enable)
  *	     support three temporal layers - 0: 7.5fps 1: 7.5fps 2: 15fps.
@@ -62,7 +62,7 @@ struct venc_vp8_vpu_config {
 	u32 pic_h;
 	u32 buf_w;
 	u32 buf_h;
-	u32 intra_period;
+	u32 gop_size;
 	u32 framerate;
 	u32 ts_mode;
 };

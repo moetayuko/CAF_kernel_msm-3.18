@@ -24,62 +24,64 @@
 #include "mtk_vpu.h"
 #include "vdec_vp9_if.h"
 #include "vdec_vp9_core.h"
+#include "vdec_vp9_vpu.h"
 #include "vdec_vp9_debug.h"
+
 
 static int vp9_setup_buf(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
-	drv->mv_buf.va = (unsigned long)inst->work_buf.mv_buf.va;
-	drv->mv_buf.pa = (unsigned long)inst->work_buf.mv_buf.dma_addr;
-	drv->mv_buf.sz = (unsigned long)inst->work_buf.mv_buf.size;
+	vsi->mv_buf.va = (unsigned long)inst->work_buf.mv_buf.va;
+	vsi->mv_buf.pa = (unsigned long)inst->work_buf.mv_buf.dma_addr;
+	vsi->mv_buf.sz = (unsigned long)inst->work_buf.mv_buf.size;
 
-	if ((drv->mv_buf.va == 0) || (drv->mv_buf.pa == 0) ||
-		(drv->mv_buf.sz == 0))
+	if ((vsi->mv_buf.va == 0) || (vsi->mv_buf.pa == 0) ||
+		(vsi->mv_buf.sz == 0))
 		return -EINVAL;
 
 	mtk_vcodec_debug(inst, "VP9_MV_BUF_Addr: 0x%lX (0x%lX)",
-		     drv->mv_buf.va, drv->mv_buf.pa);
+		     vsi->mv_buf.va, vsi->mv_buf.pa);
 	return 0;
 }
 
 static void vp9_ref_cnt_fb(struct vdec_vp9_inst *inst, int *idx,
 			   int new_idx)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 	int ref_idx = *idx;
 
-	if (ref_idx >= 0 && drv->frm_bufs[ref_idx].ref_cnt > 0) {
-		drv->frm_bufs[ref_idx].ref_cnt--;
+	if (ref_idx >= 0 && vsi->frm_bufs[ref_idx].ref_cnt > 0) {
+		vsi->frm_bufs[ref_idx].ref_cnt--;
 
-		if (drv->frm_bufs[ref_idx].ref_cnt == 0) {
+		if (vsi->frm_bufs[ref_idx].ref_cnt == 0) {
 			if (!vp9_is_sf_ref_fb(inst,
-					      drv->frm_bufs[ref_idx].buf.fb)) {
+					      vsi->frm_bufs[ref_idx].buf.fb)) {
 				struct vdec_fb *fb;
 
 				fb = vp9_rm_from_fb_use_list(inst,
-				     drv->frm_bufs[ref_idx].buf.fb->base_y.va);
+				     vsi->frm_bufs[ref_idx].buf.fb->base_y.va);
 				vp9_add_to_fb_free_list(inst, fb);
 			} else
 				vp9_free_sf_ref_fb(
-					inst, drv->frm_bufs[ref_idx].buf.fb);
+					inst, vsi->frm_bufs[ref_idx].buf.fb);
 		}
 	}
 
 	*idx = new_idx;
-	drv->frm_bufs[new_idx].ref_cnt++;
+	vsi->frm_bufs[new_idx].ref_cnt++;
 }
 
-static bool vp9_realloc_work_buf(struct vdec_vp9_inst *inst)
+bool vp9_realloc_work_buf(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 	int result;
 	struct mtk_vcodec_mem *mem;
 
-	inst->frm_hdr.width = inst->vpu.drv->pic_w;
-	inst->frm_hdr.height = inst->vpu.drv->pic_h;
-	inst->work_buf.frmbuf_width = inst->vpu.drv->buf_w;
-	inst->work_buf.frmbuf_height = inst->vpu.drv->buf_h;
+	inst->frm_hdr.width = inst->vpu.vsi->pic_w;
+	inst->frm_hdr.height = inst->vpu.vsi->pic_h;
+	inst->work_buf.frmbuf_width = inst->vpu.vsi->buf_w;
+	inst->work_buf.frmbuf_height = inst->vpu.vsi->buf_h;
 
 	mtk_vcodec_debug(inst, "BUF CHG(%d): w/h/sb_w/sb_h=%d/%d/%d/%d",
 		     inst->frm_hdr.resolution_changed,
@@ -110,35 +112,38 @@ static bool vp9_realloc_work_buf(struct vdec_vp9_inst *inst)
 		return false;
 	}
 	/* Set the va again */
-	drv->mv_buf.va = (unsigned long)inst->work_buf.mv_buf.va;
-	drv->mv_buf.pa = (unsigned long)inst->work_buf.mv_buf.dma_addr;
-	drv->mv_buf.sz = (unsigned long)inst->work_buf.mv_buf.size;
+	vsi->mv_buf.va = (unsigned long)inst->work_buf.mv_buf.va;
+	vsi->mv_buf.pa = (unsigned long)inst->work_buf.mv_buf.dma_addr;
+	vsi->mv_buf.sz = (unsigned long)inst->work_buf.mv_buf.size;
 
 	vp9_free_all_sf_ref_fb(inst);
-	drv->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
+	vsi->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
+	result = vp9_setup_buf(inst);
+	if (result) {
+		mtk_vcodec_err(inst, "Cannot vp9_setup_buf");
+		return false;
+	}
 
 	inst->frm_hdr.resolution_changed = true;
-
-
 
 	return true;
 }
 
 static void vp9_swap_frm_bufs(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 	struct vp9_fb_info *frm_to_show;
 	int ref_index = 0, mask;
 
-	for (mask = inst->vpu.drv->refresh_frm_flags; mask; mask >>= 1) {
+	for (mask = inst->vpu.vsi->refresh_frm_flags; mask; mask >>= 1) {
 		if (mask & 1)
-			vp9_ref_cnt_fb(inst, &drv->ref_frm_map[ref_index],
-				       drv->new_fb_idx);
+			vp9_ref_cnt_fb(inst, &vsi->ref_frm_map[ref_index],
+				       vsi->new_fb_idx);
 		++ref_index;
 	}
 
-	frm_to_show = &drv->frm_bufs[drv->new_fb_idx].buf;
-	--drv->frm_bufs[drv->new_fb_idx].ref_cnt;
+	frm_to_show = &vsi->frm_bufs[vsi->new_fb_idx].buf;
+	--vsi->frm_bufs[vsi->new_fb_idx].ref_cnt;
 
 	if (frm_to_show->fb != inst->cur_fb) {
 		if ((frm_to_show->fb != NULL) &&
@@ -169,22 +174,22 @@ static void vp9_swap_frm_bufs(struct vdec_vp9_inst *inst)
 		}
 	}
 
-	if (drv->frm_bufs[drv->new_fb_idx].ref_cnt == 0) {
+	if (vsi->frm_bufs[vsi->new_fb_idx].ref_cnt == 0) {
 		if (!vp9_is_sf_ref_fb(
-			inst, drv->frm_bufs[drv->new_fb_idx].buf.fb)) {
+			inst, vsi->frm_bufs[vsi->new_fb_idx].buf.fb)) {
 			struct vdec_fb *fb;
 
 			fb = vp9_rm_from_fb_use_list(inst,
-			     drv->frm_bufs[drv->new_fb_idx].buf.fb->base_y.va);
+			     vsi->frm_bufs[vsi->new_fb_idx].buf.fb->base_y.va);
 
 			vp9_add_to_fb_free_list(inst, fb);
 		} else
 			vp9_free_sf_ref_fb(
-				inst, drv->frm_bufs[drv->new_fb_idx].buf.fb);
+				inst, vsi->frm_bufs[vsi->new_fb_idx].buf.fb);
 	}
 
-	if (drv->sf_frm_cnt > 0 && drv->sf_frm_idx != drv->sf_frm_cnt - 1)
-		drv->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
+	if (vsi->sf_frm_cnt > 0 && vsi->sf_frm_idx != vsi->sf_frm_cnt - 1)
+		vsi->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
 
 }
 
@@ -193,8 +198,9 @@ static bool vp9_wait_dec_end(struct vdec_vp9_inst *inst)
 	struct mtk_vcodec_ctx *ctx = inst->ctx;
 	unsigned int irq_status;
 
-	mtk_vcodec_wait_for_done_ctx(inst->ctx, MTK_INST_IRQ_RECEIVED, 1000,
-				     true);
+	mtk_vcodec_wait_for_done_ctx(inst->ctx, MTK_INST_IRQ_RECEIVED,
+	                             WAIT_INTR_TIMEOUT_MS);
+
 	irq_status = ctx->irq_status;
 	mtk_vcodec_debug(inst, "isr return %x", irq_status);
 
@@ -224,33 +230,6 @@ bool vp9_get_hw_reg_base(struct vdec_vp9_inst *inst)
 							  VDEC_HWB);
 	inst->hw_reg_base.hwg = mtk_vcodec_get_reg_addr(inst->ctx,
 							  VDEC_HWG);
-
-	return true;
-}
-
-bool vp9_alloc_work_buf(struct vdec_vp9_inst *inst)
-{
-	int result;
-	struct mtk_vcodec_mem *mem;
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
-
-	/* mv_buf */
-	mem = &inst->work_buf.mv_buf;
-	mem->size = ((inst->work_buf.frmbuf_width / 64) *
-		    (inst->work_buf.frmbuf_height / 64) + 2) * 36 * 16;
-
-	result = mtk_vcodec_mem_alloc(inst->ctx, mem);
-	if (result) {
-		mtk_vcodec_err(inst, "Cannot allocate mv_buf");
-		return false;
-	}
-
-	drv->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
-	result = vp9_setup_buf(inst);
-	if (result) {
-		mtk_vcodec_err(inst, "Cannot vp9_setup_buf");
-		return false;
-	}
 
 	return true;
 }
@@ -298,22 +277,22 @@ void vp9_free_handle(struct vdec_vp9_inst *inst)
 bool vp9_init_proc(struct vdec_vp9_inst *inst,
 		   struct vdec_pic_info *pic_info)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
-	pic_info->pic_w = drv->pic_w;
-	pic_info->pic_h = drv->pic_h;
-	pic_info->buf_w = drv->buf_w;
-	pic_info->buf_h = drv->buf_h;
+	pic_info->pic_w = vsi->pic_w;
+	pic_info->pic_h = vsi->pic_h;
+	pic_info->buf_w = vsi->buf_w;
+	pic_info->buf_h = vsi->buf_h;
 
 	mtk_vcodec_debug(inst,
 			"(PicW,PicH,BufW,BufH) = (%d,%d,%d,%d) profile=%d",
 			pic_info->pic_w, pic_info->pic_h,
-			pic_info->buf_w, pic_info->buf_h, drv->profile);
+			pic_info->buf_w, pic_info->buf_h, vsi->profile);
 
-	inst->frm_hdr.width = pic_info->pic_w;
-	inst->frm_hdr.height = pic_info->pic_h;
-	inst->work_buf.frmbuf_width = pic_info->buf_w;
-	inst->work_buf.frmbuf_height = pic_info->buf_h;
+	inst->frm_hdr.width = vsi->pic_w;
+	inst->frm_hdr.height = vsi->pic_h;
+	inst->work_buf.frmbuf_width = vsi->buf_w;
+	inst->work_buf.frmbuf_height = vsi->buf_h;
 
 	/* ----> HW limitation */
 	if ((inst->frm_hdr.width > 4096) ||
@@ -325,9 +304,9 @@ bool vp9_init_proc(struct vdec_vp9_inst *inst,
 	}
 
 	/* ----> HW limitation */
-	if (drv->profile > 0) {
+	if (vsi->profile > 0) {
 		mtk_vcodec_err(inst, "vp9_dec DO NOT support profile(%d) > 0",
-			     drv->profile);
+			     vsi->profile);
 		return false;
 	}
 	if ((inst->work_buf.frmbuf_width > 4096) ||
@@ -345,15 +324,23 @@ bool vp9_init_proc(struct vdec_vp9_inst *inst,
 bool vp9_dec_proc(struct vdec_vp9_inst *inst, struct mtk_vcodec_mem *bs,
 		  struct vdec_fb *fb)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 	unsigned int i;
+	unsigned int data[3];
 
 	mtk_vcodec_debug_enter(inst);
 
-	drv->bs = *bs;
-	drv->fb = *fb;
+	data[0] = *((unsigned int *)bs->va);
+	data[1] = *((unsigned int *)(bs->va + 4));
+	data[2] = *((unsigned int *)(bs->va + 8));
+
+	vsi->bs = *bs;
+
+	if (fb)	
+		vsi->fb = *fb;
+
 	/* TBD: use barrel shifter if fast enough */
-	if (!drv->sf_init) {
+	if (!vsi->sf_init) {
 		unsigned int sf_bs_sz;
 		unsigned int sf_bs_off;
 		unsigned char *sf_bs_src;
@@ -363,68 +350,69 @@ bool vp9_dec_proc(struct vdec_vp9_inst *inst, struct mtk_vcodec_mem *bs,
 			VP9_SUPER_FRAME_BS_SZ :	bs->size;
 		sf_bs_off = VP9_SUPER_FRAME_BS_SZ - sf_bs_sz;
 		sf_bs_src = bs->va + bs->size - sf_bs_sz;
-		sf_bs_dst = drv->sf_bs_buf + sf_bs_off;
+		sf_bs_dst = vsi->sf_bs_buf + sf_bs_off;
 		memcpy(sf_bs_dst, sf_bs_src, sf_bs_sz);
 	} else {
-		if ((drv->sf_frm_cnt > 0) &&
-		    (drv->sf_frm_idx < drv->sf_frm_cnt)) {
-			unsigned int idx = drv->sf_frm_idx;
+		if ((vsi->sf_frm_cnt > 0) &&
+		    (vsi->sf_frm_idx < vsi->sf_frm_cnt)) {
+			unsigned int idx = vsi->sf_frm_idx;
 
 			/* TBD: use barrel shifter to reposition bit stream */
-			memcpy((void *)drv->input_ctx.v_frm_sa,
-			       (void *)(drv->input_ctx.v_frm_sa +
-			       drv->sf_frm_offset[idx]),
-			       drv->sf_frm_sz[idx]);
+			memcpy((void *)vsi->input_ctx.v_frm_sa,
+			       (void *)(vsi->input_ctx.v_frm_sa +
+			       vsi->sf_frm_offset[idx]),
+			       vsi->sf_frm_sz[idx]);
 		}
 	}
 
-	if (0 != vp9_dec_vpu_start(inst)) {
+	if (0 != vp9_dec_vpu_start(inst, data)) {
 		mtk_vcodec_err(inst, "vp9_dec_vpu_start failed");
 		return false;
 	}
 
-	if (drv->sf_frm_cnt > 0) {
-		if (drv->sf_frm_idx < drv->sf_frm_cnt)
-			inst->cur_fb =
-				&drv->sf_ref_fb[drv->sf_next_ref_fb_idx].fb;
-		else
-			inst->cur_fb = fb;
-	} else {
-		inst->cur_fb = fb;
-	}
-	drv->frm_bufs[drv->new_fb_idx].buf.fb = inst->cur_fb;
-	if (!vp9_is_sf_ref_fb(inst, inst->cur_fb))
-		vp9_add_to_fb_use_list(inst, inst->cur_fb);
-
-	if (drv->resolution_changed) {
+	if (vsi->resolution_changed) {
 		if (!vp9_realloc_work_buf(inst))
 			return false;
 		return true;
 	}
 
-	mtk_vcodec_debug(inst, "[#pic %d]", drv->frm_num);
+	if (vsi->sf_frm_cnt > 0) {
+		if (vsi->sf_frm_idx < vsi->sf_frm_cnt)
+			inst->cur_fb =
+				&vsi->sf_ref_fb[vsi->sf_next_ref_fb_idx].fb;
+		else
+			inst->cur_fb = fb;
+	} else {
+		inst->cur_fb = fb;
+	}
+
+	vsi->frm_bufs[vsi->new_fb_idx].buf.fb = inst->cur_fb;
+	if (!vp9_is_sf_ref_fb(inst, inst->cur_fb))
+		vp9_add_to_fb_use_list(inst, inst->cur_fb);
+
+	mtk_vcodec_debug(inst, "[#pic %d]", vsi->frm_num);
 
 	/* the same as VP9_SKIP_FRAME */
-	inst->frm_hdr.show_frame = drv->show_frm;
+	inst->frm_hdr.show_frame = vsi->show_frm;
 
-	if (drv->show_exist)
+	if (vsi->show_exist)
 		mtk_vcodec_debug(inst,
 			"drv->new_fb_idx=%d, drv->frm_to_show=%d",
-			drv->new_fb_idx, drv->frm_to_show);
+			vsi->new_fb_idx, vsi->frm_to_show);
 
-	if (drv->show_exist && (drv->frm_to_show < VP9_MAX_FRM_BUFF_NUM)) {
+	if (vsi->show_exist && (vsi->frm_to_show < VP9_MAX_FRM_BUFF_NUM)) {
 		mtk_vcodec_debug(inst,
 			"Skip Decode drv->new_fb_idx=%d, drv->frm_to_show=%d",
-			drv->new_fb_idx, drv->frm_to_show);
-		vp9_ref_cnt_fb(inst, &drv->new_fb_idx, drv->frm_to_show);
+			vsi->new_fb_idx, vsi->frm_to_show);
+		vp9_ref_cnt_fb(inst, &vsi->new_fb_idx, vsi->frm_to_show);
 		return true;
 	}
 
 	/* VPU assign the buffer pointer in its address space, reassign here */
 	for (i = 0; i < REFS_PER_FRAME; i++) {
-		unsigned int idx = drv->frm_refs[i].idx;
+		unsigned int idx = vsi->frm_refs[i].idx;
 
-		drv->frm_refs[i].buf = &drv->frm_bufs[idx].buf;
+		vsi->frm_refs[i].buf = &vsi->frm_bufs[idx].buf;
 	}
 
 	mtk_vcodec_debug_leave(inst);
@@ -434,23 +422,23 @@ bool vp9_dec_proc(struct vdec_vp9_inst *inst, struct mtk_vcodec_mem *bs,
 
 bool vp9_check_proc(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 	bool ret = false;
 
 	mtk_vcodec_debug_enter(inst);
 
-	if (drv->show_exist) {
+	if (vsi->show_exist) {
 		vp9_swap_frm_bufs(inst);
 		mtk_vcodec_debug(inst, "Decode Ok @%d (show_exist)",
-				 drv->frm_num);
-		drv->frm_num++;
+				 vsi->frm_num);
+		vsi->frm_num++;
 		return true;
 	}
 
 	ret = vp9_wait_dec_end(inst);
 	if (!ret) {
 		mtk_vcodec_err(inst, "Decode NG, Decode Timeout @[%d]",
-			       drv->frm_num);
+			       vsi->frm_num);
 		return false;
 	}
 
@@ -460,10 +448,10 @@ bool vp9_check_proc(struct vdec_vp9_inst *inst)
 	}
 
 	vp9_swap_frm_bufs(inst);
-	mtk_vcodec_debug(inst, "Decode Ok @%d (%d/%d)", drv->frm_num,
+	mtk_vcodec_debug(inst, "Decode Ok @%d (%d/%d)", vsi->frm_num,
 		     inst->frm_hdr.width, inst->frm_hdr.height);
 
-	drv->frm_num++;
+	vsi->frm_num++;
 
 	mtk_vcodec_debug_leave(inst);
 
@@ -474,11 +462,11 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 {
 	int i;
 	struct mtk_vcodec_mem *mem;
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
 	for (i = 0; i < VP9_MAX_FRM_BUFF_NUM - 1; i++) {
 		if (inst->work_buf.sf_ref_buf[i].base_y.va &&
-		    drv->sf_ref_fb[i].used == 0) {
+		    vsi->sf_ref_fb[i].used == 0) {
 			return i;
 		}
 	}
@@ -494,8 +482,8 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 	}
 
 	mem = &inst->work_buf.sf_ref_buf[i].base_y;
-	mem->size = inst->vpu.drv->buf_sz_y_bs +
-		    inst->vpu.drv->buf_len_sz_y;
+	mem->size = inst->vpu.vsi->buf_sz_y_bs +
+		    inst->vpu.vsi->buf_len_sz_y;
 
 	if ((inst->frm_hdr.width > 4096) ||
 		(inst->frm_hdr.height > 2304)) {
@@ -515,16 +503,16 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 			inst->work_buf.frmbuf_width *
 			inst->work_buf.frmbuf_height);
 
-	drv->sf_ref_fb[i].fb.base_y.va =
+	vsi->sf_ref_fb[i].fb.base_y.va =
 				inst->work_buf.sf_ref_buf[i].base_y.va;
-	drv->sf_ref_fb[i].fb.base_y.dma_addr =
+	vsi->sf_ref_fb[i].fb.base_y.dma_addr =
 				inst->work_buf.sf_ref_buf[i].base_y.dma_addr;
-	drv->sf_ref_fb[i].fb.base_y.size =
+	vsi->sf_ref_fb[i].fb.base_y.size =
 				inst->work_buf.sf_ref_buf[i].base_y.size;
 
 	mem = &inst->work_buf.sf_ref_buf[i].base_c;
-	mem->size = inst->vpu.drv->buf_sz_c_bs +
-		    inst->vpu.drv->buf_len_sz_c;
+	mem->size = inst->vpu.vsi->buf_sz_c_bs +
+		    inst->vpu.vsi->buf_len_sz_c;
 
 	if (mtk_vcodec_mem_alloc(inst->ctx, mem)) {
 		mtk_vcodec_err(inst, "Cannot allocate sf_ref_buf c_buf");
@@ -536,15 +524,15 @@ int vp9_get_sf_ref_fb(struct vdec_vp9_inst *inst)
 			inst->work_buf.frmbuf_width *
 			inst->work_buf.frmbuf_height / 2);
 
-	drv->sf_ref_fb[i].fb.base_c.va =
+	vsi->sf_ref_fb[i].fb.base_c.va =
 				inst->work_buf.sf_ref_buf[i].base_c.va;
-	drv->sf_ref_fb[i].fb.base_c.dma_addr =
+	vsi->sf_ref_fb[i].fb.base_c.dma_addr =
 				inst->work_buf.sf_ref_buf[i].base_c.dma_addr;
-	drv->sf_ref_fb[i].fb.base_c.size =
+	vsi->sf_ref_fb[i].fb.base_c.size =
 				inst->work_buf.sf_ref_buf[i].base_c.size;
 
-	drv->sf_ref_fb[i].used = 0;
-	drv->sf_ref_fb[i].idx = i;
+	vsi->sf_ref_fb[i].used = 0;
+	vsi->sf_ref_fb[i].idx = i;
 
 	return i;
 }
@@ -562,7 +550,7 @@ bool vp9_free_sf_ref_fb(struct vdec_vp9_inst *inst, struct vdec_fb *fb)
 void vp9_free_all_sf_ref_fb(struct vdec_vp9_inst *inst)
 {
 	int i;
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
 	for (i = 0; i < VP9_MAX_FRM_BUFF_NUM - 1; i++) {
 		if (inst->work_buf.sf_ref_buf[i].base_y.va) {
@@ -570,7 +558,7 @@ void vp9_free_all_sf_ref_fb(struct vdec_vp9_inst *inst)
 				    &inst->work_buf.sf_ref_buf[i].base_y);
 			mtk_vcodec_mem_free(inst->ctx,
 				    &inst->work_buf.sf_ref_buf[i].base_c);
-			drv->sf_ref_fb[i].used = 0;
+			vsi->sf_ref_fb[i].used = 0;
 		}
 	}
 }
@@ -578,10 +566,10 @@ void vp9_free_all_sf_ref_fb(struct vdec_vp9_inst *inst)
 bool vp9_is_sf_ref_fb(struct vdec_vp9_inst *inst, struct vdec_fb *fb)
 {
 	int i;
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
 	for (i = 0; i < VP9_MAX_FRM_BUFF_NUM - 1; i++) {
-		if (fb == &drv->sf_ref_fb[i].fb)
+		if (fb == &vsi->sf_ref_fb[i].fb)
 			break;
 	}
 
@@ -593,9 +581,9 @@ bool vp9_is_sf_ref_fb(struct vdec_vp9_inst *inst, struct vdec_fb *fb)
 
 bool vp9_is_last_sub_frm(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_vpu_drv *drv = inst->vpu.drv;
+	struct vdec_vp9_vsi *vsi = inst->vpu.vsi;
 
-	if (drv->sf_frm_cnt <= 0 || drv->sf_frm_idx == drv->sf_frm_cnt)
+	if (vsi->sf_frm_cnt <= 0 || vsi->sf_frm_idx == vsi->sf_frm_cnt)
 		return true;
 
 	return false;
@@ -692,13 +680,15 @@ bool vp9_add_to_fb_free_list(struct vdec_vp9_inst *inst,
 {
 	struct vdec_fb_node *node;
 
-	node = list_first_entry_or_null(&inst->available_fb_node_list,
+	if (fb) {
+		node = list_first_entry_or_null(&inst->available_fb_node_list,
 					struct vdec_fb_node, list);
-	if (node) {
-		node->fb = fb;
-		list_move_tail(&node->list, &inst->fb_free_list);
-	} else
-		mtk_vcodec_debug(inst, "No free fb node");
+		if (node) {
+			node->fb = fb;
+			list_move_tail(&node->list, &inst->fb_free_list);
+		} else
+			mtk_vcodec_debug(inst, "No free fb node");
+	}
 
 	mtk_vcodec_debug_leave(inst);
 
@@ -745,7 +735,7 @@ void vp9_reset(struct vdec_vp9_inst *inst)
 	vp9_fb_use_list_to_fb_free_list(inst);
 
 	vp9_free_all_sf_ref_fb(inst);
-	inst->vpu.drv->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
+	inst->vpu.vsi->sf_next_ref_fb_idx = vp9_get_sf_ref_fb(inst);
 
 	if (0 != vp9_dec_vpu_reset(inst))
 		mtk_vcodec_debug(inst, "vp9_dec_vpu_reset failed");

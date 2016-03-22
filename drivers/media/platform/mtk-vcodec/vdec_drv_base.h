@@ -23,12 +23,9 @@ struct vdec_common_if {
 	/**
 	 * (*init)() - initialize decode driver
 	 * @ctx     : [in] mtk v4l2 context
-	 * @bs      : [in] input bitstream
 	 * @h_vdec  : [out] driver handle
-	 * @pic     : [out] width and height of bitstream
 	 */
-	int (*init)(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
-		    unsigned long *h_vdec, struct vdec_pic_info *pic);
+	int (*init)(struct mtk_vcodec_ctx *ctx, unsigned long *h_vdec);
 
 	/**
 	 * (*decode)() - trigger decode
@@ -55,6 +52,5 @@ struct vdec_common_if {
 	 */
 	int (*deinit)(unsigned long h_vdec);
 };
-
 
 #endif

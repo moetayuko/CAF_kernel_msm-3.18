@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -13,7 +13,6 @@
  * GNU General Public License for more details.
  */
 
-
 #include "mtk_mdp_core.h"
 #include "mtk_mdp_vpu.h"
 #include "mtk_vpu.h"
@@ -24,32 +23,33 @@ static inline struct mtk_mdp_ctx *vpu_to_ctx(struct mtk_mdp_vpu *vpu)
 	return container_of(vpu, struct mtk_mdp_ctx, vpu);
 }
 
+static void mtk_mdp_vpu_handle_init_ack(struct mdp_ipi_comm_ack *msg)
+{
+	struct mtk_mdp_vpu *vpu = (struct mtk_mdp_vpu *)msg->ap_inst;
+
+	/* mapping VPU address to kernel virtual address */
+	vpu->vsi = (struct mdp_process_vsi *)
+			vpu_mapping_dm_addr(vpu->pdev, msg->vpu_inst_addr);
+	vpu->inst_addr = msg->vpu_inst_addr;
+}
+
 static void mtk_mdp_vpu_ipi_handler(void *data, unsigned int len, void *priv)
 {
 	unsigned int msg_id = *(unsigned int *)data;
 	struct mdp_ipi_comm_ack *msg = (struct mdp_ipi_comm_ack *)data;
-	struct mtk_mdp_vpu *vpu = (struct mtk_mdp_vpu *)msg->mdp_priv;
+	struct mtk_mdp_vpu *vpu = (struct mtk_mdp_vpu *)msg->ap_inst;
 
 	vpu->failure = msg->status;
 	if (msg->status == MDP_IPI_MSG_STATUS_OK) {
-		u32 vpu_addr;
-		struct mdp_ipi_init_ack *init_msg;
 		struct mtk_mdp_ctx *ctx;
 
 		switch (msg_id) {
 		case VPU_MDP_INIT_ACK:
-			/* mapping VPU address to kernel virtual address */
-			init_msg = (struct mdp_ipi_init_ack *)msg;
-			vpu_addr = init_msg->shmem_addr;
-			vpu->shmem_va = vpu_mapping_dm_addr(vpu->pdev,
-							    vpu_addr);
-			vpu->param = (struct mdp_process_param *)vpu->shmem_va;
-			vpu->param->h_drv = init_msg->h_drv;
+			mtk_mdp_vpu_handle_init_ack(data);
 			break;
 		case VPU_MDP_DEINIT_ACK:
 		case VPU_MDP_PROCESS_ACK:
 			break;
-
 		default:
 			ctx = vpu_to_ctx(vpu);
 			dev_err(&ctx->mdp_dev->pdev->dev,
@@ -58,6 +58,23 @@ static void mtk_mdp_vpu_ipi_handler(void *data, unsigned int len, void *priv)
 			break;
 		}
 	}
+}
+
+int mtk_mdp_vpu_register(struct platform_device *pdev)
+{
+	struct mtk_mdp_dev *mdp = platform_get_drvdata(pdev);
+	int err;
+
+	err = vpu_ipi_register(mdp->vpu_dev, IPI_MDP,
+			       mtk_mdp_vpu_ipi_handler, "mdp_vpu", NULL);
+	if (err != 0) {
+		dev_err(&mdp->pdev->dev,
+			"vpu_ipi_registration fail status=%d\n",
+			err);
+		return -EBUSY;
+	}
+
+	return 0;
 }
 
 static int mtk_mdp_vpu_send_msg(void *msg, int len, struct mtk_mdp_vpu *vpu,
@@ -80,21 +97,20 @@ static int mtk_mdp_vpu_send_msg(void *msg, int len, struct mtk_mdp_vpu *vpu,
 	return MDP_IPI_MSG_STATUS_OK;
 }
 
-int mtk_mdp_vpu_register(struct platform_device *pdev)
+static int mtk_mdp_vpu_send_ap_ipi(struct mtk_mdp_vpu *vpu, uint32_t msg_id)
 {
-	struct mtk_mdp_dev *mdp = platform_get_drvdata(pdev);
 	int err;
+	struct mdp_ipi_comm msg;
 
-	err = vpu_ipi_register(mdp->vpu_dev, IPI_MDP,
-			       mtk_mdp_vpu_ipi_handler, "mdp_vpu", NULL);
-	if (err != 0) {
-		dev_err(&mdp->pdev->dev,
-			"vpu_ipi_registration fail status=%d\n",
-			err);
-		return -EBUSY;
-	}
+	msg.msg_id = msg_id;
+	msg.ipi_id = IPI_MDP;
+	msg.vpu_inst_addr = vpu->inst_addr;
+	msg.ap_inst = (uint64_t)vpu;
+	err = mtk_mdp_vpu_send_msg((void *)&msg, sizeof(msg), vpu, IPI_MDP);
+	if (!err && vpu->failure != MDP_IPI_MSG_STATUS_OK)
+		err = vpu->failure;
 
-	return 0;
+	return err;
 }
 
 int mtk_mdp_vpu_init(struct mtk_mdp_vpu *vpu)
@@ -108,8 +124,8 @@ int mtk_mdp_vpu_init(struct mtk_mdp_vpu *vpu)
 
 	msg.msg_id = AP_MDP_INIT;
 	msg.ipi_id = IPI_MDP;
-	msg.mdp_priv = (uint64_t)vpu;
-	err = mtk_mdp_vpu_send_msg((void *)&msg, sizeof(msg), vpu, msg.ipi_id);
+	msg.ap_inst = (uint64_t)vpu;
+	err = mtk_mdp_vpu_send_msg((void *)&msg, sizeof(msg), vpu, IPI_MDP);
 	if (!err && vpu->failure != MDP_IPI_MSG_STATUS_OK)
 		err = vpu->failure;
 
@@ -118,33 +134,10 @@ int mtk_mdp_vpu_init(struct mtk_mdp_vpu *vpu)
 
 int mtk_mdp_vpu_deinit(struct mtk_mdp_vpu *vpu)
 {
-	int err;
-	struct mdp_ipi_deinit msg;
-
-	msg.msg_id = AP_MDP_DEINIT;
-	msg.ipi_id = IPI_MDP;
-	msg.h_drv = vpu->param->h_drv;
-	msg.mdp_priv = (uint64_t)vpu;
-	err = mtk_mdp_vpu_send_msg((void *)&msg, sizeof(msg), vpu, msg.ipi_id);
-	if (!err && vpu->failure != MDP_IPI_MSG_STATUS_OK)
-		err = vpu->failure;
-
-	return err;
+	return mtk_mdp_vpu_send_ap_ipi(vpu, AP_MDP_DEINIT);
 }
 
 int mtk_mdp_vpu_process(struct mtk_mdp_vpu *vpu)
 {
-	int err;
-	struct mdp_ipi_process msg;
-
-	msg.msg_id = AP_MDP_PROCESS;
-	msg.ipi_id = IPI_MDP;
-	msg.h_drv = vpu->param->h_drv;
-	msg.mdp_priv = (uint64_t)vpu;
-	err = mtk_mdp_vpu_send_msg((void *)&msg, sizeof(msg), vpu, msg.ipi_id);
-	if (!err && vpu->failure != MDP_IPI_MSG_STATUS_OK)
-		err = vpu->failure;
-
-	return err;
+	return mtk_mdp_vpu_send_ap_ipi(vpu, AP_MDP_PROCESS);
 }
-

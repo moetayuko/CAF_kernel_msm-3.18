@@ -24,20 +24,22 @@
 #define VDEC_VP8_WAIT_VPU_TIMEOUT_MS		(2000)
 
 /**
- * struct vdec_vp8_ipi_init - for AP_IPIMSG_DEC_INIT
- * @msg_id   : AP_IPIMSG_DEC_INIT
- * @data     : Private data for header information
- * @vdec_inst: AP vdec_vp8_inst address
+ * struct vdec_vp8_ipi_dec_start - for AP_IPIMSG_DEC_START
+ * @msg_id        : AP_IPIMSG_DEC_START
+ * @vpu_inst_addr : VPU decoder instance addr
+ * @data          : Header info
+ * @reserved      : Reserved field
  */
-struct vdec_vp8_ipi_init {
+struct vdec_vp8_ipi_dec_start {
 	uint32_t msg_id;
+	uint32_t vpu_inst_addr;
 	uint32_t data;
-	uint64_t vdec_inst;
+	uint32_t reserved;
 };
 
 static void handle_init_ack_msg(struct vdec_vp8_inst *inst, void *data)
 {
-	struct vdec_ipi_init_ack *msg = data;
+	struct vdec_vpu_ipi_init_ack *msg = data;
 
 	inst->vpu.inst_addr = msg->vpu_inst_addr;
 	inst->vsi = (struct vdec_vp8_vsi *)vpu_mapping_dm_addr(
@@ -100,9 +102,9 @@ static int vp8_dec_vpu_send_msg(struct vdec_vp8_inst *inst, void *msg,
 	return err;
 }
 
-int vdec_vp8_vpu_init(struct vdec_vp8_inst *inst, unsigned int data)
+int vdec_vp8_vpu_init(struct vdec_vp8_inst *inst)
 {
-	struct vdec_vp8_ipi_init msg;
+	struct vdec_ap_ipi_init msg;
 	int err;
 
 	mtk_vcodec_debug_enter(inst);
@@ -122,9 +124,8 @@ int vdec_vp8_vpu_init(struct vdec_vp8_inst *inst, unsigned int data)
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_id	= AP_IPIMSG_DEC_INIT;
 	msg.vdec_inst	= (unsigned long)inst;
-	msg.data	= data;
 
-	mtk_vcodec_debug(inst, "vdec_inst=%p data=0x%x", inst, data);
+	mtk_vcodec_debug(inst, "vdec_inst=%p", inst);
 	err = vp8_dec_vpu_send_msg(inst, &msg, sizeof(msg));
 	if (!err && inst->vpu.failure != 0)
 		err = inst->vpu.failure;
@@ -152,9 +153,24 @@ static int vp8_dec_send_ap_ipi(struct vdec_vp8_inst *inst, unsigned int msg_id)
 	return err;
 }
 
-int vdec_vp8_vpu_dec_start(struct vdec_vp8_inst *inst)
+int vdec_vp8_vpu_dec_start(struct vdec_vp8_inst *inst, unsigned int data)
 {
-	return vp8_dec_send_ap_ipi(inst, AP_IPIMSG_DEC_START);
+	struct vdec_vp8_ipi_dec_start msg;
+	int err = 0;
+
+	mtk_vcodec_debug_enter(inst);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_id		= AP_IPIMSG_DEC_START;
+	msg.vpu_inst_addr	= inst->vpu.inst_addr;
+	msg.data		= data;
+
+	err = vp8_dec_vpu_send_msg(inst, (void *)&msg, sizeof(msg));
+	if (!err && inst->vpu.failure != 0)
+		err = inst->vpu.failure;
+
+	mtk_vcodec_debug(inst, "- ret=%d", err);
+	return err;
 }
 
 int vdec_vp8_vpu_dec_end(struct vdec_vp8_inst *inst)

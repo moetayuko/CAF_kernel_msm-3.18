@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -13,10 +13,8 @@
  * GNU General Public License for more details.
  */
 
-
 #ifndef __MTK_MDP_TYPE_H__
 #define __MTK_MDP_TYPE_H__
-
 
 #define DP_COLORFMT_PACK(VIDEO, PLANE, COPLANE, HF, VF, BITS, GROUP, SWAP, ID) \
 	(((VIDEO) << 27) | ((PLANE) << 24) | ((COPLANE) << 22) |\

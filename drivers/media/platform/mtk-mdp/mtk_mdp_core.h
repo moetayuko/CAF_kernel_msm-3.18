@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -12,7 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 
 #ifndef __MTK_MDP_CORE_H__
 #define __MTK_MDP_CORE_H__

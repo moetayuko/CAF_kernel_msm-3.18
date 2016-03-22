@@ -18,7 +18,7 @@
 #include <linux/pm_runtime.h>
 #include <soc/mediatek/smi.h>
 
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_dec_pm.h"
 #include "mtk_vcodec_util.h"
 #include "mtk_vpu.h"
 

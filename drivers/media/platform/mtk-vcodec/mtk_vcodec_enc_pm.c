@@ -18,7 +18,7 @@
 #include <linux/pm_runtime.h>
 #include <soc/mediatek/smi.h>
 
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_enc_pm.h"
 #include "mtk_vcodec_util.h"
 #include "mtk_vpu.h"
 
@@ -35,29 +35,34 @@ int mtk_vcodec_init_enc_pm(struct mtk_vcodec_dev *mtkdev)
 	pm = &mtkdev->pm;
 	memset(pm, 0, sizeof(struct mtk_vcodec_pm));
 	pm->mtkdev = mtkdev;
+	pm->dev = &pdev->dev;
 	dev = &pdev->dev;
 
 	node = of_parse_phandle(dev->of_node, "mediatek,larb", 0);
-	if (!node)
+	if (!node) {
+		mtk_v4l2_err("no mediatek,larb found");
 		return -1;
+	}
 	pdev = of_find_device_by_node(node);
-	if (WARN_ON(!pdev)) {
-		of_node_put(node);
+	if (!pdev) {
+		mtk_v4l2_err("no mediatek,larb device found");
 		return -1;
 	}
 	pm->larbvenc = &pdev->dev;
 
 	node = of_parse_phandle(dev->of_node, "mediatek,larb", 1);
-	if (!node)
+	if (!node) {
+		mtk_v4l2_err("no mediatek,larb found");
 		return -1;
+	}
 
 	pdev = of_find_device_by_node(node);
-	if (WARN_ON(!pdev)) {
-		of_node_put(node);
-		return -EINVAL;
+	if (!pdev) {
+		mtk_v4l2_err("no mediatek,larb device found");
+		return -1;
 	}
-	pm->larbvenclt = &pdev->dev;
 
+	pm->larbvenclt = &pdev->dev;
 	pdev = mtkdev->plat_dev;
 	pm->dev = &pdev->dev;
 
@@ -99,7 +104,7 @@ void mtk_vcodec_enc_clock_on(struct mtk_vcodec_pm *pm)
 
 	ret = clk_prepare_enable(pm->venc_sel);
 	if (ret)
-		mtk_v4l2_err("venc_sel fail %d", ret);
+		mtk_v4l2_err("clk_prepare_enable fail %d", ret);
 
 	ret = clk_set_parent(pm->venc_sel, pm->vencpll_d2);
 	if (ret)
@@ -107,7 +112,7 @@ void mtk_vcodec_enc_clock_on(struct mtk_vcodec_pm *pm)
 
 	ret = clk_prepare_enable(pm->venc_lt_sel);
 	if (ret)
-		mtk_v4l2_err("venc_lt_sel fail %d", ret);
+		mtk_v4l2_err("clk_prepare_enable fail %d", ret);
 
 	ret = clk_set_parent(pm->venc_lt_sel, pm->univpll1_d2);
 	if (ret)

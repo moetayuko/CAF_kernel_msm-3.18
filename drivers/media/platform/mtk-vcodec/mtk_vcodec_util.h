@@ -1,7 +1,7 @@
 /*
 * Copyright (c) 2016 MediaTek Inc.
 * Author: PC Chen <pc.chen@mediatek.com>
-*         Tiffany Lin <tiffany.lin@mediatek.com>
+*		Tiffany Lin <tiffany.lin@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 as
@@ -25,6 +25,8 @@ struct mtk_vcodec_mem {
 	dma_addr_t dma_addr;
 };
 
+struct mtk_vcodec_ctx;
+
 extern int mtk_v4l2_dbg_level;
 extern bool mtk_vcodec_dbg;
 
@@ -44,8 +46,8 @@ extern bool mtk_vcodec_dbg;
 	       ##args)
 
 
-#define mtk_v4l2_debug_enter()  mtk_v4l2_debug(3, "+\n")
-#define mtk_v4l2_debug_leave()  mtk_v4l2_debug(3, "-\n")
+#define mtk_v4l2_debug_enter()  mtk_v4l2_debug(3, "+")
+#define mtk_v4l2_debug_leave()  mtk_v4l2_debug(3, "-")
 
 #define mtk_vcodec_debug(h, fmt, args...)				\
 	do {								\
@@ -59,8 +61,8 @@ extern bool mtk_vcodec_dbg;
 	pr_err("[MTK_VCODEC][ERROR][%d]: %s() " fmt "\n",		\
 	       ((struct mtk_vcodec_ctx *)h->ctx)->idx, __func__, ##args)
 
-#define mtk_vcodec_debug_enter(h)  mtk_vcodec_debug(h, "+\n")
-#define mtk_vcodec_debug_leave(h)  mtk_vcodec_debug(h, "-\n")
+#define mtk_vcodec_debug_enter(h)  mtk_vcodec_debug(h, "+")
+#define mtk_vcodec_debug_leave(h)  mtk_vcodec_debug(h, "-")
 
 #else
 
@@ -76,10 +78,8 @@ extern bool mtk_vcodec_dbg;
 
 #endif
 
-void __iomem *mtk_vcodec_get_reg_addr(void *data, unsigned int reg_idx);
-int mtk_vcodec_mem_alloc(void *data, struct mtk_vcodec_mem *mem);
-void mtk_vcodec_mem_free(void *data, struct mtk_vcodec_mem *mem);
-int mtk_vcodec_get_ctx_id(void *data);
-struct platform_device *mtk_vcodec_get_plat_dev(void *data);
-void mtk_vcodec_fmt2str(u32 fmt, char *str);
+void __iomem *mtk_vcodec_get_reg_addr(struct mtk_vcodec_ctx *data, unsigned int reg_idx);
+int mtk_vcodec_mem_alloc(struct mtk_vcodec_ctx *data, struct mtk_vcodec_mem *mem);
+void mtk_vcodec_mem_free(struct mtk_vcodec_ctx *data, struct mtk_vcodec_mem *mem);
+struct platform_device *mtk_vcodec_get_plat_dev(struct mtk_vcodec_ctx *data);
 #endif /* _MTK_VCODEC_UTIL_H_ */

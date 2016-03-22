@@ -56,6 +56,7 @@ enum venc_h264_bs_mode {
  * @buf_w: buffer width. Buffer size is stream resolution in pixels aligned to
  *         hardware requirements.
  * @buf_h: buffer height
+ * @gop_size: group of picture size (idr frame)
  * @intra_period: intra frame period
  * @framerate: frame rate in fps
  * @profile: as specified in standard
@@ -69,6 +70,7 @@ struct venc_h264_vpu_config {
 	u32 pic_h;
 	u32 buf_w;
 	u32 buf_h;
+	u32 gop_size;
 	u32 intra_period;
 	u32 framerate;
 	u32 profile;

@@ -33,8 +33,6 @@
  * VPU interfaces with other blocks by share memory and interrupt.
  **/
 
-/* #define MEM_RSV_4GB_MODE */
-
 #define INIT_TIMEOUT_MS		2000U
 #define IPI_TIMEOUT_MS		2000U
 #define VPU_FW_VER_LEN		16
@@ -215,9 +213,7 @@ struct mtk_vpu {
 	struct share_obj *send_buf;
 	struct device *dev;
 	struct clk *clk;
-#ifdef MEM_RSV_4GB_MODE
 	bool enable_4GB;
-#endif
 	struct mutex vpu_mutex; /* for protecting vpu data data structure */
 	u32 wdt_refcnt;
 	wait_queue_head_t ack_wq;
@@ -346,17 +342,11 @@ int vpu_ipi_send(struct platform_device *pdev,
 
 	/* wait for VPU's ACK */
 	timeout = msecs_to_jiffies(IPI_TIMEOUT_MS);
-	ret = wait_event_interruptible_timeout(vpu->ack_wq,
-					       vpu->ipi_id_ack[id], timeout);
+	ret = wait_event_timeout(vpu->ack_wq, vpu->ipi_id_ack[id], timeout);
 	vpu->ipi_id_ack[id] = false;
 	if (ret == 0) {
 		dev_err(vpu->dev, "vpu ipi %d ack time out !", id);
 		ret = -EIO;
-		goto clock_disable;
-	} else if (-ERESTARTSYS == ret) {
-		dev_err(vpu->dev, "vpu ipi %d ack wait interrupted by a signal",
-			id);
-		ret = -ERESTARTSYS;
 		goto clock_disable;
 	}
 	vpu_clock_disable(vpu);
@@ -736,9 +726,7 @@ static int vpu_alloc_ext_mem(struct mtk_vpu *vpu, u32 fw_type)
 	size_t fw_ext_size = fw_type ? VPU_EXT_D_SIZE : VPU_EXT_P_SIZE;
 	u32 vpu_ext_mem0 = fw_type ? VPU_DMEM_EXT0_ADDR : VPU_PMEM_EXT0_ADDR;
 	u32 vpu_ext_mem1 = fw_type ? VPU_DMEM_EXT1_ADDR : VPU_PMEM_EXT1_ADDR;
-#ifdef MEM_RSV_4GB_MODE
 	u32 offset_4gb = vpu->enable_4GB ? 0x40000000 : 0;
-#endif
 
 	vpu->extmem[fw_type].va = dma_alloc_coherent(dev,
 					       fw_ext_size,
@@ -751,12 +739,8 @@ static int vpu_alloc_ext_mem(struct mtk_vpu *vpu, u32 fw_type)
 
 	/* Disable extend0. Enable extend1 */
 	vpu_cfg_writel(vpu, 0x1, vpu_ext_mem0);
-#ifdef MEM_RSV_4GB_MODE
 	vpu_cfg_writel(vpu, (vpu->extmem[fw_type].pa & 0xFFFFF000) + offset_4gb,
 		       vpu_ext_mem1);
-#else
-	vpu_cfg_writel(vpu, vpu->extmem[fw_type].pa & 0xFFFFF000, vpu_ext_mem1);
-#endif
 
 	dev_info(dev, "%s extend memory phy=0x%llx virt=0x%p\n",
 		 fw_type ? "Data" : "Program",
@@ -777,7 +761,7 @@ static void vpu_ipi_handler(struct mtk_vpu *vpu)
 					      ipi_desc[rcv_obj->id].priv);
 		if (rcv_obj->id > IPI_VPU_INIT) {
 			vpu->ipi_id_ack[rcv_obj->id] = true;
-			wake_up_interruptible(&vpu->ack_wq);
+			wake_up(&vpu->ack_wq);
 		}
 	} else {
 		dev_err(vpu->dev, "No such ipi id = %d\n", rcv_obj->id);
@@ -918,9 +902,8 @@ static int mtk_vpu_probe(struct platform_device *pdev)
 	/* Set PTCM to 96K and DTCM to 32K */
 	vpu_cfg_writel(vpu, 0x2, VPU_TCM_CFG);
 
-#ifdef MEM_RSV_4GB_MODE
 	vpu->enable_4GB = !!(max_pfn > (0xffffffffUL >> PAGE_SHIFT));
-	dev_dbg(dev, "4GB mode %u\n", vpu->enable_4GB);
+	dev_info(dev, "4GB mode %u\n", vpu->enable_4GB);
 
 	if (vpu->enable_4GB) {
 		ret = of_reserved_mem_device_init(dev);
@@ -928,7 +911,6 @@ static int mtk_vpu_probe(struct platform_device *pdev)
 			dev_info(dev, "init reserved memory failed\n");
 			/* continue to use dynamic allocation if failed */
 	}
-#endif
 
 	ret = vpu_alloc_ext_mem(vpu, D_FW);
 	if (ret) {
@@ -969,9 +951,7 @@ free_p_mem:
 free_d_mem:
 	vpu_free_ext_mem(vpu, D_FW);
 remove_debugfs:
-#ifdef MEM_RSV_4GB_MODE
 	of_reserved_mem_device_release(dev);
-#endif
 #ifdef CONFIG_DEBUG_FS
 	debugfs_remove(vpu_debugfs);
 cleanup_ipi:

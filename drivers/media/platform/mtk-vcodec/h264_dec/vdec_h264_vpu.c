@@ -70,7 +70,7 @@ struct vdec_h264_ipi_dec_start {
 	uint64_t vdec_fb_va;
 };
 
-static void handle_init_ack_msg(struct vdec_ipi_init_ack *msg)
+static void handle_init_ack_msg(struct vdec_vpu_ipi_init_ack *msg)
 {
 	struct vdec_h264_inst *inst = (struct vdec_h264_inst *)msg->vdec_inst;
 
@@ -162,10 +162,9 @@ static int h264_dec_send_ap_ipi(struct vdec_h264_inst *inst,
 	return err;
 }
 
-int vdec_h264_vpu_init(struct vdec_h264_inst *inst, uint64_t bs_dma,
-		       uint32_t bs_sz)
+int vdec_h264_vpu_init(struct vdec_h264_inst *inst)
 {
-	struct vdec_h264_ipi_init msg;
+	struct vdec_ap_ipi_init msg;
 	int err;
 
 	mtk_vcodec_debug_enter(inst);
@@ -184,12 +183,9 @@ int vdec_h264_vpu_init(struct vdec_h264_inst *inst, uint64_t bs_dma,
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_id	= AP_IPIMSG_DEC_INIT;
-	msg.ctx_id	= inst->ctx_id;
 	msg.vdec_inst   = (unsigned long)inst;
-	msg.bs_dma	= bs_dma;
-	msg.bs_sz       = bs_sz;
 
-	mtk_vcodec_debug(inst, "vdec_inst=%p bs_sz=0x%x", inst, bs_sz);
+	mtk_vcodec_debug(inst, "vdec_inst=%p", inst);
 
 	err = h264_dec_vpu_send_msg(inst, (void *)&msg, sizeof(msg));
 

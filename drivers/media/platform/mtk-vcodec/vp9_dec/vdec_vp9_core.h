@@ -20,7 +20,6 @@
 #include "vdec_drv_base.h"
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_util.h"
-#include "vdec_vp9_vpu.h"
 
 #define VP9_SUPER_FRAME_BS_SZ 64
 
@@ -127,9 +126,9 @@ struct vp9_sf_ref_fb {
 
 
 /*
- * struct vdec_vp9_vpu_drv - shared buffer between host and VPU driver
+ * struct vdec_vp9_vsi - shared buffer between host and VPU driver
  */
-struct vdec_vp9_vpu_drv {
+struct vdec_vp9_vsi {
 	unsigned char sf_bs_buf[VP9_SUPER_FRAME_BS_SZ];
 	struct vp9_sf_ref_fb sf_ref_fb[VP9_MAX_FRM_BUFF_NUM-1];
 	int sf_next_ref_fb_idx;
@@ -177,8 +176,8 @@ struct vdec_vp9_vpu_inst {
 	wait_queue_head_t wq_hd;
 	int signaled;
 	int failure;
-	unsigned int h_drv;
-	struct vdec_vp9_vpu_drv *drv;
+	unsigned int inst_addr;
+	struct vdec_vp9_vsi *vsi;
 };
 
 /* VP9 VDEC handle */
@@ -203,7 +202,8 @@ struct vdec_vp9_inst {
 };
 
 bool vp9_get_hw_reg_base(struct vdec_vp9_inst *handle);
-bool vp9_alloc_work_buf(struct vdec_vp9_inst *handle);
+bool vp9_realloc_work_buf(struct vdec_vp9_inst *inst);
+
 bool vp9_free_work_buf(struct vdec_vp9_inst *handle);
 struct vdec_vp9_inst *vp9_alloc_inst(void *ctx);
 void vp9_free_handle(struct vdec_vp9_inst *handle);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -12,7 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 
 #include "mtk_mdp_core.h"
 #include "mtk_mdp_type.h"
@@ -37,7 +36,7 @@ int mtk_mdp_map_color_format(int v4l2_format)
 void mtk_mdp_hw_set_input_addr(struct mtk_mdp_ctx *ctx,
 			       struct mtk_mdp_addr *addr)
 {
-	struct mdp_src_buffer *src_buf = &ctx->vpu.param->src_buffer;
+	struct mdp_src_buffer *src_buf = &ctx->vpu.vsi->src_buffer;
 
 	src_buf->addr_mva[0] = (uint64_t)addr->y;
 	src_buf->addr_mva[1] = (uint64_t)addr->cb;
@@ -47,7 +46,7 @@ void mtk_mdp_hw_set_input_addr(struct mtk_mdp_ctx *ctx,
 void mtk_mdp_hw_set_output_addr(struct mtk_mdp_ctx *ctx,
 				struct mtk_mdp_addr *addr)
 {
-	struct mdp_dst_buffer *dst_buf = &ctx->vpu.param->dst_buffer;
+	struct mdp_dst_buffer *dst_buf = &ctx->vpu.vsi->dst_buffer;
 
 	dst_buf->addr_mva[0] = (uint64_t)addr->y;
 	dst_buf->addr_mva[1] = (uint64_t)addr->cb;
@@ -57,7 +56,7 @@ void mtk_mdp_hw_set_output_addr(struct mtk_mdp_ctx *ctx,
 void mtk_mdp_hw_set_in_size(struct mtk_mdp_ctx *ctx)
 {
 	struct mtk_mdp_frame *frame = &ctx->s_frame;
-	struct mdp_src_config *config = &ctx->vpu.param->src_config;
+	struct mdp_src_config *config = &ctx->vpu.vsi->src_config;
 
 	/* Set input pixel offset */
 	config->crop_x = frame->crop.left;
@@ -78,8 +77,8 @@ void mtk_mdp_hw_set_in_image_format(struct mtk_mdp_ctx *ctx)
 {
 	unsigned int i;
 	struct mtk_mdp_frame *frame = &ctx->s_frame;
-	struct mdp_src_config *config = &ctx->vpu.param->src_config;
-	struct mdp_src_buffer *src_buf = &ctx->vpu.param->src_buffer;
+	struct mdp_src_config *config = &ctx->vpu.vsi->src_config;
+	struct mdp_src_buffer *src_buf = &ctx->vpu.vsi->src_buffer;
 
 	src_buf->plane_num = frame->fmt->num_planes;
 	config->format = mtk_mdp_map_color_format(frame->fmt->pixelformat);
@@ -93,7 +92,7 @@ void mtk_mdp_hw_set_in_image_format(struct mtk_mdp_ctx *ctx)
 void mtk_mdp_hw_set_out_size(struct mtk_mdp_ctx *ctx)
 {
 	struct mtk_mdp_frame *frame = &ctx->d_frame;
-	struct mdp_dst_config *config = &ctx->vpu.param->dst_config;
+	struct mdp_dst_config *config = &ctx->vpu.vsi->dst_config;
 
 	config->crop_x = frame->crop.left;
 	config->crop_y = frame->crop.top;
@@ -109,8 +108,8 @@ void mtk_mdp_hw_set_out_image_format(struct mtk_mdp_ctx *ctx)
 {
 	unsigned int i;
 	struct mtk_mdp_frame *frame = &ctx->d_frame;
-	struct mdp_dst_config *config = &ctx->vpu.param->dst_config;
-	struct mdp_dst_buffer *dst_buf = &ctx->vpu.param->dst_buffer;
+	struct mdp_dst_config *config = &ctx->vpu.vsi->dst_config;
+	struct mdp_dst_buffer *dst_buf = &ctx->vpu.vsi->dst_buffer;
 
 	dst_buf->plane_num = frame->fmt->num_planes;
 	config->format = mtk_mdp_map_color_format(frame->fmt->pixelformat);
@@ -122,7 +121,7 @@ void mtk_mdp_hw_set_out_image_format(struct mtk_mdp_ctx *ctx)
 
 void mtk_mdp_hw_set_rotation(struct mtk_mdp_ctx *ctx)
 {
-	struct mdp_config_misc *misc = &ctx->vpu.param->misc;
+	struct mdp_config_misc *misc = &ctx->vpu.vsi->misc;
 
 	misc->orientation = ctx->ctrls.rotate->val;
 	misc->hflip = ctx->ctrls.hflip->val;
@@ -131,7 +130,7 @@ void mtk_mdp_hw_set_rotation(struct mtk_mdp_ctx *ctx)
 
 void mtk_mdp_hw_set_global_alpha(struct mtk_mdp_ctx *ctx)
 {
-	struct mdp_config_misc *misc = &ctx->vpu.param->misc;
+	struct mdp_config_misc *misc = &ctx->vpu.vsi->misc;
 
 	misc->alpha = ctx->ctrls.global_alpha->val;
 }

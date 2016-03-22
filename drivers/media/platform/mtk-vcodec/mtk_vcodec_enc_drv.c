@@ -25,7 +25,7 @@
 
 #include "mtk_vcodec_drv.h"
 #include "mtk_vcodec_enc.h"
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_enc_pm.h"
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_util.h"
 #include "mtk_vpu.h"
@@ -167,6 +167,13 @@ static int fops_vcodec_open(struct file *file)
 
 	mutex_lock(&dev->dev_mutex);
 
+	if (dev->instance_mask == ~0UL) {
+		/* ffz Undefined if no zero exists, err handling here */
+		mtk_v4l2_err("Too many open contexts\n");
+		ret = -EBUSY;
+		goto err_alloc;
+	}
+
 	ctx = devm_kzalloc(&dev->plat_dev->dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {
 		ret = -ENOMEM;
@@ -254,7 +261,7 @@ static int fops_vcodec_release(struct file *file)
 	struct mtk_vcodec_dev *dev = video_drvdata(file);
 	struct mtk_vcodec_ctx *ctx = fh_to_ctx(file->private_data);
 
-	mtk_v4l2_debug(0, "[%d] encoder\n", ctx->idx);
+	mtk_v4l2_debug(1, "[%d] encoder\n", ctx->idx);
 	mutex_lock(&dev->dev_mutex);
 
 	mtk_vcodec_enc_release(ctx);

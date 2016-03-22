@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -13,10 +13,10 @@
  * GNU General Public License for more details.
  */
 
-
 #ifndef __MTK_MDP_IPI_H__
 #define __MTK_MDP_IPI_H__
 
+#define MTK_MDP_VPU_VERSION	"0.2.13"
 #define MTK_MDP_MAX_CTX		14
 
 enum mdp_ipi_msgid {
@@ -37,24 +37,46 @@ enum mdp_ipi_msg_status {
 
 #pragma pack(push, 4)
 
+/**
+ * struct mdp_ipi_init - for AP_MDP_INIT
+ * @msg_id   : AP_MDP_INIT
+ * @ipi_id   : IPI_MDP
+ * @ap_inst  : AP mtk_mdp_vpu address
+ */
 struct mdp_ipi_init {
 	uint32_t msg_id;
 	uint32_t ipi_id;
-	uint64_t mdp_priv;
+	uint64_t ap_inst;
 };
 
-struct mdp_ipi_deinit {
+/**
+ * struct mdp_ipi_comm - for AP_MDP_PROCESS, AP_MDP_DEINIT
+ * @msg_id        : AP_MDP_PROCESS, AP_MDP_DEINIT
+ * @ipi_id        : IPI_MDP
+ * @ap_inst       : AP mtk_mdp_vpu address
+ * @vpu_inst_addr : VPU MDP instance address
+ */
+struct mdp_ipi_comm {
 	uint32_t msg_id;
 	uint32_t ipi_id;
-	uint32_t h_drv;
-	uint64_t mdp_priv;
+	uint64_t ap_inst;
+	uint32_t vpu_inst_addr;
 };
 
-struct mdp_ipi_config {
+/**
+ * struct mdp_ipi_comm_ack - for VPU_MDP_DEINIT_ACK, VPU_MDP_PROCESS_ACK
+ * @msg_id        : VPU_MDP_DEINIT_ACK, VPU_MDP_PROCESS_ACK
+ * @ipi_id        : IPI_MDP
+ * @ap_inst       : AP mtk_mdp_vpu address
+ * @vpu_inst_addr : VPU MDP instance address
+ * @status        : VPU exeuction result
+ */
+struct mdp_ipi_comm_ack {
 	uint32_t msg_id;
 	uint32_t ipi_id;
-	uint32_t h_drv;
-	uint64_t mdp_priv;
+	uint64_t ap_inst;
+	uint32_t vpu_inst_addr;
+	int32_t status;
 };
 
 struct mdp_src_config {
@@ -104,39 +126,12 @@ struct mdp_config_misc {
 	int32_t alpha; /* global alpha */
 };
 
-struct mdp_process_param {
+struct mdp_process_vsi {
 	struct mdp_src_config src_config;
 	struct mdp_src_buffer src_buffer;
 	struct mdp_dst_config dst_config;
 	struct mdp_dst_buffer dst_buffer;
 	struct mdp_config_misc misc;
-	uint32_t h_drv;
-	uint64_t mdp_priv;
-};
-
-struct mdp_ipi_process {
-	uint32_t msg_id;
-	uint32_t ipi_id;
-	uint32_t h_drv;
-	uint64_t mdp_priv;
-};
-
-struct mdp_ipi_init_ack {
-	uint32_t msg_id;
-	uint32_t ipi_id;
-	int32_t status;
-	int32_t reserved;
-	uint64_t mdp_priv;
-	uint32_t shmem_addr;
-	uint32_t h_drv;
-};
-
-struct mdp_ipi_comm_ack {
-	uint32_t msg_id;
-	uint32_t ipi_id;
-	int32_t status;
-	int32_t reserved;
-	uint64_t mdp_priv;
 };
 
 #pragma pack(pop)

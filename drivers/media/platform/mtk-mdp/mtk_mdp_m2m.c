@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -12,7 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 
 #include <linux/bug.h>
 #include <linux/clk.h>
@@ -99,9 +98,9 @@ struct mtk_mdp_frame *mtk_mdp_ctx_get_frame(struct mtk_mdp_ctx *ctx,
 {
 	struct mtk_mdp_frame *frame;
 
-	if (V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE == type) {
+	if (type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		frame = &ctx->s_frame;
-	} else if (V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE == type) {
+	} else if (type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		frame = &ctx->d_frame;
 	} else {
 		dev_err(&ctx->mdp_dev->pdev->dev,
@@ -738,10 +737,12 @@ static int mtk_mdp_m2m_open(struct file *file)
 			goto err_load_vpu;
 		}
 
-		ret = vpu_compare_version(mdp->vpu_dev, "0.2.8-rc1");
+		ret = vpu_compare_version(mdp->vpu_dev, MTK_MDP_VPU_VERSION);
 		if (ret < 0) {
 			ret = -EINVAL;
-			dev_err(&mdp->pdev->dev, "invalid vpu firmware\n");
+			dev_err(&mdp->pdev->dev,
+			"invalid vpu firmware, should be newer than %s\n",
+				MTK_MDP_VPU_VERSION);
 			goto err_load_vpu;
 		}
 

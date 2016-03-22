@@ -49,44 +49,24 @@ struct vdec_fb_node {
 	void *fb;
 };
 
-
 /**
  * For the same vdec_handle, these functions below are not thread safe.
  * For different vdec_handle, these functions can be called at the same time.
  */
 
 /**
- * vdec_if_create() - create video decode handle according video format
- * @ctx    : [in] v4l2 context
- * @fmt    : [in] video format fourcc, V4L2_PIX_FMT_H264/VP8/VP9..
- */
-int vdec_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc);
-
-/**
- * vdec_if_release() - release decode driver.
- * @handle : [in] video decode handle to be released
- *
- * need to perform driver deinit before driver release.
- */
-int vdec_if_release(struct mtk_vcodec_ctx *ctx);
-
-/**
  * vdec_if_init() - initialize decode driver
- * @handle   : [in] video decode handle
- * @bs       : [in] input bitstream
- * @pic	     : [out] width and height of bitstream
+ * @ctx      : [in] v4l2 context
+ * @fourcc   : [in] video format fourcc, V4L2_PIX_FMT_H264/VP8/VP9..
  */
-int vdec_if_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
-		 struct vdec_pic_info *pic);
+int vdec_if_init(struct mtk_vcodec_ctx *ctx, unsigned int fourcc);
 
 /**
- * vdec_if_get_param() - get driver's parameter
- * @handle : [in] video decode handle
- * @type   : [in] input parameter type
- * @out    : [out] buffer to store query result
+ * vdec_if_deinit() - deinitialize decode driver
+ * @ctx : [in] v4l2 context
+ *
  */
-int vdec_if_get_param(struct mtk_vcodec_ctx *ctx, enum vdec_get_param_type type,
-		      void *out);
+int vdec_if_deinit(struct mtk_vcodec_ctx *ctx);
 
 /**
  * vdec_if_decode() - trigger decode
@@ -99,5 +79,14 @@ int vdec_if_get_param(struct mtk_vcodec_ctx *ctx, enum vdec_get_param_type type,
  */
 int vdec_if_decode(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 		   struct vdec_fb *fb, bool *res_chg);
+
+/**
+ * vdec_if_get_param() - get driver's parameter
+ * @handle : [in] video decode handle
+ * @type   : [in] input parameter type
+ * @out    : [out] buffer to store query result
+ */
+int vdec_if_get_param(struct mtk_vcodec_ctx *ctx, enum vdec_get_param_type type,
+		      void *out);
 
 #endif

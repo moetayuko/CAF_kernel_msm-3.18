@@ -54,7 +54,8 @@ enum venc_start_opt {
  * @VENC_SET_PARAM_FORCE_INTRA: set force intra frame
  * @VENC_SET_PARAM_ADJUST_BITRATE: set to adjust bitrate (in bps)
  * @VENC_SET_PARAM_ADJUST_FRAMERATE: set frame rate
- * @VENC_SET_PARAM_I_FRAME_INTERVAL: set I frame interval
+ * @VENC_SET_PARAM_GOP_SIZE: set IDR interval
+ * @VENC_SET_PARAM_INTRA_PERIOD: set I frame interval
  * @VENC_SET_PARAM_SKIP_FRAME: set H264 skip one frame
  * @VENC_SET_PARAM_PREPEND_HEADER: set H264 prepend SPS/PPS before IDR
  * @VENC_SET_PARAM_TS_MODE: set VP8 temporal scalability mode
@@ -64,7 +65,8 @@ enum venc_set_param_type {
 	VENC_SET_PARAM_FORCE_INTRA,
 	VENC_SET_PARAM_ADJUST_BITRATE,
 	VENC_SET_PARAM_ADJUST_FRAMERATE,
-	VENC_SET_PARAM_I_FRAME_INTERVAL,
+	VENC_SET_PARAM_GOP_SIZE,
+	VENC_SET_PARAM_INTRA_PERIOD,
 	VENC_SET_PARAM_SKIP_FRAME,
 	VENC_SET_PARAM_PREPEND_HEADER,
 	VENC_SET_PARAM_TS_MODE,
@@ -108,9 +110,7 @@ struct venc_enc_prm {
  * @fb_addr2: plane 2 frame buffer address
  */
 struct venc_frm_buf {
-	struct mtk_vcodec_mem fb_addr;
-	struct mtk_vcodec_mem fb_addr1;
-	struct mtk_vcodec_mem fb_addr2;
+	struct mtk_vcodec_mem fb_addr[MTK_VCODEC_MAX_PLANES];
 };
 
 /*
@@ -129,14 +129,14 @@ struct venc_done_result {
  * @fourcc: encoder output format
  * Return: 0 if creating handle successfully, otherwise it is failed.
  */
-int venc_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc);
+int venc_if_init(struct mtk_vcodec_ctx *ctx, unsigned int fourcc);
 
 /*
  * venc_if_release - Release the driver handle
  * @ctx: device context
  * Return: 0 if releasing handle successfully, otherwise it is failed.
  */
-int venc_if_release(struct mtk_vcodec_ctx *ctx);
+int venc_if_deinit(struct mtk_vcodec_ctx *ctx);
 
 /*
  * venc_if_set_param - Set parameter to driver

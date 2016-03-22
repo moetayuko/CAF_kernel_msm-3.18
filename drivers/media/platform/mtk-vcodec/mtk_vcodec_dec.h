@@ -25,9 +25,9 @@
  * @status      : frame buffer status (vdec_fb_status)
  */
 struct vdec_fb {
-	struct mtk_vcodec_mem base_y;
-	struct mtk_vcodec_mem base_c;
-	unsigned int status;
+	struct mtk_vcodec_mem	base_y;
+	struct mtk_vcodec_mem	base_c;
+	unsigned int	status;
 };
 
 /**
@@ -45,18 +45,22 @@ struct vdec_fb {
  *			before r/w info in mtk_video_buf
  */
 struct mtk_video_buf {
-	struct vb2_buffer b;
-	struct list_head list;
+	struct vb2_buffer	b;
+	struct list_head	list;
 
-	bool used;
-	bool ready_to_display;
-	bool nonrealdisplay;
-	bool queued_in_vb2;
-	bool queued_in_v4l2;
-	bool lastframe;
-	struct vdec_fb frame_buffer;
-	struct mutex lock;
+	bool	used;
+	bool	ready_to_display;
+	bool	nonrealdisplay;
+	bool	queued_in_vb2;
+	bool	queued_in_v4l2;
+	bool	lastframe;
+	struct vdec_fb	frame_buffer;
+	struct mutex	lock;
 };
+
+extern const struct v4l2_ioctl_ops mtk_vdec_ioctl_ops;
+extern const struct v4l2_m2m_ops mtk_vdec_m2m_ops;
+
 
 /*
  * mtk_vdec_lock/mtk_vdec_unlock are for ctx instance to

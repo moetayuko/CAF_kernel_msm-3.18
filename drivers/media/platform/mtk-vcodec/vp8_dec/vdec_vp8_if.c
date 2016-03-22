@@ -234,9 +234,12 @@ static void add_fb_to_free_list(struct vdec_vp8_inst *inst, void *fb)
 {
 	struct vdec_fb_node *node;
 
-	node = list_first_entry(&inst->dec_fb_list, struct vdec_fb_node, list);
-	node->fb = fb;
-	list_move_tail(&node->list, &inst->dec_free_list);
+	if (fb) {
+		node = list_first_entry(&inst->dec_fb_list,
+					struct vdec_fb_node, list);
+		node->fb = fb;
+		list_move_tail(&node->list, &inst->dec_free_list);
+	}
 }
 
 static int alloc_all_working_buf(struct vdec_vp8_inst *inst)
@@ -265,12 +268,9 @@ static void free_all_working_buf(struct vdec_vp8_inst *inst)
 	inst->vsi->dec.vp_wrapper_dma = 0;
 }
 
-static int vdec_vp8_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
-			 unsigned long *h_vdec, struct vdec_pic_info *pic)
+static int vdec_vp8_init(struct mtk_vcodec_ctx *ctx, unsigned long *h_vdec)
 {
 	struct vdec_vp8_inst *inst;
-	unsigned int data;
-	unsigned char *bs_va = (unsigned char *)bs->va;
 	int err;
 
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
@@ -279,19 +279,13 @@ static int vdec_vp8_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 
 	inst->ctx = ctx;
 	inst->dev = mtk_vcodec_get_plat_dev(ctx);
-	mtk_vcodec_debug(inst, "bs va=%p dma=%llx sz=0x%lx", bs->va,
-			 (u64)bs->dma_addr, bs->size);
 
-	data = (*(bs_va + 9) << 24) | (*(bs_va + 8) << 16) |
-	       (*(bs_va + 7) << 8) | *(bs_va + 6);
-
-	err = vdec_vp8_vpu_init(inst, data);
+	err = vdec_vp8_vpu_init(inst);
 	if (err) {
 		mtk_vcodec_err(inst, "vdec_vp8 init err=%d", err);
 		goto error_free_inst;
 	}
 
-	get_pic_info(inst, pic);
 	init_list(inst);
 	err = alloc_all_working_buf(inst);
 	if (err)
@@ -315,6 +309,8 @@ static int vdec_vp8_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 {
 	struct vdec_vp8_inst *inst = (struct vdec_vp8_inst *)h_vdec;
 	struct vdec_vp8_dec_info *dec = &inst->vsi->dec;
+	unsigned char *bs_va;
+	unsigned int data;
 	int err = 0;
 	uint64_t y_fb_dma;
 	uint64_t c_fb_dma;
@@ -333,6 +329,10 @@ static int vdec_vp8_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 		return vdec_vp8_vpu_reset(inst);
 	}
 
+	bs_va = (unsigned char *)bs->va;
+	data = (*(bs_va + 9) << 24) | (*(bs_va + 8) << 16) |
+	       (*(bs_va + 7) << 8) | *(bs_va + 6);
+
 	dec->bs_dma = (unsigned long)bs->dma_addr;
 	dec->bs_sz = bs->size;
 	dec->cur_y_fb_dma = y_fb_dma;
@@ -344,7 +344,7 @@ static int vdec_vp8_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 	enable_hw_rw_dec_data(inst);
 	store_dec_data(inst);
 
-	err = vdec_vp8_vpu_dec_start(inst);
+	err = vdec_vp8_vpu_dec_start(inst, data);
 	if (err) {
 		add_fb_to_free_list(inst, fb);
 		if (dec->wait_key_frame) {
@@ -364,7 +364,7 @@ static int vdec_vp8_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 
 	/* wait decoder done interrupt */
 	mtk_vcodec_wait_for_done_ctx(inst->ctx, MTK_INST_IRQ_RECEIVED,
-				     WAIT_INTR_TIMEOUT, true);
+				     WAIT_INTR_TIMEOUT_MS);
 
 	if (inst->vsi->load_data)
 		load_dec_data(inst);

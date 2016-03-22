@@ -46,15 +46,15 @@ static void vp8_enc_vpu_ipi_handler(void *data, unsigned int len, void *priv)
 			 msg->msg_id, inst, msg->status);
 
 	switch (msg->msg_id) {
-	case VPU_IPIMSG_VP8_ENC_INIT_DONE:
+	case VPU_IPIMSG_ENC_INIT_DONE:
 		handle_vp8_enc_init_msg(inst, data);
 		break;
-	case VPU_IPIMSG_VP8_ENC_SET_PARAM_DONE:
+	case VPU_IPIMSG_ENC_SET_PARAM_DONE:
 		break;
-	case VPU_IPIMSG_VP8_ENC_ENCODE_DONE:
+	case VPU_IPIMSG_ENC_ENCODE_DONE:
 		handle_vp8_enc_encode_msg(inst, data);
 		break;
-	case VPU_IPIMSG_VP8_ENC_DEINIT_DONE:
+	case VPU_IPIMSG_ENC_DEINIT_DONE:
 		break;
 	default:
 		mtk_vcodec_err(inst, "unknown msg id=%x", msg->msg_id);
@@ -111,10 +111,10 @@ int vp8_enc_vpu_init(struct venc_vp8_inst *inst)
 		return -EINVAL;
 	}
 
-	out.msg_id = AP_IPIMSG_VP8_ENC_INIT;
+	out.msg_id = AP_IPIMSG_ENC_INIT;
 	out.venc_inst = (unsigned long)inst;
 	if (vp8_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_VP8_ENC_INIT failed");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_INIT failed");
 		return -EINVAL;
 	}
 
@@ -131,7 +131,7 @@ int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst,
 
 	mtk_vcodec_debug_enter(inst);
 
-	out.msg_id = AP_IPIMSG_VP8_ENC_SET_PARAM;
+	out.msg_id = AP_IPIMSG_ENC_SET_PARAM;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	out.param_id = id;
 	switch (id) {
@@ -143,8 +143,7 @@ int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst,
 		inst->vpu_inst.vsi->config.pic_h = enc_param->height;
 		inst->vpu_inst.vsi->config.buf_w = enc_param->buf_width;
 		inst->vpu_inst.vsi->config.buf_h = enc_param->buf_height;
-		inst->vpu_inst.vsi->config.intra_period =
-			enc_param->intra_period;
+		inst->vpu_inst.vsi->config.gop_size = enc_param->gop_size;
 		inst->vpu_inst.vsi->config.framerate = enc_param->frm_rate;
 		inst->vpu_inst.vsi->config.ts_mode = inst->ts_mode;
 		out.data_item = 0;
@@ -161,7 +160,7 @@ int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst,
 		out.data_item = 1;
 		out.data[0] = enc_param->frm_rate;
 		break;
-	case VENC_SET_PARAM_I_FRAME_INTERVAL:
+	case VENC_SET_PARAM_GOP_SIZE:
 		out.data_item = 1;
 		out.data[0] = enc_param->gop_size;
 		break;
@@ -170,7 +169,7 @@ int vp8_enc_vpu_set_param(struct venc_vp8_inst *inst,
 		return -EINVAL;
 	}
 	if (vp8_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_VP8_ENC_SET_PARAM failed");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_SET_PARAM failed");
 		return -EINVAL;
 	}
 
@@ -188,15 +187,15 @@ int vp8_enc_vpu_encode(struct venc_vp8_inst *inst,
 	mtk_vcodec_debug_enter(inst);
 
 	memset(&out, 0, sizeof(out));
-	out.msg_id = AP_IPIMSG_VP8_ENC_ENCODE;
+	out.msg_id = AP_IPIMSG_ENC_ENCODE;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	if (frm_buf) {
-		if ((frm_buf->fb_addr.dma_addr % 16 == 0) &&
-		    (frm_buf->fb_addr1.dma_addr % 16 == 0) &&
-		    (frm_buf->fb_addr2.dma_addr % 16 == 0)) {
-			out.input_addr[0] = frm_buf->fb_addr.dma_addr;
-			out.input_addr[1] = frm_buf->fb_addr1.dma_addr;
-			out.input_addr[2] = frm_buf->fb_addr2.dma_addr;
+		if ((frm_buf->fb_addr[0].dma_addr % 16 == 0) &&
+		    (frm_buf->fb_addr[1].dma_addr % 16 == 0) &&
+		    (frm_buf->fb_addr[2].dma_addr % 16 == 0)) {
+			out.input_addr[0] = frm_buf->fb_addr[0].dma_addr;
+			out.input_addr[1] = frm_buf->fb_addr[1].dma_addr;
+			out.input_addr[2] = frm_buf->fb_addr[2].dma_addr;
 		} else {
 			mtk_vcodec_err(inst, "dma_addr not align to 16");
 			return -EINVAL;
@@ -207,7 +206,7 @@ int vp8_enc_vpu_encode(struct venc_vp8_inst *inst,
 		out.bs_size = bs_buf->size;
 	}
 	if (vp8_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_VP8_ENC_ENCODE failed");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_ENCODE failed");
 		return -EINVAL;
 	}
 
@@ -225,10 +224,10 @@ int vp8_enc_vpu_deinit(struct venc_vp8_inst *inst)
 
 	mtk_vcodec_debug_enter(inst);
 
-	out.msg_id = AP_IPIMSG_VP8_ENC_DEINIT;
+	out.msg_id = AP_IPIMSG_ENC_DEINIT;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	if (vp8_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_VP8_ENC_DEINIT failed");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_DEINIT failed");
 		return -EINVAL;
 	}
 

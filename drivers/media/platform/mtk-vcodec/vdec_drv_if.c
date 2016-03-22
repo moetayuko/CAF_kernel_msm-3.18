@@ -19,7 +19,7 @@
 #include "vdec_drv_base.h"
 #include "vdec_drv_if.h"
 
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_dec_pm.h"
 #include "mtk_vcodec_util.h"
 #include "mtk_vpu.h"
 
@@ -28,8 +28,10 @@
 #include "vp9_dec/vdec_vp9_if.h"
 
 
-int vdec_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
+int vdec_if_init(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
 {
+	int ret = 0;
+
 	switch (fourcc) {
 	case V4L2_PIX_FMT_H264:
 		ctx->dec_if = get_h264_dec_comm_if();
@@ -41,26 +43,12 @@ int vdec_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
 		ctx->dec_if = get_vp9_dec_comm_if();
 		break;
 	default:
-		goto err_out;
-	}
-
-	return 0;
-
-err_out:
-	return -EINVAL;
-}
-
-int vdec_if_init(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
-		 struct vdec_pic_info *pic)
-{
-	int ret = 0;
-
-	if (ctx->dec_if == NULL)
 		return -EINVAL;
+	}
 
 	mtk_vdec_lock(ctx);
 	mtk_vcodec_dec_clock_on(&ctx->dev->pm);
-	ret = ctx->dec_if->init(ctx, bs, &ctx->drv_handle, pic);
+	ret = ctx->dec_if->init(ctx, &ctx->drv_handle);
 	mtk_vcodec_dec_clock_off(&ctx->dev->pm);
 	mtk_vdec_unlock(ctx);
 
@@ -75,7 +63,9 @@ int vdec_if_decode(struct mtk_vcodec_ctx *ctx, struct mtk_vcodec_mem *bs,
 	if (bs) {
 		if ((bs->dma_addr & 63) != 0)
 			return -EINVAL;
+	}
 
+	if (fb) {
 		if (((fb->base_y.dma_addr & 511) != 0) ||
 		    ((fb->base_c.dma_addr & 511) != 0))
 			return -EINVAL;
@@ -104,7 +94,7 @@ int vdec_if_get_param(struct mtk_vcodec_ctx *ctx, enum vdec_get_param_type type,
 	return ret;
 }
 
-int vdec_if_release(struct mtk_vcodec_ctx *ctx)
+int vdec_if_deinit(struct mtk_vcodec_ctx *ctx)
 {
 	int ret = 0;
 
@@ -120,4 +110,3 @@ int vdec_if_release(struct mtk_vcodec_ctx *ctx)
 	ctx->drv_handle = 0;
 	return ret;
 }
-

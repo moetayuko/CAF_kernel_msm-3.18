@@ -21,19 +21,16 @@
 
 #include "venc_drv_if.h"
 #include "mtk_vcodec_enc.h"
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_enc_pm.h"
 #include "mtk_vpu.h"
 
 #include "venc_drv_base.h"
 #include "vp8_enc/venc_vp8_if.h"
 #include "h264_enc/venc_h264_if.h"
 
-int venc_if_create(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
+int venc_if_init(struct mtk_vcodec_ctx *ctx, unsigned int fourcc)
 {
-	char str[10];
 	int ret = 0;
-
-	mtk_vcodec_fmt2str(fourcc, str);
 
 	switch (fourcc) {
 	case V4L2_PIX_FMT_VP8:
@@ -86,7 +83,7 @@ int venc_if_encode(struct mtk_vcodec_ctx *ctx,
 	return ret;
 }
 
-int venc_if_release(struct mtk_vcodec_ctx *ctx)
+int venc_if_deinit(struct mtk_vcodec_ctx *ctx)
 {
 	int ret = 0;
 

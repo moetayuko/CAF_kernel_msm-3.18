@@ -24,7 +24,7 @@
 
 #include "mtk_vcodec_drv.h"
 #include "mtk_vcodec_dec.h"
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_dec_pm.h"
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_util.h"
 #include "vdec_drv_if.h"
@@ -32,6 +32,11 @@
 
 module_param(mtk_v4l2_dbg_level, int, S_IRUGO | S_IWUSR);
 module_param(mtk_vcodec_dbg, bool, S_IRUGO | S_IWUSR);
+
+#define VDEC_HW_ACTIVE	0x10
+#define VDEC_IRQ_CFG	0x11
+#define VDEC_IRQ_CLR	0x10
+#define VDEC_IRQ_CFG_REG	0xa4
 
 
 /* Wake up context wait_queue */
@@ -102,6 +107,12 @@ static int fops_vcodec_open(struct file *file)
 	int ret = 0;
 
 	mutex_lock(&dev->dev_mutex);
+
+	if (dev->instance_mask == ~0UL) {
+		mtk_v4l2_err("Too many open contexts\n");
+		ret = -EBUSY;
+		goto err_alloc;
+	}
 
 	ctx = devm_kzalloc(&dev->plat_dev->dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {

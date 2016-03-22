@@ -107,15 +107,15 @@ static void h264_enc_vpu_ipi_handler(void *data, unsigned int len, void *priv)
 			 msg->msg_id, inst, msg->status);
 
 	switch (msg->msg_id) {
-	case VPU_IPIMSG_H264_ENC_INIT_DONE:
+	case VPU_IPIMSG_ENC_INIT_DONE:
 		handle_h264_enc_init_msg(inst, data);
 		break;
-	case VPU_IPIMSG_H264_ENC_SET_PARAM_DONE:
+	case VPU_IPIMSG_ENC_SET_PARAM_DONE:
 		break;
-	case VPU_IPIMSG_H264_ENC_ENCODE_DONE:
+	case VPU_IPIMSG_ENC_ENCODE_DONE:
 		handle_h264_enc_encode_msg(inst, data);
 		break;
-	case VPU_IPIMSG_H264_ENC_DEINIT_DONE:
+	case VPU_IPIMSG_ENC_DEINIT_DONE:
 		break;
 	default:
 		mtk_vcodec_err(inst, "unknown msg id %x", msg->msg_id);
@@ -170,10 +170,10 @@ int h264_enc_vpu_init(struct venc_h264_inst *inst)
 		return -EINVAL;
 	}
 
-	out.msg_id = AP_IPIMSG_H264_ENC_INIT;
+	out.msg_id = AP_IPIMSG_ENC_INIT;
 	out.venc_inst = (unsigned long)inst;
 	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_INIT fail");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_INIT fail");
 		return -EINVAL;
 	}
 
@@ -190,7 +190,7 @@ int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
 
 	mtk_vcodec_debug(inst, "id %d ->", id);
 
-	out.msg_id = AP_IPIMSG_H264_ENC_SET_PARAM;
+	out.msg_id = AP_IPIMSG_ENC_SET_PARAM;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	out.param_id = id;
 	switch (id) {
@@ -202,6 +202,7 @@ int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
 		inst->vpu_inst.vsi->config.pic_h = enc_param->height;
 		inst->vpu_inst.vsi->config.buf_w = enc_param->buf_width;
 		inst->vpu_inst.vsi->config.buf_h = enc_param->buf_height;
+		inst->vpu_inst.vsi->config.gop_size = enc_param->gop_size;
 		inst->vpu_inst.vsi->config.intra_period =
 			enc_param->intra_period;
 		inst->vpu_inst.vsi->config.framerate = enc_param->frm_rate;
@@ -224,9 +225,13 @@ int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
 		out.data_item = 1;
 		out.data[0] = enc_param->frm_rate;
 		break;
-	case VENC_SET_PARAM_I_FRAME_INTERVAL:
+	case VENC_SET_PARAM_GOP_SIZE:
 		out.data_item = 1;
 		out.data[0] = enc_param->gop_size;
+		break;
+	case VENC_SET_PARAM_INTRA_PERIOD:
+		out.data_item = 1;
+		out.data[0] = enc_param->intra_period;
 		break;
 	case VENC_SET_PARAM_SKIP_FRAME:
 		out.data_item = 0;
@@ -237,7 +242,7 @@ int h264_enc_vpu_set_param(struct venc_h264_inst *inst,
 	}
 	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
 		mtk_vcodec_err(inst,
-			       "AP_IPIMSG_H264_ENC_SET_PARAM %d fail", id);
+			       "AP_IPIMSG_ENC_SET_PARAM %d fail", id);
 		return -EINVAL;
 	}
 
@@ -256,16 +261,16 @@ int h264_enc_vpu_encode(struct venc_h264_inst *inst, unsigned int bs_mode,
 	mtk_vcodec_debug(inst, "bs_mode %d ->", bs_mode);
 
 	memset(&out, 0, sizeof(out));
-	out.msg_id = AP_IPIMSG_H264_ENC_ENCODE;
+	out.msg_id = AP_IPIMSG_ENC_ENCODE;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	out.bs_mode = bs_mode;
 	if (frm_buf) {
-		if ((frm_buf->fb_addr.dma_addr % 16 == 0) &&
-		    (frm_buf->fb_addr1.dma_addr % 16 == 0) &&
-		    (frm_buf->fb_addr2.dma_addr % 16 == 0)) {
-			out.input_addr[0] = frm_buf->fb_addr.dma_addr;
-			out.input_addr[1] = frm_buf->fb_addr1.dma_addr;
-			out.input_addr[2] = frm_buf->fb_addr2.dma_addr;
+		if ((frm_buf->fb_addr[0].dma_addr % 16 == 0) &&
+		    (frm_buf->fb_addr[1].dma_addr % 16 == 0) &&
+		    (frm_buf->fb_addr[2].dma_addr % 16 == 0)) {
+			out.input_addr[0] = frm_buf->fb_addr[0].dma_addr;
+			out.input_addr[1] = frm_buf->fb_addr[1].dma_addr;
+			out.input_addr[2] = frm_buf->fb_addr[2].dma_addr;
 		} else {
 			mtk_vcodec_err(inst, "dma_addr not align to 16");
 			return -EINVAL;
@@ -276,7 +281,7 @@ int h264_enc_vpu_encode(struct venc_h264_inst *inst, unsigned int bs_mode,
 		out.bs_size = bs_buf->size;
 	}
 	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_ENCODE %d fail",
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_ENCODE %d fail",
 			       bs_mode);
 		return -EINVAL;
 	}
@@ -305,10 +310,10 @@ int h264_enc_vpu_deinit(struct venc_h264_inst *inst)
 
 	mtk_vcodec_debug_enter(inst);
 
-	out.msg_id = AP_IPIMSG_H264_ENC_DEINIT;
+	out.msg_id = AP_IPIMSG_ENC_DEINIT;
 	out.vpu_inst_addr = inst->vpu_inst.id;
 	if (h264_enc_vpu_send_msg(inst, &out, sizeof(out))) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_H264_ENC_DEINIT fail");
+		mtk_vcodec_err(inst, "AP_IPIMSG_ENC_DEINIT fail");
 		return -EINVAL;
 	}
 

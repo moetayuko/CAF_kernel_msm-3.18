@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015-2016 MediaTek Inc.
  * Author: Houlong Wei <houlong.wei@mediatek.com>
  *         Ming Hsiu Tsai <minghsiu.tsai@mediatek.com>
  *
@@ -13,7 +13,6 @@
  * GNU General Public License for more details.
  */
 
-
 #ifndef __MTK_MDP_VPU_H__
 #define __MTK_MDP_VPU_H__
 
@@ -22,11 +21,18 @@
 #include "mtk_mdp_ipi.h"
 
 
+/**
+ * struct mtk_mdp_vpu - VPU instance for MDP
+ * @pdev	: pointer to the VPU platform device
+ * @inst_addr	: VPU MDP instance address
+ * @failure	: VPU execution result status
+ * @vsi		: VPU shared information
+ */
 struct mtk_mdp_vpu {
-	struct platform_device		*pdev;
-	unsigned int			failure;
-	void				*shmem_va;
-	struct mdp_process_param	*param;
+	struct platform_device	*pdev;
+	uint32_t		inst_addr;
+	unsigned int		failure;
+	struct mdp_process_vsi	*vsi;
 };
 
 int mtk_mdp_vpu_register(struct platform_device *pdev);

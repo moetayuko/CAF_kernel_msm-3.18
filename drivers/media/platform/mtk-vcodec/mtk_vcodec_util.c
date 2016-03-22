@@ -1,7 +1,7 @@
 /*
 * Copyright (c) 2016 MediaTek Inc.
 * Author: PC Chen <pc.chen@mediatek.com>
-*         Tiffany Lin <tiffany.lin@mediatek.com>
+*		Tiffany Lin <tiffany.lin@mediatek.com>
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 as
@@ -25,7 +25,7 @@ EXPORT_SYMBOL(mtk_vcodec_dbg);
 int mtk_v4l2_dbg_level;
 EXPORT_SYMBOL(mtk_v4l2_dbg_level);
 
-void __iomem *mtk_vcodec_get_reg_addr(void *data, unsigned int reg_idx)
+void __iomem *mtk_vcodec_get_reg_addr(struct mtk_vcodec_ctx *data, unsigned int reg_idx)
 {
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)data;
 
@@ -37,7 +37,7 @@ void __iomem *mtk_vcodec_get_reg_addr(void *data, unsigned int reg_idx)
 }
 EXPORT_SYMBOL(mtk_vcodec_get_reg_addr);
 
-int mtk_vcodec_mem_alloc(void *data, struct mtk_vcodec_mem *mem)
+int mtk_vcodec_mem_alloc(struct mtk_vcodec_ctx *data, struct mtk_vcodec_mem *mem)
 {
 	unsigned long size = mem->size;
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)data;
@@ -62,8 +62,7 @@ int mtk_vcodec_mem_alloc(void *data, struct mtk_vcodec_mem *mem)
 }
 EXPORT_SYMBOL(mtk_vcodec_mem_alloc);
 
-
-void mtk_vcodec_mem_free(void *data, struct mtk_vcodec_mem *mem)
+void mtk_vcodec_mem_free(struct mtk_vcodec_ctx *data, struct mtk_vcodec_mem *mem)
 {
 	unsigned long size = mem->size;
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)data;
@@ -85,19 +84,7 @@ void mtk_vcodec_mem_free(void *data, struct mtk_vcodec_mem *mem)
 }
 EXPORT_SYMBOL(mtk_vcodec_mem_free);
 
-
-int mtk_vcodec_get_ctx_id(void *data)
-{
-	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)data;
-
-	if (!ctx)
-		return -1;
-
-	return ctx->idx;
-}
-EXPORT_SYMBOL(mtk_vcodec_get_ctx_id);
-
-struct platform_device *mtk_vcodec_get_plat_dev(void *data)
+struct platform_device *mtk_vcodec_get_plat_dev(struct mtk_vcodec_ctx *data)
 {
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)data;
 
@@ -107,16 +94,4 @@ struct platform_device *mtk_vcodec_get_plat_dev(void *data)
 	return vpu_get_plat_device(ctx->dev->plat_dev);
 }
 EXPORT_SYMBOL(mtk_vcodec_get_plat_dev);
-
-
-void mtk_vcodec_fmt2str(u32 fmt, char *str)
-{
-	char a = fmt & 0xFF;
-	char b = (fmt >> 8) & 0xFF;
-	char c = (fmt >> 16) & 0xFF;
-	char d = (fmt >> 24) & 0xFF;
-
-	sprintf(str, "%c%c%c%c", a, b, c, d);
-}
-EXPORT_SYMBOL(mtk_vcodec_fmt2str);
 

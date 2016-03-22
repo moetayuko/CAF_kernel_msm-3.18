@@ -23,7 +23,7 @@
 #include "mtk_vcodec_util.h"
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_enc.h"
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_enc_pm.h"
 #include "mtk_vpu.h"
 
 #include "venc_h264_if.h"
@@ -33,12 +33,6 @@ static const char h264_filler_marker[] = {0x0, 0x0, 0x0, 0x1, 0xc};
 
 #define H264_FILLER_MARKER_SIZE ARRAY_SIZE(h264_filler_marker)
 #define VENC_PIC_BITSTREAM_BYTE_CNT 0x0098
-
-enum venc_h264_irq_status {
-	H264_IRQ_STATUS_ENC_SPS_INT = (1 << 0),
-	H264_IRQ_STATUS_ENC_PPS_INT = (1 << 1),
-	H264_IRQ_STATUS_ENC_FRM_INT = (1 << 2),
-};
 
 static inline void h264_write_reg(struct venc_h264_inst *inst, u32 addr,
 				  u32 val)
@@ -156,7 +150,7 @@ static unsigned int h264_enc_wait_venc_done(struct venc_h264_inst *inst)
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)inst->ctx;
 
 	if (!mtk_vcodec_wait_for_done_ctx(ctx, MTK_INST_IRQ_RECEIVED,
-					  WAIT_INTR_TIMEOUT, true)) {
+					  WAIT_INTR_TIMEOUT_MS)) {
 		irq_status = ctx->irq_status;
 		mtk_vcodec_debug(inst, "irq_status %x <-", irq_status);
 	}
@@ -178,9 +172,9 @@ static int h264_encode_sps(struct venc_h264_inst *inst,
 		return ret;
 
 	irq_status = h264_enc_wait_venc_done(inst);
-	if (irq_status != H264_IRQ_STATUS_ENC_SPS_INT) {
+	if (irq_status != MTK_VENC_IRQ_STATUS_SPS) {
 		mtk_vcodec_err(inst, "expect irq status %d",
-			       H264_IRQ_STATUS_ENC_SPS_INT);
+			       MTK_VENC_IRQ_STATUS_SPS);
 		return -EINVAL;
 	}
 
@@ -205,9 +199,9 @@ static int h264_encode_pps(struct venc_h264_inst *inst,
 		return ret;
 
 	irq_status = h264_enc_wait_venc_done(inst);
-	if (irq_status != H264_IRQ_STATUS_ENC_PPS_INT) {
+	if (irq_status != MTK_VENC_IRQ_STATUS_PPS) {
 		mtk_vcodec_err(inst, "expect irq status %d",
-			       H264_IRQ_STATUS_ENC_PPS_INT);
+			       MTK_VENC_IRQ_STATUS_PPS);
 		return -EINVAL;
 	}
 
@@ -264,7 +258,7 @@ static int h264_encode_frame(struct venc_h264_inst *inst,
 	}
 
 	irq_status = h264_enc_wait_venc_done(inst);
-	if (irq_status != H264_IRQ_STATUS_ENC_FRM_INT) {
+	if (irq_status != MTK_VENC_IRQ_STATUS_FRM) {
 		mtk_vcodec_err(inst, "irq_status=%d failed", irq_status);
 		return -EIO;
 	}

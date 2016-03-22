@@ -37,8 +37,7 @@ static unsigned int get_mv_buf_size(unsigned int width, unsigned int height)
 	return HW_MB_STORE_SZ * (width/MB_UNIT_SZ) * (height/MB_UNIT_SZ);
 }
 
-static int alloc_mv_buf(struct vdec_h264_inst *inst, struct vdec_pic_info *pic,
-			bool free)
+static int alloc_mv_buf(struct vdec_h264_inst *inst, struct vdec_pic_info *pic)
 {
 	int i;
 	int err;
@@ -49,7 +48,7 @@ static int alloc_mv_buf(struct vdec_h264_inst *inst, struct vdec_pic_info *pic,
 
 	for (i = 0; i < H264_MAX_FB_NUM; i++) {
 		mem = &inst->mv_buf[i];
-		if (free)
+		if (mem->va)
 			mtk_vcodec_mem_free(inst->ctx, mem);
 		mem->size = buf_sz;
 		err = mtk_vcodec_mem_alloc(inst->ctx, mem);
@@ -83,8 +82,7 @@ static void free_all_working_buf(struct vdec_h264_inst *inst)
 	}
 }
 
-static int allocate_all_working_buf(struct vdec_h264_inst *inst,
-				    struct vdec_pic_info *pic)
+static int allocate_working_buf(struct vdec_h264_inst *inst)
 {
 	int err = 0;
 
@@ -96,26 +94,28 @@ static int allocate_all_working_buf(struct vdec_h264_inst *inst,
 	}
 
 	inst->vsi->ppl_buf_dma = inst->ppl_buf.dma_addr;
-	return alloc_mv_buf(inst, pic, false);
+	return 0;
 }
 
 static void put_fb_to_free(struct vdec_h264_inst *inst, struct vdec_fb *fb)
 {
 	struct h264_ring_fb_list *list;
 
-	list = &inst->vsi->list_free;
-	if (list->count == H264_MAX_FB_NUM) {
-		mtk_vcodec_err(inst, "[FB] put fb free_list full\n");
-		return;
+	if (fb) {
+		list = &inst->vsi->list_free;
+		if (list->count == H264_MAX_FB_NUM) {
+			mtk_vcodec_err(inst, "[FB] put fb free_list full\n");
+			return;
+		}
+
+		mtk_vcodec_debug(inst, "[FB] put fb into free_list @(%p, %llx)\n",
+				 fb->base_y.va, (u64)fb->base_y.dma_addr);
+
+		list->fb_list[list->write_idx].vdec_fb_va = (u64)fb;
+		list->write_idx = (list->write_idx == H264_MAX_FB_NUM - 1) ?
+				  0 : list->write_idx + 1;
+		list->count++;
 	}
-
-	mtk_vcodec_debug(inst, "[FB] put fb into free_list @(%p, %llx)\n",
-			 fb->base_y.va, (u64)fb->base_y.dma_addr);
-
-	list->fb_list[list->write_idx].vdec_fb_va = (u64)fb;
-	list->write_idx = (list->write_idx == H264_MAX_FB_NUM - 1) ?
-			  0 : list->write_idx + 1;
-	list->count++;
 }
 
 static void get_pic_info(struct vdec_h264_inst *inst,
@@ -152,9 +152,7 @@ static void get_dpb_size(struct vdec_h264_inst *inst, unsigned int *dpb_sz)
 	mtk_vcodec_debug(inst, "sz=%d", *dpb_sz);
 }
 
-static int vdec_h264_init(struct mtk_vcodec_ctx *ctx,
-			  struct mtk_vcodec_mem *bs, unsigned long *h_vdec,
-			  struct vdec_pic_info *pic)
+static int vdec_h264_init(struct mtk_vcodec_ctx *ctx, unsigned long *h_vdec)
 {
 	struct vdec_h264_inst *inst = NULL;
 	int err;
@@ -165,32 +163,23 @@ static int vdec_h264_init(struct mtk_vcodec_ctx *ctx,
 
 	inst->ctx = ctx;
 	inst->dev = mtk_vcodec_get_plat_dev(ctx);
-	inst->ctx_id = mtk_vcodec_get_ctx_id(ctx);
+	inst->ctx_id = ctx->idx;
 
-	mtk_vcodec_debug(inst, "bs va=%p dma=%llx sz=0x%lx", bs->va,
-			 (u64)bs->dma_addr, bs->size);
-
-	err = vdec_h264_vpu_init(inst, (u64)bs->dma_addr, bs->size);
+	err = vdec_h264_vpu_init(inst);
 	if (err) {
 		mtk_vcodec_err(inst, "vdec_h264 init err=%d\n", err);
 		goto error_free_inst;
 	}
 
-	get_pic_info(inst, pic);
+	err = allocate_working_buf(inst);
 	if (err)
 		goto error_free_inst;
-
-	err = allocate_all_working_buf(inst, pic);
-	if (err)
-		goto error_free_buf;
 
 	mtk_vcodec_debug(inst, "H264 Instance >> %p", inst);
 
 	*h_vdec = (unsigned long)inst;
 	return 0;
 
-error_free_buf:
-	free_all_working_buf(inst);
 error_free_inst:
 	kfree(inst);
 
@@ -271,10 +260,8 @@ static int vdec_h264_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 	err = vdec_h264_vpu_dec_start(inst, buf_sz, nal_start,
 				      (u64)bs->dma_addr, y_fb_dma, c_fb_dma,
 				      vdec_fb_va);
-	if (err) {
-		mtk_vcodec_err(inst, "dec_start err = %d\n", err);
+	if (err)
 		goto err_free_fb_out;
-	}
 
 	*res_chg = inst->vsi->dec.resolution_changed;
 	if (*res_chg) {
@@ -284,7 +271,7 @@ static int vdec_h264_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 		get_pic_info(inst, &pic);
 
 		if (inst->vsi->dec.realloc_mv_buf) {
-			err = alloc_mv_buf(inst, &pic, true);
+			err = alloc_mv_buf(inst, &pic);
 			if (err)
 				goto err_free_fb_out;
 		}
@@ -294,7 +281,7 @@ static int vdec_h264_decode(unsigned long h_vdec, struct mtk_vcodec_mem *bs,
 		/* wait decoder done interrupt */
 		err = mtk_vcodec_wait_for_done_ctx(inst->ctx,
 						   MTK_INST_IRQ_RECEIVED,
-						   WAIT_INTR_TIMEOUT, true);
+						   WAIT_INTR_TIMEOUT_MS);
 		if (err)
 			goto err_free_fb_out;
 

@@ -14,19 +14,26 @@
  */
 
 #include "vdec_vp9_core.h"
-#include "vdec_vp9_debug.h"
 #include "vdec_vp9_vpu.h"
+#include "vdec_vp9_debug.h"
 #include "mtk_vpu.h"
 #include "vdec_ipi_msg.h"
 
 #define VDEC_VP9_WAIT_VPU_TIMEOUT_MS		(10000)
 
-/* ipi messages */
-struct vdec_vp9_ap_ipi_msg_init {
-	unsigned int msg_id; /* vp9 decoder init message id */
-	unsigned int items; /* actual data items */
-	unsigned long long drv_id; /* handle to AP driver */
-	unsigned int data[3]; /* bit stream data */
+
+/**
+ * struct vdec_vp9_ipi_dec_start - for AP_IPIMSG_DEC_START
+ * @msg_id        : AP_IPIMSG_DEC_START
+ * @vpu_inst_addr : VPU decoder instance addr
+ * @data          : Header info
+ * @reserved      : Reserved field
+ */
+struct vdec_vp9_ipi_dec_start {
+	uint32_t msg_id;
+	uint32_t vpu_inst_addr;
+	uint32_t data[3];
+	uint32_t reserved;
 };
 
 enum vdec_vp9_ipi_msg_status {
@@ -43,14 +50,15 @@ struct vdec_vp9_ipi_init_ack {
 
 static void handle_init_ack_msg(struct vdec_vp9_inst *inst, void *data)
 {
-	struct vdec_vp9_ipi_init_ack *msg = data;
+	struct vdec_vpu_ipi_init_ack *msg = data;
 
-	inst->vpu.h_drv = msg->md32_id;
-	inst->vpu.drv = (struct vdec_vp9_vpu_drv *)vpu_mapping_dm_addr(
-		inst->dev, msg->md32_id);
+	inst->vpu.inst_addr = msg->vpu_inst_addr;
+	inst->vpu.vsi = (struct vdec_vp9_vsi *)vpu_mapping_dm_addr(
+		inst->dev, msg->vpu_inst_addr);
 
-	mtk_vcodec_debug(inst, "h_drv %x map to drv %p", inst->vpu.h_drv,
-			 inst->vpu.drv);
+	mtk_vcodec_debug(inst, "inst_addr %x map to vsi %p",
+					inst->vpu.inst_addr,
+					inst->vpu.vsi);
 }
 
 static void vp9_dec_vpu_ipi_handler(void *data, unsigned int len, void *priv)
@@ -84,8 +92,12 @@ static int vp9_dec_vpu_send_msg(struct vdec_vp9_inst *inst, void *msg,
 				int len)
 {
 	int err;
+	struct vdec_vp9_vpu_inst *vpu = &inst->vpu;
 
 	mtk_vcodec_debug(inst, "id=%X", *(unsigned int *)msg);
+
+	vpu->failure = 0;
+	vpu->signaled = 0;
 
 	err = vpu_ipi_send(inst->dev, IPI_VDEC_VP9, msg, len);
 	if (err) {
@@ -96,12 +108,10 @@ static int vp9_dec_vpu_send_msg(struct vdec_vp9_inst *inst, void *msg,
 	return err;
 }
 
-int vp9_dec_vpu_init(void *vdec_inst, unsigned int *data, unsigned int items)
+int vp9_dec_vpu_init(struct vdec_vp9_inst *inst)
 {
-	struct vdec_vp9_inst *inst = vdec_inst;
-	int err;
-	struct vdec_vp9_ap_ipi_msg_init out;
-	unsigned int i;
+	int ret;
+	struct vdec_ap_ipi_init out;
 
 	mtk_vcodec_debug_enter(inst);
 
@@ -109,35 +119,25 @@ int vp9_dec_vpu_init(void *vdec_inst, unsigned int *data, unsigned int items)
 	inst->vpu.signaled = 0;
 	inst->vpu.failure = 0;
 
-	err = vpu_ipi_register(inst->dev, IPI_VDEC_VP9,
+	ret = vpu_ipi_register(inst->dev, IPI_VDEC_VP9,
 			       vp9_dec_vpu_ipi_handler, "vp9_dec", NULL);
-	if (0 != err) {
-		mtk_vcodec_err(inst, "vpu_ipi_register fail status=%d", err);
-		return err;
+	if (ret) {
+		mtk_vcodec_err(inst, "vpu_ipi_register fail status=%d", ret);
+		return ret;
 	}
 	mtk_vcodec_debug(inst, "vpu_ipi_register success %p", inst);
 
-	if (items > sizeof(out.data) / sizeof(out.data[0])) {
-		mtk_vcodec_err(inst, "vp9_dec_vpu_init: max %d data items",
-			       (int)(sizeof(out.data) / sizeof(out.data[0])));
-		return -EINVAL;
-	}
-
 	memset(&out, 0, sizeof(out));
 	out.msg_id = AP_IPIMSG_DEC_INIT;
-	out.drv_id = (unsigned long)inst;
-	for (i = 0; i < items; i++)
-		out.data[i] = data[i];
-	out.items = items;
-	if (0 != vp9_dec_vpu_send_msg(inst, &out, sizeof(out)) ||
-	    inst->vpu.failure) {
-		mtk_vcodec_err(inst, "AP_IPIMSG_DEC_INIT failed");
-		return -EINVAL;
-	}
+	out.vdec_inst = (unsigned long)inst;
+
+	ret = vp9_dec_vpu_send_msg(inst, &out, sizeof(out));
+	if (!ret && inst->vpu.failure != 0)
+		ret = inst->vpu.failure;
 
 	mtk_vcodec_debug_leave(inst);
 
-	return 0;
+	return ret;
 }
 
 static int vp9_dec_send_ap_ipi(void *vdec_inst, unsigned int msg_id)
@@ -150,7 +150,7 @@ static int vp9_dec_send_ap_ipi(void *vdec_inst, unsigned int msg_id)
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_id = msg_id;
-	msg.vpu_inst_addr = inst->vpu.h_drv;
+	msg.vpu_inst_addr = inst->vpu.inst_addr;
 
 	err = vp9_dec_vpu_send_msg(inst, &msg, sizeof(msg));
 	if (!err && inst->vpu.failure != 0)
@@ -160,22 +160,41 @@ static int vp9_dec_send_ap_ipi(void *vdec_inst, unsigned int msg_id)
 	return err;
 }
 
-int vp9_dec_vpu_start(void *vdec_inst)
+int vp9_dec_vpu_start(struct vdec_vp9_inst *vdec_inst, unsigned int *data)
 {
-	return vp9_dec_send_ap_ipi(vdec_inst, AP_IPIMSG_DEC_START);
+
+	struct vdec_vp9_ipi_dec_start msg;
+	int ret, i;
+
+	mtk_vcodec_debug_enter(vdec_inst);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_id				= AP_IPIMSG_DEC_START;
+	msg.vpu_inst_addr		= vdec_inst->vpu.inst_addr;
+	for (i = 0; i < 3; i++)
+		msg.data[i] = data[i];
+
+	ret = vp9_dec_vpu_send_msg(vdec_inst, (void *)&msg, sizeof(msg));
+	if (!ret && vdec_inst->vpu.failure != 0)
+		ret = vdec_inst->vpu.failure;
+
+	mtk_vcodec_debug(vdec_inst, "- ret=%d", ret);
+
+	return ret;
+
 }
 
-int vp9_dec_vpu_end(void *vdec_inst)
+int vp9_dec_vpu_end(struct vdec_vp9_inst *vdec_inst)
 {
 	return vp9_dec_send_ap_ipi(vdec_inst, AP_IPIMSG_DEC_END);
 }
 
-int vp9_dec_vpu_reset(void *vdec_inst)
+int vp9_dec_vpu_reset(struct vdec_vp9_inst *vdec_inst)
 {
 	return vp9_dec_send_ap_ipi(vdec_inst, AP_IPIMSG_DEC_RESET);
 }
 
-int vp9_dec_vpu_deinit(void *vdec_inst)
+int vp9_dec_vpu_deinit(struct vdec_vp9_inst *vdec_inst)
 {
 	return vp9_dec_send_ap_ipi(vdec_inst, AP_IPIMSG_DEC_DEINIT);
 }

@@ -1,8 +1,7 @@
 
-
 obj-$(CONFIG_VIDEO_MEDIATEK_VCODEC) += mtk-vcodec-dec.o \
-		mtk-vcodec-enc.o \
-		mtk-vcodec-common.o
+				       mtk-vcodec-enc.o \
+				       mtk-vcodec-common.o
 
 mtk-vcodec-dec-y := vp9_dec/vdec_vp9_core.o \
 		vp9_dec/vdec_vp9_if.o \
@@ -32,4 +31,3 @@ mtk-vcodec-common-y := mtk_vcodec_intr.o \
 
 
 ccflags-y += -I$(srctree)/drivers/media/platform/mtk-vpu
-ccflags-y += -I$(srctree)/drivers/media/platform/mtk-vcodec

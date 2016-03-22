@@ -22,7 +22,7 @@
 #include "mtk_vcodec_util.h"
 #include "mtk_vcodec_intr.h"
 #include "mtk_vcodec_enc.h"
-#include "mtk_vcodec_pm.h"
+#include "mtk_vcodec_enc_pm.h"
 #include "mtk_vpu.h"
 
 #include "venc_vp8_if.h"
@@ -30,7 +30,6 @@
 
 #define VENC_BITSTREAM_FRAME_SIZE 0x0098
 #define VENC_BITSTREAM_HEADER_LEN 0x00e8
-#define VENC_IRQ_STATUS_ENC_FRM_INT 0x04
 
 /* This ac_tag is vp8 frame tag. */
 #define MAX_AC_TAG_SIZE 10
@@ -53,8 +52,11 @@ static void vp8_enc_free_work_buf(struct venc_vp8_inst *inst)
 	mtk_vcodec_debug_enter(inst);
 
 	/* Buffers need to be freed by AP. */
-	for (i = 0; i < VENC_VP8_VPU_WORK_BUF_MAX; i++)
+	for (i = 0; i < VENC_VP8_VPU_WORK_BUF_MAX; i++) {
+		if ((inst->work_bufs[i].size == 0))
+			continue;
 		mtk_vcodec_mem_free(inst->ctx, &inst->work_bufs[i]);
+	}
 
 	mtk_vcodec_debug_leave(inst);
 }
@@ -125,7 +127,7 @@ static unsigned int vp8_enc_wait_venc_done(struct venc_vp8_inst *inst)
 	struct mtk_vcodec_ctx *ctx = (struct mtk_vcodec_ctx *)inst->ctx;
 
 	if (!mtk_vcodec_wait_for_done_ctx(ctx, MTK_INST_IRQ_RECEIVED,
-					  WAIT_INTR_TIMEOUT, true)) {
+					  WAIT_INTR_TIMEOUT_MS)) {
 		irq_status = ctx->irq_status;
 		mtk_vcodec_debug(inst, "isr return %x", irq_status);
 	}
@@ -205,7 +207,7 @@ static int vp8_enc_encode_frame(struct venc_vp8_inst *inst,
 		return ret;
 
 	irq_status = vp8_enc_wait_venc_done(inst);
-	if (irq_status != VENC_IRQ_STATUS_ENC_FRM_INT) {
+	if (irq_status != MTK_VENC_IRQ_STATUS_FRM) {
 		mtk_vcodec_err(inst, "irq_status=%d failed", irq_status);
 		return -EIO;
 	}
