@@ -657,6 +657,7 @@ static const struct user_regset_view user_aarch64_view = {
 enum compat_regset {
 	REGSET_COMPAT_GPR,
 	REGSET_COMPAT_VFP,
+	REGSET_COMPAT_FPR,
 };
 
 static int compat_gpr_get(struct task_struct *target,
@@ -826,6 +827,39 @@ static int compat_vfp_set(struct task_struct *target,
 	return ret;
 }
 
+/*
+ * arm64 CPUs do not support FPA, so we do not store fpa values in thread_info.
+ * However, to keep Aarch32 compat consistent with arch/arm NT_PRFPREG,
+ * implement dummy fpa_get/set backed by an all-zero 1-word fp_state.
+ */
+struct compat_fp_struct {
+	compat_ulong_t save;		/* dummy FPA state */
+};
+
+static int compat_fpa_get(struct task_struct *target,
+		   const struct user_regset *regset,
+		   unsigned int pos, unsigned int count,
+		   void *kbuf, void __user *ubuf)
+{
+	struct compat_fp_struct fpstate = { 0 };
+
+	return user_regset_copyout(&pos, &count, &kbuf, &ubuf,
+				   &fpstate,
+				   0, sizeof(struct compat_fp_struct));
+}
+
+static int compat_fpa_set(struct task_struct *target,
+		   const struct user_regset *regset,
+		   unsigned int pos, unsigned int count,
+		   const void *kbuf, const void __user *ubuf)
+{
+	struct compat_fp_struct fpstate = { 0 };
+
+	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				  &fpstate,
+				  0, sizeof(struct compat_fp_struct));
+}
+
 static const struct user_regset aarch32_regsets[] = {
 	[REGSET_COMPAT_GPR] = {
 		.core_note_type = NT_PRSTATUS,
@@ -842,6 +876,15 @@ static const struct user_regset aarch32_regsets[] = {
 		.align = sizeof(compat_ulong_t),
 		.get = compat_vfp_get,
 		.set = compat_vfp_set
+	},
+	/* Pretend to support FPR for consistency with arch/arm */
+	[REGSET_COMPAT_FPR] = {
+		.core_note_type = NT_PRFPREG,
+		.n = sizeof(struct compat_fp_struct) / sizeof(compat_ulong_t),
+		.size = sizeof(compat_ulong_t),
+		.align = sizeof(compat_ulong_t),
+		.get = compat_fpa_get,
+		.set = compat_fpa_set
 	},
 };
 
