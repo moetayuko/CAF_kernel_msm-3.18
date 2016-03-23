@@ -249,9 +249,14 @@ static void mtk_hdmi_bridge_disable(struct drm_bridge *bridge)
 {
 	struct mtk_hdmi *hdmi = hdmi_ctx_from_bridge(bridge);
 
+	if (!hdmi->enabled)
+		return;
+
 	phy_power_off(hdmi->phy);
 	clk_disable_unprepare(hdmi->clk[MTK_HDMI_CLK_HDMI_PIXEL]);
 	clk_disable_unprepare(hdmi->clk[MTK_HDMI_CLK_HDMI_PLL]);
+
+	hdmi->enabled = false;
 }
 
 static void mtk_hdmi_bridge_post_disable(struct drm_bridge *bridge)
@@ -294,10 +299,15 @@ static void mtk_hdmi_bridge_enable(struct drm_bridge *bridge)
 {
 	struct mtk_hdmi *hdmi = hdmi_ctx_from_bridge(bridge);
 
+	if (hdmi->enabled)
+		return;
+
 	mtk_hdmi_output_set_display_mode(hdmi, &hdmi->mode);
 	clk_prepare_enable(hdmi->clk[MTK_HDMI_CLK_HDMI_PLL]);
 	clk_prepare_enable(hdmi->clk[MTK_HDMI_CLK_HDMI_PIXEL]);
 	phy_power_on(hdmi->phy);
+
+	hdmi->enabled = true;
 }
 
 static const struct drm_bridge_funcs mtk_hdmi_bridge_funcs = {

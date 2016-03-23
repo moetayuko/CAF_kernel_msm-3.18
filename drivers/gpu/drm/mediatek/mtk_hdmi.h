@@ -179,6 +179,7 @@ struct mtk_hdmi {
 	unsigned int sys_offset;
 	void __iomem *regs;
 	bool init;
+	bool enabled;
 	enum hdmi_colorspace csp;
 	bool audio_enable;
 	bool output;
