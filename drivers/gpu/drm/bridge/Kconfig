@@ -15,3 +15,12 @@ config DRM_PTN3460
 	depends on DRM
 	select DRM_KMS_HELPER
 	---help---
+	  Parade eDP-LVDS bridge chip driver.
+
+config DRM_ANX78XX
+	tristate "Analogix ANX78XX bridge"
+	select DRM_KMS_HELPER
+	select REGMAP_I2C
+	---help---
+	  ANX78XX is a HD video transmitter chip over micro-USB connector
+	  for smartphone device.
