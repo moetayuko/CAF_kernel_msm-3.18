@@ -198,7 +198,7 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 		bp = stack_frame(current, NULL);
 	}
 
-	show_stack_log_lvl(task, NULL, sp, 0, "", 0);
+	show_stack_log_lvl(task, NULL, sp, bp, "", 0);
 }
 
 static arch_spinlock_t die_lock = __ARCH_SPIN_LOCK_UNLOCKED;
