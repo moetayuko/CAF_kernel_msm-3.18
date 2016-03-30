@@ -760,8 +760,7 @@ static int totmaps_proc_show(struct seq_file *m, void *data)
 
 		if (vma->vm_mm && !is_vm_hugetlb_page(vma)) {
 			memset(&mss, 0, sizeof(mss));
-			walk_page_range(vma->vm_start, vma->vm_end,
-					&smaps_walk);
+			walk_page_vma(vma, &smaps_walk);
 			add_smaps_sum(&mss, mss_sum);
 		}
 	}
