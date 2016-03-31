@@ -7,13 +7,13 @@
  * Copyright 2014 Google Inc.
  */
 
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/dmi.h>
+#include <linux/mm.h>
 #include <asm/bios_ebda.h>
 #include <asm/e820.h>
 #include <linux/acpi.h>
-#include <linux/dmi.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/module.h>
 
 #include "memconsole.h"
 
