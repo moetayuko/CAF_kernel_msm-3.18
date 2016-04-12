@@ -40,48 +40,33 @@
 &soc {
 	i2c@78b7000 {
 		status = "ok";
-		focaltech@38 {
-			compatible = "focaltech,5x06";
-			reg = <0x38>;
+		goodix@5d {
+			compatible = "goodix,gt9xx";
+			reg = <0x5d>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <65 0x2>;
+			interrupts = <65 0x2008>;
+			reset-gpios = <&tlmm 64 0x00>;
+			interrupt-gpios = <&tlmm 65 0x2008>;
 			vdd-supply = <&pm8917_l10>;
-			vcc_i2c-supply = <&pm8917_l5>;
-			/* pins used by touchscreen */
-			pinctrl-names = "pmx_ts_active",
-						"pmx_ts_suspend",
-						"pmx_ts_release";
-			pinctrl-0 = <&ts_int_active &ts_reset_active>;
-			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
-			pinctrl-2 = <&ts_release>;
-			focaltech,name = "ft5436";
-			focaltech,family-id = <0x06>;
-			focaltech,reset-gpio = <&tlmm 64 0x0>;
-			focaltech,irq-gpio = <&tlmm 65 0x2008>;
-			focaltech,display-coords = <0 0 720 1280>;
-			focaltech,panel-coords = <0 0 720 1400>;
-			focaltech,button-map= <139 102 158>;
-			focaltech,no-force-update;
-			focaltech,i2c-pull-up;
-			focaltech,group-id = <1>;
-			focaltech,hard-reset-delay-ms = <20>;
-			focaltech,soft-reset-delay-ms = <200>;
-			focaltech,num-max-touches = <5>;
-			focaltech,fw-delay-aa-ms = <30>;
-			focaltech,fw-delay-55-ms = <30>;
-			focaltech,fw-upgrade-id1 = <0x79>;
-			focaltech,fw-upgrade-id2 = <0x08>;
-			focaltech,fw-delay-readid-ms = <10>;
-			focaltech,fw-delay-era-flsh-ms = <2000>;
-			focaltech,fw-auto-cal;
-			focaltech,ignore-id-check;
-			focaltech,resume-in-workqueue;
+			vcc-i2c-supply = <&pm8917_l5>;
+			goodix,button-map = <158 139 172>;
+			goodix,panel-coords = <0 0 1080 2098>;
+			goodix,display-coords = <0 0 1080 1920>;
+			goodix,product-id = "5668";
+			goodix,num_max_touches = <5>;
+			goodix,soft_rst_dly = <20>;
+			goodix,name = "GT5668";
+			goodix,fw_name = "gtp_fw.bin";
+			goodix,fw-vkey-support;
+			goodix,i2c-pull-up;
+			goodix,no-force-update;
+			goodix,enable-power-off;
 		};
 	};
 
 	gen-vkeys {
 		compatible = "qcom,gen-vkeys";
-		label = "ft5x06_ts";
+		label = "goodix_ts";
 		qcom,disp-maxx = <720>;
 		qcom,disp-maxy = <1280>;
 		qcom,panel-maxx = <720>;
