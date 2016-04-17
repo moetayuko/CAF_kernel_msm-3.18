@@ -73,8 +73,9 @@ module_param_named(prof_sel, prof_sel, int, 0444);
 MODULE_PARM_DESC(prof_sel, "profile selector. Valid range 0 - 2");
 
 static LIST_HEAD(intf_list);
-static LIST_HEAD(dev_list);
-static DEFINE_MUTEX(intf_mutex);
+
+LIST_HEAD(dev_list);
+DEFINE_MUTEX(intf_mutex);
 
 struct mlx5_device_context {
 	struct list_head	list;
@@ -891,6 +892,30 @@ void *mlx5_get_protocol_dev(struct mlx5_core_dev *mdev, int protocol)
 	return result;
 }
 EXPORT_SYMBOL(mlx5_get_protocol_dev);
+
+/* Must be called with intf_mutex held */
+void mlx5_add_dev_by_protocol(struct mlx5_core_dev *dev, int protocol)
+{
+	struct mlx5_interface *intf;
+
+	list_for_each_entry(intf, &intf_list, list)
+		if (intf->protocol == protocol) {
+			mlx5_add_device(intf, &dev->priv);
+			break;
+		}
+}
+
+/* Must be called with intf_mutex held */
+void mlx5_remove_dev_by_protocol(struct mlx5_core_dev *dev, int protocol)
+{
+	struct mlx5_interface *intf;
+
+	list_for_each_entry(intf, &intf_list, list)
+		if (intf->protocol == protocol) {
+			mlx5_remove_device(intf, &dev->priv);
+			break;
+		}
+}
 
 static int mlx5_pci_init(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 {
