@@ -19,9 +19,23 @@
 #include <linux/nodemask.h>
 #include <linux/of.h>
 #include <linux/sched.h>
+#include <linux/sched.h>
+#include <linux/sched_energy.h>
 
 #include <asm/cputype.h>
 #include <asm/topology.h>
+
+static DEFINE_PER_CPU(unsigned long, cpu_scale);
+
+unsigned long arm_arch_scale_cpu_capacity(struct sched_domain *sd, int cpu)
+{
+	return per_cpu(cpu_scale, cpu);
+}
+
+static void set_capacity_scale(unsigned int cpu, unsigned long capacity)
+{
+	per_cpu(cpu_scale, cpu) = capacity;
+}
 
 static int __init get_cpu_for_node(struct device_node *node)
 {
@@ -200,15 +214,95 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_CPU_FREQ
+/*
+ * Scheduler load-tracking scale-invariance
+ *
+ * Provides the scheduler with a scale-invariance correction factor that
+ * compensates for frequency scaling (arch_scale_freq_capacity()). The scaling
+ * factor is updated in smp.c
+ */
+unsigned long arm_arch_scale_freq_capacity(int cpu)
+{
+	unsigned long curr = atomic_long_read(&per_cpu(cpu_freq_capacity, cpu));
+
+	if (!curr)
+		return SCHED_CAPACITY_SCALE;
+
+	return curr;
+}
+#else /* CONFIG_CPU_FREQ */
+unsigned long arm_arch_scale_freq_capacity(int cpu)
+{
+	return SCHED_CAPACITY_SCALE;
+}
+#endif /* CONFIG_CPU_FREQ */
+
 /*
  * cpu topology table
  */
 struct cpu_topology cpu_topology[NR_CPUS];
 EXPORT_SYMBOL_GPL(cpu_topology);
 
+/* sd energy functions */
+static inline const struct sched_group_energy *cpu_cluster_energy(int cpu)
+{
+	struct sched_group_energy *sge = sge_array[cpu][SD_LEVEL1];
+
+	if (!sge) {
+		pr_warn("Invalid sched_group_energy for Cluster%d\n", cpu);
+		return NULL;
+	}
+
+	return sge;
+}
+
+static inline const struct sched_group_energy *cpu_core_energy(int cpu)
+{
+	struct sched_group_energy *sge = sge_array[cpu][SD_LEVEL0];
+
+	if (!sge) {
+		pr_warn("Invalid sched_group_energy for CPU%d\n", cpu);
+		return NULL;
+	}
+
+	return sge;
+}
+
 const struct cpumask *cpu_coregroup_mask(int cpu)
 {
 	return &cpu_topology[cpu].core_sibling;
+}
+
+static inline int cpu_corepower_flags(void)
+{
+	return SD_SHARE_PKG_RESOURCES  | SD_SHARE_POWERDOMAIN | \
+	       SD_SHARE_CAP_STATES;
+}
+
+static struct sched_domain_topology_level arm64_topology[] = {
+#ifdef CONFIG_SCHED_MC
+	{ cpu_coregroup_mask, cpu_corepower_flags, cpu_core_energy, SD_INIT_NAME(MC) },
+#endif
+	{ cpu_cpu_mask, 0, cpu_cluster_energy, SD_INIT_NAME(DIE) },
+	{ NULL, },
+};
+
+static void update_cpu_capacity(unsigned int cpu)
+{
+	unsigned long capacity;
+
+	if (!cpu_core_energy(cpu)) {
+		capacity = SCHED_CAPACITY_SCALE;
+	} else {
+		int max_cap_idx = cpu_core_energy(cpu)->nr_cap_states - 1;
+		capacity = cpu_core_energy(cpu)->cap_states[max_cap_idx].cap;
+	}
+
+	set_capacity_scale(cpu, capacity);
+
+	pr_info("CPU%d: update cpu_capacity %lu\n",
+		cpu, arch_scale_cpu_capacity(NULL, cpu));
 }
 
 static void update_siblings_masks(unsigned int cpuid)
@@ -269,6 +363,7 @@ void store_cpu_topology(unsigned int cpuid)
 
 topology_populated:
 	update_siblings_masks(cpuid);
+	update_cpu_capacity(cpuid);
 }
 
 static void __init reset_cpu_topology(void)
@@ -289,6 +384,14 @@ static void __init reset_cpu_topology(void)
 	}
 }
 
+static void __init reset_cpu_capacity(void)
+{
+	unsigned int cpu;
+
+	for_each_possible_cpu(cpu)
+		set_capacity_scale(cpu, SCHED_CAPACITY_SCALE);
+}
+
 void __init init_cpu_topology(void)
 {
 	reset_cpu_topology();
@@ -299,4 +402,10 @@ void __init init_cpu_topology(void)
 	 */
 	if (parse_dt_topology())
 		reset_cpu_topology();
+	else
+		set_sched_topology(arm64_topology);
+
+	reset_cpu_capacity();
+
+	init_sched_energy_costs();
 }
