@@ -1,0 +1,8 @@
+#
+# Freescale SOC drivers
+#
+
+source "drivers/soc/fsl/qe/Kconfig"
+
+config FSL_GUTS
+	bool
