@@ -33,6 +33,12 @@ config TYPEC_TCPCI
 	help
 	  Type-C Port Controller driver for TCPCI-compliant controller.
 
+config TYPEC_CROS_EC
+	tristate "Chrome EC Type-C Port Controller driver"
+	depends on MFD_CROS_EC
+	help
+	  Chrome EC Type-C Port Controller driver.
+
 endif
 
 endmenu
