@@ -17,6 +17,7 @@
 #define __LINUX_MFD_CROS_EC_PD_H
 
 #include <linux/mfd/cros_ec_commands.h>
+#include <linux/notifier.h>
 
 enum cros_ec_pd_device_type {
 	PD_DEVICE_TYPE_NONE = 0,
@@ -81,5 +82,9 @@ enum cros_ec_pd_find_update_firmware_result {
  * immediately after insertion) and fixes load issues on resume.
  */
 #define PD_UPDATE_CHECK_DELAY msecs_to_jiffies(2000)
+
+#ifdef CONFIG_ACPI
+extern struct blocking_notifier_head cros_ec_pd_notifier;
+#endif
 
 #endif /* __LINUX_MFD_CROS_EC_H */
