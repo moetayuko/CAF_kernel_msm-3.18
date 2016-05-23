@@ -911,8 +911,16 @@ static SIMPLE_DEV_PM_OPS(cros_ec_pd_pm,
 	cros_ec_pd_suspend, cros_ec_pd_resume);
 
 #ifdef CONFIG_ACPI
+
+struct blocking_notifier_head cros_ec_pd_notifier = BLOCKING_NOTIFIER_INIT(cros_ec_pd_notifier);
+EXPORT_SYMBOL(cros_ec_pd_notifier);
+
 static void acpi_cros_ec_pd_notify(struct acpi_device *acpi_device, u32 event)
 {
+	blocking_notifier_call_chain(&cros_ec_pd_notifier,
+				     EC_HOST_EVENT_MASK(EC_HOST_EVENT_PD_MCU),
+				     NULL);
+
 	cros_ec_pd_notify(&acpi_device->dev, event);
 }
 
@@ -958,6 +966,17 @@ static int _ec_pd_notify(struct notifier_block *nb,
 	drv_data = container_of(nb, struct cros_ec_pd_update_data, notifier);
 	dev = drv_data->dev;
 	ec = dev_get_drvdata(dev->parent);
+
+	/*
+	 * XXX
+	 * It might be better to get the event in the calling code and
+	 * pass it in <queued_during_suspend>, which is currently unused
+	 * (except for displaying its value in cros_usbpd-charger.c).
+	 * Currently the event is also retrieved from
+	 *	drivers/power/cros_usbpd-charger.c
+	 *	drivers/usb/typec/cros_tcpm.c
+	 *	drivers/extcon/extcon-cros_ec.c
+	 */
 
 	host_event = cros_ec_get_host_event(ec);
 	if (host_event & EC_HOST_EVENT_MASK(EC_HOST_EVENT_PD_MCU)) {
