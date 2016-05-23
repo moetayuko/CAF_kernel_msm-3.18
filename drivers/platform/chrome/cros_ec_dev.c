@@ -276,6 +276,10 @@ static const struct mfd_cell cros_usb_pd_charger_devs[] = {
 		.name = "cros-usb-pd-charger",
 		.id   = -1,
 	},
+	{
+		.name = "cros-ec-tcpc",
+		.id = -1,
+	}
 };
 
 static void cros_ec_usb_pd_charger_register(struct cros_ec_dev *ec)
