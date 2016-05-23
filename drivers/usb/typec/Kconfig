@@ -19,4 +19,11 @@ config TYPEC_WCOVE
 	  To compile this driver as module, choose M here: the module will be
 	  called typec_wcove
 
+config TYPEC_TCPM
+	tristate "USB Type-C Port Controller Manager"
+	select TYPEC
+	help
+	  The Type-C Port Controller Manager provides a USB PD and USB Type-C
+	  state machine for use with Type-C Port Controllers.
+
 endmenu
