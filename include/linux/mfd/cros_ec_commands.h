@@ -3801,6 +3801,30 @@ struct __ec_align4 ec_response_usb_pd_power_info {
 	uint32_t max_power;
 };
 
+#define EC_CMD_USB_PD_VBUS	0x105
+
+struct ec_params_usb_pd_vbus_control {
+	uint8_t port;
+	uint8_t control;
+	uint8_t charge;
+} __packed;
+
+#define EC_CMD_USB_PD_MUX	0x106
+
+struct ec_params_usb_pd_mux_control {
+	uint8_t port;
+	uint8_t mux;
+	uint8_t polarity;
+} __packed;
+
+#define EC_CMD_USB_PD_CURRENT_LIMIT	0x107
+
+struct ec_params_usb_pd_current_limit {
+	uint8_t port;
+	uint32_t current_limit;
+	uint32_t supply_voltage;
+} __packed;
+
 /* Write USB-PD device FW */
 #define EC_CMD_USB_PD_FW_UPDATE 0x0110
 
