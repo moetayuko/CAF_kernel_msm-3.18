@@ -5757,6 +5757,7 @@ static int btrfs_real_readdir(struct file *file, struct dir_context *ctx)
 	int name_len;
 	int is_curr = 0;	/* ctx->pos points to the current index? */
 	bool emitted;
+	bool put = false;
 
 	/* FIXME, use a real flag for deciding about the key type */
 	if (root->fs_info->tree_root == root)
@@ -5774,7 +5775,8 @@ static int btrfs_real_readdir(struct file *file, struct dir_context *ctx)
 	if (key_type == BTRFS_DIR_INDEX_KEY) {
 		INIT_LIST_HEAD(&ins_list);
 		INIT_LIST_HEAD(&del_list);
-		btrfs_get_delayed_items(inode, &ins_list, &del_list);
+		put = btrfs_readdir_get_delayed_items(inode, &ins_list,
+						      &del_list);
 	}
 
 	key.type = key_type;
@@ -5921,8 +5923,8 @@ next:
 nopos:
 	ret = 0;
 err:
-	if (key_type == BTRFS_DIR_INDEX_KEY)
-		btrfs_put_delayed_items(&ins_list, &del_list);
+	if (put)
+		btrfs_readdir_put_delayed_items(inode, &ins_list, &del_list);
 	btrfs_free_path(path);
 	return ret;
 }
@@ -8571,13 +8573,13 @@ out:
 	return retval;
 }
 
-static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
-			       loff_t offset)
+static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_dio_data dio_data = { 0 };
+	loff_t offset = iocb->ki_pos;
 	size_t count = 0;
 	int flags = 0;
 	bool wakeup = true;
@@ -8637,7 +8639,7 @@ static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 
 	ret = __blockdev_direct_IO(iocb, inode,
 				   BTRFS_I(inode)->root->fs_info->fs_devices->latest_bdev,
-				   iter, offset, btrfs_get_blocks_direct, NULL,
+				   iter, btrfs_get_blocks_direct, NULL,
 				   btrfs_submit_direct, flags);
 	if (iov_iter_rw(iter) == WRITE) {
 		current->journal_info = NULL;
@@ -10501,10 +10503,10 @@ static const struct inode_operations btrfs_dir_inode_operations = {
 	.symlink	= btrfs_symlink,
 	.setattr	= btrfs_setattr,
 	.mknod		= btrfs_mknod,
-	.setxattr	= btrfs_setxattr,
+	.setxattr	= generic_setxattr,
 	.getxattr	= generic_getxattr,
 	.listxattr	= btrfs_listxattr,
-	.removexattr	= btrfs_removexattr,
+	.removexattr	= generic_removexattr,
 	.permission	= btrfs_permission,
 	.get_acl	= btrfs_get_acl,
 	.set_acl	= btrfs_set_acl,
@@ -10578,10 +10580,10 @@ static const struct address_space_operations btrfs_symlink_aops = {
 static const struct inode_operations btrfs_file_inode_operations = {
 	.getattr	= btrfs_getattr,
 	.setattr	= btrfs_setattr,
-	.setxattr	= btrfs_setxattr,
+	.setxattr	= generic_setxattr,
 	.getxattr	= generic_getxattr,
 	.listxattr      = btrfs_listxattr,
-	.removexattr	= btrfs_removexattr,
+	.removexattr	= generic_removexattr,
 	.permission	= btrfs_permission,
 	.fiemap		= btrfs_fiemap,
 	.get_acl	= btrfs_get_acl,
@@ -10592,10 +10594,10 @@ static const struct inode_operations btrfs_special_inode_operations = {
 	.getattr	= btrfs_getattr,
 	.setattr	= btrfs_setattr,
 	.permission	= btrfs_permission,
-	.setxattr	= btrfs_setxattr,
+	.setxattr	= generic_setxattr,
 	.getxattr	= generic_getxattr,
 	.listxattr	= btrfs_listxattr,
-	.removexattr	= btrfs_removexattr,
+	.removexattr	= generic_removexattr,
 	.get_acl	= btrfs_get_acl,
 	.set_acl	= btrfs_set_acl,
 	.update_time	= btrfs_update_time,
@@ -10606,10 +10608,10 @@ static const struct inode_operations btrfs_symlink_inode_operations = {
 	.getattr	= btrfs_getattr,
 	.setattr	= btrfs_setattr,
 	.permission	= btrfs_permission,
-	.setxattr	= btrfs_setxattr,
+	.setxattr	= generic_setxattr,
 	.getxattr	= generic_getxattr,
 	.listxattr	= btrfs_listxattr,
-	.removexattr	= btrfs_removexattr,
+	.removexattr	= generic_removexattr,
 	.update_time	= btrfs_update_time,
 };
 
