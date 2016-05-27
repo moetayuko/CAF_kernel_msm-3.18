@@ -19,6 +19,7 @@
 #include <linux/pm_runtime.h>
 
 #include <drm/drmP.h>
+#include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
@@ -108,17 +109,11 @@ static void hdlcd_fb_output_poll_changed(struct drm_device *drm)
 		drm_fbdev_cma_hotplug_event(hdlcd->fbdev);
 }
 
-static int hdlcd_atomic_commit(struct drm_device *dev,
-			       struct drm_atomic_state *state, bool nonblock)
-{
-	return drm_atomic_helper_commit(dev, state, false);
-}
-
 static const struct drm_mode_config_funcs hdlcd_mode_config_funcs = {
 	.fb_create = drm_fb_cma_create,
 	.output_poll_changed = hdlcd_fb_output_poll_changed,
 	.atomic_check = drm_atomic_helper_check,
-	.atomic_commit = hdlcd_atomic_commit,
+	.atomic_commit = drm_atomic_helper_commit,
 };
 
 static void hdlcd_setup_mode_config(struct drm_device *drm)
@@ -160,23 +155,8 @@ static irqreturn_t hdlcd_irq(int irq, void *arg)
 		atomic_inc(&hdlcd->vsync_count);
 
 #endif
-	if (irq_status & HDLCD_INTERRUPT_VSYNC) {
-		bool events_sent = false;
-		unsigned long flags;
-		struct drm_pending_vblank_event	*e, *t;
-
+	if (irq_status & HDLCD_INTERRUPT_VSYNC)
 		drm_crtc_handle_vblank(&hdlcd->crtc);
-
-		spin_lock_irqsave(&drm->event_lock, flags);
-		list_for_each_entry_safe(e, t, &hdlcd->event_list, base.link) {
-			list_del(&e->base.link);
-			drm_crtc_send_vblank_event(&hdlcd->crtc, e);
-			events_sent = true;
-		}
-		if (events_sent)
-			drm_crtc_vblank_put(&hdlcd->crtc);
-		spin_unlock_irqrestore(&drm->event_lock, flags);
-	}
 
 	/* acknowledge interrupt(s) */
 	hdlcd_write(hdlcd, HDLCD_REG_INT_CLEAR, irq_status);
@@ -200,9 +180,13 @@ static int hdlcd_irq_postinstall(struct drm_device *drm)
 
 	/* enable debug interrupts */
 	irq_mask |= HDLCD_DEBUG_INT_MASK;
+#endif
+
+	/* enable vsync interrupts */
+	irq_mask |= HDLCD_INTERRUPT_VSYNC;
 
 	hdlcd_write(hdlcd, HDLCD_REG_INT_MASK, irq_mask);
-#endif
+
 	return 0;
 }
 
@@ -225,20 +209,11 @@ static void hdlcd_irq_uninstall(struct drm_device *drm)
 
 static int hdlcd_enable_vblank(struct drm_device *drm, unsigned int crtc)
 {
-	struct hdlcd_drm_private *hdlcd = drm->dev_private;
-	unsigned int mask = hdlcd_read(hdlcd, HDLCD_REG_INT_MASK);
-
-	hdlcd_write(hdlcd, HDLCD_REG_INT_MASK, mask | HDLCD_INTERRUPT_VSYNC);
-
 	return 0;
 }
 
 static void hdlcd_disable_vblank(struct drm_device *drm, unsigned int crtc)
 {
-	struct hdlcd_drm_private *hdlcd = drm->dev_private;
-	unsigned int mask = hdlcd_read(hdlcd, HDLCD_REG_INT_MASK);
-
-	hdlcd_write(hdlcd, HDLCD_REG_INT_MASK, mask & ~HDLCD_INTERRUPT_VSYNC);
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -271,6 +246,7 @@ static int hdlcd_show_pxlclock(struct seq_file *m, void *arg)
 static struct drm_info_list hdlcd_debugfs_list[] = {
 	{ "interrupt_count", hdlcd_show_underrun_count, 0 },
 	{ "clocks", hdlcd_show_pxlclock, 0 },
+	{ "fb", drm_fb_cma_debugfs_show, 0 },
 };
 
 static int hdlcd_debugfs_init(struct drm_minor *minor)
