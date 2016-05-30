@@ -209,7 +209,9 @@ trip_point_hyst_store(struct device *dev, struct device_attribute *attr,
 	 * here. The driver implementing 'set_trip_hyst' has to
 	 * take care of this.
 	 */
+	mutex_lock(&tz->lock);
 	ret = tz->ops->set_trip_hyst(tz, trip, temperature);
+	mutex_unlock(&tz->lock);
 
 	return ret ? ret : count;
 }
@@ -228,7 +230,9 @@ trip_point_hyst_show(struct device *dev, struct device_attribute *attr,
 	if (sscanf(attr->attr.name, "trip_point_%d_hyst", &trip) != 1)
 		return -EINVAL;
 
+	mutex_lock(&tz->lock);
 	ret = tz->ops->get_trip_hyst(tz, trip, &temperature);
+	mutex_unlock(&tz->lock);
 
 	return ret ? ret : sprintf(buf, "%d\n", temperature);
 }
