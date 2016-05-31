@@ -57,6 +57,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_CS42XX8_I2C if I2C
 	select SND_SOC_CS4349 if I2C
 	select SND_SOC_CS47L24 if MFD_CS47L24
+	select SND_SOC_CS53L30 if I2C
 	select SND_SOC_CX20442 if TTY
 	select SND_SOC_DA7210 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_DA7213 if I2C
@@ -84,6 +85,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX98925 if I2C
 	select SND_SOC_MAX98926 if I2C
 	select SND_SOC_MAX9850 if I2C
+	select SND_SOC_MAX9860 if I2C
 	select SND_SOC_MAX9768 if I2C
 	select SND_SOC_MAX9877 if I2C
 	select SND_SOC_MC13783 if MFD_MC13XXX
@@ -450,6 +452,11 @@ config SND_SOC_CS4349
 config SND_SOC_CS47L24
 	tristate
 
+# Cirrus Logic Quad-Channel ADC
+config SND_SOC_CS53L30
+	tristate "Cirrus Logic CS53L30 CODEC"
+	depends on I2C
+
 config SND_SOC_CX20442
 	tristate
 	depends on TTY
@@ -546,6 +553,11 @@ config SND_SOC_MAX98926
 
 config SND_SOC_MAX9850
 	tristate
+
+config SND_SOC_MAX9860
+	tristate "Maxim MAX9860 Mono Audio Voice Codec"
+	depends on I2C
+	select REGMAP_I2C
 
 config SND_SOC_PCM1681
 	tristate "Texas Instruments PCM1681 CODEC"
@@ -968,7 +980,7 @@ config SND_SOC_WM8983
 	tristate
 
 config SND_SOC_WM8985
-	tristate
+	tristate "Wolfson Microelectronics WM8985 and WM8758 codec driver"
 
 config SND_SOC_WM8988
 	tristate
