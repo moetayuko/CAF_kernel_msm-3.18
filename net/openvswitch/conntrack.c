@@ -367,6 +367,7 @@ static int handle_fragments(struct net *net, struct sw_flow_key *key,
 	} else if (key->eth.type == htons(ETH_P_IPV6)) {
 		enum ip6_defrag_users user = IP6_DEFRAG_CONNTRACK_IN + zone;
 
+		skb_orphan(skb);
 		memset(IP6CB(skb), 0, sizeof(struct inet6_skb_parm));
 		err = nf_ct_frag6_gather(net, skb, user);
 		if (err)
@@ -773,6 +774,19 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 		    (nf_ct_is_confirmed(ct) || info->commit) &&
 		    ovs_ct_nat(net, key, info, skb, ct, ctinfo) != NF_ACCEPT) {
 			return -EINVAL;
+		}
+
+		/* Userspace may decide to perform a ct lookup without a helper
+		 * specified followed by a (recirculate and) commit with one.
+		 * Therefore, for unconfirmed connections which we will commit,
+		 * we need to attach the helper here.
+		 */
+		if (!nf_ct_is_confirmed(ct) && info->commit &&
+		    info->helper && !nfct_help(ct)) {
+			int err = __nf_ct_try_assign_helper(ct, info->ct,
+							    GFP_ATOMIC);
+			if (err)
+				return err;
 		}
 
 		/* Call the helper only if:
