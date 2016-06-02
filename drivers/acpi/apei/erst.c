@@ -927,7 +927,8 @@ static int erst_open_pstore(struct pstore_info *psi);
 static int erst_close_pstore(struct pstore_info *psi);
 static ssize_t erst_reader(u64 *id, enum pstore_type_id *type, int *count,
 			   struct timespec *time, char **buf,
-			   bool *compressed, struct pstore_info *psi);
+			   bool *compressed, ssize_t *ecc_notice_size,
+			   struct pstore_info *psi);
 static int erst_writer(enum pstore_type_id type, enum kmsg_dump_reason reason,
 		       u64 *id, unsigned int part, int count, bool compressed,
 		       size_t size, struct pstore_info *psi);
@@ -987,7 +988,8 @@ static int erst_close_pstore(struct pstore_info *psi)
 
 static ssize_t erst_reader(u64 *id, enum pstore_type_id *type, int *count,
 			   struct timespec *time, char **buf,
-			   bool *compressed, struct pstore_info *psi)
+			   bool *compressed, ssize_t *ecc_notice_size,
+			   struct pstore_info *psi)
 {
 	int rc;
 	ssize_t len = 0;
