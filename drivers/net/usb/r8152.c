@@ -4360,6 +4360,7 @@ static u8 rtl_get_version(struct usb_interface *intf)
 		version = RTL_VER_05;
 		break;
 	case 0x5c30:
+	case 0x6010:
 		version = RTL_VER_06;
 		break;
 	default:
