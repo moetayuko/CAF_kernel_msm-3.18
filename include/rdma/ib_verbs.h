@@ -261,6 +261,38 @@ struct ib_odp_caps {
 	} per_transport_caps;
 };
 
+enum ibv_xrq_cap_flags {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IBV_NO_TAG	     = 1 << 0,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IBV_EAGER_EXPECTED   = 1 << 1,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_EAGER_UNEXPECTED = 1 << 2,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives after the corresponding receive (for RC QPs)
+	 */
+	IBV_RNDV_EXPECTED_RC = 1 << 3,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_RNDV_UNEXPECTED  = 1 << 5,
+};
+
+struct ib_xrq_caps {
+	uint32_t max_unexpected_tags;
+	uint32_t tag_mask_length;
+	uint32_t header_size;
+	uint32_t app_context_size;
+	uint32_t max_match_list;
+	uint32_t capability_flags;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -318,6 +350,7 @@ struct ib_device_attr {
 	struct ib_odp_caps	odp_caps;
 	uint64_t		timestamp_mask;
 	uint64_t		hca_core_clock; /* in KHZ */
+	struct ib_xrq_caps	xrq_caps;
 };
 
 enum ib_mtu {
