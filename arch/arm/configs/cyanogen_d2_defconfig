@@ -3140,7 +3140,10 @@ CONFIG_RTC_DRV_PM8XXX=y
 # CONFIG_ESOC is not set
 # CONFIG_DMADEVICES is not set
 # CONFIG_AUXDISPLAY is not set
-# CONFIG_UIO is not set
+CONFIG_UIO=y
+# CONFIG_UIO_PDRV is not set
+# CONFIG_UIO_PDRV_GENIRQ is not set
+CONFIG_UIO_MSM_SHAREDMEM=y
 
 #
 # Virtio drivers
