@@ -173,6 +173,7 @@ struct tegra_sor {
 	struct clk *clk_parent;
 	struct clk *clk_brick;
 	struct clk *clk_safe;
+	struct clk *clk_src;
 	struct clk *clk_dp;
 	struct clk *clk;
 
@@ -2129,7 +2130,11 @@ static void tegra_sor_hdmi_enable(struct drm_encoder *encoder)
 	tegra_sor_writel(sor, 0x00000000, SOR_XBAR_POL);
 
 	/* switch to parent clock */
-	err = tegra_sor_set_parent_clock(sor, sor->clk_parent);
+	err = clk_set_parent(sor->clk_src, sor->clk_parent);
+	if (err < 0)
+		dev_err(sor->dev, "failed to set source clock: %d\n", err);
+
+	err = tegra_sor_set_parent_clock(sor, sor->clk_src);
 	if (err < 0)
 		dev_err(sor->dev, "failed to set parent clock: %d\n", err);
 
@@ -2631,6 +2636,13 @@ static int tegra_sor_probe(struct platform_device *pdev)
 	if (IS_ERR(sor->clk)) {
 		err = PTR_ERR(sor->clk);
 		dev_err(&pdev->dev, "failed to get module clock: %d\n", err);
+		goto remove;
+	}
+
+	sor->clk_src = devm_clk_get(&pdev->dev, "source");
+	if (IS_ERR(sor->clk_src)) {
+		err = PTR_ERR(sor->clk_src);
+		dev_err(&pdev->dev, "failed to get source clock: %d\n", err);
 		goto remove;
 	}
 
