@@ -450,14 +450,14 @@ static int run_test(test_func_t test_func, int bitmaps,
 	struct btrfs_path *path = NULL;
 	int ret;
 
-	fs_info = btrfs_alloc_dummy_fs_info();
+	fs_info = btrfs_alloc_dummy_fs_info(nodesize, sectorsize);
 	if (!fs_info) {
 		test_msg("Couldn't allocate dummy fs info\n");
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	root = btrfs_alloc_dummy_root(fs_info, sectorsize, nodesize);
+	root = btrfs_alloc_dummy_root(fs_info);
 	if (IS_ERR(root)) {
 		test_msg("Couldn't allocate dummy root\n");
 		ret = PTR_ERR(root);

@@ -1022,7 +1022,8 @@ static int iterate_dir_item(struct btrfs_root *root, struct btrfs_path *path,
 				ret = -ENAMETOOLONG;
 				goto out;
 			}
-			if (name_len + data_len > BTRFS_MAX_XATTR_SIZE(root)) {
+			if (name_len + data_len >
+					BTRFS_MAX_XATTR_SIZE(root->fs_info)) {
 				ret = -E2BIG;
 				goto out;
 			}
@@ -5117,7 +5118,7 @@ static int get_last_extent(struct send_ctx *sctx, u64 offset)
 		u64 size = btrfs_file_extent_inline_len(path->nodes[0],
 							path->slots[0], fi);
 		extent_end = ALIGN(key.offset + size,
-				   sctx->send_root->sectorsize);
+				   sctx->send_root->fs_info->sectorsize);
 	} else {
 		extent_end = key.offset +
 			btrfs_file_extent_num_bytes(path->nodes[0], fi);
@@ -5152,7 +5153,7 @@ static int maybe_send_hole(struct send_ctx *sctx, struct btrfs_path *path,
 		u64 size = btrfs_file_extent_inline_len(path->nodes[0],
 							path->slots[0], fi);
 		extent_end = ALIGN(key->offset + size,
-				   sctx->send_root->sectorsize);
+				   sctx->send_root->fs_info->sectorsize);
 	} else {
 		extent_end = key->offset +
 			btrfs_file_extent_num_bytes(path->nodes[0], fi);

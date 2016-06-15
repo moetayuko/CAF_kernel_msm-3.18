@@ -79,7 +79,7 @@ static void btrfs_destroy_test_fs(void)
 	unregister_filesystem(&test_type);
 }
 
-struct btrfs_fs_info *btrfs_alloc_dummy_fs_info(void)
+struct btrfs_fs_info *btrfs_alloc_dummy_fs_info(u32 nodesize, u32 sectorsize)
 {
 	struct btrfs_fs_info *fs_info = kzalloc(sizeof(struct btrfs_fs_info),
 						GFP_KERNEL);
@@ -99,6 +99,9 @@ struct btrfs_fs_info *btrfs_alloc_dummy_fs_info(void)
 		kfree(fs_info);
 		return NULL;
 	}
+
+	fs_info->super_copy->nodesize = nodesize;
+	fs_info->super_copy->nodesize = sectorsize;
 
 	if (init_srcu_struct(&fs_info->subvol_srcu)) {
 		kfree(fs_info->fs_devices);

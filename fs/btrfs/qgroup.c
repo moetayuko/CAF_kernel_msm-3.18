@@ -1919,7 +1919,7 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 		}
 
 		rcu_read_lock();
-		level_size = srcroot->nodesize;
+		level_size = srcroot->fs_info->nodesize;
 		rcu_read_unlock();
 	}
 
@@ -2270,7 +2270,7 @@ qgroup_rescan_leaf(struct btrfs_fs_info *fs_info, struct btrfs_path *path,
 		    found.type != BTRFS_METADATA_ITEM_KEY)
 			continue;
 		if (found.type == BTRFS_METADATA_ITEM_KEY)
-			num_bytes = fs_info->extent_root->nodesize;
+			num_bytes = fs_info->nodesize;
 		else
 			num_bytes = found.offset;
 
@@ -2638,7 +2638,7 @@ int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes)
 	    num_bytes == 0)
 		return 0;
 
-	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
+	BUG_ON(num_bytes != round_down(num_bytes, root->fs_info->nodesize));
 	ret = qgroup_reserve(root, num_bytes);
 	if (ret < 0)
 		return ret;
@@ -2664,7 +2664,7 @@ void btrfs_qgroup_free_meta(struct btrfs_root *root, int num_bytes)
 	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid))
 		return;
 
-	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
+	BUG_ON(num_bytes != round_down(num_bytes, root->fs_info->nodesize));
 	WARN_ON(atomic_read(&root->qgroup_meta_rsv) < num_bytes);
 	atomic_sub(num_bytes, &root->qgroup_meta_rsv);
 	qgroup_free(root, num_bytes);

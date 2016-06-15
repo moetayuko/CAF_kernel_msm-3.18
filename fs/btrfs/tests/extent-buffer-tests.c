@@ -41,13 +41,13 @@ static int test_btrfs_split_item(u32 sectorsize, u32 nodesize)
 
 	test_msg("Running btrfs_split_item tests\n");
 
-	fs_info = btrfs_alloc_dummy_fs_info();
+	fs_info = btrfs_alloc_dummy_fs_info(nodesize, sectorsize);
 	if (!fs_info) {
 		test_msg("Could not allocate fs_info\n");
 		return -ENOMEM;
 	}
 
-	root = btrfs_alloc_dummy_root(fs_info, sectorsize, nodesize);
+	root = btrfs_alloc_dummy_root(fs_info);
 	if (IS_ERR(root)) {
 		test_msg("Could not allocate root\n");
 		ret = PTR_ERR(root);

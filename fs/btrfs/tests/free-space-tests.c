@@ -856,13 +856,13 @@ int btrfs_test_free_space_cache(u32 sectorsize, u32 nodesize)
 		return 0;
 	}
 
-	fs_info = btrfs_alloc_dummy_fs_info();
+	fs_info = btrfs_alloc_dummy_fs_info(nodesize, sectorsize);
 	if (!fs_info) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	root = btrfs_alloc_dummy_root(fs_info, sectorsize, nodesize);
+	root = btrfs_alloc_dummy_root(fs_info);
 	if (IS_ERR(root)) {
 		ret = PTR_ERR(root);
 		goto out;

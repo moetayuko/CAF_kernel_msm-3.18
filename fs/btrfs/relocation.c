@@ -1685,8 +1685,8 @@ int replace_file_extents(struct btrfs_trans_handle *trans,
 				end = key.offset +
 				      btrfs_file_extent_num_bytes(leaf, fi);
 				WARN_ON(!IS_ALIGNED(key.offset,
-						    root->sectorsize));
-				WARN_ON(!IS_ALIGNED(end, root->sectorsize));
+						    root->fs_info->sectorsize));
+				WARN_ON(!IS_ALIGNED(end, root->fs_info->sectorsize));
 				end--;
 				ret = try_lock_extent(&BTRFS_I(inode)->io_tree,
 						      key.offset, end);
@@ -1821,7 +1821,7 @@ again:
 			btrfs_node_key_to_cpu(parent, next_key, slot + 1);
 
 		old_bytenr = btrfs_node_blockptr(parent, slot);
-		blocksize = dest->nodesize;
+		blocksize = dest->fs_info->nodesize;
 		old_ptr_gen = btrfs_node_ptr_generation(parent, slot);
 
 		if (level <= max_level) {
@@ -2059,7 +2059,7 @@ static int invalidate_extent_cache(struct btrfs_root *root,
 				start = 0;
 			else {
 				start = min_key->offset;
-				WARN_ON(!IS_ALIGNED(start, root->sectorsize));
+				WARN_ON(!IS_ALIGNED(start, root->fs_info->sectorsize));
 			}
 		} else {
 			start = 0;
@@ -2074,7 +2074,7 @@ static int invalidate_extent_cache(struct btrfs_root *root,
 				if (max_key->offset == 0)
 					continue;
 				end = max_key->offset;
-				WARN_ON(!IS_ALIGNED(end, root->sectorsize));
+				WARN_ON(!IS_ALIGNED(end, root->fs_info->sectorsize));
 				end--;
 			}
 		} else {
@@ -2162,7 +2162,7 @@ static noinline_for_stack int merge_reloc_root(struct reloc_control *rc,
 		btrfs_unlock_up_safe(path, 0);
 	}
 
-	min_reserved = root->nodesize * (BTRFS_MAX_LEVEL - 1) * 2;
+	min_reserved = root->fs_info->nodesize * (BTRFS_MAX_LEVEL - 1) * 2;
 	memset(&next_key, 0, sizeof(next_key));
 
 	while (1) {
@@ -2275,7 +2275,7 @@ int prepare_to_merge(struct reloc_control *rc, int err)
 	int ret;
 
 	mutex_lock(&root->fs_info->reloc_mutex);
-	rc->merging_rsv_size += root->nodesize * (BTRFS_MAX_LEVEL - 1) * 2;
+	rc->merging_rsv_size += root->fs_info->nodesize * (BTRFS_MAX_LEVEL - 1) * 2;
 	rc->merging_rsv_size += rc->nodes_relocated * 2;
 	mutex_unlock(&root->fs_info->reloc_mutex);
 
@@ -2576,7 +2576,7 @@ u64 calcu_metadata_size(struct reloc_control *rc,
 			if (next->processed && (reserve || next != node))
 				break;
 
-			num_bytes += rc->extent_root->nodesize;
+			num_bytes += rc->extent_root->fs_info->nodesize;
 
 			if (list_empty(&next->upper))
 				break;
@@ -2613,7 +2613,8 @@ static int reserve_metadata_space(struct btrfs_trans_handle *trans,
 	ret = btrfs_block_rsv_refill(root, rc->block_rsv, num_bytes,
 				BTRFS_RESERVE_FLUSH_LIMIT);
 	if (ret) {
-		tmp = rc->extent_root->nodesize * RELOCATION_RESERVED_NODES;
+		tmp = rc->extent_root->fs_info->nodesize *
+			RELOCATION_RESERVED_NODES;
 		while (tmp <= rc->reserved_bytes)
 			tmp <<= 1;
 		/*
@@ -2623,7 +2624,7 @@ static int reserve_metadata_space(struct btrfs_trans_handle *trans,
 		 * space for relocation and we will return eailer in
 		 * enospc case.
 		 */
-		rc->block_rsv->size = tmp + rc->extent_root->nodesize *
+		rc->block_rsv->size = tmp + rc->extent_root->fs_info->nodesize *
 			RELOCATION_RESERVED_NODES;
 		return -EAGAIN;
 	}
@@ -2713,7 +2714,7 @@ static int do_relocation(struct btrfs_trans_handle *trans,
 				goto next;
 		}
 
-		blocksize = root->nodesize;
+		blocksize = root->fs_info->nodesize;
 		generation = btrfs_node_ptr_generation(upper->eb, slot);
 		eb = read_tree_block(root, bytenr, generation);
 		if (IS_ERR(eb)) {
@@ -2826,7 +2827,7 @@ static void __mark_block_processed(struct reloc_control *rc,
 	u32 blocksize;
 	if (node->level == 0 ||
 	    in_block_group(node->bytenr, rc->block_group)) {
-		blocksize = rc->extent_root->nodesize;
+		blocksize = rc->extent_root->fs_info->nodesize;
 		mark_block_processed(rc, node->bytenr, blocksize);
 	}
 	node->processed = 1;
@@ -2866,7 +2867,7 @@ static void update_processed_blocks(struct reloc_control *rc,
 
 static int tree_block_processed(u64 bytenr, struct reloc_control *rc)
 {
-	u32 blocksize = rc->extent_root->nodesize;
+	u32 blocksize = rc->extent_root->fs_info->nodesize;
 
 	if (test_range_bit(&rc->processed_blocks, bytenr,
 			   bytenr + blocksize - 1, EXTENT_DIRTY, 1, NULL))
@@ -3339,7 +3340,7 @@ static int add_tree_block(struct reloc_control *rc,
 		return -ENOMEM;
 
 	block->bytenr = extent_key->objectid;
-	block->key.objectid = rc->extent_root->nodesize;
+	block->key.objectid = rc->extent_root->fs_info->nodesize;
 	block->key.offset = generation;
 	block->level = level;
 	block->key_ready = 0;
@@ -3669,7 +3670,7 @@ int add_data_references(struct reloc_control *rc,
 	struct btrfs_extent_inline_ref *iref;
 	unsigned long ptr;
 	unsigned long end;
-	u32 blocksize = rc->extent_root->nodesize;
+	u32 blocksize = rc->extent_root->fs_info->nodesize;
 	int ret = 0;
 	int err = 0;
 
@@ -3811,7 +3812,7 @@ next:
 		}
 
 		if (key.type == BTRFS_METADATA_ITEM_KEY &&
-		    key.objectid + rc->extent_root->nodesize <=
+		    key.objectid + rc->extent_root->fs_info->nodesize <=
 		    rc->search_start) {
 			path->slots[0]++;
 			goto next;
@@ -3829,7 +3830,7 @@ next:
 				rc->search_start = key.objectid + key.offset;
 			else
 				rc->search_start = key.objectid +
-					rc->extent_root->nodesize;
+					rc->extent_root->fs_info->nodesize;
 			memcpy(extent_key, &key, sizeof(key));
 			return 0;
 		}
@@ -3887,7 +3888,7 @@ int prepare_to_relocate(struct reloc_control *rc)
 	rc->nodes_relocated = 0;
 	rc->merging_rsv_size = 0;
 	rc->reserved_bytes = 0;
-	rc->block_rsv->size = rc->extent_root->nodesize *
+	rc->block_rsv->size = rc->extent_root->fs_info->nodesize *
 			      RELOCATION_RESERVED_NODES;
 	ret = btrfs_block_rsv_refill(rc->extent_root,
 				     rc->block_rsv, rc->block_rsv->size,
