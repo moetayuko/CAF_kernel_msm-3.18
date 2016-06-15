@@ -67,6 +67,11 @@ static const struct mfd_cell ec_tp_cell = {
 	.pdata_size = sizeof(ec_tp_p),
 };
 
+static const struct mfd_cell ec_extcon_cell = {
+	.name = "extcon-usbc-cros-ec",
+	.id = 1,
+};
+
 static const struct mfd_cell ec_pd_cell = {
 	.name = "cros-ec-ctl",
 	.platform_data = &pd_p,
@@ -456,6 +461,9 @@ int cros_ec_register(struct cros_ec_device *ec_dev)
 			dev_err(dev, "Failed to register sub-devices\n");
 			goto fail_mfd;
 		}
+	} else if (cros_ec_check_features(ec_dev, EC_FEATURE_USB_PD)) {
+		err = mfd_add_devices(ec_dev->dev, 0,
+				      &ec_extcon_cell, 1, NULL, 0, NULL);
 	}
 
 	/*
