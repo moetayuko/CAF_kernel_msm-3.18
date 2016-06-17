@@ -209,8 +209,6 @@ static int msm_drm_uninit(struct device *dev)
 
 	drm_kms_helper_poll_fini(ddev);
 
-	drm_connector_unregister_all(ddev);
-
 	drm_dev_unregister(ddev);
 
 #ifdef CONFIG_DRM_FBDEV_EMULATION
@@ -453,12 +451,6 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 	ret = drm_dev_register(ddev, 0);
 	if (ret)
 		goto fail;
-
-	ret = drm_connector_register_all(ddev);
-	if (ret) {
-		dev_err(dev, "failed to register connectors\n");
-		goto fail;
-	}
 
 	drm_mode_config_reset(ddev);
 
