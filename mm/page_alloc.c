@@ -1243,7 +1243,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 }
 
 #ifdef CONFIG_GCC_PLUGIN_LATENT_ENTROPY
-volatile u64 latent_entropy;
+volatile u64 latent_entropy __latent_entropy;
 EXPORT_SYMBOL(latent_entropy);
 #endif
 
