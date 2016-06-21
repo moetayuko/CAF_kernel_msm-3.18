@@ -1400,33 +1400,37 @@ static int dw_mci_switch_voltage(struct mmc_host *mmc, struct mmc_ios *ios)
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
 	const struct dw_mci_drv_data *drv_data = host->drv_data;
-	u32 uhs;
+	u32 uhs = 0;
 	u32 v18 = SDMMC_UHS_18V << slot->id;
 	int ret;
 
 	if (drv_data && drv_data->switch_voltage)
 		return drv_data->switch_voltage(mmc, ios);
 
-	/*
-	 * Program the voltage.  Note that some instances of dw_mmc may use
-	 * the UHS_REG for this.  For other instances (like exynos) the UHS_REG
-	 * does no harm but you need to set the regulator directly.  Try both.
-	 */
+	if (IS_ERR(mmc->supply.vqmmc)) {
+		dev_dbg(&mmc->class_dev,
+			"vqmmc not available.(Skip the switching voltage)\n");
+		return -EINVAL;
+	}
+
+	ret = mmc_regulator_set_vqmmc(mmc, ios);
+	if (ret) {
+		dev_err(&mmc->class_dev,
+				 "Regulator set error %d - %s V\n",
+				 ret, uhs & v18 ? "1.8" : "3.3");
+		return ret;
+	}
+
 	uhs = mci_readl(host, UHS_REG);
-	if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330)
+	switch (ios->signal_voltage) {
+	case MMC_SIGNAL_VOLTAGE_330:
 		uhs &= ~v18;
-	else
+		break;
+	case MMC_SIGNAL_VOLTAGE_180:
 		uhs |= v18;
-
-	if (!IS_ERR(mmc->supply.vqmmc)) {
-		ret = mmc_regulator_set_vqmmc(mmc, ios);
-
-		if (ret) {
-			dev_dbg(&mmc->class_dev,
-					 "Regulator set error %d - %s V\n",
-					 ret, uhs & v18 ? "1.8" : "3.3");
-			return ret;
-		}
+		break;
+	default:
+		uhs &= ~v18;
 	}
 	mci_writel(host, UHS_REG, uhs);
 
