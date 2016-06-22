@@ -623,9 +623,9 @@ fail:
 		*async_transid = trans->transid;
 		err = btrfs_commit_transaction_async(trans, root, 1);
 		if (err)
-			err = btrfs_commit_transaction(trans, root);
+			err = btrfs_commit_transaction(trans);
 	} else {
-		err = btrfs_commit_transaction(trans, root);
+		err = btrfs_commit_transaction(trans);
 	}
 	if (err && !ret)
 		ret = err;
@@ -732,12 +732,11 @@ static int create_snapshot(struct btrfs_root *root, struct inode *dir,
 	if (async_transid) {
 		*async_transid = trans->transid;
 		ret = btrfs_commit_transaction_async(trans,
-				     fs_info->extent_root, 1);
+						     fs_info->extent_root, 1);
 		if (ret)
-			ret = btrfs_commit_transaction(trans, root);
+			ret = btrfs_commit_transaction(trans);
 	} else {
-		ret = btrfs_commit_transaction(trans,
-					       fs_info->extent_root);
+		ret = btrfs_commit_transaction(trans);
 	}
 	if (ret)
 		goto fail;
@@ -1619,7 +1618,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 			goto out_free;
 		}
 		ret = btrfs_grow_device(trans, device, new_size);
-		btrfs_commit_transaction(trans, root);
+		btrfs_commit_transaction(trans);
 	} else if (new_size < old_size) {
 		ret = btrfs_shrink_device(device, new_size);
 	} /* equal, nothing need to do */
@@ -1868,7 +1867,7 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 	ret = btrfs_update_root(trans, fs_info->tree_root,
 				&root->root_key, &root->root_item);
 
-	btrfs_commit_transaction(trans, root);
+	btrfs_commit_transaction(trans);
 out_reset:
 	if (ret)
 		btrfs_set_root_flags(&root->root_item, root_flags);
@@ -4875,7 +4874,7 @@ static long btrfs_ioctl_quota_ctl(struct file *file, void __user *arg)
 		break;
 	}
 
-	err = btrfs_commit_transaction(trans, fs_info->tree_root);
+	err = btrfs_commit_transaction(trans);
 	if (err && !ret)
 		ret = err;
 out:
@@ -5189,7 +5188,7 @@ static long _btrfs_ioctl_set_received_subvol(struct file *file,
 			goto out;
 		}
 	}
-	ret = btrfs_commit_transaction(trans, root);
+	ret = btrfs_commit_transaction(trans);
 	if (ret < 0) {
 		btrfs_abort_transaction(trans, ret);
 		goto out;
@@ -5343,7 +5342,7 @@ static int btrfs_ioctl_set_fslabel(struct file *file, void __user *arg)
 	spin_lock(&fs_info->super_lock);
 	strcpy(super_block->label, label);
 	spin_unlock(&fs_info->super_lock);
-	ret = btrfs_commit_transaction(trans, root);
+	ret = btrfs_commit_transaction(trans);
 
 out_unlock:
 	mnt_drop_write_file(file);
@@ -5515,7 +5514,7 @@ static int btrfs_ioctl_set_features(struct file *file, void __user *arg)
 	btrfs_set_super_incompat_flags(super_block, newflags);
 	spin_unlock(&fs_info->super_lock);
 
-	ret = btrfs_commit_transaction(trans, root);
+	ret = btrfs_commit_transaction(trans);
 out_drop_write:
 	mnt_drop_write_file(file);
 

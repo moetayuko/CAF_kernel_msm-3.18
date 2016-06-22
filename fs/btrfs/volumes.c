@@ -1717,7 +1717,7 @@ static int btrfs_rm_dev_item(struct btrfs_fs_info *fs_info,
 		goto out;
 out:
 	btrfs_free_path(path);
-	btrfs_commit_transaction(trans, root);
+	btrfs_commit_transaction(trans);
 	return ret;
 }
 
@@ -2428,7 +2428,7 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, char *device_path)
 
 	fs_info->num_tolerated_disk_barrier_failures =
 		btrfs_calc_num_tolerated_disk_barrier_failures(fs_info);
-	ret = btrfs_commit_transaction(trans, root);
+	ret = btrfs_commit_transaction(trans);
 
 	if (seeding_dev) {
 		mutex_unlock(&uuid_mutex);
@@ -2449,7 +2449,7 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, char *device_path)
 				return 0;
 			return PTR_ERR(trans);
 		}
-		ret = btrfs_commit_transaction(trans, root);
+		ret = btrfs_commit_transaction(trans);
 	}
 
 	/* Update ctime/mtime for libblkid */
@@ -3020,7 +3020,7 @@ static int insert_balance_item(struct btrfs_fs_info *fs_info,
 	btrfs_mark_buffer_dirty(leaf);
 out:
 	btrfs_free_path(path);
-	err = btrfs_commit_transaction(trans, root);
+	err = btrfs_commit_transaction(trans);
 	if (err && !ret)
 		ret = err;
 	return ret;
@@ -3059,7 +3059,7 @@ static int del_balance_item(struct btrfs_fs_info *fs_info)
 	ret = btrfs_del_item(trans, root, path);
 out:
 	btrfs_free_path(path);
-	err = btrfs_commit_transaction(trans, root);
+	err = btrfs_commit_transaction(trans);
 	if (err && !ret)
 		ret = err;
 	return ret;
@@ -4239,7 +4239,7 @@ int btrfs_create_uuid_tree(struct btrfs_fs_info *fs_info)
 
 	fs_info->uuid_root = uuid_root;
 
-	ret = btrfs_commit_transaction(trans, tree_root);
+	ret = btrfs_commit_transaction(trans);
 	if (ret)
 		return ret;
 
@@ -4411,7 +4411,7 @@ again:
 			checked_pending_chunks = true;
 			failed = 0;
 			retried = false;
-			ret = btrfs_commit_transaction(trans, root);
+			ret = btrfs_commit_transaction(trans);
 			if (ret)
 				goto done;
 			goto again;

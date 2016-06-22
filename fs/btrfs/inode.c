@@ -5306,7 +5306,7 @@ void btrfs_evict_inode(struct inode *inode)
 		 * again.
 		 */
 		if (ret) {
-			ret = btrfs_commit_transaction(trans, root);
+			ret = btrfs_commit_transaction(trans);
 			if (ret) {
 				btrfs_orphan_del(NULL, inode);
 				btrfs_free_block_rsv(fs_info, rsv);
@@ -5984,7 +5984,7 @@ int btrfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 			trans = btrfs_join_transaction(root);
 		if (IS_ERR(trans))
 			return PTR_ERR(trans);
-		ret = btrfs_commit_transaction(trans, root);
+		ret = btrfs_commit_transaction(trans);
 	}
 	return ret;
 }

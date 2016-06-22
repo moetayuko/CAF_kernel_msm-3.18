@@ -3612,8 +3612,7 @@ int scrub_enumerate_chunks(struct scrub_ctx *sctx,
 				if (IS_ERR(trans))
 					ret = PTR_ERR(trans);
 				else
-					ret = btrfs_commit_transaction(trans,
-								       root);
+					ret = btrfs_commit_transaction(trans);
 				if (ret) {
 					scrub_pause_off(fs_info);
 					btrfs_put_block_group(cache);

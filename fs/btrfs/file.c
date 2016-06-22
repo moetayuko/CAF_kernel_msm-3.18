@@ -2129,7 +2129,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 				goto out;
 			}
 		}
-		ret = btrfs_commit_transaction(trans, root);
+		ret = btrfs_commit_transaction(trans);
 	} else {
 		ret = btrfs_end_transaction(trans, root);
 	}

@@ -1188,7 +1188,7 @@ int btrfs_sync_fs(struct super_block *sb, int wait)
 		if (IS_ERR(trans))
 			return PTR_ERR(trans);
 	}
-	return btrfs_commit_transaction(trans, root);
+	return btrfs_commit_transaction(trans);
 }
 
 static int btrfs_show_options(struct seq_file *seq, struct dentry *dentry)
@@ -2228,7 +2228,7 @@ static int btrfs_freeze(struct super_block *sb)
 			return 0;
 		return PTR_ERR(trans);
 	}
-	return btrfs_commit_transaction(trans, root);
+	return btrfs_commit_transaction(trans);
 }
 
 static int btrfs_show_devname(struct seq_file *m, struct dentry *root)

@@ -580,7 +580,7 @@ again:
 	if (cur_trans->state >= TRANS_STATE_BLOCKED &&
 	    may_wait_transaction(fs_info, type)) {
 		current->journal_info = h;
-		btrfs_commit_transaction(h, root);
+		btrfs_commit_transaction(h);
 		goto again;
 	}
 
@@ -878,7 +878,7 @@ static int __btrfs_end_transaction(struct btrfs_trans_handle *trans,
 
 	if (lock && ACCESS_ONCE(cur_trans->state) == TRANS_STATE_BLOCKED) {
 		if (throttle)
-			return btrfs_commit_transaction(trans, root);
+			return btrfs_commit_transaction(trans);
 		else
 			wake_up_process(info->transaction_kthread);
 	}
@@ -1799,7 +1799,7 @@ static void do_async_commit(struct work_struct *work)
 
 	current->journal_info = ac->newtrans;
 
-	btrfs_commit_transaction(ac->newtrans, ac->root);
+	btrfs_commit_transaction(ac->newtrans);
 	kfree(ac);
 }
 
@@ -1925,9 +1925,9 @@ btrfs_wait_pending_ordered(struct btrfs_transaction *cur_trans)
 		   atomic_read(&cur_trans->pending_ordered) == 0);
 }
 
-int btrfs_commit_transaction(struct btrfs_trans_handle *trans,
-			     struct btrfs_root *root)
+int btrfs_commit_transaction(struct btrfs_trans_handle *trans)
 {
+	struct btrfs_root *root = trans->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_transaction *cur_trans = trans->transaction;
 	struct btrfs_transaction *prev_trans = NULL;
