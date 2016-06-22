@@ -353,7 +353,7 @@ static int btrfs_ioctl_setflags(struct file *file, void __user *arg)
 	inode->i_ctime = current_fs_time(inode->i_sb);
 	ret = btrfs_update_inode(trans, root, inode);
 
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
  out_drop:
 	if (ret) {
 		ip->flags = ip_oldflags;
@@ -2542,7 +2542,7 @@ static noinline int btrfs_ioctl_snap_destroy(struct file *file,
 out_end_trans:
 	trans->block_rsv = NULL;
 	trans->bytes_reserved = 0;
-	ret = btrfs_end_transaction(trans, root);
+	ret = btrfs_end_transaction(trans);
 	if (ret && !err)
 		err = ret;
 	inode->i_flags |= S_DEAD;
@@ -3302,10 +3302,10 @@ static int clone_finish_inode_update(struct btrfs_trans_handle *trans,
 	ret = btrfs_update_inode(trans, root, inode);
 	if (ret) {
 		btrfs_abort_transaction(trans, ret);
-		btrfs_end_transaction(trans, root);
+		btrfs_end_transaction(trans);
 		goto out;
 	}
-	ret = btrfs_end_transaction(trans, root);
+	ret = btrfs_end_transaction(trans);
 out:
 	return ret;
 }
@@ -3706,7 +3706,7 @@ process_slot:
 					if (ret != -EOPNOTSUPP)
 						btrfs_abort_transaction(trans,
 									ret);
-					btrfs_end_transaction(trans, root);
+					btrfs_end_transaction(trans);
 					goto out;
 				}
 
@@ -3714,7 +3714,7 @@ process_slot:
 							      &new_key, size);
 				if (ret) {
 					btrfs_abort_transaction(trans, ret);
-					btrfs_end_transaction(trans, root);
+					btrfs_end_transaction(trans);
 					goto out;
 				}
 
@@ -3747,8 +3747,7 @@ process_slot:
 					if (ret) {
 						btrfs_abort_transaction(trans,
 									ret);
-						btrfs_end_transaction(trans,
-								      root);
+						btrfs_end_transaction(trans);
 						goto out;
 
 					}
@@ -3767,7 +3766,7 @@ process_slot:
 
 				if (comp && (skip || trim)) {
 					ret = -EINVAL;
-					btrfs_end_transaction(trans, root);
+					btrfs_end_transaction(trans);
 					goto out;
 				}
 				size -= skip + trim;
@@ -3783,7 +3782,7 @@ process_slot:
 					if (ret != -EOPNOTSUPP)
 						btrfs_abort_transaction(trans,
 									ret);
-					btrfs_end_transaction(trans, root);
+					btrfs_end_transaction(trans);
 					goto out;
 				}
 				leaf = path->nodes[0];
@@ -3838,7 +3837,7 @@ process_slot:
 		if (ret) {
 			if (ret != -EOPNOTSUPP)
 				btrfs_abort_transaction(trans, ret);
-			btrfs_end_transaction(trans, root);
+			btrfs_end_transaction(trans);
 			goto out;
 		}
 		clone_update_extent_map(inode, trans, NULL, last_dest_end,
@@ -4100,7 +4099,7 @@ static long btrfs_ioctl_default_subvol(struct file *file, void __user *argp)
 				   dir_id, "default", 7, 1);
 	if (IS_ERR_OR_NULL(di)) {
 		btrfs_free_path(path);
-		btrfs_end_transaction(trans, root);
+		btrfs_end_transaction(trans);
 		btrfs_err(fs_info,
 			  "Umm, you don't have the default dir item, this isn't going to work");
 		ret = -ENOENT;
@@ -4113,7 +4112,7 @@ static long btrfs_ioctl_default_subvol(struct file *file, void __user *argp)
 	btrfs_free_path(path);
 
 	btrfs_set_fs_incompat(fs_info, DEFAULT_SUBVOL);
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
 out:
 	mnt_drop_write_file(file);
 	return ret;
@@ -4293,7 +4292,7 @@ long btrfs_ioctl_trans_end(struct file *file)
 		return -EINVAL;
 	file->private_data = NULL;
 
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
 
 	atomic_dec(&root->fs_info->open_ioctl_trans);
 
@@ -4320,7 +4319,7 @@ static noinline long btrfs_ioctl_start_sync(struct btrfs_root *root,
 	transid = trans->transid;
 	ret = btrfs_commit_transaction_async(trans, root, 0);
 	if (ret) {
-		btrfs_end_transaction(trans, root);
+		btrfs_end_transaction(trans);
 		return ret;
 	}
 out:
@@ -4928,7 +4927,7 @@ static long btrfs_ioctl_qgroup_assign(struct file *file, void __user *arg)
 	if (err < 0)
 		btrfs_handle_fs_error(fs_info, err,
 				      "failed to update qgroup status and info");
-	err = btrfs_end_transaction(trans, root);
+	err = btrfs_end_transaction(trans);
 	if (err && !ret)
 		ret = err;
 
@@ -4980,7 +4979,7 @@ static long btrfs_ioctl_qgroup_create(struct file *file, void __user *arg)
 		ret = btrfs_remove_qgroup(trans, fs_info, sa->qgroupid);
 	}
 
-	err = btrfs_end_transaction(trans, root);
+	err = btrfs_end_transaction(trans);
 	if (err && !ret)
 		ret = err;
 
@@ -5030,7 +5029,7 @@ static long btrfs_ioctl_qgroup_limit(struct file *file, void __user *arg)
 	/* FIXME: check if the IDs really exist */
 	ret = btrfs_limit_qgroup(trans, fs_info, qgroupid, &sa->lim);
 
-	err = btrfs_end_transaction(trans, root);
+	err = btrfs_end_transaction(trans);
 	if (err && !ret)
 		ret = err;
 
@@ -5176,7 +5175,7 @@ static long _btrfs_ioctl_set_received_subvol(struct file *file,
 	ret = btrfs_update_root(trans, fs_info->tree_root,
 				&root->root_key, &root->root_item);
 	if (ret < 0) {
-		btrfs_end_transaction(trans, root);
+		btrfs_end_transaction(trans);
 		goto out;
 	}
 	if (received_uuid_changed && !btrfs_is_empty_uuid(sa->uuid)) {

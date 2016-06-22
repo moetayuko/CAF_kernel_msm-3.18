@@ -838,7 +838,7 @@ static void scrub_fixup_nodatasum(struct btrfs_work *work)
 
 out:
 	if (trans && !IS_ERR(trans))
-		btrfs_end_transaction(trans, fixup->root);
+		btrfs_end_transaction(trans);
 	if (uncorrectable) {
 		spin_lock(&sctx->stat_lock);
 		++sctx->stat.uncorrectable_errors;
@@ -4197,7 +4197,7 @@ static void copy_nocow_pages_worker(struct btrfs_work *work)
 		goto out;
 	}
 
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
 	trans = NULL;
 	while (!list_empty(&nocow_ctx->inodes)) {
 		struct scrub_nocow_inode *entry;
@@ -4225,7 +4225,7 @@ out:
 		kfree(entry);
 	}
 	if (trans && !IS_ERR(trans))
-		btrfs_end_transaction(trans, root);
+		btrfs_end_transaction(trans);
 	if (not_written)
 		btrfs_dev_replace_stats_inc(&fs_info->dev_replace.
 					    num_uncorrectable_read_errors);

@@ -1922,7 +1922,7 @@ static int transaction_kthread(void *arg)
 		if (transid == trans->transid) {
 			btrfs_commit_transaction(trans);
 		} else {
-			btrfs_end_transaction(trans, root);
+			btrfs_end_transaction(trans);
 		}
 sleep:
 		wake_up_process(fs_info->cleaner_kthread);

@@ -184,8 +184,7 @@ static inline void btrfs_clear_skip_qgroup(struct btrfs_trans_handle *trans)
 	delayed_refs->qgroup_to_skip = 0;
 }
 
-int btrfs_end_transaction(struct btrfs_trans_handle *trans,
-			  struct btrfs_root *root);
+int btrfs_end_transaction(struct btrfs_trans_handle *trans);
 struct btrfs_trans_handle *btrfs_start_transaction(struct btrfs_root *root,
 						   unsigned int num_items);
 struct btrfs_trans_handle *btrfs_start_transaction_fallback_global_rsv(
@@ -210,8 +209,7 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans);
 int btrfs_commit_transaction_async(struct btrfs_trans_handle *trans,
 				   struct btrfs_root *root,
 				   int wait_for_unblock);
-int btrfs_end_transaction_throttle(struct btrfs_trans_handle *trans,
-				   struct btrfs_root *root);
+int btrfs_end_transaction_throttle(struct btrfs_trans_handle *trans);
 int btrfs_should_end_transaction(struct btrfs_trans_handle *trans,
 				 struct btrfs_root *root);
 void btrfs_throttle(struct btrfs_fs_info *fs_info);

@@ -2457,7 +2457,7 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, char *device_path)
 	return ret;
 
 error_trans:
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
 	rcu_string_free(device->name);
 	btrfs_sysfs_rm_device_link(fs_info->fs_devices, device);
 	kfree(device);
@@ -2894,7 +2894,7 @@ static int btrfs_relocate_chunk(struct btrfs_fs_info *fs_info, u64 chunk_offset)
 	 * chunk tree entries
 	 */
 	ret = btrfs_remove_chunk(trans, fs_info, chunk_offset);
-	btrfs_end_transaction(trans, fs_info->extent_root);
+	btrfs_end_transaction(trans);
 	return ret;
 }
 
@@ -3456,7 +3456,7 @@ static int __btrfs_balance(struct btrfs_fs_info *fs_info)
 		ret = btrfs_grow_device(trans, device, old_size);
 		BUG_ON(ret);
 
-		btrfs_end_transaction(trans, dev_root);
+		btrfs_end_transaction(trans);
 	}
 
 	/* step two, relocate all the chunks */
@@ -3586,7 +3586,7 @@ again:
 
 			ret = btrfs_force_chunk_alloc(trans, fs_info,
 						      BTRFS_BLOCK_GROUP_DATA);
-			btrfs_end_transaction(trans, chunk_root);
+			btrfs_end_transaction(trans);
 			if (ret < 0) {
 				mutex_unlock(&fs_info->delete_unused_bgs_mutex);
 				goto error;
@@ -4114,7 +4114,7 @@ update_tree:
 
 skip:
 		if (trans) {
-			ret = btrfs_end_transaction(trans, fs_info->uuid_root);
+			ret = btrfs_end_transaction(trans);
 			trans = NULL;
 			if (ret)
 				break;
@@ -4139,7 +4139,7 @@ skip:
 out:
 	btrfs_free_path(path);
 	if (trans && !IS_ERR(trans))
-		btrfs_end_transaction(trans, fs_info->uuid_root);
+		btrfs_end_transaction(trans);
 	if (ret)
 		btrfs_warn(fs_info, "btrfs_uuid_scan_kthread failed %d", ret);
 	else
@@ -4233,7 +4233,7 @@ int btrfs_create_uuid_tree(struct btrfs_fs_info *fs_info)
 	if (IS_ERR(uuid_root)) {
 		ret = PTR_ERR(uuid_root);
 		btrfs_abort_transaction(trans, ret);
-		btrfs_end_transaction(trans, tree_root);
+		btrfs_end_transaction(trans);
 		return ret;
 	}
 
@@ -4429,7 +4429,7 @@ again:
 
 	/* Now btrfs_update_device() will change the on-disk size. */
 	ret = btrfs_update_device(trans, device);
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans);
 done:
 	btrfs_free_path(path);
 	if (ret) {
