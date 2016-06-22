@@ -2068,10 +2068,9 @@ int repair_io_failure(struct inode *inode, u64 start, u64 length, u64 logical,
 	return 0;
 }
 
-int repair_eb_io_failure(struct btrfs_root *root, struct extent_buffer *eb,
-			 int mirror_num)
+int repair_eb_io_failure(struct btrfs_fs_info *fs_info,
+			 struct extent_buffer *eb, int mirror_num)
 {
-	struct btrfs_fs_info *fs_info = root->fs_info;
 	u64 start = eb->start;
 	unsigned long i, num_pages = num_extent_pages(eb->start, eb->len);
 	int ret = 0;

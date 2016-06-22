@@ -3028,14 +3028,13 @@ int btrfsic_submit_bio_wait(int rw, struct bio *bio)
 	return submit_bio_wait(rw, bio);
 }
 
-int btrfsic_mount(struct btrfs_root *root,
+int btrfsic_mount(struct btrfs_fs_info *fs_info,
 		  struct btrfs_fs_devices *fs_devices,
 		  int including_extent_data, u32 print_mask)
 {
 	int ret;
 	struct btrfsic_state *state;
 	struct list_head *dev_head = &fs_devices->devices;
-	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_device *device;
 
 	if (fs_info->nodesize & ((u64)PAGE_SIZE - 1)) {
@@ -3065,7 +3064,7 @@ int btrfsic_mount(struct btrfs_root *root,
 		btrfsic_is_initialized = 1;
 	}
 	mutex_lock(&btrfsic_mutex);
-	state->fs_info = root->fs_info;
+	state->fs_info = fs_info;
 	state->print_mask = print_mask;
 	state->include_extent_data = including_extent_data;
 	state->csum_size = 0;
@@ -3104,7 +3103,7 @@ int btrfsic_mount(struct btrfs_root *root,
 	ret = btrfsic_process_superblock(state, fs_devices);
 	if (0 != ret) {
 		mutex_unlock(&btrfsic_mutex);
-		btrfsic_unmount(root, fs_devices);
+		btrfsic_unmount(fs_devices);
 		return ret;
 	}
 
@@ -3117,8 +3116,7 @@ int btrfsic_mount(struct btrfs_root *root,
 	return 0;
 }
 
-void btrfsic_unmount(struct btrfs_root *root,
-		     struct btrfs_fs_devices *fs_devices)
+void btrfsic_unmount(struct btrfs_fs_devices *fs_devices)
 {
 	struct btrfsic_block *b_all, *tmp_all;
 	struct btrfsic_state *state;
