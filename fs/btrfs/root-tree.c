@@ -137,6 +137,7 @@ int btrfs_update_root(struct btrfs_trans_handle *trans, struct btrfs_root
 		      *root, struct btrfs_key *key, struct btrfs_root_item
 		      *item)
 {
+	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_path *path;
 	struct extent_buffer *l;
 	int ret;
@@ -156,8 +157,8 @@ int btrfs_update_root(struct btrfs_trans_handle *trans, struct btrfs_root
 
 	if (ret != 0) {
 		btrfs_print_leaf(root, path->nodes[0]);
-		btrfs_crit(root->fs_info, "unable to update root key %llu %u %llu",
-		       key->objectid, key->type, key->offset);
+		btrfs_crit(fs_info, "unable to update root key %llu %u %llu",
+			   key->objectid, key->type, key->offset);
 		BUG_ON(1);
 	}
 
@@ -232,7 +233,7 @@ int btrfs_find_orphan_roots(struct btrfs_fs_info *fs_info)
 	int ret;
 	bool can_recover = true;
 
-	if (tree_root->fs_info->sb->s_flags & MS_RDONLY)
+	if (fs_info->sb->s_flags & MS_RDONLY)
 		can_recover = false;
 
 	path = btrfs_alloc_path();
@@ -285,7 +286,7 @@ int btrfs_find_orphan_roots(struct btrfs_fs_info *fs_info)
 			trans = btrfs_join_transaction(tree_root);
 			if (IS_ERR(trans)) {
 				err = PTR_ERR(trans);
-				btrfs_handle_fs_error(tree_root->fs_info, err,
+				btrfs_handle_fs_error(fs_info, err,
 					    "Failed to start trans to delete "
 					    "orphan item");
 				break;
@@ -294,7 +295,7 @@ int btrfs_find_orphan_roots(struct btrfs_fs_info *fs_info)
 						    root_key.objectid);
 			btrfs_end_transaction(trans, tree_root);
 			if (err) {
-				btrfs_handle_fs_error(tree_root->fs_info, err,
+				btrfs_handle_fs_error(fs_info, err,
 					    "Failed to delete root orphan "
 					    "item");
 				break;
@@ -310,7 +311,7 @@ int btrfs_find_orphan_roots(struct btrfs_fs_info *fs_info)
 
 		set_bit(BTRFS_ROOT_ORPHAN_ITEM_INSERTED, &root->state);
 
-		err = btrfs_insert_fs_root(root->fs_info, root);
+		err = btrfs_insert_fs_root(fs_info, root);
 		/*
 		 * The root might have been inserted already, as before we look
 		 * for orphan roots, log replay might have happened, which

@@ -1345,9 +1345,11 @@ static inline int
 btrfs_should_fragment_free_space(struct btrfs_root *root,
 				 struct btrfs_block_group_cache *block_group)
 {
-	return (btrfs_test_opt(root->fs_info, FRAGMENT_METADATA) &&
+	struct btrfs_fs_info *fs_info = root->fs_info;
+
+	return (btrfs_test_opt(fs_info, FRAGMENT_METADATA) &&
 		block_group->flags & BTRFS_BLOCK_GROUP_METADATA) ||
-	       (btrfs_test_opt(root->fs_info, FRAGMENT_DATA) &&
+	       (btrfs_test_opt(fs_info, FRAGMENT_DATA) &&
 		block_group->flags &  BTRFS_BLOCK_GROUP_DATA);
 }
 #endif
@@ -2875,8 +2877,9 @@ static inline int btrfs_fs_closing(struct btrfs_fs_info *fs_info)
  */
 static inline int btrfs_need_cleaner_sleep(struct btrfs_root *root)
 {
-	return (root->fs_info->sb->s_flags & MS_RDONLY ||
-		btrfs_fs_closing(root->fs_info));
+	struct btrfs_fs_info *fs_info = root->fs_info;
+
+	return (fs_info->sb->s_flags & MS_RDONLY || btrfs_fs_closing(fs_info));
 }
 
 static inline void free_fs_info(struct btrfs_fs_info *fs_info)
