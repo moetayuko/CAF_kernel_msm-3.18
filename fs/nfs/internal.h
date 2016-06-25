@@ -514,6 +514,7 @@ void nfs_pageio_stop_mirroring(struct nfs_pageio_descriptor *pgio);
 
 int nfs_filemap_write_and_wait_range(struct address_space *mapping,
 		loff_t lstart, loff_t lend);
+int nfs_filemap_write_and_wait(struct address_space *mapping);
 
 #ifdef CONFIG_NFS_V4_1
 static inline

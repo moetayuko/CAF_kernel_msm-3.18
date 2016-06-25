@@ -1931,6 +1931,21 @@ int nfs_filemap_write_and_wait_range(struct address_space *mapping,
 EXPORT_SYMBOL_GPL(nfs_filemap_write_and_wait_range);
 
 /*
+ * Wrapper for filemap_write_and_wait()
+ *
+ * Needed for pNFS...
+ */
+int nfs_filemap_write_and_wait(struct address_space *mapping)
+{
+	int ret;
+
+	ret = filemap_write_and_wait(mapping);
+	if (ret == 0)
+		ret = pnfs_sync_inode(mapping->host, true);
+	return ret;
+}
+
+/*
  * flush the inode to disk.
  */
 int nfs_wb_all(struct inode *inode)
