@@ -536,7 +536,22 @@ typedef efi_status_t efi_query_variable_store_t(u32 attributes,
 void efi_native_runtime_setup(void);
 
 /*
- *  EFI Configuration Table and GUID definitions
+ * EFI Configuration Table and GUID definitions
+ *
+ * These should be formatted roughly like the ones in the UEFI SPEC has
+ * them.  It makes them easier to grep for, and they look the same when
+ * you're staring at them.  Here's the guide:
+ *
+ * GUID: 12345678-1234-1234-1234-123456789012
+ * Spec:
+ *      #define EFI_SOME_PROTOCOL_GUID \
+ *        {0x12345678,0x1234,0x1234,\
+ *          {0x12,0x34,0x12,0x34,0x56,0x78,0x90,0x12}}
+ * Here:
+ *	#define SOME_PROTOCOL_GUID \
+ *		EFI_GUID(0x12345678, 0x1234,  0x1234, \
+ *			 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x90, 0x12)
+ *      ^ tab   ^tab    ^ space
  */
 #define NULL_GUID \
 	EFI_GUID(0x00000000, 0x0000, 0x0000, \
@@ -975,7 +990,6 @@ extern u64 efi_mem_desc_end(efi_memory_desc_t *md);
 extern int efi_mem_desc_lookup(u64 phys_addr, efi_memory_desc_t *out_md);
 extern void efi_initialize_iomem_resources(struct resource *code_resource,
 		struct resource *data_resource, struct resource *bss_resource);
-extern void efi_get_time(struct timespec *now);
 extern void efi_reserve_boot_services(void);
 extern int efi_get_fdt_params(struct efi_fdt_params *params);
 extern struct kobject *efi_kobj;
@@ -1465,4 +1479,55 @@ efi_status_t efi_setup_gop(efi_system_table_t *sys_table_arg,
 			   unsigned long size);
 
 bool efi_runtime_disabled(void);
+extern void efi_call_virt_check_flags(unsigned long flags, const char *call);
+
+/*
+ * Arch code can implement the following three template macros, avoiding
+ * reptition for the void/non-void return cases of {__,}efi_call_virt():
+ *
+ *  * arch_efi_call_virt_setup()
+ *
+ *    Sets up the environment for the call (e.g. switching page tables,
+ *    allowing kernel-mode use of floating point, if required).
+ *
+ *  * arch_efi_call_virt()
+ *
+ *    Performs the call. The last expression in the macro must be the call
+ *    itself, allowing the logic to be shared by the void and non-void
+ *    cases.
+ *
+ *  * arch_efi_call_virt_teardown()
+ *
+ *    Restores the usual kernel environment once the call has returned.
+ */
+
+#define efi_call_virt_pointer(p, f, args...)				\
+({									\
+	efi_status_t __s;						\
+	unsigned long __flags;						\
+									\
+	arch_efi_call_virt_setup();					\
+									\
+	local_save_flags(__flags);					\
+	__s = arch_efi_call_virt(p, f, args);				\
+	efi_call_virt_check_flags(__flags, __stringify(f));		\
+									\
+	arch_efi_call_virt_teardown();					\
+									\
+	__s;								\
+})
+
+#define __efi_call_virt_pointer(p, f, args...)				\
+({									\
+	unsigned long __flags;						\
+									\
+	arch_efi_call_virt_setup();					\
+									\
+	local_save_flags(__flags);					\
+	arch_efi_call_virt(p, f, args);					\
+	efi_call_virt_check_flags(__flags, __stringify(f));		\
+									\
+	arch_efi_call_virt_teardown();					\
+})
+
 #endif /* _LINUX_EFI_H */
