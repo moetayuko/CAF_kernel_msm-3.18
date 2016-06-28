@@ -4283,6 +4283,9 @@ int btrfs_check_data_free_space(struct inode *inode, u64 start, u64 len)
 	 * range, but don't impact performance on quota disable case.
 	 */
 	ret = btrfs_qgroup_reserve_data(inode, start, len);
+	if (ret < 0)
+		/* Qgroup reserve failed, need to cleanup reserved data space */
+		btrfs_free_reserved_data_space(inode, start, len);
 	return ret;
 }
 
