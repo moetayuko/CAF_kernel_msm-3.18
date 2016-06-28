@@ -11,15 +11,12 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/of_platform.h>
-
 #include <asm/mach/arch.h>
 
 #include "kona_l2_cache.h"
 
 static void __init bcm21664_init(void)
 {
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 	kona_l2_cache_init();
 }
 
