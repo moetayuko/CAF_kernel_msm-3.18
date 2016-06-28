@@ -159,6 +159,7 @@ struct intel_framebuffer {
 struct intel_fbdev {
 	struct drm_fb_helper helper;
 	struct intel_framebuffer *fb;
+	async_cookie_t cookie;
 	int preferred_bpp;
 };
 
@@ -861,6 +862,11 @@ struct intel_dp {
 	 * this port. Only relevant on VLV/CHV.
 	 */
 	enum pipe pps_pipe;
+	/*
+	 * Set if the sequencer may be reset due to a power transition,
+	 * requiring a reinitialization. Only relevant on BXT.
+	 */
+	bool pps_reset;
 	struct edp_power_seq pps_delays;
 
 	bool can_mst; /* this port supports mst */
@@ -1338,7 +1344,7 @@ void intel_dp_mst_resume(struct drm_device *dev);
 int intel_dp_max_link_rate(struct intel_dp *intel_dp);
 int intel_dp_rate_select(struct intel_dp *intel_dp, int rate);
 void intel_dp_hot_plug(struct intel_encoder *intel_encoder);
-void vlv_power_sequencer_reset(struct drm_i915_private *dev_priv);
+void intel_power_sequencer_reset(struct drm_i915_private *dev_priv);
 uint32_t intel_dp_pack_aux(const uint8_t *src, int src_bytes);
 void intel_plane_destroy(struct drm_plane *plane);
 void intel_edp_drrs_enable(struct intel_dp *intel_dp);
@@ -1451,6 +1457,7 @@ void intel_dp_dual_mode_set_tmds_output(struct intel_hdmi *hdmi, bool enable);
 
 /* intel_lvds.c */
 void intel_lvds_init(struct drm_device *dev);
+struct intel_encoder *intel_get_lvds_encoder(struct drm_device *dev);
 bool intel_is_dual_link_lvds(struct drm_device *dev);
 
 
@@ -1489,7 +1496,8 @@ void intel_gmch_panel_fitting(struct intel_crtc *crtc,
 			      int fitting_mode);
 void intel_panel_set_backlight_acpi(struct intel_connector *connector,
 				    u32 level, u32 max);
-int intel_panel_setup_backlight(struct drm_connector *connector, enum pipe pipe);
+int intel_panel_setup_backlight(struct drm_connector *connector,
+				enum pipe pipe);
 void intel_panel_enable_backlight(struct intel_connector *connector);
 void intel_panel_disable_backlight(struct intel_connector *connector);
 void intel_panel_destroy_backlight(struct drm_connector *connector);
@@ -1498,11 +1506,15 @@ extern struct drm_display_mode *intel_find_panel_downclock(
 				struct drm_device *dev,
 				struct drm_display_mode *fixed_mode,
 				struct drm_connector *connector);
-void intel_backlight_register(struct drm_device *dev);
 
 #if IS_ENABLED(CONFIG_BACKLIGHT_CLASS_DEVICE)
+int intel_backlight_device_register(struct intel_connector *connector);
 void intel_backlight_device_unregister(struct intel_connector *connector);
 #else /* CONFIG_BACKLIGHT_CLASS_DEVICE */
+static int intel_backlight_device_register(struct intel_connector *connector)
+{
+	return 0;
+}
 static inline void intel_backlight_device_unregister(struct intel_connector *connector)
 {
 }

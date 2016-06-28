@@ -14633,11 +14633,8 @@ int intel_get_pipe_from_crtc_id(struct drm_device *dev, void *data,
 	struct intel_crtc *crtc;
 
 	drmmode_crtc = drm_crtc_find(dev, pipe_from_crtc_id->crtc_id);
-
-	if (!drmmode_crtc) {
-		DRM_ERROR("no such CRTC id\n");
+	if (!drmmode_crtc)
 		return -ENOENT;
-	}
 
 	crtc = to_intel_crtc(drmmode_crtc);
 	pipe_from_crtc_id->pipe = crtc->pipe;
@@ -14710,6 +14707,11 @@ static void intel_setup_outputs(struct drm_device *dev)
 	struct intel_encoder *encoder;
 	bool dpd_is_edp = false;
 
+	/*
+	 * intel_edp_init_connector() depends on this completing first, to
+	 * prevent the registeration of both eDP and LVDS and the incorrect
+	 * sharing of the PPS.
+	 */
 	intel_lvds_init(dev);
 
 	if (intel_crt_present(dev))
@@ -16309,8 +16311,21 @@ void intel_modeset_gem_init(struct drm_device *dev)
 			c->state->plane_mask &= ~(1 << drm_plane_index(c->primary));
 		}
 	}
+}
 
-	intel_backlight_register(dev);
+int intel_connector_register(struct drm_connector *connector)
+{
+	struct intel_connector *intel_connector = to_intel_connector(connector);
+	int ret;
+
+	ret = intel_backlight_device_register(intel_connector);
+	if (ret)
+		goto err;
+
+	return 0;
+
+err:
+	return ret;
 }
 
 void intel_connector_unregister(struct drm_connector *connector)
@@ -16346,8 +16361,6 @@ void intel_modeset_cleanup(struct drm_device *dev)
 
 	/* flush any delayed tasks or pending work */
 	flush_scheduled_work();
-
-	drm_connector_unregister_all(dev);
 
 	drm_mode_config_cleanup(dev);
 

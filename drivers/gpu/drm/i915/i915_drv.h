@@ -872,6 +872,8 @@ struct i915_gem_context {
 	u32 user_handle;
 #define CONTEXT_NO_ZEROMAP		(1<<0)
 
+	u32 ggtt_alignment;
+
 	struct intel_context {
 		struct drm_i915_gem_object *state;
 		struct intel_ringbuffer *ringbuf;
@@ -1733,6 +1735,8 @@ struct intel_wm_config {
 };
 
 struct drm_i915_private {
+	struct drm_device drm;
+
 	struct drm_device *dev;
 	struct kmem_cache *objects;
 	struct kmem_cache *vmas;
@@ -2044,7 +2048,7 @@ struct drm_i915_private {
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
 {
-	return dev->dev_private;
+	return container_of(dev, struct drm_i915_private, drm);
 }
 
 static inline struct drm_i915_private *dev_to_i915(struct device *dev)
@@ -2215,6 +2219,7 @@ struct drm_i915_gem_object {
 
 	unsigned int frontbuffer_bits:INTEL_FRONTBUFFER_BITS;
 
+	unsigned int has_wc_mmap;
 	unsigned int pin_display;
 
 	struct sg_table *pages;
@@ -2266,6 +2271,12 @@ struct drm_i915_gem_object {
 	};
 };
 #define to_intel_bo(x) container_of(x, struct drm_i915_gem_object, base)
+
+static inline bool
+i915_gem_object_has_struct_page(const struct drm_i915_gem_object *obj)
+{
+	return obj->ops->flags & I915_GEM_OBJECT_HAS_STRUCT_PAGE;
+}
 
 /*
  * Optimised SGL iterator for GEM objects
@@ -2613,7 +2624,7 @@ struct drm_i915_cmd_table {
 #define INTEL_DEVID(p)	(INTEL_INFO(p)->device_id)
 
 #define REVID_FOREVER		0xff
-#define INTEL_REVID(p)	(__I915__(p)->dev->pdev->revision)
+#define INTEL_REVID(p)	(__I915__(p)->drm.pdev->revision)
 
 #define GEN_FOREVER (0)
 /*
@@ -2752,17 +2763,22 @@ struct drm_i915_cmd_table {
 #define IS_GEN8(dev)	(INTEL_INFO(dev)->gen_mask & BIT(7))
 #define IS_GEN9(dev)	(INTEL_INFO(dev)->gen_mask & BIT(8))
 
-#define RENDER_RING		(1<<RCS)
-#define BSD_RING		(1<<VCS)
-#define BLT_RING		(1<<BCS)
-#define VEBOX_RING		(1<<VECS)
-#define BSD2_RING		(1<<VCS2)
-#define ALL_ENGINES		(~0)
+#define ENGINE_MASK(id)	BIT(id)
+#define RENDER_RING	ENGINE_MASK(RCS)
+#define BSD_RING	ENGINE_MASK(VCS)
+#define BLT_RING	ENGINE_MASK(BCS)
+#define VEBOX_RING	ENGINE_MASK(VECS)
+#define BSD2_RING	ENGINE_MASK(VCS2)
+#define ALL_ENGINES	(~0)
 
-#define HAS_BSD(dev)		(INTEL_INFO(dev)->ring_mask & BSD_RING)
-#define HAS_BSD2(dev)		(INTEL_INFO(dev)->ring_mask & BSD2_RING)
-#define HAS_BLT(dev)		(INTEL_INFO(dev)->ring_mask & BLT_RING)
-#define HAS_VEBOX(dev)		(INTEL_INFO(dev)->ring_mask & VEBOX_RING)
+#define HAS_ENGINE(dev_priv, id) \
+	(INTEL_INFO(dev_priv)->ring_mask & ENGINE_MASK(id))
+
+#define HAS_BSD(dev_priv)	HAS_ENGINE(dev_priv, VCS)
+#define HAS_BSD2(dev_priv)	HAS_ENGINE(dev_priv, VCS2)
+#define HAS_BLT(dev_priv)	HAS_ENGINE(dev_priv, BCS)
+#define HAS_VEBOX(dev_priv)	HAS_ENGINE(dev_priv, VECS)
+
 #define HAS_LLC(dev)		(INTEL_INFO(dev)->has_llc)
 #define HAS_SNOOP(dev)		(INTEL_INFO(dev)->has_snoop)
 #define HAS_EDRAM(dev)		(__I915__(dev)->edram_cap & EDRAM_ENABLED)
@@ -2783,9 +2799,10 @@ struct drm_i915_cmd_table {
 #define HAS_BROKEN_CS_TLB(dev)		(IS_I830(dev) || IS_845G(dev))
 
 /* WaRsDisableCoarsePowerGating:skl,bxt */
-#define NEEDS_WaRsDisableCoarsePowerGating(dev) (IS_BXT_REVID(dev, 0, BXT_REVID_A1) || \
-						 IS_SKL_GT3(dev) || \
-						 IS_SKL_GT4(dev))
+#define NEEDS_WaRsDisableCoarsePowerGating(dev_priv) \
+	(IS_BXT_REVID(dev_priv, 0, BXT_REVID_A1) || \
+	 IS_SKL_GT3(dev_priv) || \
+	 IS_SKL_GT4(dev_priv))
 
 /*
  * dp aux and gmbus irq on gen4 seems to be able to generate legacy interrupts
@@ -2879,16 +2896,13 @@ struct drm_i915_cmd_table {
 
 #include "i915_trace.h"
 
-extern const struct drm_ioctl_desc i915_ioctls[];
-extern int i915_max_ioctl;
-
 extern int i915_suspend_switcheroo(struct drm_device *dev, pm_message_t state);
 extern int i915_resume_switcheroo(struct drm_device *dev);
 
 int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
 			       	int enable_ppgtt);
 
-/* i915_dma.c */
+/* i915_drv.c */
 void __printf(3, 4)
 __i915_printk(struct drm_i915_private *dev_priv, const char *level,
 	      const char *fmt, ...);
@@ -2896,14 +2910,6 @@ __i915_printk(struct drm_i915_private *dev_priv, const char *level,
 #define i915_report_error(dev_priv, fmt, ...)				   \
 	__i915_printk(dev_priv, KERN_ERR, fmt, ##__VA_ARGS__)
 
-extern int i915_driver_load(struct drm_device *, unsigned long flags);
-extern int i915_driver_unload(struct drm_device *);
-extern int i915_driver_open(struct drm_device *dev, struct drm_file *file);
-extern void i915_driver_lastclose(struct drm_device * dev);
-extern void i915_driver_preclose(struct drm_device *dev,
-				 struct drm_file *file);
-extern void i915_driver_postclose(struct drm_device *dev,
-				  struct drm_file *file);
 #ifdef CONFIG_COMPAT
 extern long i915_compat_ioctl(struct file *filp, unsigned int cmd,
 			      unsigned long arg);
@@ -3330,7 +3336,7 @@ int i915_gem_init_engines(struct drm_device *dev);
 int __must_check i915_gem_init_hw(struct drm_device *dev);
 void i915_gem_init_swizzling(struct drm_device *dev);
 void i915_gem_cleanup_engines(struct drm_device *dev);
-int __must_check i915_gpu_idle(struct drm_device *dev);
+int __must_check i915_gem_wait_for_idle(struct drm_i915_private *dev_priv);
 int __must_check i915_gem_suspend(struct drm_device *dev);
 void __i915_add_request(struct drm_i915_gem_request *req,
 			struct drm_i915_gem_object *batch_obj,
@@ -3484,7 +3490,7 @@ i915_gem_context_lookup(struct drm_i915_file_private *file_priv, u32 id)
 {
 	struct i915_gem_context *ctx;
 
-	lockdep_assert_held(&file_priv->dev_priv->dev->struct_mutex);
+	lockdep_assert_held(&file_priv->dev_priv->drm.struct_mutex);
 
 	ctx = idr_find(&file_priv->context_idr, id);
 	if (!ctx)
@@ -3500,7 +3506,7 @@ static inline void i915_gem_context_reference(struct i915_gem_context *ctx)
 
 static inline void i915_gem_context_unreference(struct i915_gem_context *ctx)
 {
-	lockdep_assert_held(&ctx->i915->dev->struct_mutex);
+	lockdep_assert_held(&ctx->i915->drm.struct_mutex);
 	kref_put(&ctx->ref, i915_gem_context_free);
 }
 
@@ -3576,7 +3582,7 @@ void i915_gem_shrinker_cleanup(struct drm_i915_private *dev_priv);
 /* i915_gem_tiling.c */
 static inline bool i915_gem_object_needs_bit17_swizzle(struct drm_i915_gem_object *obj)
 {
-	struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
+	struct drm_i915_private *dev_priv = to_i915(obj->base.dev);
 
 	return dev_priv->mm.bit_6_swizzle_x == I915_BIT_6_SWIZZLE_9_10_17 &&
 		obj->tiling_mode != I915_TILING_NONE;
@@ -3590,12 +3596,14 @@ int i915_verify_lists(struct drm_device *dev);
 #endif
 
 /* i915_debugfs.c */
-int i915_debugfs_init(struct drm_minor *minor);
-void i915_debugfs_cleanup(struct drm_minor *minor);
 #ifdef CONFIG_DEBUG_FS
+int i915_debugfs_register(struct drm_i915_private *dev_priv);
+void i915_debugfs_unregister(struct drm_i915_private *dev_priv);
 int i915_debugfs_connector_add(struct drm_connector *connector);
 void intel_display_crc_init(struct drm_device *dev);
 #else
+static inline int i915_debugfs_register(struct drm_i915_private *) {return 0;}
+static inline void i915_debugfs_unregister(struct drm_i915_private *) {}
 static inline int i915_debugfs_connector_add(struct drm_connector *connector)
 { return 0; }
 static inline void intel_display_crc_init(struct drm_device *dev) {}
@@ -3721,6 +3729,7 @@ extern void intel_modeset_init_hw(struct drm_device *dev);
 extern void intel_modeset_init(struct drm_device *dev);
 extern void intel_modeset_gem_init(struct drm_device *dev);
 extern void intel_modeset_cleanup(struct drm_device *dev);
+extern int intel_connector_register(struct drm_connector *);
 extern void intel_connector_unregister(struct drm_connector *);
 extern int intel_modeset_vga_set_state(struct drm_device *dev, bool state);
 extern void intel_display_resume(struct drm_device *dev);
@@ -3731,7 +3740,6 @@ extern void intel_init_pch_refclk(struct drm_device *dev);
 extern void intel_set_rps(struct drm_i915_private *dev_priv, u8 val);
 extern void intel_set_memory_cxsr(struct drm_i915_private *dev_priv,
 				  bool enable);
-extern void intel_detect_pch(struct drm_device *dev);
 
 extern bool i915_semaphore_is_enabled(struct drm_i915_private *dev_priv);
 int i915_reg_read_ioctl(struct drm_device *dev, void *data,
