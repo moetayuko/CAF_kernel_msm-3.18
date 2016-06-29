@@ -13,12 +13,12 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   kernel-documentation
+
    gpu/index
 
 Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
 * :ref:`search`
-
