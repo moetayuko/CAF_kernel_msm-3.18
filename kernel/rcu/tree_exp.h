@@ -518,18 +518,17 @@ static void rcu_exp_wait_wake(struct rcu_state *rsp, unsigned long s)
 }
 
 /*
- * Given a call_rcu() function and a smp_call_function() handler, kick
+ * Given an rcu_state pointer and a smp_call_function() handler, kick
  * off the specified flavor of expedited grace period.
  */
 static void _synchronize_rcu_expedited(struct rcu_state *rsp,
-				       call_rcu_func_t call,
 				       smp_call_func_t func)
 {
 	unsigned long s;
 
 	/* If expedited grace periods are prohibited, fall back to normal. */
 	if (rcu_gp_is_normal()) {
-		wait_rcu_gp(call);
+		wait_rcu_gp(rsp->call);
 		return;
 	}
 
@@ -569,7 +568,7 @@ void synchronize_sched_expedited(void)
 	if (rcu_blocking_is_gp())
 		return;
 
-	_synchronize_rcu_expedited(rsp, call_rcu_sched, sync_sched_exp_handler);
+	_synchronize_rcu_expedited(rsp, sync_sched_exp_handler);
 }
 EXPORT_SYMBOL_GPL(synchronize_sched_expedited);
 
@@ -634,7 +633,7 @@ void synchronize_rcu_expedited(void)
 {
 	struct rcu_state *rsp = rcu_state_p;
 
-	_synchronize_rcu_expedited(rsp, call_rcu, sync_rcu_exp_handler);
+	_synchronize_rcu_expedited(rsp, sync_rcu_exp_handler);
 }
 EXPORT_SYMBOL_GPL(synchronize_rcu_expedited);
 
