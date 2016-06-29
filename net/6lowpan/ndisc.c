@@ -47,6 +47,9 @@ static int lowpan_ndisc_parse_options(const struct net_device *dev,
 				      struct nd_opt_hdr *nd_opt,
 				      struct ndisc_options *ndopts)
 {
+	if (!lowpan_is_ll(dev, LOWPAN_LLTYPE_IEEE802154))
+		return 0;
+
 	switch (nd_opt->nd_opt_type) {
 	case ND_OPT_SOURCE_LL_ADDR:
 	case ND_OPT_TARGET_LL_ADDR:
@@ -135,8 +138,9 @@ static int lowpan_ndisc_opt_addr_space(const struct net_device *dev,
 			read_unlock_bh(&neigh->lock);
 			addr_space += __ndisc_opt_addr_space(IEEE802154_SHORT_ADDR_LEN, 0);
 			*ha = ha_buf;
+		} else {
+			read_unlock_bh(&neigh->lock);
 		}
-		read_unlock_bh(&neigh->lock);
 		break;
 	case NDISC_NEIGHBOUR_ADVERTISEMENT:
 	case NDISC_NEIGHBOUR_SOLICITATION:
