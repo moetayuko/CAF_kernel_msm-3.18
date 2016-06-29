@@ -247,7 +247,11 @@ void pnfs_fetch_commit_bucket_list(struct list_head *pages,
 }
 
 /* Helper function for pnfs_generic_commit_pagelist to catch an empty
- * page list. This can happen when two commits race. */
+ * page list. This can happen when two commits race.
+ *
+ * This must be called instead of nfs_init_commit - call one or the other, but
+ * not both!
+ */
 static bool
 pnfs_generic_commit_cancel_empty_pagelist(struct list_head *pages,
 					  struct nfs_commit_data *data,
@@ -256,7 +260,11 @@ pnfs_generic_commit_cancel_empty_pagelist(struct list_head *pages,
 	if (list_empty(pages)) {
 		if (atomic_dec_and_test(&cinfo->mds->rpcs_out))
 			wake_up_atomic_t(&cinfo->mds->rpcs_out);
-		nfs_commitdata_release(data);
+		/* don't call nfs_commitdata_release - it tries to put
+		 * the open_context which is not acquired until nfs_init_commit
+		 * which has not been called on @data */
+		WARN_ON_ONCE(data->context);
+		nfs_commit_free(data);
 		return true;
 	}
 
@@ -932,6 +940,13 @@ EXPORT_SYMBOL_GPL(pnfs_layout_mark_request_commit);
 int
 pnfs_nfs_generic_sync(struct inode *inode, bool datasync)
 {
+	int ret;
+
+	if (!test_bit(NFS_INO_LAYOUTCOMMIT, &NFS_I(inode)->flags))
+		return 0;
+	ret = nfs_commit_inode(inode, FLUSH_SYNC);
+	if (ret < 0)
+		return ret;
 	if (datasync)
 		return 0;
 	return pnfs_layoutcommit_inode(inode, true);
