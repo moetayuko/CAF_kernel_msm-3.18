@@ -34,6 +34,7 @@
 			clock-names = "dpaux", "parent";
 			resets = <&tegra_car 207>;
 			reset-names = "dpaux";
+			power-domains = <&pd_sor>;
 			status = "disabled";
 		};
 
@@ -154,6 +155,7 @@
 			clock-names = "sor", "parent", "dp", "safe";
 			resets = <&tegra_car 182>;
 			reset-names = "sor";
+			power-domains = <&pd_sor>;
 			status = "disabled";
 		};
 
@@ -168,6 +170,7 @@
 			clock-names = "sor", "parent", "dp", "safe";
 			resets = <&tegra_car 183>;
 			reset-names = "sor";
+			power-domains = <&pd_sor>;
 			status = "disabled";
 		};
 
@@ -180,6 +183,7 @@
 			clock-names = "dpaux", "parent";
 			resets = <&tegra_car 181>;
 			reset-names = "dpaux";
+			power-domains = <&pd_sor>;
 			status = "disabled";
 		};
 
@@ -590,6 +594,26 @@
 				clocks = <&tegra_car TEGRA210_CLK_APE>,
 					 <&tegra_car TEGRA210_CLK_APB2APE>;
 				resets = <&tegra_car 198>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_sor: sor {
+				clocks = <&tegra_car TEGRA210_CLK_SOR0>,
+					 <&tegra_car TEGRA210_CLK_SOR1>,
+					 <&tegra_car TEGRA210_CLK_CSI>,
+					 <&tegra_car TEGRA210_CLK_DSIA>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,
+					 <&tegra_car TEGRA210_CLK_DPAUX>,
+					 <&tegra_car TEGRA210_CLK_DPAUX1>,
+					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
+				resets = <&tegra_car TEGRA210_CLK_SOR0>,
+					 <&tegra_car TEGRA210_CLK_SOR1>,
+					 <&tegra_car TEGRA210_CLK_CSI>,
+					 <&tegra_car TEGRA210_CLK_DSIA>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,
+					 <&tegra_car TEGRA210_CLK_DPAUX>,
+					 <&tegra_car TEGRA210_CLK_DPAUX1>,
+					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
 				#power-domain-cells = <0>;
 			};
 		};
