@@ -508,7 +508,7 @@ int i915_gem_obj_prepare_shmem_read(struct drm_i915_gem_object *obj,
 
 	*needs_clflush = 0;
 
-	if (WARN_ON((obj->ops->flags & I915_GEM_OBJECT_HAS_STRUCT_PAGE) == 0))
+	if (WARN_ON(!i915_gem_object_has_struct_page(obj)))
 		return -EINVAL;
 
 	if (!(obj->base.read_domains & I915_GEM_DOMAIN_CPU)) {
@@ -760,7 +760,7 @@ i915_gem_shmem_pread(struct drm_device *dev,
 	int needs_clflush = 0;
 	struct sg_page_iter sg_iter;
 
-	if (!obj->base.filp)
+	if (!i915_gem_object_has_struct_page(obj))
 		return -ENODEV;
 
 	user_data = u64_to_user_ptr(args->data_ptr);
@@ -1298,7 +1298,8 @@ i915_gem_pwrite_ioctl(struct drm_device *dev, void *data,
 	 * pread/pwrite currently are reading and writing from the CPU
 	 * perspective, requiring manual detiling by the client.
 	 */
-	if (!obj->base.filp || cpu_write_needs_clflush(obj)) {
+	if (!i915_gem_object_has_struct_page(obj) ||
+	    cpu_write_needs_clflush(obj)) {
 		ret = i915_gem_gtt_pwrite_fast(dev_priv, obj, args, file);
 		/* Note that the gtt paths might fail with non-page-backed user
 		 * pointers (e.g. gtt mappings when moving data between
@@ -1308,7 +1309,7 @@ i915_gem_pwrite_ioctl(struct drm_device *dev, void *data,
 	if (ret == -EFAULT) {
 		if (obj->phys_handle)
 			ret = i915_gem_phys_pwrite(obj, args, file);
-		else if (obj->base.filp)
+		else if (i915_gem_object_has_struct_page(obj))
 			ret = i915_gem_shmem_pwrite(dev, obj, args, file);
 		else
 			ret = -ENODEV;
@@ -1809,6 +1810,13 @@ static struct intel_rps_client *to_rps_client(struct drm_file *file)
 	return &fpriv->rps;
 }
 
+static enum fb_op_origin
+write_origin(struct drm_i915_gem_object *obj, unsigned domain)
+{
+	return domain == I915_GEM_DOMAIN_GTT && !obj->has_wc_mmap ?
+	       ORIGIN_GTT : ORIGIN_CPU;
+}
+
 /**
  * Called when user space prepares to use an object with the CPU, either
  * through the mmap ioctl's mapping or a GTT mapping.
@@ -1865,9 +1873,7 @@ i915_gem_set_domain_ioctl(struct drm_device *dev, void *data,
 		ret = i915_gem_object_set_to_cpu_domain(obj, write_domain != 0);
 
 	if (write_domain != 0)
-		intel_fb_obj_invalidate(obj,
-					write_domain == I915_GEM_DOMAIN_GTT ?
-					ORIGIN_GTT : ORIGIN_CPU);
+		intel_fb_obj_invalidate(obj, write_origin(obj, write_domain));
 
 unref:
 	drm_gem_object_unreference(&obj->base);
@@ -1974,6 +1980,9 @@ i915_gem_mmap_ioctl(struct drm_device *dev, void *data,
 		else
 			addr = -ENOMEM;
 		up_write(&mm->mmap_sem);
+
+		/* This may race, but that's ok, it only gets set */
+		WRITE_ONCE(to_intel_bo(obj)->has_wc_mmap, true);
 	}
 	drm_gem_object_unreference_unlocked(obj);
 	if (IS_ERR((void *)addr))
@@ -3662,26 +3671,16 @@ int __i915_vma_unbind_no_wait(struct i915_vma *vma)
 	return __i915_vma_unbind(vma, false);
 }
 
-int i915_gpu_idle(struct drm_device *dev)
+int i915_gem_wait_for_idle(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct intel_engine_cs *engine;
 	int ret;
 
-	/* Flush everything onto the inactive list. */
+	lockdep_assert_held(&dev_priv->dev->struct_mutex);
+
 	for_each_engine(engine, dev_priv) {
-		if (!i915.enable_execlists) {
-			struct drm_i915_gem_request *req;
-
-			req = i915_gem_request_alloc(engine, NULL);
-			if (IS_ERR(req))
-				return PTR_ERR(req);
-
-			ret = i915_switch_context(req);
-			i915_add_request_no_flush(req);
-			if (ret)
-				return ret;
-		}
+		if (engine->last_context == NULL)
+			continue;
 
 		ret = intel_engine_idle(engine);
 		if (ret)
@@ -4952,7 +4951,7 @@ i915_gem_suspend(struct drm_device *dev)
 	int ret = 0;
 
 	mutex_lock(&dev->struct_mutex);
-	ret = i915_gpu_idle(dev);
+	ret = i915_gem_wait_for_idle(dev_priv);
 	if (ret)
 		goto err;
 
@@ -5528,7 +5527,7 @@ i915_gem_object_get_dirty_page(struct drm_i915_gem_object *obj, int n)
 	struct page *page;
 
 	/* Only default objects have per-page dirty tracking */
-	if (WARN_ON((obj->ops->flags & I915_GEM_OBJECT_HAS_STRUCT_PAGE) == 0))
+	if (WARN_ON(!i915_gem_object_has_struct_page(obj)))
 		return NULL;
 
 	page = i915_gem_object_get_page(obj, n);

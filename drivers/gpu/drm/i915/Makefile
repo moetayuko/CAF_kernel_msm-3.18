@@ -10,6 +10,7 @@ subdir-ccflags-$(CONFIG_DRM_I915_WERROR) := -Werror
 i915-y := i915_drv.o \
 	  i915_irq.o \
 	  i915_params.o \
+	  i915_pci.o \
           i915_suspend.o \
 	  i915_sysfs.o \
 	  intel_csr.o \
@@ -100,9 +101,6 @@ i915-y += dvo_ch7017.o \
 
 # virtual gpu code
 i915-y += i915_vgpu.o
-
-# legacy horrors
-i915-y += i915_dma.o
 
 ifeq ($(CONFIG_DRM_I915_GVT),y)
 i915-y += intel_gvt.o
