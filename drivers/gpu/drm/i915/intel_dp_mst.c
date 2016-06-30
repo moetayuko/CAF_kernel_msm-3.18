@@ -336,6 +336,7 @@ static const struct drm_connector_funcs intel_dp_mst_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = intel_dp_mst_set_property,
 	.atomic_get_property = intel_connector_atomic_get_property,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_dp_mst_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
@@ -477,9 +478,11 @@ static void intel_dp_register_mst_connector(struct drm_connector *connector)
 {
 	struct intel_connector *intel_connector = to_intel_connector(connector);
 	struct drm_device *dev = connector->dev;
+
 	drm_modeset_lock_all(dev);
 	intel_connector_add_to_fbdev(intel_connector);
 	drm_modeset_unlock_all(dev);
+
 	drm_connector_register(&intel_connector->base);
 }
 

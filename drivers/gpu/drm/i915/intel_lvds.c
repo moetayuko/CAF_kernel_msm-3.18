@@ -555,6 +555,7 @@ static const struct drm_connector_funcs intel_lvds_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = intel_lvds_set_property,
 	.atomic_get_property = intel_connector_atomic_get_property,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_lvds_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
@@ -810,20 +811,22 @@ static const struct dmi_system_id intel_dual_link_lvds[] = {
 	{ }	/* terminating entry */
 };
 
+struct intel_encoder *intel_get_lvds_encoder(struct drm_device *dev)
+{
+	struct intel_encoder *intel_encoder;
+
+	for_each_intel_encoder(dev, intel_encoder)
+		if (intel_encoder->type == INTEL_OUTPUT_LVDS)
+			return intel_encoder;
+
+	return NULL;
+}
+
 bool intel_is_dual_link_lvds(struct drm_device *dev)
 {
-	struct intel_encoder *encoder;
-	struct intel_lvds_encoder *lvds_encoder;
+	struct intel_encoder *encoder = intel_get_lvds_encoder(dev);
 
-	for_each_intel_encoder(dev, encoder) {
-		if (encoder->type == INTEL_OUTPUT_LVDS) {
-			lvds_encoder = to_lvds_encoder(&encoder->base);
-
-			return lvds_encoder->is_dual_link;
-		}
-	}
-
-	return false;
+	return encoder && to_lvds_encoder(&encoder->base)->is_dual_link;
 }
 
 static bool compute_is_dual_link_lvds(struct intel_lvds_encoder *lvds_encoder)
@@ -1118,6 +1121,7 @@ out:
 	mutex_unlock(&dev->mode_config.mutex);
 
 	intel_panel_init(&intel_connector->panel, fixed_mode, downclock_mode);
+	intel_panel_setup_backlight(connector, INVALID_PIPE);
 
 	lvds_encoder->is_dual_link = compute_is_dual_link_lvds(lvds_encoder);
 	DRM_DEBUG_KMS("detected %s-link lvds configuration\n",
@@ -1130,9 +1134,6 @@ out:
 		DRM_DEBUG_KMS("lid notifier registration failed\n");
 		lvds_connector->lid_notifier.notifier_call = NULL;
 	}
-	drm_connector_register(connector);
-
-	intel_panel_setup_backlight(connector, INVALID_PIPE);
 
 	return;
 

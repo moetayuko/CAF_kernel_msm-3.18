@@ -1774,6 +1774,7 @@ static const struct drm_connector_funcs intel_hdmi_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = intel_hdmi_set_property,
 	.atomic_get_property = intel_connector_atomic_get_property,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_hdmi_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
@@ -1914,7 +1915,6 @@ void intel_hdmi_init_connector(struct intel_digital_port *intel_dig_port,
 	intel_hdmi_add_properties(intel_hdmi, connector);
 
 	intel_connector_attach_encoder(intel_connector, intel_encoder);
-	drm_connector_register(connector);
 	intel_hdmi->attached_connector = intel_connector;
 
 	/* For G4X desktop chip, PEG_BAND_GAP_DATA 3:0 must first be written

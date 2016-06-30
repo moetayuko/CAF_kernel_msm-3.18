@@ -743,6 +743,7 @@ static const struct drm_connector_funcs intel_crt_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.detect = intel_crt_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_crt_destroy,
 	.set_property = intel_crt_set_property,
@@ -878,8 +879,6 @@ void intel_crt_init(struct drm_device *dev)
 	intel_connector->get_hw_state = intel_connector_get_hw_state;
 
 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
-
-	drm_connector_register(connector);
 
 	if (!I915_HAS_HOTPLUG(dev))
 		intel_connector->polled = DRM_CONNECTOR_POLL_CONNECT;
