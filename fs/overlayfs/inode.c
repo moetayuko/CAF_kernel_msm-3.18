@@ -59,16 +59,37 @@ int ovl_setattr(struct dentry *dentry, struct iattr *attr)
 	if (err)
 		goto out;
 
+	if (attr->ia_valid & ATTR_SIZE) {
+		struct inode *realinode = d_inode(ovl_dentry_real(dentry));
+
+		err = -ETXTBSY;
+		if (atomic_read(&realinode->i_writecount) < 0)
+			goto out_drop_write;
+	}
+
 	err = ovl_copy_up(dentry);
 	if (!err) {
+		struct inode *winode = NULL;
+
 		upperdentry = ovl_dentry_upper(dentry);
+
+		if (attr->ia_valid & ATTR_SIZE) {
+			winode = d_inode(upperdentry);
+			err = get_write_access(winode);
+			if (err)
+				goto out_drop_write;
+		}
 
 		inode_lock(upperdentry->d_inode);
 		err = notify_change(upperdentry, attr, NULL);
 		if (!err)
 			ovl_copyattr(upperdentry->d_inode, dentry->d_inode);
 		inode_unlock(upperdentry->d_inode);
+
+		if (winode)
+			put_write_access(winode);
 	}
+out_drop_write:
 	ovl_drop_write(dentry);
 out:
 	return err;
@@ -85,28 +106,11 @@ static int ovl_getattr(struct vfsmount *mnt, struct dentry *dentry,
 
 int ovl_permission(struct inode *inode, int mask)
 {
-	struct ovl_entry *oe;
-	struct dentry *alias = NULL;
+	struct ovl_entry *oe = inode->i_private;
 	struct inode *realinode;
 	struct dentry *realdentry;
 	bool is_upper;
 	int err;
-
-	if (S_ISDIR(inode->i_mode)) {
-		oe = inode->i_private;
-	} else if (mask & MAY_NOT_BLOCK) {
-		return -ECHILD;
-	} else {
-		/*
-		 * For non-directories find an alias and get the info
-		 * from there.
-		 */
-		alias = d_find_any_alias(inode);
-		if (WARN_ON(!alias))
-			return -ENOENT;
-
-		oe = alias->d_fsdata;
-	}
 
 	realdentry = ovl_entry_real(oe, &is_upper);
 
@@ -137,8 +141,7 @@ int ovl_permission(struct inode *inode, int mask)
 	realinode = ACCESS_ONCE(realdentry->d_inode);
 	if (!realinode) {
 		WARN_ON(!(mask & MAY_NOT_BLOCK));
-		err = -ENOENT;
-		goto out_dput;
+		return -ENOENT;
 	}
 
 	if (mask & MAY_WRITE) {
@@ -157,16 +160,12 @@ int ovl_permission(struct inode *inode, int mask)
 		 * constructed return EROFS to prevent modification of
 		 * upper layer.
 		 */
-		err = -EROFS;
 		if (is_upper && !IS_RDONLY(inode) && IS_RDONLY(realinode) &&
 		    (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode)))
-			goto out_dput;
+			return -EROFS;
 	}
 
-	err = __inode_permission(realinode, mask);
-out_dput:
-	dput(alias);
-	return err;
+	return __inode_permission(realinode, mask);
 }
 
 static const char *ovl_get_link(struct dentry *dentry,
@@ -325,36 +324,25 @@ static bool ovl_open_need_copy_up(int flags, enum ovl_path_type type,
 	return true;
 }
 
-struct inode *ovl_d_select_inode(struct dentry *dentry, unsigned file_flags)
+int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags)
 {
-	int err;
+	int err = 0;
 	struct path realpath;
 	enum ovl_path_type type;
-
-	if (d_is_dir(dentry))
-		return d_backing_inode(dentry);
 
 	type = ovl_path_real(dentry, &realpath);
 	if (ovl_open_need_copy_up(file_flags, type, realpath.dentry)) {
 		err = ovl_want_write(dentry);
-		if (err)
-			return ERR_PTR(err);
-
-		if (file_flags & O_TRUNC)
-			err = ovl_copy_up_truncate(dentry);
-		else
-			err = ovl_copy_up(dentry);
-		ovl_drop_write(dentry);
-		if (err)
-			return ERR_PTR(err);
-
-		ovl_path_upper(dentry, &realpath);
+		if (!err) {
+			if (file_flags & O_TRUNC)
+				err = ovl_copy_up_truncate(dentry);
+			else
+				err = ovl_copy_up(dentry);
+			ovl_drop_write(dentry);
+		}
 	}
 
-	if (realpath.dentry->d_flags & DCACHE_OP_SELECT_INODE)
-		return realpath.dentry->d_op->d_select_inode(realpath.dentry, file_flags);
-
-	return d_backing_inode(realpath.dentry);
+	return err;
 }
 
 static const struct inode_operations ovl_file_inode_operations = {
@@ -392,10 +380,10 @@ struct inode *ovl_new_inode(struct super_block *sb, umode_t mode,
 	inode->i_ino = get_next_ino();
 	inode->i_mode = mode;
 	inode->i_flags |= S_NOATIME | S_NOCMTIME;
+	inode->i_private = oe;
 
 	switch (mode) {
 	case S_IFDIR:
-		inode->i_private = oe;
 		inode->i_op = &ovl_dir_inode_operations;
 		inode->i_fop = &ovl_dir_operations;
 		break;
