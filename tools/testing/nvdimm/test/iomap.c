@@ -52,7 +52,7 @@ static struct nfit_test_resource *__get_nfit_res(resource_size_t resource)
 	return NULL;
 }
 
-static struct nfit_test_resource *get_nfit_res(resource_size_t resource)
+struct nfit_test_resource *get_nfit_res(resource_size_t resource)
 {
 	struct nfit_test_resource *res;
 
@@ -62,6 +62,7 @@ static struct nfit_test_resource *get_nfit_res(resource_size_t resource)
 
 	return res;
 }
+EXPORT_SYMBOL(get_nfit_res);
 
 void __iomem *__nfit_test_ioremap(resource_size_t offset, unsigned long size,
 		void __iomem *(*fallback_fn)(resource_size_t, unsigned long))
@@ -228,6 +229,22 @@ struct resource *__wrap___request_region(struct resource *parent,
 	return nfit_test_request_region(NULL, parent, start, n, name, flags);
 }
 EXPORT_SYMBOL(__wrap___request_region);
+
+int __wrap_insert_resource(struct resource *parent, struct resource *res)
+{
+	if (get_nfit_res(res->start))
+		return 0;
+	return insert_resource(parent, res);
+}
+EXPORT_SYMBOL(__wrap_insert_resource);
+
+int __wrap_remove_resource(struct resource *res)
+{
+	if (get_nfit_res(res->start))
+		return 0;
+	return remove_resource(res);
+}
+EXPORT_SYMBOL(__wrap_remove_resource);
 
 struct resource *__wrap___devm_request_region(struct device *dev,
 		struct resource *parent, resource_size_t start,

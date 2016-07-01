@@ -31,6 +31,9 @@
 #define UUID_NFIT_DIMM_N_HPE1 "9002c334-acf3-4c0e-9642-a235f0d53bc6"
 #define UUID_NFIT_DIMM_N_HPE2 "5008664b-b758-41a0-a03c-27c2f2d04f7e"
 
+/* https://msdn.microsoft.com/library/windows/hardware/mt604741 */
+#define UUID_NFIT_DIMM_N_MSFT "1ee68b36-d4bd-4a1a-9a16-4f8e53d46e05"
+
 #define ACPI_NFIT_MEM_FAILED_MASK (ACPI_NFIT_MEM_SAVE_FAILED \
 		| ACPI_NFIT_MEM_RESTORE_FAILED | ACPI_NFIT_MEM_FLUSH_FAILED \
 		| ACPI_NFIT_MEM_NOT_ARMED)
@@ -40,6 +43,7 @@ enum nfit_uuids {
 	NFIT_DEV_DIMM = NVDIMM_FAMILY_INTEL,
 	NFIT_DEV_DIMM_N_HPE1 = NVDIMM_FAMILY_HPE1,
 	NFIT_DEV_DIMM_N_HPE2 = NVDIMM_FAMILY_HPE2,
+	NFIT_DEV_DIMM_N_MSFT = NVDIMM_FAMILY_MSFT,
 	NFIT_SPA_VOLATILE,
 	NFIT_SPA_PM,
 	NFIT_SPA_DCR,
@@ -53,12 +57,12 @@ enum nfit_uuids {
 };
 
 /*
- * Region format interface codes are stored as an array of bytes in the
- * NFIT DIMM Control Region structure
+ * Region format interface codes are stored with the interface as the
+ * LSB and the function as the MSB.
  */
-#define NFIT_FIC_BYTE cpu_to_be16(0x101) /* byte-addressable energy backed */
-#define NFIT_FIC_BLK cpu_to_be16(0x201) /* block-addressable non-energy backed */
-#define NFIT_FIC_BYTEN cpu_to_be16(0x301) /* byte-addressable non-energy backed */
+#define NFIT_FIC_BYTE cpu_to_le16(0x101) /* byte-addressable energy backed */
+#define NFIT_FIC_BLK cpu_to_le16(0x201) /* block-addressable non-energy backed */
+#define NFIT_FIC_BYTEN cpu_to_le16(0x301) /* byte-addressable non-energy backed */
 
 enum {
 	NFIT_BLK_READ_FLUSH = 1,
