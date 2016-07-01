@@ -5,7 +5,7 @@
  * This file is released under the GPL.
  */
 
-#include "dm.h"
+#include "dm-core.h"
 
 #include <linux/module.h>
 #include <linux/vmalloc.h>
@@ -1679,6 +1679,11 @@ static void free_params(struct dm_ioctl *param, size_t param_size, int param_fla
 	if (param_flags & DM_WIPE_BUFFER)
 		memset(param, 0, param_size);
 
+	/*
+	 * NOTE! The following code _cannot_ be refactored to
+	 * simply use kvfree().  See here for more details:
+	 * https://www.redhat.com/archives/dm-devel/2016-April/msg00103.html
+	 */
 	if (param_flags & DM_PARAMS_KMALLOC)
 		kfree(param);
 	if (param_flags & DM_PARAMS_VMALLOC)
