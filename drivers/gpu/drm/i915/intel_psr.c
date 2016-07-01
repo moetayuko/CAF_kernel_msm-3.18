@@ -501,8 +501,11 @@ static void vlv_psr_disable(struct intel_dp *intel_dp)
 
 	if (dev_priv->psr.active) {
 		/* Put VLV PSR back to PSR_state 0 that is PSR Disabled. */
-		if (wait_for((I915_READ(VLV_PSRSTAT(intel_crtc->pipe)) &
-			      VLV_EDP_PSR_IN_TRANS) == 0, 1))
+		if (intel_wait_for_register(dev_priv,
+					    VLV_PSRSTAT(intel_crtc->pipe),
+					    VLV_EDP_PSR_IN_TRANS,
+					    0,
+					    1))
 			WARN(1, "PSR transition took longer than expected\n");
 
 		val = I915_READ(VLV_PSRCTL(intel_crtc->pipe));
@@ -528,9 +531,11 @@ static void hsw_psr_disable(struct intel_dp *intel_dp)
 			   I915_READ(EDP_PSR_CTL) & ~EDP_PSR_ENABLE);
 
 		/* Wait till PSR is idle */
-		if (_wait_for((I915_READ(EDP_PSR_STATUS_CTL) &
-			       EDP_PSR_STATUS_STATE_MASK) == 0,
-			       2 * USEC_PER_SEC, 10 * USEC_PER_MSEC))
+		if (intel_wait_for_register(dev_priv,
+					    EDP_PSR_STATUS_CTL,
+					    EDP_PSR_STATUS_STATE_MASK,
+					    0,
+					    2000))
 			DRM_ERROR("Timed out waiting for PSR Idle State\n");
 
 		dev_priv->psr.active = false;
@@ -586,14 +591,20 @@ static void intel_psr_work(struct work_struct *work)
 	 * and be ready for re-enable.
 	 */
 	if (HAS_DDI(dev_priv)) {
-		if (wait_for((I915_READ(EDP_PSR_STATUS_CTL) &
-			      EDP_PSR_STATUS_STATE_MASK) == 0, 50)) {
+		if (intel_wait_for_register(dev_priv,
+					    EDP_PSR_STATUS_CTL,
+					    EDP_PSR_STATUS_STATE_MASK,
+					    0,
+					    50)) {
 			DRM_ERROR("Timed out waiting for PSR Idle for re-enable\n");
 			return;
 		}
 	} else {
-		if (wait_for((I915_READ(VLV_PSRSTAT(pipe)) &
-			      VLV_EDP_PSR_IN_TRANS) == 0, 1)) {
+		if (intel_wait_for_register(dev_priv,
+					    VLV_PSRSTAT(pipe),
+					    VLV_EDP_PSR_IN_TRANS,
+					    0,
+					    1)) {
 			DRM_ERROR("Timed out waiting for PSR Idle for re-enable\n");
 			return;
 		}

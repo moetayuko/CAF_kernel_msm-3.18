@@ -90,7 +90,9 @@ static void wait_for_dsi_fifo_empty(struct intel_dsi *intel_dsi, enum port port)
 	mask = LP_CTRL_FIFO_EMPTY | HS_CTRL_FIFO_EMPTY |
 		LP_DATA_FIFO_EMPTY | HS_DATA_FIFO_EMPTY;
 
-	if (wait_for((I915_READ(MIPI_GEN_FIFO_STAT(port)) & mask) == mask, 100))
+	if (intel_wait_for_register(dev_priv,
+				    MIPI_GEN_FIFO_STAT(port), mask, mask,
+				    100))
 		DRM_ERROR("DPI FIFOs are not empty\n");
 }
 
@@ -158,8 +160,10 @@ static ssize_t intel_dsi_host_transfer(struct mipi_dsi_host *host,
 
 	/* note: this is never true for reads */
 	if (packet.payload_length) {
-
-		if (wait_for((I915_READ(MIPI_GEN_FIFO_STAT(port)) & data_mask) == 0, 50))
+		if (intel_wait_for_register(dev_priv,
+					    MIPI_GEN_FIFO_STAT(port),
+					    data_mask, 0,
+					    50))
 			DRM_ERROR("Timeout waiting for HS/LP DATA FIFO !full\n");
 
 		write_data(dev_priv, data_reg, packet.payload,
@@ -170,7 +174,10 @@ static ssize_t intel_dsi_host_transfer(struct mipi_dsi_host *host,
 		I915_WRITE(MIPI_INTR_STAT(port), GEN_READ_DATA_AVAIL);
 	}
 
-	if (wait_for((I915_READ(MIPI_GEN_FIFO_STAT(port)) & ctrl_mask) == 0, 50)) {
+	if (intel_wait_for_register(dev_priv,
+				    MIPI_GEN_FIFO_STAT(port),
+				    ctrl_mask, 0,
+				    50)) {
 		DRM_ERROR("Timeout waiting for HS/LP CTRL FIFO !full\n");
 	}
 
@@ -179,7 +186,10 @@ static ssize_t intel_dsi_host_transfer(struct mipi_dsi_host *host,
 	/* ->rx_len is set only for reads */
 	if (msg->rx_len) {
 		data_mask = GEN_READ_DATA_AVAIL;
-		if (wait_for((I915_READ(MIPI_INTR_STAT(port)) & data_mask) == data_mask, 50))
+		if (intel_wait_for_register(dev_priv,
+					    MIPI_INTR_STAT(port),
+					    data_mask, data_mask,
+					    50))
 			DRM_ERROR("Timeout waiting for read data.\n");
 
 		read_data(dev_priv, data_reg, msg->rx_buf, msg->rx_len);
@@ -269,7 +279,9 @@ static int dpi_send_cmd(struct intel_dsi *intel_dsi, u32 cmd, bool hs,
 	I915_WRITE(MIPI_DPI_CONTROL(port), cmd);
 
 	mask = SPL_PKT_SENT_INTERRUPT;
-	if (wait_for((I915_READ(MIPI_INTR_STAT(port)) & mask) == mask, 100))
+	if (intel_wait_for_register(dev_priv,
+				    MIPI_INTR_STAT(port), mask, mask,
+				    100))
 		DRM_ERROR("Video mode command 0x%08x send failed.\n", cmd);
 
 	return 0;
@@ -667,8 +679,9 @@ static void intel_dsi_clear_device_ready(struct intel_encoder *encoder)
 		/* Wait till Clock lanes are in LP-00 state for MIPI Port A
 		 * only. MIPI Port C has no similar bit for checking
 		 */
-		if (wait_for(((I915_READ(port_ctrl) & AFE_LATCHOUT)
-						== 0x00000), 30))
+		if (intel_wait_for_register(dev_priv,
+					    port_ctrl, AFE_LATCHOUT, 0,
+					    30))
 			DRM_ERROR("DSI LP not going Low\n");
 
 		/* Disable MIPI PHY transparent latch */
@@ -1390,6 +1403,7 @@ static const struct drm_connector_helper_funcs intel_dsi_connector_helper_funcs 
 static const struct drm_connector_funcs intel_dsi_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.detect = intel_dsi_detect,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_dsi_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
@@ -1587,12 +1601,9 @@ void intel_dsi_init(struct drm_device *dev)
 	connector->display_info.height_mm = fixed_mode->height_mm;
 
 	intel_panel_init(&intel_connector->panel, fixed_mode, NULL);
+	intel_panel_setup_backlight(connector, INVALID_PIPE);
 
 	intel_dsi_add_properties(intel_connector);
-
-	drm_connector_register(connector);
-
-	intel_panel_setup_backlight(connector, INVALID_PIPE);
 
 	return;
 

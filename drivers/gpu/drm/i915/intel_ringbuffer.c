@@ -515,8 +515,9 @@ static void intel_ring_setup_status_page(struct intel_engine_cs *engine)
 		I915_WRITE(reg,
 			   _MASKED_BIT_ENABLE(INSTPM_TLB_INVALIDATE |
 					      INSTPM_SYNC_FLUSH));
-		if (wait_for((I915_READ(reg) & INSTPM_SYNC_FLUSH) == 0,
-			     1000))
+		if (intel_wait_for_register(dev_priv,
+					    reg, INSTPM_SYNC_FLUSH, 0,
+					    1000))
 			DRM_ERROR("%s: wait for SyncFlush to complete for TLB invalidation timed out\n",
 				  engine->name);
 	}
@@ -528,7 +529,11 @@ static bool stop_ring(struct intel_engine_cs *engine)
 
 	if (!IS_GEN2(dev_priv)) {
 		I915_WRITE_MODE(engine, _MASKED_BIT_ENABLE(STOP_RING));
-		if (wait_for((I915_READ_MODE(engine) & MODE_IDLE) != 0, 1000)) {
+		if (intel_wait_for_register(dev_priv,
+					    RING_MI_MODE(engine->mmio_base),
+					    MODE_IDLE,
+					    MODE_IDLE,
+					    1000)) {
 			DRM_ERROR("%s : timed out trying to stop ring\n",
 				  engine->name);
 			/* Sometimes we observe that the idle flag is not
@@ -1542,6 +1547,7 @@ gen8_ring_sync(struct drm_i915_gem_request *waiter_req,
 {
 	struct intel_engine_cs *waiter = waiter_req->engine;
 	struct drm_i915_private *dev_priv = waiter_req->i915;
+	u64 offset = GEN8_WAIT_OFFSET(waiter, signaller->id);
 	struct i915_hw_ppgtt *ppgtt;
 	int ret;
 
@@ -1553,10 +1559,8 @@ gen8_ring_sync(struct drm_i915_gem_request *waiter_req,
 				MI_SEMAPHORE_GLOBAL_GTT |
 				MI_SEMAPHORE_SAD_GTE_SDD);
 	intel_ring_emit(waiter, seqno);
-	intel_ring_emit(waiter,
-			lower_32_bits(GEN8_WAIT_OFFSET(waiter, signaller->id)));
-	intel_ring_emit(waiter,
-			upper_32_bits(GEN8_WAIT_OFFSET(waiter, signaller->id)));
+	intel_ring_emit(waiter, lower_32_bits(offset));
+	intel_ring_emit(waiter, upper_32_bits(offset));
 	intel_ring_advance(waiter);
 
 	/* When the !RCS engines idle waiting upon a semaphore, they lose their
@@ -2321,6 +2325,57 @@ intel_ringbuffer_free(struct intel_ringbuffer *ring)
 	kfree(ring);
 }
 
+static int intel_ring_context_pin(struct i915_gem_context *ctx,
+				  struct intel_engine_cs *engine)
+{
+	struct intel_context *ce = &ctx->engine[engine->id];
+	int ret;
+
+	lockdep_assert_held(&ctx->i915->dev->struct_mutex);
+
+	if (ce->pin_count++)
+		return 0;
+
+	if (ce->state) {
+		ret = i915_gem_obj_ggtt_pin(ce->state, ctx->ggtt_alignment, 0);
+		if (ret)
+			goto error;
+	}
+
+	/* The kernel context is only used as a placeholder for flushing the
+	 * active context. It is never used for submitting user rendering and
+	 * as such never requires the golden render context, and so we can skip
+	 * emitting it when we switch to the kernel context. This is required
+	 * as during eviction we cannot allocate and pin the renderstate in
+	 * order to initialise the context.
+	 */
+	if (ctx == ctx->i915->kernel_context)
+		ce->initialised = true;
+
+	i915_gem_context_reference(ctx);
+	return 0;
+
+error:
+	ce->pin_count = 0;
+	return ret;
+}
+
+static void intel_ring_context_unpin(struct i915_gem_context *ctx,
+				     struct intel_engine_cs *engine)
+{
+	struct intel_context *ce = &ctx->engine[engine->id];
+
+	lockdep_assert_held(&ctx->i915->dev->struct_mutex);
+
+	if (--ce->pin_count)
+		return;
+
+	if (ce->state)
+		i915_gem_object_ggtt_unpin(ce->state);
+
+	i915_gem_context_unreference(ctx);
+}
+
 static int intel_init_ring_buffer(struct drm_device *dev,
 				  struct intel_engine_cs *engine)
 {
@@ -2340,6 +2395,17 @@ static int intel_init_ring_buffer(struct drm_device *dev,
 	       sizeof(engine->semaphore.sync_seqno));
 
 	init_waitqueue_head(&engine->irq_queue);
+
+	/* We may need to do things with the shrinker which
+	 * require us to immediately switch back to the default
+	 * context. This can cause a problem as pinning the
+	 * default context also requires GTT space which may not
+	 * be available. To avoid this we always pin the default
+	 * context.
+	 */
+	ret = intel_ring_context_pin(dev_priv->kernel_context, engine);
+	if (ret)
+		goto error;
 
 	ringbuf = intel_engine_create_ringbuffer(engine, 32 * PAGE_SIZE);
 	if (IS_ERR(ringbuf)) {
@@ -2408,6 +2474,9 @@ void intel_cleanup_engine(struct intel_engine_cs *engine)
 
 	i915_cmd_parser_fini_ring(engine);
 	i915_gem_batch_pool_fini(&engine->batch_pool);
+
+	intel_ring_context_unpin(dev_priv->kernel_context, engine);
+
 	engine->i915 = NULL;
 }
 
@@ -2614,32 +2683,38 @@ static void gen6_bsd_ring_write_tail(struct intel_engine_cs *engine,
 {
 	struct drm_i915_private *dev_priv = engine->i915;
 
+	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
+
        /* Every tail move must follow the sequence below */
 
 	/* Disable notification that the ring is IDLE. The GT
 	 * will then assume that it is busy and bring it out of rc6.
 	 */
-	I915_WRITE(GEN6_BSD_SLEEP_PSMI_CONTROL,
-		   _MASKED_BIT_ENABLE(GEN6_BSD_SLEEP_MSG_DISABLE));
+	I915_WRITE_FW(GEN6_BSD_SLEEP_PSMI_CONTROL,
+		      _MASKED_BIT_ENABLE(GEN6_BSD_SLEEP_MSG_DISABLE));
 
 	/* Clear the context id. Here be magic! */
-	I915_WRITE64(GEN6_BSD_RNCID, 0x0);
+	I915_WRITE64_FW(GEN6_BSD_RNCID, 0x0);
 
 	/* Wait for the ring not to be idle, i.e. for it to wake up. */
-	if (wait_for((I915_READ(GEN6_BSD_SLEEP_PSMI_CONTROL) &
-		      GEN6_BSD_SLEEP_INDICATOR) == 0,
-		     50))
+	if (intel_wait_for_register_fw(dev_priv,
+				       GEN6_BSD_SLEEP_PSMI_CONTROL,
+				       GEN6_BSD_SLEEP_INDICATOR,
+				       0,
+				       50))
 		DRM_ERROR("timed out waiting for the BSD ring to wake up\n");
 
 	/* Now that the ring is fully powered up, update the tail */
-	I915_WRITE_TAIL(engine, value);
-	POSTING_READ(RING_TAIL(engine->mmio_base));
+	I915_WRITE_FW(RING_TAIL(engine->mmio_base), value);
+	POSTING_READ_FW(RING_TAIL(engine->mmio_base));
 
 	/* Let the ring send IDLE messages to the GT again,
 	 * and so let it sleep to conserve power when idle.
 	 */
-	I915_WRITE(GEN6_BSD_SLEEP_PSMI_CONTROL,
-		   _MASKED_BIT_DISABLE(GEN6_BSD_SLEEP_MSG_DISABLE));
+	I915_WRITE_FW(GEN6_BSD_SLEEP_PSMI_CONTROL,
+		      _MASKED_BIT_DISABLE(GEN6_BSD_SLEEP_MSG_DISABLE));
+
+	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
 
 static int gen6_bsd_ring_flush(struct drm_i915_gem_request *req,
@@ -2808,6 +2883,147 @@ static int gen6_ring_flush(struct drm_i915_gem_request *req,
 	return 0;
 }
 
+static void intel_ring_init_semaphores(struct drm_i915_private *dev_priv,
+				       struct intel_engine_cs *engine)
+{
+	struct drm_i915_gem_object *obj;
+	int ret, i;
+
+	if (!i915_semaphore_is_enabled(dev_priv))
+		return;
+
+	if (INTEL_GEN(dev_priv) >= 8 && !dev_priv->semaphore_obj) {
+		obj = i915_gem_object_create(dev_priv->dev, 4096);
+		if (IS_ERR(obj)) {
+			DRM_ERROR("Failed to allocate semaphore bo. Disabling semaphores\n");
+			i915.semaphores = 0;
+		} else {
+			i915_gem_object_set_cache_level(obj, I915_CACHE_LLC);
+			ret = i915_gem_obj_ggtt_pin(obj, 0, PIN_NONBLOCK);
+			if (ret != 0) {
+				drm_gem_object_unreference(&obj->base);
+				DRM_ERROR("Failed to pin semaphore bo. Disabling semaphores\n");
+				i915.semaphores = 0;
+			} else {
+				dev_priv->semaphore_obj = obj;
+			}
+		}
+	}
+
+	if (!i915_semaphore_is_enabled(dev_priv))
+		return;
+
+	if (INTEL_GEN(dev_priv) >= 8) {
+		u64 offset = i915_gem_obj_ggtt_offset(dev_priv->semaphore_obj);
+
+		engine->semaphore.sync_to = gen8_ring_sync;
+		engine->semaphore.signal = gen8_xcs_signal;
+
+		for (i = 0; i < I915_NUM_ENGINES; i++) {
+			u64 ring_offset;
+
+			if (i != engine->id)
+				ring_offset = offset + GEN8_SEMAPHORE_OFFSET(engine->id, i);
+			else
+				ring_offset = MI_SEMAPHORE_SYNC_INVALID;
+
+			engine->semaphore.signal_ggtt[i] = ring_offset;
+		}
+	} else if (INTEL_GEN(dev_priv) >= 6) {
+		engine->semaphore.sync_to = gen6_ring_sync;
+		engine->semaphore.signal = gen6_signal;
+
+		/*
+		 * The current semaphore is only applied on pre-gen8
+		 * platform.  And there is no VCS2 ring on the pre-gen8
+		 * platform. So the semaphore between RCS and VCS2 is
+		 * initialized as INVALID.  Gen8 will initialize the
+		 * sema between VCS2 and RCS later.
+		 */
+		for (i = 0; i < I915_NUM_ENGINES; i++) {
+			static const struct {
+				u32 wait_mbox;
+				i915_reg_t mbox_reg;
+			} sem_data[I915_NUM_ENGINES][I915_NUM_ENGINES] = {
+				[RCS] = {
+					[VCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_RV,  .mbox_reg = GEN6_VRSYNC },
+					[BCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_RB,  .mbox_reg = GEN6_BRSYNC },
+					[VECS] = { .wait_mbox = MI_SEMAPHORE_SYNC_RVE, .mbox_reg = GEN6_VERSYNC },
+				},
+				[VCS] = {
+					[RCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_VR,  .mbox_reg = GEN6_RVSYNC },
+					[BCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_VB,  .mbox_reg = GEN6_BVSYNC },
+					[VECS] = { .wait_mbox = MI_SEMAPHORE_SYNC_VVE, .mbox_reg = GEN6_VEVSYNC },
+				},
+				[BCS] = {
+					[RCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_BR,  .mbox_reg = GEN6_RBSYNC },
+					[VCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_BV,  .mbox_reg = GEN6_VBSYNC },
+					[VECS] = { .wait_mbox = MI_SEMAPHORE_SYNC_BVE, .mbox_reg = GEN6_VEBSYNC },
+				},
+				[VECS] = {
+					[RCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_VER, .mbox_reg = GEN6_RVESYNC },
+					[VCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_VEV, .mbox_reg = GEN6_VVESYNC },
+					[BCS] =  { .wait_mbox = MI_SEMAPHORE_SYNC_VEB, .mbox_reg = GEN6_BVESYNC },
+				},
+			};
+			u32 wait_mbox;
+			i915_reg_t mbox_reg;
+
+			if (i == engine->id || i == VCS2) {
+				wait_mbox = MI_SEMAPHORE_SYNC_INVALID;
+				mbox_reg = GEN6_NOSYNC;
+			} else {
+				wait_mbox = sem_data[engine->id][i].wait_mbox;
+				mbox_reg = sem_data[engine->id][i].mbox_reg;
+			}
+
+			engine->semaphore.mbox.wait[i] = wait_mbox;
+			engine->semaphore.mbox.signal[i] = mbox_reg;
+		}
+	}
+}
+
+static void intel_ring_default_vfuncs(struct drm_i915_private *dev_priv,
+				      struct intel_engine_cs *engine)
+{
+	engine->init_hw = init_ring_common;
+	engine->write_tail = ring_write_tail;
+	engine->get_seqno = ring_get_seqno;
+	engine->set_seqno = ring_set_seqno;
+
+	if (INTEL_GEN(dev_priv) >= 8) {
+		engine->dispatch_execbuffer = gen8_ring_dispatch_execbuffer;
+		engine->add_request = gen6_add_request;
+		engine->irq_seqno_barrier = gen6_seqno_barrier;
+	} else if (INTEL_GEN(dev_priv) >= 6) {
+		engine->dispatch_execbuffer = gen6_ring_dispatch_execbuffer;
+		engine->add_request = gen6_add_request;
+		engine->irq_seqno_barrier = gen6_seqno_barrier;
+	} else {
+		engine->dispatch_execbuffer = i965_dispatch_execbuffer;
+		engine->add_request = i9xx_add_request;
+	}
+
+	if (INTEL_GEN(dev_priv) >= 8) {
+		engine->irq_get = gen8_ring_get_irq;
+		engine->irq_put = gen8_ring_put_irq;
+	} else if (INTEL_GEN(dev_priv) >= 6) {
+		engine->irq_get = gen6_ring_get_irq;
+		engine->irq_put = gen6_ring_put_irq;
+	} else if (INTEL_GEN(dev_priv) >= 5) {
+		engine->irq_get = gen5_ring_get_irq;
+		engine->irq_put = gen5_ring_put_irq;
+	} else if (INTEL_GEN(dev_priv) >= 3) {
+		engine->irq_get = i9xx_ring_get_irq;
+		engine->irq_put = i9xx_ring_put_irq;
+	} else {
+		engine->irq_get = i8xx_ring_get_irq;
+		engine->irq_put = i8xx_ring_put_irq;
+	}
+
+	intel_ring_init_semaphores(dev_priv, engine);
+}
+
 int intel_init_render_ring_buffer(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
@@ -2821,110 +3037,41 @@ int intel_init_render_ring_buffer(struct drm_device *dev)
 	engine->hw_id = 0;
 	engine->mmio_base = RENDER_RING_BASE;
 
-	if (INTEL_GEN(dev_priv) >= 8) {
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			obj = i915_gem_object_create(dev, 4096);
-			if (IS_ERR(obj)) {
-				DRM_ERROR("Failed to allocate semaphore bo. Disabling semaphores\n");
-				i915.semaphores = 0;
-			} else {
-				i915_gem_object_set_cache_level(obj, I915_CACHE_LLC);
-				ret = i915_gem_obj_ggtt_pin(obj, 0, PIN_NONBLOCK);
-				if (ret != 0) {
-					drm_gem_object_unreference(&obj->base);
-					DRM_ERROR("Failed to pin semaphore bo. Disabling semaphores\n");
-					i915.semaphores = 0;
-				} else
-					dev_priv->semaphore_obj = obj;
-			}
-		}
+	intel_ring_default_vfuncs(dev_priv, engine);
 
+	if (INTEL_GEN(dev_priv) >= 8) {
 		engine->init_context = intel_rcs_ctx_init;
 		engine->add_request = gen8_render_add_request;
 		engine->flush = gen8_render_ring_flush;
-		engine->irq_get = gen8_ring_get_irq;
-		engine->irq_put = gen8_ring_put_irq;
 		engine->irq_enable_mask = GT_RENDER_USER_INTERRUPT;
-		engine->get_seqno = ring_get_seqno;
-		engine->set_seqno = ring_set_seqno;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			WARN_ON(!dev_priv->semaphore_obj);
-			engine->semaphore.sync_to = gen8_ring_sync;
+		if (i915_semaphore_is_enabled(dev_priv))
 			engine->semaphore.signal = gen8_rcs_signal;
-			GEN8_RING_SEMAPHORE_INIT(engine);
-		}
 	} else if (INTEL_GEN(dev_priv) >= 6) {
 		engine->init_context = intel_rcs_ctx_init;
-		engine->add_request = gen6_add_request;
 		engine->flush = gen7_render_ring_flush;
 		if (IS_GEN6(dev_priv))
 			engine->flush = gen6_render_ring_flush;
-		engine->irq_get = gen6_ring_get_irq;
-		engine->irq_put = gen6_ring_put_irq;
 		engine->irq_enable_mask = GT_RENDER_USER_INTERRUPT;
-		engine->irq_seqno_barrier = gen6_seqno_barrier;
-		engine->get_seqno = ring_get_seqno;
-		engine->set_seqno = ring_set_seqno;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			engine->semaphore.sync_to = gen6_ring_sync;
-			engine->semaphore.signal = gen6_signal;
-			/*
-			 * The current semaphore is only applied on pre-gen8
-			 * platform.  And there is no VCS2 ring on the pre-gen8
-			 * platform. So the semaphore between RCS and VCS2 is
-			 * initialized as INVALID.  Gen8 will initialize the
-			 * sema between VCS2 and RCS later.
-			 */
-			engine->semaphore.mbox.wait[RCS] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.wait[VCS] = MI_SEMAPHORE_SYNC_RV;
-			engine->semaphore.mbox.wait[BCS] = MI_SEMAPHORE_SYNC_RB;
-			engine->semaphore.mbox.wait[VECS] = MI_SEMAPHORE_SYNC_RVE;
-			engine->semaphore.mbox.wait[VCS2] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.signal[RCS] = GEN6_NOSYNC;
-			engine->semaphore.mbox.signal[VCS] = GEN6_VRSYNC;
-			engine->semaphore.mbox.signal[BCS] = GEN6_BRSYNC;
-			engine->semaphore.mbox.signal[VECS] = GEN6_VERSYNC;
-			engine->semaphore.mbox.signal[VCS2] = GEN6_NOSYNC;
-		}
 	} else if (IS_GEN5(dev_priv)) {
 		engine->add_request = pc_render_add_request;
 		engine->flush = gen4_render_ring_flush;
 		engine->get_seqno = pc_render_get_seqno;
 		engine->set_seqno = pc_render_set_seqno;
-		engine->irq_get = gen5_ring_get_irq;
-		engine->irq_put = gen5_ring_put_irq;
 		engine->irq_enable_mask = GT_RENDER_USER_INTERRUPT |
 					GT_RENDER_PIPECTL_NOTIFY_INTERRUPT;
 	} else {
-		engine->add_request = i9xx_add_request;
 		if (INTEL_GEN(dev_priv) < 4)
 			engine->flush = gen2_render_ring_flush;
 		else
 			engine->flush = gen4_render_ring_flush;
-		engine->get_seqno = ring_get_seqno;
-		engine->set_seqno = ring_set_seqno;
-		if (IS_GEN2(dev_priv)) {
-			engine->irq_get = i8xx_ring_get_irq;
-			engine->irq_put = i8xx_ring_put_irq;
-		} else {
-			engine->irq_get = i9xx_ring_get_irq;
-			engine->irq_put = i9xx_ring_put_irq;
-		}
 		engine->irq_enable_mask = I915_USER_INTERRUPT;
 	}
-	engine->write_tail = ring_write_tail;
 
 	if (IS_HASWELL(dev_priv))
 		engine->dispatch_execbuffer = hsw_ring_dispatch_execbuffer;
-	else if (IS_GEN8(dev_priv))
-		engine->dispatch_execbuffer = gen8_ring_dispatch_execbuffer;
-	else if (INTEL_GEN(dev_priv) >= 6)
-		engine->dispatch_execbuffer = gen6_ring_dispatch_execbuffer;
-	else if (INTEL_GEN(dev_priv) >= 4)
-		engine->dispatch_execbuffer = i965_dispatch_execbuffer;
 	else if (IS_I830(dev_priv) || IS_845G(dev_priv))
 		engine->dispatch_execbuffer = i830_dispatch_execbuffer;
-	else
+	else if (INTEL_GEN(dev_priv) <= 3)
 		engine->dispatch_execbuffer = i915_dispatch_execbuffer;
 	engine->init_hw = init_render_ring;
 	engine->cleanup = render_ring_cleanup;
@@ -2971,68 +3118,27 @@ int intel_init_bsd_ring_buffer(struct drm_device *dev)
 	engine->exec_id = I915_EXEC_BSD;
 	engine->hw_id = 1;
 
-	engine->write_tail = ring_write_tail;
+	intel_ring_default_vfuncs(dev_priv, engine);
+
 	if (INTEL_GEN(dev_priv) >= 6) {
 		engine->mmio_base = GEN6_BSD_RING_BASE;
 		/* gen6 bsd needs a special wa for tail updates */
 		if (IS_GEN6(dev_priv))
 			engine->write_tail = gen6_bsd_ring_write_tail;
 		engine->flush = gen6_bsd_ring_flush;
-		engine->add_request = gen6_add_request;
-		engine->irq_seqno_barrier = gen6_seqno_barrier;
-		engine->get_seqno = ring_get_seqno;
-		engine->set_seqno = ring_set_seqno;
-		if (INTEL_GEN(dev_priv) >= 8) {
+		if (INTEL_GEN(dev_priv) >= 8)
 			engine->irq_enable_mask =
 				GT_RENDER_USER_INTERRUPT << GEN8_VCS1_IRQ_SHIFT;
-			engine->irq_get = gen8_ring_get_irq;
-			engine->irq_put = gen8_ring_put_irq;
-			engine->dispatch_execbuffer =
-				gen8_ring_dispatch_execbuffer;
-			if (i915_semaphore_is_enabled(dev_priv)) {
-				engine->semaphore.sync_to = gen8_ring_sync;
-				engine->semaphore.signal = gen8_xcs_signal;
-				GEN8_RING_SEMAPHORE_INIT(engine);
-			}
-		} else {
+		else
 			engine->irq_enable_mask = GT_BSD_USER_INTERRUPT;
-			engine->irq_get = gen6_ring_get_irq;
-			engine->irq_put = gen6_ring_put_irq;
-			engine->dispatch_execbuffer =
-				gen6_ring_dispatch_execbuffer;
-			if (i915_semaphore_is_enabled(dev_priv)) {
-				engine->semaphore.sync_to = gen6_ring_sync;
-				engine->semaphore.signal = gen6_signal;
-				engine->semaphore.mbox.wait[RCS] = MI_SEMAPHORE_SYNC_VR;
-				engine->semaphore.mbox.wait[VCS] = MI_SEMAPHORE_SYNC_INVALID;
-				engine->semaphore.mbox.wait[BCS] = MI_SEMAPHORE_SYNC_VB;
-				engine->semaphore.mbox.wait[VECS] = MI_SEMAPHORE_SYNC_VVE;
-				engine->semaphore.mbox.wait[VCS2] = MI_SEMAPHORE_SYNC_INVALID;
-				engine->semaphore.mbox.signal[RCS] = GEN6_RVSYNC;
-				engine->semaphore.mbox.signal[VCS] = GEN6_NOSYNC;
-				engine->semaphore.mbox.signal[BCS] = GEN6_BVSYNC;
-				engine->semaphore.mbox.signal[VECS] = GEN6_VEVSYNC;
-				engine->semaphore.mbox.signal[VCS2] = GEN6_NOSYNC;
-			}
-		}
 	} else {
 		engine->mmio_base = BSD_RING_BASE;
 		engine->flush = bsd_ring_flush;
-		engine->add_request = i9xx_add_request;
-		engine->get_seqno = ring_get_seqno;
-		engine->set_seqno = ring_set_seqno;
-		if (IS_GEN5(dev_priv)) {
+		if (IS_GEN5(dev_priv))
 			engine->irq_enable_mask = ILK_BSD_USER_INTERRUPT;
-			engine->irq_get = gen5_ring_get_irq;
-			engine->irq_put = gen5_ring_put_irq;
-		} else {
+		else
 			engine->irq_enable_mask = I915_BSD_USER_INTERRUPT;
-			engine->irq_get = i9xx_ring_get_irq;
-			engine->irq_put = i9xx_ring_put_irq;
-		}
-		engine->dispatch_execbuffer = i965_dispatch_execbuffer;
 	}
-	engine->init_hw = init_ring_common;
 
 	return intel_init_ring_buffer(dev, engine);
 }
@@ -3049,26 +3155,13 @@ int intel_init_bsd2_ring_buffer(struct drm_device *dev)
 	engine->id = VCS2;
 	engine->exec_id = I915_EXEC_BSD;
 	engine->hw_id = 4;
-
-	engine->write_tail = ring_write_tail;
 	engine->mmio_base = GEN8_BSD2_RING_BASE;
+
+	intel_ring_default_vfuncs(dev_priv, engine);
+
 	engine->flush = gen6_bsd_ring_flush;
-	engine->add_request = gen6_add_request;
-	engine->irq_seqno_barrier = gen6_seqno_barrier;
-	engine->get_seqno = ring_get_seqno;
-	engine->set_seqno = ring_set_seqno;
 	engine->irq_enable_mask =
 			GT_RENDER_USER_INTERRUPT << GEN8_VCS2_IRQ_SHIFT;
-	engine->irq_get = gen8_ring_get_irq;
-	engine->irq_put = gen8_ring_put_irq;
-	engine->dispatch_execbuffer =
-			gen8_ring_dispatch_execbuffer;
-	if (i915_semaphore_is_enabled(dev_priv)) {
-		engine->semaphore.sync_to = gen8_ring_sync;
-		engine->semaphore.signal = gen8_xcs_signal;
-		GEN8_RING_SEMAPHORE_INIT(engine);
-	}
-	engine->init_hw = init_ring_common;
 
 	return intel_init_ring_buffer(dev, engine);
 }
@@ -3082,53 +3175,16 @@ int intel_init_blt_ring_buffer(struct drm_device *dev)
 	engine->id = BCS;
 	engine->exec_id = I915_EXEC_BLT;
 	engine->hw_id = 2;
-
 	engine->mmio_base = BLT_RING_BASE;
-	engine->write_tail = ring_write_tail;
+
+	intel_ring_default_vfuncs(dev_priv, engine);
+
 	engine->flush = gen6_ring_flush;
-	engine->add_request = gen6_add_request;
-	engine->irq_seqno_barrier = gen6_seqno_barrier;
-	engine->get_seqno = ring_get_seqno;
-	engine->set_seqno = ring_set_seqno;
-	if (INTEL_GEN(dev_priv) >= 8) {
+	if (INTEL_GEN(dev_priv) >= 8)
 		engine->irq_enable_mask =
 			GT_RENDER_USER_INTERRUPT << GEN8_BCS_IRQ_SHIFT;
-		engine->irq_get = gen8_ring_get_irq;
-		engine->irq_put = gen8_ring_put_irq;
-		engine->dispatch_execbuffer = gen8_ring_dispatch_execbuffer;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			engine->semaphore.sync_to = gen8_ring_sync;
-			engine->semaphore.signal = gen8_xcs_signal;
-			GEN8_RING_SEMAPHORE_INIT(engine);
-		}
-	} else {
+	else
 		engine->irq_enable_mask = GT_BLT_USER_INTERRUPT;
-		engine->irq_get = gen6_ring_get_irq;
-		engine->irq_put = gen6_ring_put_irq;
-		engine->dispatch_execbuffer = gen6_ring_dispatch_execbuffer;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			engine->semaphore.signal = gen6_signal;
-			engine->semaphore.sync_to = gen6_ring_sync;
-			/*
-			 * The current semaphore is only applied on pre-gen8
-			 * platform.  And there is no VCS2 ring on the pre-gen8
-			 * platform. So the semaphore between BCS and VCS2 is
-			 * initialized as INVALID.  Gen8 will initialize the
-			 * sema between BCS and VCS2 later.
-			 */
-			engine->semaphore.mbox.wait[RCS] = MI_SEMAPHORE_SYNC_BR;
-			engine->semaphore.mbox.wait[VCS] = MI_SEMAPHORE_SYNC_BV;
-			engine->semaphore.mbox.wait[BCS] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.wait[VECS] = MI_SEMAPHORE_SYNC_BVE;
-			engine->semaphore.mbox.wait[VCS2] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.signal[RCS] = GEN6_RBSYNC;
-			engine->semaphore.mbox.signal[VCS] = GEN6_VBSYNC;
-			engine->semaphore.mbox.signal[BCS] = GEN6_NOSYNC;
-			engine->semaphore.mbox.signal[VECS] = GEN6_VEBSYNC;
-			engine->semaphore.mbox.signal[VCS2] = GEN6_NOSYNC;
-		}
-	}
-	engine->init_hw = init_ring_common;
 
 	return intel_init_ring_buffer(dev, engine);
 }
@@ -3142,47 +3198,20 @@ int intel_init_vebox_ring_buffer(struct drm_device *dev)
 	engine->id = VECS;
 	engine->exec_id = I915_EXEC_VEBOX;
 	engine->hw_id = 3;
-
 	engine->mmio_base = VEBOX_RING_BASE;
-	engine->write_tail = ring_write_tail;
+
+	intel_ring_default_vfuncs(dev_priv, engine);
+
 	engine->flush = gen6_ring_flush;
-	engine->add_request = gen6_add_request;
-	engine->irq_seqno_barrier = gen6_seqno_barrier;
-	engine->get_seqno = ring_get_seqno;
-	engine->set_seqno = ring_set_seqno;
 
 	if (INTEL_GEN(dev_priv) >= 8) {
 		engine->irq_enable_mask =
 			GT_RENDER_USER_INTERRUPT << GEN8_VECS_IRQ_SHIFT;
-		engine->irq_get = gen8_ring_get_irq;
-		engine->irq_put = gen8_ring_put_irq;
-		engine->dispatch_execbuffer = gen8_ring_dispatch_execbuffer;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			engine->semaphore.sync_to = gen8_ring_sync;
-			engine->semaphore.signal = gen8_xcs_signal;
-			GEN8_RING_SEMAPHORE_INIT(engine);
-		}
 	} else {
 		engine->irq_enable_mask = PM_VEBOX_USER_INTERRUPT;
 		engine->irq_get = hsw_vebox_get_irq;
 		engine->irq_put = hsw_vebox_put_irq;
-		engine->dispatch_execbuffer = gen6_ring_dispatch_execbuffer;
-		if (i915_semaphore_is_enabled(dev_priv)) {
-			engine->semaphore.sync_to = gen6_ring_sync;
-			engine->semaphore.signal = gen6_signal;
-			engine->semaphore.mbox.wait[RCS] = MI_SEMAPHORE_SYNC_VER;
-			engine->semaphore.mbox.wait[VCS] = MI_SEMAPHORE_SYNC_VEV;
-			engine->semaphore.mbox.wait[BCS] = MI_SEMAPHORE_SYNC_VEB;
-			engine->semaphore.mbox.wait[VECS] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.wait[VCS2] = MI_SEMAPHORE_SYNC_INVALID;
-			engine->semaphore.mbox.signal[RCS] = GEN6_RVESYNC;
-			engine->semaphore.mbox.signal[VCS] = GEN6_VVESYNC;
-			engine->semaphore.mbox.signal[BCS] = GEN6_BVESYNC;
-			engine->semaphore.mbox.signal[VECS] = GEN6_NOSYNC;
-			engine->semaphore.mbox.signal[VCS2] = GEN6_NOSYNC;
-		}
 	}
-	engine->init_hw = init_ring_common;
 
 	return intel_init_ring_buffer(dev, engine);
 }

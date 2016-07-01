@@ -1501,6 +1501,7 @@ out:
 static const struct drm_connector_funcs intel_tv_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.detect = intel_tv_detect,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_tv_destroy,
 	.set_property = intel_tv_set_property,
@@ -1641,5 +1642,4 @@ intel_tv_init(struct drm_device *dev)
 	drm_object_attach_property(&connector->base,
 				   dev->mode_config.tv_bottom_margin_property,
 				   intel_tv->margin[TV_MARGIN_BOTTOM]);
-	drm_connector_register(connector);
 }

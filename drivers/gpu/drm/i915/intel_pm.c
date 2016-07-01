@@ -3879,6 +3879,19 @@ static int skl_update_pipe_wm(struct drm_crtc_state *cstate,
 	return 0;
 }
 
+static uint32_t
+pipes_modified(struct drm_atomic_state *state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *cstate;
+	uint32_t i, ret = 0;
+
+	for_each_crtc_in_state(state, crtc, cstate, i)
+		ret |= drm_crtc_mask(crtc);
+
+	return ret;
+}
+
 static int
 skl_compute_ddb(struct drm_atomic_state *state)
 {
@@ -3887,7 +3900,7 @@ skl_compute_ddb(struct drm_atomic_state *state)
 	struct intel_atomic_state *intel_state = to_intel_atomic_state(state);
 	struct intel_crtc *intel_crtc;
 	struct skl_ddb_allocation *ddb = &intel_state->wm_results.ddb;
-	unsigned realloc_pipes = dev_priv->active_crtcs;
+	uint32_t realloc_pipes = pipes_modified(state);
 	int ret;
 
 	/*
@@ -4844,6 +4857,12 @@ void gen6_rps_busy(struct drm_i915_private *dev_priv)
 			gen6_rps_reset_ei(dev_priv);
 		I915_WRITE(GEN6_PMINTRMSK,
 			   gen6_rps_pm_mask(dev_priv, dev_priv->rps.cur_freq));
+
+		/* Ensure we start at the user's desired frequency */
+		intel_set_rps(dev_priv,
+			      clamp(dev_priv->rps.cur_freq,
+				    dev_priv->rps.min_freq_softlimit,
+				    dev_priv->rps.max_freq_softlimit));
 	}
 	mutex_unlock(&dev_priv->rps.hw_lock);
 }
@@ -7604,46 +7623,59 @@ int sandybridge_pcode_read(struct drm_i915_private *dev_priv, u32 mbox, u32 *val
 {
 	WARN_ON(!mutex_is_locked(&dev_priv->rps.hw_lock));
 
-	if (I915_READ(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) {
+	/* GEN6_PCODE_* are outside of the forcewake domain, we can
+	 * use te fw I915_READ variants to reduce the amount of work
+	 * required when reading/writing.
+	 */
+
+	if (I915_READ_FW(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) {
 		DRM_DEBUG_DRIVER("warning: pcode (read) mailbox access failed\n");
 		return -EAGAIN;
 	}
 
-	I915_WRITE(GEN6_PCODE_DATA, *val);
-	I915_WRITE(GEN6_PCODE_DATA1, 0);
-	I915_WRITE(GEN6_PCODE_MAILBOX, GEN6_PCODE_READY | mbox);
+	I915_WRITE_FW(GEN6_PCODE_DATA, *val);
+	I915_WRITE_FW(GEN6_PCODE_DATA1, 0);
+	I915_WRITE_FW(GEN6_PCODE_MAILBOX, GEN6_PCODE_READY | mbox);
 
-	if (wait_for((I915_READ(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) == 0,
-		     500)) {
+	if (intel_wait_for_register_fw(dev_priv,
+				       GEN6_PCODE_MAILBOX, GEN6_PCODE_READY, 0,
+				       500)) {
 		DRM_ERROR("timeout waiting for pcode read (%d) to finish\n", mbox);
 		return -ETIMEDOUT;
 	}
 
-	*val = I915_READ(GEN6_PCODE_DATA);
-	I915_WRITE(GEN6_PCODE_DATA, 0);
+	*val = I915_READ_FW(GEN6_PCODE_DATA);
+	I915_WRITE_FW(GEN6_PCODE_DATA, 0);
 
 	return 0;
 }
 
-int sandybridge_pcode_write(struct drm_i915_private *dev_priv, u32 mbox, u32 val)
+int sandybridge_pcode_write(struct drm_i915_private *dev_priv,
+			       u32 mbox, u32 val)
 {
 	WARN_ON(!mutex_is_locked(&dev_priv->rps.hw_lock));
 
-	if (I915_READ(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) {
+	/* GEN6_PCODE_* are outside of the forcewake domain, we can
+	 * use te fw I915_READ variants to reduce the amount of work
+	 * required when reading/writing.
+	 */
+
+	if (I915_READ_FW(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) {
 		DRM_DEBUG_DRIVER("warning: pcode (write) mailbox access failed\n");
 		return -EAGAIN;
 	}
 
-	I915_WRITE(GEN6_PCODE_DATA, val);
-	I915_WRITE(GEN6_PCODE_MAILBOX, GEN6_PCODE_READY | mbox);
+	I915_WRITE_FW(GEN6_PCODE_DATA, val);
+	I915_WRITE_FW(GEN6_PCODE_MAILBOX, GEN6_PCODE_READY | mbox);
 
-	if (wait_for((I915_READ(GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY) == 0,
-		     500)) {
+	if (intel_wait_for_register_fw(dev_priv,
+				       GEN6_PCODE_MAILBOX, GEN6_PCODE_READY, 0,
+				       500)) {
 		DRM_ERROR("timeout waiting for pcode write (%d) to finish\n", mbox);
 		return -ETIMEDOUT;
 	}
 
-	I915_WRITE(GEN6_PCODE_DATA, 0);
+	I915_WRITE_FW(GEN6_PCODE_DATA, 0);
 
 	return 0;
 }

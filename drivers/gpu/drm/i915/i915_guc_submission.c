@@ -153,12 +153,11 @@ static int host2guc_sample_forcewake(struct intel_guc *guc,
 				     struct i915_guc_client *client)
 {
 	struct drm_i915_private *dev_priv = guc_to_i915(guc);
-	struct drm_device *dev = dev_priv->dev;
 	u32 data[2];
 
 	data[0] = HOST2GUC_ACTION_SAMPLE_FORCEWAKE;
 	/* WaRsDisableCoarsePowerGating:skl,bxt */
-	if (!intel_enable_rc6() || NEEDS_WaRsDisableCoarsePowerGating(dev))
+	if (!intel_enable_rc6() || NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
 		data[1] = 0;
 	else
 		/* bit 0 and 1 are for Render and Media domain separately */
@@ -582,7 +581,7 @@ static int guc_ring_doorbell(struct i915_guc_client *gc)
  */
 int i915_guc_submit(struct drm_i915_gem_request *rq)
 {
-	unsigned int engine_id = rq->engine->guc_id;
+	unsigned int engine_id = rq->engine->id;
 	struct intel_guc *guc = &rq->i915->guc;
 	struct i915_guc_client *client = guc->execbuf_client;
 	int b_ret;

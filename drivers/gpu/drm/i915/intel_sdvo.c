@@ -2177,6 +2177,21 @@ done:
 #undef CHECK_PROPERTY
 }
 
+static int
+intel_sdvo_connector_register(struct drm_connector *connector)
+{
+	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	int ret;
+
+	ret = intel_connector_register(connector);
+	if (ret)
+		return ret;
+
+	return sysfs_create_link(&connector->kdev->kobj,
+				 &sdvo->ddc.dev.kobj,
+				 sdvo->ddc.dev.kobj.name);
+}
+
 static void
 intel_sdvo_connector_unregister(struct drm_connector *connector)
 {
@@ -2193,6 +2208,7 @@ static const struct drm_connector_funcs intel_sdvo_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = intel_sdvo_set_property,
 	.atomic_get_property = intel_connector_atomic_get_property,
+	.late_register = intel_sdvo_connector_register,
 	.early_unregister = intel_sdvo_connector_unregister,
 	.destroy = intel_sdvo_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
@@ -2380,24 +2396,8 @@ intel_sdvo_connector_init(struct intel_sdvo_connector *connector,
 	connector->base.get_hw_state = intel_sdvo_connector_get_hw_state;
 
 	intel_connector_attach_encoder(&connector->base, &encoder->base);
-	ret = drm_connector_register(drm_connector);
-	if (ret < 0)
-		goto err1;
-
-	ret = sysfs_create_link(&drm_connector->kdev->kobj,
-				&encoder->ddc.dev.kobj,
-				encoder->ddc.dev.kobj.name);
-	if (ret < 0)
-		goto err2;
 
 	return 0;
-
-err2:
-	drm_connector_unregister(drm_connector);
-err1:
-	drm_connector_cleanup(drm_connector);
-
-	return ret;
 }
 
 static void
@@ -2524,7 +2524,6 @@ intel_sdvo_tv_init(struct intel_sdvo *intel_sdvo, int type)
 	return true;
 
 err:
-	drm_connector_unregister(connector);
 	intel_sdvo_destroy(connector);
 	return false;
 }
@@ -2603,7 +2602,6 @@ intel_sdvo_lvds_init(struct intel_sdvo *intel_sdvo, int device)
 	return true;
 
 err:
-	drm_connector_unregister(connector);
 	intel_sdvo_destroy(connector);
 	return false;
 }

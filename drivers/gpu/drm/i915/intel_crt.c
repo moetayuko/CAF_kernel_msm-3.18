@@ -301,8 +301,10 @@ static bool intel_ironlake_crt_detect_hotplug(struct drm_connector *connector)
 
 		I915_WRITE(crt->adpa_reg, adpa);
 
-		if (wait_for((I915_READ(crt->adpa_reg) & ADPA_CRT_HOTPLUG_FORCE_TRIGGER) == 0,
-			     1000))
+		if (intel_wait_for_register(dev_priv,
+					    crt->adpa_reg,
+					    ADPA_CRT_HOTPLUG_FORCE_TRIGGER, 0,
+					    1000))
 			DRM_DEBUG_KMS("timed out waiting for FORCE_TRIGGER");
 
 		if (turn_off_dac) {
@@ -338,8 +340,10 @@ static bool valleyview_crt_detect_hotplug(struct drm_connector *connector)
 
 	I915_WRITE(crt->adpa_reg, adpa);
 
-	if (wait_for((I915_READ(crt->adpa_reg) & ADPA_CRT_HOTPLUG_FORCE_TRIGGER) == 0,
-		     1000)) {
+	if (intel_wait_for_register(dev_priv,
+				    crt->adpa_reg,
+				    ADPA_CRT_HOTPLUG_FORCE_TRIGGER, 0,
+				    1000)) {
 		DRM_DEBUG_KMS("timed out waiting for FORCE_TRIGGER");
 		I915_WRITE(crt->adpa_reg, save_adpa);
 	}
@@ -394,9 +398,9 @@ static bool intel_crt_detect_hotplug(struct drm_connector *connector)
 					      CRT_HOTPLUG_FORCE_DETECT,
 					      CRT_HOTPLUG_FORCE_DETECT);
 		/* wait for FORCE_DETECT to go off */
-		if (wait_for((I915_READ(PORT_HOTPLUG_EN) &
-			      CRT_HOTPLUG_FORCE_DETECT) == 0,
-			     1000))
+		if (intel_wait_for_register(dev_priv, PORT_HOTPLUG_EN,
+					    CRT_HOTPLUG_FORCE_DETECT, 0,
+					    1000))
 			DRM_DEBUG_KMS("timed out waiting for FORCE_DETECT to go off");
 	}
 
@@ -743,6 +747,7 @@ static const struct drm_connector_funcs intel_crt_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.detect = intel_crt_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
+	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
 	.destroy = intel_crt_destroy,
 	.set_property = intel_crt_set_property,
@@ -878,8 +883,6 @@ void intel_crt_init(struct drm_device *dev)
 	intel_connector->get_hw_state = intel_connector_get_hw_state;
 
 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
-
-	drm_connector_register(connector);
 
 	if (!I915_HAS_HOTPLUG(dev))
 		intel_connector->polled = DRM_CONNECTOR_POLL_CONNECT;
