@@ -337,8 +337,9 @@ extern struct attribute_group cros_usb_pd_charger_attr_group;
 /**
  * cros_ec_get_host_event - Return a mask of event set by the EC.
  *
- * When MKBP is supported, when the EC raises an interrupt,
- * We collect the events raised and call the functions in the ec notifier.
+ * Once cros_ec_get_next_event() has been called, if the event source is
+ * a host event, this function returns the precise event that triggered
+ * the interrupt.
  *
  * This function is a helper to know which events are raised.
  */
