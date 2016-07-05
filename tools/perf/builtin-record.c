@@ -13,6 +13,7 @@
 #include "util/util.h"
 #include <subcmd/parse-options.h>
 #include "util/parse-events.h"
+#include "util/config.h"
 
 #include "util/callchain.h"
 #include "util/cgroup.h"
@@ -352,7 +353,7 @@ static int record__open(struct record *rec)
 
 	perf_evlist__config(evlist, opts, &callchain_param);
 
-	evlist__for_each(evlist, pos) {
+	evlist__for_each_entry(evlist, pos) {
 try_again:
 		if (perf_evsel__open(pos, pos->cpus, pos->threads) < 0) {
 			if (perf_evsel__fallback(pos, errno, msg, sizeof(msg))) {
@@ -655,6 +656,13 @@ perf_event__synth_time_conv(const struct perf_event_mmap_page *pc __maybe_unused
 	return 0;
 }
 
+static const struct perf_event_mmap_page *record__pick_pc(struct record *rec)
+{
+	if (rec->evlist && rec->evlist->mmap && rec->evlist->mmap[0].base)
+		return rec->evlist->mmap[0].base;
+	return NULL;
+}
+
 static int record__synthesize(struct record *rec)
 {
 	struct perf_session *session = rec->session;
@@ -692,7 +700,7 @@ static int record__synthesize(struct record *rec)
 		}
 	}
 
-	err = perf_event__synth_time_conv(rec->evlist->mmap[0].base, tool,
+	err = perf_event__synth_time_conv(record__pick_pc(rec), tool,
 					  process_synthesized_event, machine);
 	if (err)
 		goto out;
@@ -1267,6 +1275,8 @@ static struct record record = {
 const char record_callchain_help[] = CALLCHAIN_RECORD_HELP
 	"\n\t\t\t\tDefault: fp";
 
+static bool dry_run;
+
 /*
  * XXX Will stay a global variable till we fix builtin-script.c to stop messing
  * with it and switch to use the library functions in perf_evlist that came
@@ -1386,6 +1396,8 @@ struct option __record_options[] = {
 		    "append timestamp to output filename"),
 	OPT_BOOLEAN(0, "switch-output", &record.switch_output,
 		    "Switch output when receive SIGUSR2"),
+	OPT_BOOLEAN(0, "dry-run", &dry_run,
+		    "Parse options then exit"),
 	OPT_END()
 };
 
@@ -1454,6 +1466,9 @@ int cmd_record(int argc, const char **argv, const char *prefix __maybe_unused)
 					      rec->opts.auxtrace_snapshot_opts);
 	if (err)
 		return err;
+
+	if (dry_run)
+		return 0;
 
 	err = bpf__setup_stdout(rec->evlist);
 	if (err) {
