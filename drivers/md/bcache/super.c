@@ -134,7 +134,6 @@ static const char *read_super(struct cache_sb *sb, struct block_device *bdev,
 	case BCACHE_SB_VERSION_CDEV:
 	case BCACHE_SB_VERSION_CDEV_WITH_UUID:
 		sb->nbuckets	= le64_to_cpu(s->nbuckets);
-		sb->block_size	= le16_to_cpu(s->block_size);
 		sb->bucket_size	= le16_to_cpu(s->bucket_size);
 
 		sb->nr_in_set	= le16_to_cpu(s->nr_in_set);
@@ -1806,7 +1805,7 @@ void bch_cache_release(struct kobject *kobj)
 	module_put(THIS_MODULE);
 }
 
-static int cache_alloc(struct cache_sb *sb, struct cache *ca)
+static int cache_alloc(struct cache *ca)
 {
 	size_t free;
 	struct bucket *b;
@@ -1861,7 +1860,7 @@ static int register_cache(struct cache_sb *sb, struct page *sb_page,
 	if (blk_queue_discard(bdev_get_queue(ca->bdev)))
 		ca->discard = CACHE_DISCARD(&ca->sb);
 
-	ret = cache_alloc(sb, ca);
+	ret = cache_alloc(ca);
 	if (ret != 0)
 		goto err;
 
