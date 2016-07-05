@@ -26,6 +26,12 @@ next/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone tags/keystone_for_4.8
 	at91/soc2
 		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-soc2
+	davinci/sco
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.8
+	qcom/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-soc-for-4.8
+	patch
+		ARM: uniphier: remove empty DT machine descriptor
 
 next/arm64
 	patch
@@ -45,6 +51,8 @@ next/arm64
 		git://git.infradead.org/linux-mvebu tags/mvebu-defconfig64-4.8-1
 	juno/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/juno-defconfig-4.8
+	qcom/defconfig64
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-arm64-defconfig-for-4.8
 
 next/dt
 	samsung/dt
@@ -73,6 +81,8 @@ next/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-dt2
 	omap/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/dt-part1-signed-v2
+	qcom/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-dt-for-4.8
 
 next/dt64
 	patch
@@ -89,6 +99,8 @@ next/dt64
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-arm64
 	xgene/dts
 		https://github.com/AppliedMicro/xgene-next tags/xgene-dts-for-v4.8-part1
+	qcom/arm64
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-arm64-for-4.8
 
 next/defconfig
 	samsung/defconfig
@@ -101,6 +113,8 @@ next/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone tags/keystone_config_for_4.8
 	socfpga/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_defconfig_updates_for_v4.8
+	qcom/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-defconfig-for-4.8
 
 next/drivers
 	reset/for-4.8
@@ -122,4 +136,8 @@ next/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-drivers2
 	drivers/scpi
 		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/scpi-updates-4.8
+	omap/gpmc
+		https://github.com/rogerq/linux tags/gpmc-omap-for-v4.8
+	qcom/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8
 
