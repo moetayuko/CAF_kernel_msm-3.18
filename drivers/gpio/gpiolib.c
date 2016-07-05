@@ -1505,25 +1505,32 @@ static const struct irq_domain_ops gpiochip_domain_ops = {
 static int gpiochip_irq_reqres(struct irq_data *d)
 {
 	struct gpio_chip *chip = irq_data_get_irq_chip_data(d);
+	struct gpio_desc *desc;
 
 	if (!try_module_get(chip->gpiodev->owner))
 		return -ENODEV;
 
+	/* Look up the corresponding descriptor */
+	desc = gpiochip_get_desc(chip, d->hwirq);
+	if (IS_ERR(desc)) {
+		module_put(chip->gpiodev->owner);
+		return PTR_ERR(desc);
+	}
+
 	/*
-	 * If it is possible to switch this GPIO to an input
-	 * this is a good time to do it.
+	 * If the pin is flagged as output and it is possible to
+	 * switch this GPIO to an input this is a good time to
+	 * do it.
 	 */
-	if (chip->direction_input) {
-		struct gpio_desc *desc;
+	if (test_bit(FLAG_IS_OUT, &desc->flags) &&
+	    chip->direction_input) {
 		int ret;
 
-		desc = gpiochip_get_desc(chip, d->hwirq);
-		if (IS_ERR(desc))
-			return PTR_ERR(desc);
-
 	        ret = chip->direction_input(chip, d->hwirq);
-		if (ret)
+		if (ret) {
+			module_put(chip->gpiodev->owner);
 			return ret;
+		}
 
 		clear_bit(FLAG_IS_OUT, &desc->flags);
 	}
