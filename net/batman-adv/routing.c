@@ -654,7 +654,7 @@ static int batadv_route_unicast_packet(struct sk_buff *skb,
 				   len + ETH_HLEN);
 
 		ret = NET_RX_SUCCESS;
-	} else if (res == NET_XMIT_POLICED) {
+	} else if (res == -EINPROGRESS) {
 		/* skb was buffered and consumed */
 		ret = NET_RX_SUCCESS;
 	}
@@ -1006,6 +1006,8 @@ int batadv_recv_frag_packet(struct sk_buff *skb,
 	orig_node_src = batadv_orig_hash_find(bat_priv, frag_packet->orig);
 	if (!orig_node_src)
 		goto out;
+
+	skb->priority = frag_packet->priority + 256;
 
 	/* Route the fragment if it is not for us and too big to be merged. */
 	if (!batadv_is_my_mac(bat_priv, frag_packet->dest) &&
