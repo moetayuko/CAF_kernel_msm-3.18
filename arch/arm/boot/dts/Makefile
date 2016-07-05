@@ -17,8 +17,10 @@ dtb-$(CONFIG_SOC_SAM_V4_V5) += \
 	evk-pro3.dtb \
 	tny_a9260.dtb \
 	usb_a9260.dtb \
+	at91sam9260ek.dtb \
 	at91sam9261ek.dtb \
 	at91sam9263ek.dtb \
+	at91-sam9_l9260.dtb \
 	tny_a9263.dtb \
 	usb_a9263.dtb \
 	at91-foxg20.dtb \
@@ -95,8 +97,11 @@ dtb-$(CONFIG_ARCH_BCM_CYGNUS) += \
 	bcm958305k.dtb
 dtb-$(CONFIG_ARCH_BCM_MOBILE) += \
 	bcm28155-ap.dtb \
-	bcm21664-garnet.dtb
+	bcm21664-garnet.dtb \
+	bcm23550-sparrow.dtb
 dtb-$(CONFIG_ARCH_BCM_NSP) += \
+	bcm958525xmc.dtb \
+	bcm958625hr.dtb \
 	bcm958625k.dtb
 dtb-$(CONFIG_ARCH_BERLIN) += \
 	berlin2-sony-nsz-gs7.dtb \
@@ -134,6 +139,7 @@ dtb-$(CONFIG_ARCH_EXYNOS5) += \
 	exynos5250-snow-rev5.dtb \
 	exynos5250-spring.dtb \
 	exynos5260-xyref5260.dtb \
+	exynos5410-odroidxu.dtb \
 	exynos5410-smdk5410.dtb \
 	exynos5420-arndale-octa.dtb \
 	exynos5420-peach-pit.dtb \
@@ -572,7 +578,8 @@ dtb-$(CONFIG_ARCH_PRIMA2) += \
 dtb-$(CONFIG_ARCH_OXNAS) += \
 	wd-mbwe.dtb
 dtb-$(CONFIG_ARCH_QCOM) += \
-	qcom-apq8064-arrow-db600c.dtb \
+	qcom-apq8060-dragonboard.dtb \
+	qcom-apq8064-arrow-sd-600eval.dtb \
 	qcom-apq8064-cm-qs600.dtb \
 	qcom-apq8064-ifc6410.dtb \
 	qcom-apq8064-sony-xperia-yuga.dtb \
