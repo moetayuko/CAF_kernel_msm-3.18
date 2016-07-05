@@ -1279,11 +1279,33 @@ static void pxad_free_channels(struct dma_device *dmadev)
 	}
 }
 
+static void pxad_free_irq(struct platform_device *op, struct pxad_device *pdev)
+{
+	struct pxad_phy *phy;
+	int nr_irq = 0, irq, irq0, i;
+
+	irq0 = platform_get_irq(op, 0);
+	for (i = 0; i < pdev->nr_chans; i++)
+		if (platform_get_irq(op, i) > 0)
+			nr_irq++;
+
+	for (i = 0; i < pdev->nr_chans; i++) {
+		phy = &pdev->phys[i];
+		irq = platform_get_irq(op, i);
+		if ((nr_irq > 1) && (irq > 0))
+			devm_free_irq(&op->dev, irq, phy);
+
+		if ((nr_irq == 1) && (i == 0))
+			devm_free_irq(&op->dev, irq0, pdev);
+	}
+}
+
 static int pxad_remove(struct platform_device *op)
 {
 	struct pxad_device *pdev = platform_get_drvdata(op);
 
 	pxad_cleanup_debugfs(pdev);
+	pxad_free_irq(op, pdev);
 	pxad_free_channels(&pdev->slave);
 	dma_async_device_unregister(&pdev->slave);
 	return 0;
