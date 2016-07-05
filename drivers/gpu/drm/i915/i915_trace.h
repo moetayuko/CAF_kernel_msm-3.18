@@ -490,7 +490,7 @@ TRACE_EVENT(i915_gem_ring_dispatch,
 			   __entry->ring = req->engine->id;
 			   __entry->seqno = req->seqno;
 			   __entry->flags = flags;
-			   i915_trace_irq_get(req->engine, req);
+			   intel_engine_enable_signaling(req);
 			   ),
 
 	    TP_printk("dev=%u, ring=%u, seqno=%u, flags=%x",
@@ -558,7 +558,7 @@ TRACE_EVENT(i915_gem_request_notify,
 	    TP_fast_assign(
 			   __entry->dev = engine->i915->dev->primary->index;
 			   __entry->ring = engine->id;
-			   __entry->seqno = engine->get_seqno(engine);
+			   __entry->seqno = intel_engine_get_seqno(engine);
 			   ),
 
 	    TP_printk("dev=%u, ring=%u, seqno=%u",

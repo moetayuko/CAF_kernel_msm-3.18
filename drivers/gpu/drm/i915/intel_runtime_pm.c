@@ -365,8 +365,11 @@ static void hsw_set_power_well(struct drm_i915_private *dev_priv,
 
 		if (!is_enabled) {
 			DRM_DEBUG_KMS("Enabling power well\n");
-			if (wait_for((I915_READ(HSW_PWR_WELL_DRIVER) &
-				      HSW_PWR_WELL_STATE_ENABLED), 20))
+			if (intel_wait_for_register(dev_priv,
+						    HSW_PWR_WELL_DRIVER,
+						    HSW_PWR_WELL_STATE_ENABLED,
+						    HSW_PWR_WELL_STATE_ENABLED,
+						    20))
 				DRM_ERROR("Timeout enabling power well\n");
 			hsw_power_well_post_enable(dev_priv);
 		}
@@ -578,6 +581,7 @@ void bxt_enable_dc9(struct drm_i915_private *dev_priv)
 
 	DRM_DEBUG_KMS("Enabling DC9\n");
 
+	intel_power_sequencer_reset(dev_priv);
 	gen9_set_dc_state(dev_priv, DC_STATE_EN_DC9);
 }
 
@@ -699,8 +703,11 @@ static void skl_set_power_well(struct drm_i915_private *dev_priv,
 
 	switch (power_well->data) {
 	case SKL_DISP_PW_1:
-		if (wait_for((I915_READ(SKL_FUSE_STATUS) &
-			SKL_FUSE_PG0_DIST_STATUS), 1)) {
+		if (intel_wait_for_register(dev_priv,
+					    SKL_FUSE_STATUS,
+					    SKL_FUSE_PG0_DIST_STATUS,
+					    SKL_FUSE_PG0_DIST_STATUS,
+					    1)) {
 			DRM_ERROR("PG0 not enabled\n");
 			return;
 		}
@@ -761,12 +768,18 @@ static void skl_set_power_well(struct drm_i915_private *dev_priv,
 
 	if (check_fuse_status) {
 		if (power_well->data == SKL_DISP_PW_1) {
-			if (wait_for((I915_READ(SKL_FUSE_STATUS) &
-				SKL_FUSE_PG1_DIST_STATUS), 1))
+			if (intel_wait_for_register(dev_priv,
+						    SKL_FUSE_STATUS,
+						    SKL_FUSE_PG1_DIST_STATUS,
+						    SKL_FUSE_PG1_DIST_STATUS,
+						    1))
 				DRM_ERROR("PG1 distributing status timeout\n");
 		} else if (power_well->data == SKL_DISP_PW_2) {
-			if (wait_for((I915_READ(SKL_FUSE_STATUS) &
-				SKL_FUSE_PG2_DIST_STATUS), 1))
+			if (intel_wait_for_register(dev_priv,
+						    SKL_FUSE_STATUS,
+						    SKL_FUSE_PG2_DIST_STATUS,
+						    SKL_FUSE_PG2_DIST_STATUS,
+						    1))
 				DRM_ERROR("PG2 distributing status timeout\n");
 		}
 	}
@@ -1112,7 +1125,7 @@ static void vlv_display_power_well_deinit(struct drm_i915_private *dev_priv)
 	/* make sure we're done processing display irqs */
 	synchronize_irq(dev_priv->dev->irq);
 
-	vlv_power_sequencer_reset(dev_priv);
+	intel_power_sequencer_reset(dev_priv);
 }
 
 static void vlv_display_power_well_enable(struct drm_i915_private *dev_priv,
@@ -1205,7 +1218,6 @@ static void assert_chv_phy_status(struct drm_i915_private *dev_priv)
 	u32 phy_control = dev_priv->chv_phy_control;
 	u32 phy_status = 0;
 	u32 phy_status_mask = 0xffffffff;
-	u32 tmp;
 
 	/*
 	 * The BIOS can leave the PHY is some weird state
@@ -1293,10 +1305,14 @@ static void assert_chv_phy_status(struct drm_i915_private *dev_priv)
 	 * The PHY may be busy with some initial calibration and whatnot,
 	 * so the power state can take a while to actually change.
 	 */
-	if (wait_for((tmp = I915_READ(DISPLAY_PHY_STATUS) & phy_status_mask) == phy_status, 10))
-		WARN(phy_status != tmp,
-		     "Unexpected PHY_STATUS 0x%08x, expected 0x%08x (PHY_CONTROL=0x%08x)\n",
-		     tmp, phy_status, dev_priv->chv_phy_control);
+	if (intel_wait_for_register(dev_priv,
+				    DISPLAY_PHY_STATUS,
+				    phy_status_mask,
+				    phy_status,
+				    10))
+		DRM_ERROR("Unexpected PHY_STATUS 0x%08x, expected 0x%08x (PHY_CONTROL=0x%08x)\n",
+			  I915_READ(DISPLAY_PHY_STATUS) & phy_status_mask,
+			   phy_status, dev_priv->chv_phy_control);
 }
 
 #undef BITS_SET
@@ -1324,7 +1340,11 @@ static void chv_dpio_cmn_power_well_enable(struct drm_i915_private *dev_priv,
 	vlv_set_power_well(dev_priv, power_well, true);
 
 	/* Poll for phypwrgood signal */
-	if (wait_for(I915_READ(DISPLAY_PHY_STATUS) & PHY_POWERGOOD(phy), 1))
+	if (intel_wait_for_register(dev_priv,
+				    DISPLAY_PHY_STATUS,
+				    PHY_POWERGOOD(phy),
+				    PHY_POWERGOOD(phy),
+				    1))
 		DRM_ERROR("Display PHY %d is not power up\n", phy);
 
 	mutex_lock(&dev_priv->sb_lock);
