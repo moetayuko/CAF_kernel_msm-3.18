@@ -189,6 +189,11 @@ static inline struct net_device *ib_get_ndev_from_path(struct ib_sa_path_rec *re
 #define IB_SA_MCMEMBER_REC_JOIN_STATE			IB_SA_COMP_MASK(16)
 #define IB_SA_MCMEMBER_REC_PROXY_JOIN			IB_SA_COMP_MASK(17)
 
+#define IB_SA_MCMEMBER_REC_JOIN_STATE_FULL_MEMBER       BIT(0)
+#define IB_SA_MCMEMBER_REC_JOIN_STATE_NON_MEMBER        BIT(1)
+#define IB_SA_MCMEMBER_REC_JOIN_STATE_SO_NON_MEMBER     BIT(2)
+#define IB_SA_MCMEMBER_REC_JOIN_STATE_SO_FULL_MEMBER    BIT(3)
+
 struct ib_sa_mcmember_rec {
 	union ib_gid mgid;
 	union ib_gid port_gid;
