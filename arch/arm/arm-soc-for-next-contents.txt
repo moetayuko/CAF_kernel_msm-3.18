@@ -9,8 +9,6 @@ fixes
 		MAINTAINERS: update STM32 maintainers list
 		MAINTAINERS: update STi maintainer list
 
-next/fixes-non-critical
-
 next/cleanup
 	patch
 		ARM: uniphier: drop code for old DT binding
@@ -52,6 +50,13 @@ next/soc
 	samsung/soc2
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-soc-4.8-2
 		contains samsung/soc
+	patch
+		ARM: clps711x: Reduce static map size
+		ARM: clps711x: Add basic DT support
+		ARM: clps711x: Remove boards support
+		ARM: clps711x: Switch to MULTIPLATFORM
+	<no branch> (5c34a4e89c743339f78cafb2f2a826a010f0746a)
+		Merge ARCH_[WANT_OPTIONAL|REQUIRE]_GPIOLIB changes into next/soc
 
 next/arm64
 	patch
@@ -111,6 +116,8 @@ next/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-exynos-mfc-4.8-2
 		contains depends/exynos-mfc
 		contains samsung/mfc
+	patch
+		ARM: dts: clps711x: Add DT Cirrus Logic EDB7211 Development board
 
 next/dt64
 	patch
@@ -151,6 +158,8 @@ next/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-defconfig-4.8
 	samsung/defconfig2
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8-2
+	patch
+		ARM: config: Add a multi_v4t_defconfig
 
 next/drivers
 	reset/for-4.8
@@ -178,4 +187,11 @@ next/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8
 	samsung/drivers2
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-2
-
+	patch
+		clk: clps711x: Changing the compatibility string to match with the smallest supported chip
+		clocksource: clps711x: Changing the compatibility string to match with the smallest supported chip
+		irqchip: clps711x: Changing the compatibility string to match with the smallest supported chip
+		serial: clps711x: Changing the compatibility string to match with the smallest supported chip
+		pwm: clps711x: Changing the compatibility string to match with the smallest supported chip
+		input: clps711x-keypad: Changing the compatibility string to match with the smallest supported chip
+		video: clps711x-fb: Changing the compatibility string to match with the smallest supported chip
