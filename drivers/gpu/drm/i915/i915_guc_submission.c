@@ -153,12 +153,11 @@ static int host2guc_sample_forcewake(struct intel_guc *guc,
 				     struct i915_guc_client *client)
 {
 	struct drm_i915_private *dev_priv = guc_to_i915(guc);
-	struct drm_device *dev = dev_priv->dev;
 	u32 data[2];
 
 	data[0] = HOST2GUC_ACTION_SAMPLE_FORCEWAKE;
 	/* WaRsDisableCoarsePowerGating:skl,bxt */
-	if (!intel_enable_rc6() || NEEDS_WaRsDisableCoarsePowerGating(dev))
+	if (!intel_enable_rc6() || NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
 		data[1] = 0;
 	else
 		/* bit 0 and 1 are for Render and Media domain separately */
@@ -582,7 +581,7 @@ static int guc_ring_doorbell(struct i915_guc_client *gc)
  */
 int i915_guc_submit(struct drm_i915_gem_request *rq)
 {
-	unsigned int engine_id = rq->engine->guc_id;
+	unsigned int engine_id = rq->engine->id;
 	struct intel_guc *guc = &rq->i915->guc;
 	struct i915_guc_client *client = guc->execbuf_client;
 	int b_ret;
@@ -623,7 +622,7 @@ gem_allocate_guc_obj(struct drm_i915_private *dev_priv, u32 size)
 {
 	struct drm_i915_gem_object *obj;
 
-	obj = i915_gem_object_create(dev_priv->dev, size);
+	obj = i915_gem_object_create(&dev_priv->drm, size);
 	if (IS_ERR(obj))
 		return NULL;
 
@@ -1034,7 +1033,7 @@ void i915_guc_submission_fini(struct drm_i915_private *dev_priv)
  */
 int intel_guc_suspend(struct drm_device *dev)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_guc *guc = &dev_priv->guc;
 	struct i915_gem_context *ctx;
 	u32 data[3];
@@ -1060,7 +1059,7 @@ int intel_guc_suspend(struct drm_device *dev)
  */
 int intel_guc_resume(struct drm_device *dev)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_guc *guc = &dev_priv->guc;
 	struct i915_gem_context *ctx;
 	u32 data[3];
