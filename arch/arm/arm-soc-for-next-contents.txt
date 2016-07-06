@@ -1,6 +1,13 @@
 fixes
 	<no branch> (929e604efa3dc0522214e0dc18984be23993e9f0)
 		git://git.infradead.org/linux-mvebu tags/mvebu-fixes-4.7-1
+	<no branch> (eee25ab19de632af1ab4d2ac50bfc5006802e664)
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-fixes-for-4.7
+	<no branch> (b44439e42912b9dcc510a0ff891809ea2cadc46b)
+		git://git.infradead.org/linux-mvebu tags/mvebu-fixes-4.7-2
+	patch
+		MAINTAINERS: update STM32 maintainers list
+		MAINTAINERS: update STi maintainer list
 
 next/fixes-non-critical
 
@@ -14,6 +21,8 @@ next/cleanup
 		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/vexpress-fixes-4.8
 	mvebu/cleanup
 		git://git.infradead.org/linux-mvebu tags/mvebu-cleanup-4.8-1
+	imx/cleanup
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-cleanup-4.8
 
 next/soc
 	renesas/soc
@@ -32,6 +41,17 @@ next/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-soc-for-4.8
 	patch
 		ARM: uniphier: remove empty DT machine descriptor
+		ARM: tango: add HOTPLUG_CPU support
+		Update ARM/TANGO section
+	imx/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-soc-4.8
+	patch
+		ARM: oxnas: Change OX810SE default driver config
+	omap/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/soc-signed
+	samsung/soc2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-soc-4.8-2
+		contains samsung/soc
 
 next/arm64
 	patch
@@ -83,6 +103,14 @@ next/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/dt-part1-signed-v2
 	qcom/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-dt-for-4.8
+	imx/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-dt-4.8
+	omap/dt2
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/dt-part2-signed
+	samsung/mfc2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-exynos-mfc-4.8-2
+		contains depends/exynos-mfc
+		contains samsung/mfc
 
 next/dt64
 	patch
@@ -101,6 +129,10 @@ next/dt64
 		https://github.com/AppliedMicro/xgene-next tags/xgene-dts-for-v4.8-part1
 	qcom/arm64
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-arm64-for-4.8
+	imx/d64
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-dt64-4.8
+	hisi/hi6220-dt
+		git://github.com/hisilicon/linux-hisi tags/hi6220-dt-for-4.8
 
 next/defconfig
 	samsung/defconfig
@@ -115,6 +147,10 @@ next/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_defconfig_updates_for_v4.8
 	qcom/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-defconfig-for-4.8
+	imx/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-defconfig-4.8
+	samsung/defconfig2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8-2
 
 next/drivers
 	reset/for-4.8
@@ -140,4 +176,6 @@ next/drivers
 		https://github.com/rogerq/linux tags/gpmc-omap-for-v4.8
 	qcom/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8
+	samsung/drivers2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-2
 
