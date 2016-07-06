@@ -17,8 +17,10 @@ dtb-$(CONFIG_SOC_SAM_V4_V5) += \
 	evk-pro3.dtb \
 	tny_a9260.dtb \
 	usb_a9260.dtb \
+	at91sam9260ek.dtb \
 	at91sam9261ek.dtb \
 	at91sam9263ek.dtb \
+	at91-sam9_l9260.dtb \
 	tny_a9263.dtb \
 	usb_a9263.dtb \
 	at91-foxg20.dtb \
@@ -95,8 +97,11 @@ dtb-$(CONFIG_ARCH_BCM_CYGNUS) += \
 	bcm958305k.dtb
 dtb-$(CONFIG_ARCH_BCM_MOBILE) += \
 	bcm28155-ap.dtb \
-	bcm21664-garnet.dtb
+	bcm21664-garnet.dtb \
+	bcm23550-sparrow.dtb
 dtb-$(CONFIG_ARCH_BCM_NSP) += \
+	bcm958525xmc.dtb \
+	bcm958625hr.dtb \
 	bcm958625k.dtb
 dtb-$(CONFIG_ARCH_BERLIN) += \
 	berlin2-sony-nsz-gs7.dtb \
@@ -104,6 +109,8 @@ dtb-$(CONFIG_ARCH_BERLIN) += \
 	berlin2q-marvell-dmp.dtb
 dtb-$(CONFIG_ARCH_BRCMSTB) += \
 	bcm7445-bcm97445svmb.dtb
+dtb-$(CONFIG_ARCH_CLPS711X) += \
+	ep7211-edb7211.dtb
 dtb-$(CONFIG_ARCH_DAVINCI) += \
 	da850-enbw-cmc.dtb \
 	da850-evm.dtb
@@ -134,6 +141,7 @@ dtb-$(CONFIG_ARCH_EXYNOS5) += \
 	exynos5250-snow-rev5.dtb \
 	exynos5250-spring.dtb \
 	exynos5260-xyref5260.dtb \
+	exynos5410-odroidxu.dtb \
 	exynos5410-smdk5410.dtb \
 	exynos5420-arndale-octa.dtb \
 	exynos5420-peach-pit.dtb \
@@ -356,6 +364,7 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6q-gw54xx.dtb \
 	imx6q-gw551x.dtb \
 	imx6q-gw552x.dtb \
+	imx6q-h100.dtb \
 	imx6q-hummingboard.dtb \
 	imx6q-icore-rqs.dtb \
 	imx6q-marsboard.dtb \
@@ -377,6 +386,7 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6q-tx6q-1110.dtb \
 	imx6q-tx6q-11x0-mb7.dtb \
 	imx6q-udoo.dtb \
+	imx6q-utilite-pro.dtb \
 	imx6q-wandboard.dtb \
 	imx6q-wandboard-revb1.dtb \
 	imx6qp-nitrogen6_max.dtb \
@@ -399,9 +409,11 @@ dtb-$(CONFIG_SOC_IMX6UL) += \
 	imx6ul-tx6ul-mainboard.dtb
 dtb-$(CONFIG_SOC_IMX7D) += \
 	imx7d-cl-som-imx7.dtb \
+	imx7d-colibri-eval-v3.dtb \
 	imx7d-nitrogen7.dtb \
 	imx7d-sbc-imx7.dtb \
-	imx7d-sdb.dtb
+	imx7d-sdb.dtb \
+	imx7s-colibri-eval-v3.dtb
 dtb-$(CONFIG_SOC_LS1021A) += \
 	ls1021a-qds.dtb \
 	ls1021a-twr.dtb
@@ -416,7 +428,9 @@ dtb-$(CONFIG_SOC_VF610) += \
 dtb-$(CONFIG_ARCH_MXS) += \
 	imx23-evk.dtb \
 	imx23-olinuxino.dtb \
+	imx23-sansa.dtb \
 	imx23-stmp378x_devb.dtb \
+	imx23-xfi3.dtb \
 	imx28-apf28.dtb \
 	imx28-apf28dev.dtb \
 	imx28-apx4devkit.dtb \
@@ -572,7 +586,8 @@ dtb-$(CONFIG_ARCH_PRIMA2) += \
 dtb-$(CONFIG_ARCH_OXNAS) += \
 	wd-mbwe.dtb
 dtb-$(CONFIG_ARCH_QCOM) += \
-	qcom-apq8064-arrow-db600c.dtb \
+	qcom-apq8060-dragonboard.dtb \
+	qcom-apq8064-arrow-sd-600eval.dtb \
 	qcom-apq8064-cm-qs600.dtb \
 	qcom-apq8064-ifc6410.dtb \
 	qcom-apq8064-sony-xperia-yuga.dtb \
