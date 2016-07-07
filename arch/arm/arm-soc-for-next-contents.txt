@@ -66,6 +66,16 @@ next/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-soc2-for-v4.8
 		contains renesas/rcar-sysc
 		contains renesas/rcar-sysc2
+	omap/soc2
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/soc-pt2-signed
+	hisi/soc
+		git://github.com/hisilicon/linux-hisi tags/hisi-armv7-soc-for-4.8-v3
+	brcm/soc2
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/soc-part2
+	brcm/maintainer
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/maintainers-part2
+	patch
+		ARM: tango: add Suspend-to-RAM support
 
 next/arm64
 	patch
@@ -89,6 +99,10 @@ next/arm64
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-arm64-defconfig-for-4.8
 	renesas/defconfig64
 		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-defconfig-for-v4.8
+	mvebu/arm64
+		git://git.infradead.org/linux-mvebu tags/mvebu-arm64-4.8-1
+	brcm/arm64-2
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/soc-arm64-part2
 
 next/dt
 	samsung/dt
@@ -135,6 +149,15 @@ next/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip tags/v4.8-rockchip-dts32-1
 	tegra/dt-bindings
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-dt-bindings
+	patch
+		ARM: dts: Ux500: fix up TVK sensor data
+	sunxi/dt
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-dt-for-4.8
+	hisi/dt
+		git://github.com/hisilicon/linux-hisi tags/hisi-armv7-soc-dt-for-4.8-v2
+	brcm/dt2
+broadcom/dt2
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-part2
 
 next/dt64
 	patch
@@ -159,6 +182,14 @@ next/dt64
 		git://github.com/hisilicon/linux-hisi tags/hi6220-dt-for-4.8
 	rockchip/dts64
 		git://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip tags/v4.8-rockchip-dts64-1
+	mediatek/dts
+		https://github.com/mbgg/linux-mediatek tags/v4.7-next-dts
+	mvebu/dt64
+		git://git.infradead.org/linux-mvebu tags/mvebu-dt64-4.8-1
+	amlogic/dt64-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-dt64-2
+	brcm/dt64-2
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-arm64-part2
 
 next/defconfig
 	samsung/defconfig
@@ -181,6 +212,10 @@ next/defconfig
 		ARM: config: Add a multi_v4t_defconfig
 	rockchip/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-defconfig-for-v4.8
+	at91/defconfig2
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig2
+	sunxi/defconfig
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-defconfig-for-4.8
 
 next/drivers
 	reset/for-4.8
@@ -224,4 +259,13 @@ next/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-memory
 	tegra/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-soc
+	reset/for-4.8-3
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8-3
+	omap/ir-rx51
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/ir-rx51-signed
+	patch
+		firmware: scpi: add CONFIG_OF dependency
+		soc: raspberrypi-power: add CONFIG_OF dependency
+	brcm/maintainer
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/maintainers-part2
 
