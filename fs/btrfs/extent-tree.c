@@ -2650,7 +2650,10 @@ static noinline int __btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 
 		btrfs_free_delayed_extent_op(extent_op);
 		if (ret) {
+			spin_lock(&delayed_refs->lock);
 			locked_ref->processing = 0;
+			delayed_refs->num_heads_ready++;
+			spin_unlock(&delayed_refs->lock);
 			btrfs_delayed_ref_unlock(locked_ref);
 			btrfs_put_delayed_ref(ref);
 			btrfs_debug(fs_info, "run_one_delayed_ref returned %d", ret);
@@ -4276,6 +4279,9 @@ int btrfs_check_data_free_space(struct inode *inode, u64 start, u64 len)
 	 * range, but don't impact performance on quota disable case.
 	 */
 	ret = btrfs_qgroup_reserve_data(inode, start, len);
+	if (ret < 0)
+		/* Qgroup reserve failed, need to cleanup reserved data space */
+		btrfs_free_reserved_data_space(inode, start, len);
 	return ret;
 }
 
