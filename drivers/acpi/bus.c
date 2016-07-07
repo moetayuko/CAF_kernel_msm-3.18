@@ -174,22 +174,17 @@ void acpi_bus_detach_private_data(acpi_handle handle)
 EXPORT_SYMBOL_GPL(acpi_bus_detach_private_data);
 
 static void acpi_print_osc_error(acpi_handle handle,
-	struct acpi_osc_context *context, char *error)
+				 struct acpi_osc_context *context, char *error)
 {
-	struct acpi_buffer buffer = {ACPI_ALLOCATE_BUFFER};
 	int i;
 
-	if (ACPI_FAILURE(acpi_get_name(handle, ACPI_FULL_PATHNAME, &buffer)))
-		printk(KERN_DEBUG "%s: %s\n", context->uuid_str, error);
-	else {
-		printk(KERN_DEBUG "%s (%s): %s\n",
-		       (char *)buffer.pointer, context->uuid_str, error);
-		kfree(buffer.pointer);
-	}
-	printk(KERN_DEBUG "_OSC request data:");
+	acpi_handle_debug(handle, "(%s): %s\n", context->uuid_str, error);
+
+	pr_debug("_OSC request data:");
 	for (i = 0; i < context->cap.length; i += sizeof(u32))
-		printk(" %x", *((u32 *)(context->cap.pointer + i)));
-	printk("\n");
+		pr_debug(" %x", *((u32 *)(context->cap.pointer + i)));
+
+	pr_debug("\n");
 }
 
 acpi_status acpi_str_to_uuid(char *str, u8 *uuid)
@@ -961,8 +956,7 @@ void __init acpi_early_init(void)
 /**
  * acpi_subsystem_init - Finalize the early initialization of ACPI.
  *
- * Switch over the platform to the ACPI mode (if possible), initialize the
- * handling of ACPI events, install the interrupt and global lock handlers.
+ * Switch over the platform to the ACPI mode (if possible).
  *
  * Doing this too early is generally unsafe, but at the same time it needs to be
  * done before all things that really depend on ACPI.  The right spot appears to
