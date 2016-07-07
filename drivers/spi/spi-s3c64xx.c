@@ -310,44 +310,63 @@ static void prepare_dma(struct s3c64xx_spi_dma_data *dma,
 	dma_async_issue_pending(dma->ch);
 }
 
+static void s3c64xx_spi_set_cs(struct spi_device *spi, bool enable)
+{
+	struct s3c64xx_spi_driver_data *sdd =
+					spi_master_get_devdata(spi->master);
+
+	if (sdd->cntrlr_info->no_cs)
+		return;
+
+	if (enable) {
+		if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO)) {
+			writel(0, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+		} else {
+			u32 ssel = readl(sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+
+			ssel |= (S3C64XX_SPI_SLAVE_AUTO |
+						S3C64XX_SPI_SLAVE_NSC_CNT_2);
+			writel(ssel, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+		}
+	} else {
+		if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
+			writel(S3C64XX_SPI_SLAVE_SIG_INACT,
+			       sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	}
+}
+
 static int s3c64xx_spi_prepare_transfer(struct spi_master *spi)
 {
 	struct s3c64xx_spi_driver_data *sdd = spi_master_get_devdata(spi);
 	dma_filter_fn filter = sdd->cntrlr_info->filter;
 	struct device *dev = &sdd->pdev->dev;
 	dma_cap_mask_t mask;
-	int ret;
 
-	if (!is_polling(sdd)) {
-		dma_cap_zero(mask);
-		dma_cap_set(DMA_SLAVE, mask);
+	if (is_polling(sdd))
+		return 0;
 
-		/* Acquire DMA channels */
-		sdd->rx_dma.ch = dma_request_slave_channel_compat(mask, filter,
-				   sdd->cntrlr_info->dma_rx, dev, "rx");
-		if (!sdd->rx_dma.ch) {
-			dev_err(dev, "Failed to get RX DMA channel\n");
-			ret = -EBUSY;
-			goto out;
-		}
-		spi->dma_rx = sdd->rx_dma.ch;
+	dma_cap_zero(mask);
+	dma_cap_set(DMA_SLAVE, mask);
 
-		sdd->tx_dma.ch = dma_request_slave_channel_compat(mask, filter,
-				   sdd->cntrlr_info->dma_tx, dev, "tx");
-		if (!sdd->tx_dma.ch) {
-			dev_err(dev, "Failed to get TX DMA channel\n");
-			ret = -EBUSY;
-			goto out_rx;
-		}
-		spi->dma_tx = sdd->tx_dma.ch;
+	/* Acquire DMA channels */
+	sdd->rx_dma.ch = dma_request_slave_channel_compat(mask, filter,
+			   sdd->cntrlr_info->dma_rx, dev, "rx");
+	if (!sdd->rx_dma.ch) {
+		dev_err(dev, "Failed to get RX DMA channel\n");
+		return -EBUSY;
 	}
+	spi->dma_rx = sdd->rx_dma.ch;
+
+	sdd->tx_dma.ch = dma_request_slave_channel_compat(mask, filter,
+			   sdd->cntrlr_info->dma_tx, dev, "tx");
+	if (!sdd->tx_dma.ch) {
+		dev_err(dev, "Failed to get TX DMA channel\n");
+		dma_release_channel(sdd->rx_dma.ch);
+		return -EBUSY;
+	}
+	spi->dma_tx = sdd->tx_dma.ch;
 
 	return 0;
-
-out_rx:
-	dma_release_channel(sdd->rx_dma.ch);
-out:
-	return ret;
 }
 
 static int s3c64xx_spi_unprepare_transfer(struct spi_master *spi)
@@ -577,9 +596,7 @@ static void s3c64xx_spi_config(struct s3c64xx_spi_driver_data *sdd)
 	u32 val;
 
 	/* Disable Clock */
-	if (sdd->port_conf->clk_from_cmu) {
-		clk_disable_unprepare(sdd->src_clk);
-	} else {
+	if (!sdd->port_conf->clk_from_cmu) {
 		val = readl(regs + S3C64XX_SPI_CLK_CFG);
 		val &= ~S3C64XX_SPI_ENCLK_ENABLE;
 		writel(val, regs + S3C64XX_SPI_CLK_CFG);
@@ -622,11 +639,7 @@ static void s3c64xx_spi_config(struct s3c64xx_spi_driver_data *sdd)
 	writel(val, regs + S3C64XX_SPI_MODE_CFG);
 
 	if (sdd->port_conf->clk_from_cmu) {
-		/* Configure Clock */
-		/* There is half-multiplier before the SPI */
 		clk_set_rate(sdd->src_clk, sdd->cur_speed * 2);
-		/* Enable Clock */
-		clk_prepare_enable(sdd->src_clk);
 	} else {
 		/* Configure Clock */
 		val = readl(regs + S3C64XX_SPI_CLK_CFG);
@@ -650,16 +663,6 @@ static int s3c64xx_spi_prepare_message(struct spi_master *master,
 	struct s3c64xx_spi_driver_data *sdd = spi_master_get_devdata(master);
 	struct spi_device *spi = msg->spi;
 	struct s3c64xx_spi_csinfo *cs = spi->controller_data;
-
-	/* If Master's(controller) state differs from that needed by Slave */
-	if (sdd->cur_speed != spi->max_speed_hz
-			|| sdd->cur_mode != spi->mode
-			|| sdd->cur_bpw != spi->bits_per_word) {
-		sdd->cur_bpw = spi->bits_per_word;
-		sdd->cur_speed = spi->max_speed_hz;
-		sdd->cur_mode = spi->mode;
-		s3c64xx_spi_config(sdd);
-	}
 
 	/* Configure feedback delay */
 	writel(cs->fb_delay & 0x3, sdd->regs + S3C64XX_SPI_FB_CLK);
@@ -687,6 +690,7 @@ static int s3c64xx_spi_transfer_one(struct spi_master *master,
 	if (bpw != sdd->cur_bpw || speed != sdd->cur_speed) {
 		sdd->cur_bpw = bpw;
 		sdd->cur_speed = speed;
+		sdd->cur_mode = spi->mode;
 		s3c64xx_spi_config(sdd);
 	}
 
@@ -706,12 +710,7 @@ static int s3c64xx_spi_transfer_one(struct spi_master *master,
 	enable_datapath(sdd, spi, xfer, use_dma);
 
 	/* Start the signals */
-	if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
-		writel(0, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
-	else
-		writel(readl(sdd->regs + S3C64XX_SPI_SLAVE_SEL)
-			| S3C64XX_SPI_SLAVE_AUTO | S3C64XX_SPI_SLAVE_NSC_CNT_2,
-			sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	s3c64xx_spi_set_cs(spi, true);
 
 	spin_unlock_irqrestore(&sdd->lock, flags);
 
@@ -861,16 +860,15 @@ static int s3c64xx_spi_setup(struct spi_device *spi)
 
 	pm_runtime_mark_last_busy(&sdd->pdev->dev);
 	pm_runtime_put_autosuspend(&sdd->pdev->dev);
-	if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
-		writel(S3C64XX_SPI_SLAVE_SIG_INACT, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	s3c64xx_spi_set_cs(spi, false);
+
 	return 0;
 
 setup_exit:
 	pm_runtime_mark_last_busy(&sdd->pdev->dev);
 	pm_runtime_put_autosuspend(&sdd->pdev->dev);
 	/* setup() returns with device de-selected */
-	if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
-		writel(S3C64XX_SPI_SLAVE_SIG_INACT, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	s3c64xx_spi_set_cs(spi, false);
 
 	if (gpio_is_valid(spi->cs_gpio))
 		gpio_free(spi->cs_gpio);
@@ -944,7 +942,9 @@ static void s3c64xx_spi_hwinit(struct s3c64xx_spi_driver_data *sdd, int channel)
 
 	sdd->cur_speed = 0;
 
-	if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
+	if (sci->no_cs)
+		writel(0, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	else if (!(sdd->port_conf->quirks & S3C64XX_SPI_QUIRK_CS_AUTO))
 		writel(S3C64XX_SPI_SLAVE_SIG_INACT, sdd->regs + S3C64XX_SPI_SLAVE_SEL);
 
 	/* Disable Interrupts - we use Polling if not DMA mode */
@@ -998,6 +998,8 @@ static struct s3c64xx_spi_info *s3c64xx_spi_parse_dt(struct device *dev)
 	} else {
 		sci->num_cs = temp;
 	}
+
+	sci->no_cs = of_property_read_bool(dev->of_node, "broken-cs");
 
 	return sci;
 }
