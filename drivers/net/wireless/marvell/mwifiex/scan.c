@@ -2026,9 +2026,13 @@ void mwifiex_cancel_scan(struct mwifiex_adapter *adapter)
 			if (!priv)
 				continue;
 			if (priv->scan_request) {
+				struct cfg80211_scan_info info = {
+					.aborted = true,
+				};
+
 				mwifiex_dbg(adapter, INFO,
 					    "info: aborting scan\n");
-				cfg80211_scan_done(priv->scan_request, 1);
+				cfg80211_scan_done(priv->scan_request, &info);
 				priv->scan_request = NULL;
 			}
 		}
