@@ -1815,7 +1815,8 @@ static int qgroup_redirty_data_extents(struct btrfs_trans_handle *trans,
 		record->old_roots = NULL;
 
 		spin_lock(&delayed_refs->lock);
-		exist = btrfs_qgroup_insert_dirty_extent(delayed_refs, record);
+		exist = btrfs_qgroup_insert_dirty_extent(fs_info, delayed_refs,
+				record);
 		spin_unlock(&delayed_refs->lock);
 		if (exist)
 			kfree(record);
