@@ -99,23 +99,24 @@ static inline void btrfs_init_delayed_root(
 }
 
 int btrfs_insert_delayed_dir_index(struct btrfs_trans_handle *trans,
-				   struct btrfs_root *root, const char *name,
-				   int name_len, struct inode *dir,
+				   struct btrfs_fs_info *fs_info,
+				   const char *name, int name_len,
+				   struct inode *dir,
 				   struct btrfs_disk_key *disk_key, u8 type,
 				   u64 index);
 
 int btrfs_delete_delayed_dir_index(struct btrfs_trans_handle *trans,
-				   struct btrfs_root *root, struct inode *dir,
-				   u64 index);
+				   struct btrfs_fs_info *fs_info,
+				   struct inode *dir, u64 index);
 
 int btrfs_inode_delayed_dir_index_count(struct inode *inode);
 
 int btrfs_run_delayed_items(struct btrfs_trans_handle *trans,
-			    struct btrfs_root *root);
+			    struct btrfs_fs_info *fs_info);
 int btrfs_run_delayed_items_nr(struct btrfs_trans_handle *trans,
-			       struct btrfs_root *root, int nr);
+			       struct btrfs_fs_info *fs_info, int nr);
 
-void btrfs_balance_delayed_items(struct btrfs_root *root);
+void btrfs_balance_delayed_items(struct btrfs_fs_info *fs_info);
 
 int btrfs_commit_inode_delayed_items(struct btrfs_trans_handle *trans,
 				     struct inode *inode);
@@ -134,7 +135,7 @@ int btrfs_delayed_delete_inode_ref(struct inode *inode);
 void btrfs_kill_all_delayed_nodes(struct btrfs_root *root);
 
 /* Used for clean the transaction */
-void btrfs_destroy_delayed_inodes(struct btrfs_root *root);
+void btrfs_destroy_delayed_inodes(struct btrfs_fs_info *fs_info);
 
 /* Used for readdir() */
 bool btrfs_readdir_get_delayed_items(struct inode *inode,
@@ -153,6 +154,6 @@ int __init btrfs_delayed_inode_init(void);
 void btrfs_delayed_inode_exit(void);
 
 /* for debugging */
-void btrfs_assert_delayed_root_empty(struct btrfs_root *root);
+void btrfs_assert_delayed_root_empty(struct btrfs_fs_info *fs_info);
 
 #endif
