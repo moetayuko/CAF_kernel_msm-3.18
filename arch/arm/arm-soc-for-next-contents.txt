@@ -24,6 +24,8 @@ next/cleanup
 		git://git.infradead.org/linux-mvebu tags/mvebu-cleanup-4.8-1
 	imx/cleanup
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-cleanup-4.8
+	patch
+		ARM: iop: Fix indentation
 
 next/soc
 	renesas/soc
@@ -76,6 +78,7 @@ next/soc
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/maintainers-part2
 	patch
 		ARM: tango: add Suspend-to-RAM support
+		arm: meson: explicitly select clk drivers
 
 next/arm64
 	patch
@@ -103,6 +106,8 @@ next/arm64
 		git://git.infradead.org/linux-mvebu tags/mvebu-arm64-4.8-1
 	brcm/arm64-2
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/soc-arm64-part2
+	patch
+		arm64: amlogic: select gxbb clk driver
 
 next/dt
 	samsung/dt
@@ -156,8 +161,9 @@ next/dt
 	hisi/dt
 		git://github.com/hisilicon/linux-hisi tags/hisi-armv7-soc-dt-for-4.8-v2
 	brcm/dt2
-broadcom/dt2
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-part2
+	pxa/dt
+		https://github.com/rjarzmik/linux tags/pxa-dt-4.7
 
 next/dt64
 	patch
@@ -190,6 +196,10 @@ next/dt64
 		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-dt64-2
 	brcm/dt64-2
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-arm64-part2
+	patch
+		Revert "ARM64: DTS: meson-gxbb: switch ethernet to real clock"
+	renesas/dt64-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-dt2-for-v4.8
 
 next/defconfig
 	samsung/defconfig
@@ -216,6 +226,8 @@ next/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig2
 	sunxi/defconfig
 		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-defconfig-for-4.8
+	patch
+		ARM: configs: lpc18xx: enable adc and dac iio drivers
 
 next/drivers
 	reset/for-4.8
