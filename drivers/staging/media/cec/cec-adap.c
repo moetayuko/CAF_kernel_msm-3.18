@@ -801,6 +801,7 @@ void cec_received_msg(struct cec_adapter *adap, struct cec_msg *msg)
 
 			/* We got a reply */
 			msg->sequence = dst->sequence;
+			msg->tx_status = dst->tx_status;
 			dst_reply = dst->reply;
 			*dst = *msg;
 			dst->reply = dst_reply;
@@ -1441,18 +1442,21 @@ static int cec_receive_notify(struct cec_adapter *adap, struct cec_msg *msg,
 
 	switch (msg->msg[1]) {
 	/* The following messages are processed but still passed through */
-	case CEC_MSG_REPORT_PHYSICAL_ADDR:
-		adap->phys_addrs[init_laddr] =
-			(msg->msg[2] << 8) | msg->msg[3];
-		dprintk(1, "Reported physical address %04x for logical address %d\n",
-			adap->phys_addrs[init_laddr], init_laddr);
+	case CEC_MSG_REPORT_PHYSICAL_ADDR: {
+		u16 pa = (msg->msg[2] << 8) | msg->msg[3];
+
+		if (!from_unregistered)
+			adap->phys_addrs[init_laddr] = pa;
+		dprintk(1, "Reported physical address %x.%x.%x.%x for logical address %d\n",
+			cec_phys_addr_exp(pa), init_laddr);
 		break;
+	}
 
 	case CEC_MSG_USER_CONTROL_PRESSED:
 		if (!(adap->capabilities & CEC_CAP_RC))
 			break;
 
-#if IS_ENABLED(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 		switch (msg->msg[2]) {
 		/*
 		 * Play function, this message can have variable length
@@ -1488,7 +1492,7 @@ static int cec_receive_notify(struct cec_adapter *adap, struct cec_msg *msg,
 	case CEC_MSG_USER_CONTROL_RELEASED:
 		if (!(adap->capabilities & CEC_CAP_RC))
 			break;
-#if IS_ENABLED(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 		rc_keyup(adap->rc);
 #endif
 		break;

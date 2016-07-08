@@ -1330,7 +1330,7 @@ static int cxd2841er_read_packet_errors_i(
 	return 0;
 }
 
-static u32 cxd2841er_mon_read_ber_s(struct cxd2841er_priv *priv)
+static int cxd2841er_mon_read_ber_s(struct cxd2841er_priv *priv, u32 *ber)
 {
 	u8 data[11];
 	u32 bit_error, bit_count;
@@ -1365,25 +1365,25 @@ static u32 cxd2841er_mon_read_ber_s(struct cxd2841er_priv *priv)
 			dev_dbg(&priv->i2c->dev,
 				"%s(): invalid bit_error %d, bit_count %d\n",
 				__func__, bit_error, bit_count);
-			return 0;
+			return -EINVAL;
 		}
 		temp_q = div_u64_rem(10000000ULL * bit_error,
 						bit_count, &temp_r);
 		if (bit_count != 1 && temp_r >= bit_count / 2)
 			temp_q++;
-		return temp_q;
+		*ber = temp_q;
+		return 0;
 	}
 	dev_dbg(&priv->i2c->dev, "%s(): no data available\n", __func__);
-	return 0;
+	return -EINVAL;
 }
 
 
-static u32 cxd2841er_mon_read_ber_s2(struct cxd2841er_priv *priv)
+static int cxd2841er_mon_read_ber_s2(struct cxd2841er_priv *priv, u32 *ber)
 {
 	u8 data[5];
 	u32 bit_error, period;
 	u32 temp_q, temp_r;
-	u32 result = 0;
 
 	/* Set SLV-T Bank : 0xB2 */
 	cxd2841er_write_reg(priv, I2C_SLVT, 0x00, 0xb2);
@@ -1411,13 +1411,13 @@ static u32 cxd2841er_mon_read_ber_s2(struct cxd2841er_priv *priv)
 		if (period == 0) {
 			dev_dbg(&priv->i2c->dev,
 				"%s(): period is 0\n", __func__);
-			return 0;
+			return -EINVAL;
 		}
 		if (bit_error > (period * 64800)) {
 			dev_dbg(&priv->i2c->dev,
 				"%s(): invalid bit_err 0x%x period 0x%x\n",
 				__func__, bit_error, period);
-			return 0;
+			return -EINVAL;
 		}
 		/*
 		 * BER = bitError / (period * 64800)
@@ -1430,12 +1430,13 @@ static u32 cxd2841er_mon_read_ber_s2(struct cxd2841er_priv *priv)
 					period * 81, &temp_r);
 		if (temp_r >= period * 40)
 			temp_q++;
-		result = temp_q;
+		*ber = temp_q;
+		return 0;
 	} else {
 		dev_dbg(&priv->i2c->dev,
 			"%s(): no data available\n", __func__);
 	}
-	return result;
+	return -EINVAL;
 }
 
 static int cxd2841er_read_ber_t2(struct cxd2841er_priv *priv, u32 *ber)
@@ -1656,6 +1657,21 @@ static int cxd2841er_read_snr_i(struct cxd2841er_priv *priv, u32 *snr)
 	return 0;
 }
 
+static u16 cxd2841er_read_agc_gain_c(struct cxd2841er_priv *priv,
+					u8 delsys)
+{
+	u8 data[2];
+
+	cxd2841er_write_reg(
+		priv, I2C_SLVT, 0x00, 0x40);
+	cxd2841er_read_regs(priv, I2C_SLVT, 0x49, data, 2);
+	dev_dbg(&priv->i2c->dev,
+			"%s(): AGC value=%u\n",
+			__func__, (((u16)data[0] & 0x0F) << 8) |
+			(u16)(data[1] & 0xFF));
+	return ((((u16)data[0] & 0x0F) << 8) | (u16)(data[1] & 0xFF)) << 4;
+}
+
 static u16 cxd2841er_read_agc_gain_t_t2(struct cxd2841er_priv *priv,
 					u8 delsys)
 {
@@ -1702,60 +1718,82 @@ static u16 cxd2841er_read_agc_gain_s(struct cxd2841er_priv *priv)
 	return ((((u16)data[0] & 0x1F) << 8) | (u16)(data[1] & 0xFF)) << 3;
 }
 
-static int cxd2841er_read_ber(struct dvb_frontend *fe, u32 *ber)
+static void cxd2841er_read_ber(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct cxd2841er_priv *priv = fe->demodulator_priv;
+	u32 ber = 0, ret;
 
 	dev_dbg(&priv->i2c->dev, "%s()\n", __func__);
-	*ber = 0;
 	switch (p->delivery_system) {
 	case SYS_DVBS:
-		*ber = cxd2841er_mon_read_ber_s(priv);
+		ret = cxd2841er_mon_read_ber_s(priv, &ber);
 		break;
 	case SYS_DVBS2:
-		*ber = cxd2841er_mon_read_ber_s2(priv);
+		ret = cxd2841er_mon_read_ber_s2(priv, &ber);
 		break;
 	case SYS_DVBT:
-		return cxd2841er_read_ber_t(priv, ber);
-	case SYS_DVBT2:
-		return cxd2841er_read_ber_t2(priv, ber);
-	default:
-		*ber = 0;
+		ret = cxd2841er_read_ber_t(priv, &ber);
 		break;
+	case SYS_DVBT2:
+		ret = cxd2841er_read_ber_t2(priv, &ber);
+		break;
+	default:
+		p->post_bit_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+		return;
 	}
-	return 0;
+
+	if (!ret) {
+		p->post_bit_error.stat[0].scale = FE_SCALE_COUNTER;
+		p->post_bit_error.stat[0].uvalue = ber;
+	} else {
+		p->post_bit_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+	}
 }
 
-static int cxd2841er_read_signal_strength(struct dvb_frontend *fe,
-					  u16 *strength)
+static void cxd2841er_read_signal_strength(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct cxd2841er_priv *priv = fe->demodulator_priv;
+	u32 strength;
 
 	dev_dbg(&priv->i2c->dev, "%s()\n", __func__);
 	switch (p->delivery_system) {
-	case SYS_DVBT:
-	case SYS_DVBT2:
-		*strength = 65535 - cxd2841er_read_agc_gain_t_t2(
-			priv, p->delivery_system);
-		break;
-	case SYS_ISDBT:
-		*strength = 65535 - cxd2841er_read_agc_gain_i(
+	case SYS_DVBC_ANNEX_A:
+	case SYS_DVBC_ANNEX_B:
+	case SYS_DVBC_ANNEX_C:
+		strength = 65535 - cxd2841er_read_agc_gain_c(
 				priv, p->delivery_system);
+		p->strength.stat[0].scale = FE_SCALE_RELATIVE;
+		p->strength.stat[0].uvalue = strength;
+		break;
+	case SYS_DVBT:
+	case SYS_DVBT2:
+		strength = cxd2841er_read_agc_gain_t_t2(priv,
+							p->delivery_system);
+		p->strength.stat[0].scale = FE_SCALE_DECIBEL;
+		/* Formula was empirically determinated @ 410 MHz */
+		p->strength.stat[0].uvalue = ((s32)strength) * 366 / 100 - 89520;
+		break;	/* Code moved out of the function */
+	case SYS_ISDBT:
+		strength = 65535 - cxd2841er_read_agc_gain_i(
+				priv, p->delivery_system);
+		p->strength.stat[0].scale = FE_SCALE_RELATIVE;
+		p->strength.stat[0].uvalue = strength;
 		break;
 	case SYS_DVBS:
 	case SYS_DVBS2:
-		*strength = 65535 - cxd2841er_read_agc_gain_s(priv);
+		strength = 65535 - cxd2841er_read_agc_gain_s(priv);
+		p->strength.stat[0].scale = FE_SCALE_RELATIVE;
+		p->strength.stat[0].uvalue = strength;
 		break;
 	default:
-		*strength = 0;
+		p->strength.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
 		break;
 	}
-	return 0;
 }
 
-static int cxd2841er_read_snr(struct dvb_frontend *fe, u16 *snr)
+static void cxd2841er_read_snr(struct dvb_frontend *fe)
 {
 	u32 tmp = 0;
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
@@ -1779,34 +1817,39 @@ static int cxd2841er_read_snr(struct dvb_frontend *fe, u16 *snr)
 	default:
 		dev_dbg(&priv->i2c->dev, "%s(): unknown delivery system %d\n",
 			__func__, p->delivery_system);
-		break;
+		p->cnr.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+		return;
 	}
-	*snr = tmp & 0xffff;
-	return 0;
+
+	p->cnr.stat[0].scale = FE_SCALE_DECIBEL;
+	p->cnr.stat[0].svalue = tmp;
 }
 
-static int cxd2841er_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
+static void cxd2841er_read_ucblocks(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct cxd2841er_priv *priv = fe->demodulator_priv;
+	u32 ucblocks;
 
 	dev_dbg(&priv->i2c->dev, "%s()\n", __func__);
 	switch (p->delivery_system) {
 	case SYS_DVBT:
-		cxd2841er_read_packet_errors_t(priv, ucblocks);
+		cxd2841er_read_packet_errors_t(priv, &ucblocks);
 		break;
 	case SYS_DVBT2:
-		cxd2841er_read_packet_errors_t2(priv, ucblocks);
+		cxd2841er_read_packet_errors_t2(priv, &ucblocks);
 		break;
 	case SYS_ISDBT:
-		cxd2841er_read_packet_errors_i(priv, ucblocks);
+		cxd2841er_read_packet_errors_i(priv, &ucblocks);
 		break;
 	default:
-		*ucblocks = 0;
-		break;
+		p->block_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+		return;
 	}
 	dev_dbg(&priv->i2c->dev, "%s()\n", __func__);
-	return 0;
+
+	p->block_error.stat[0].scale = FE_SCALE_COUNTER;
+	p->block_error.stat[0].uvalue = ucblocks;
 }
 
 static int cxd2841er_dvbt2_set_profile(
@@ -2926,8 +2969,6 @@ static int cxd2841er_get_frontend(struct dvb_frontend *fe,
 				  struct dtv_frontend_properties *p)
 {
 	enum fe_status status = 0;
-	u16 strength = 0, snr = 0;
-	u32 errors = 0, ber = 0;
 	struct cxd2841er_priv *priv = fe->demodulator_priv;
 
 	dev_dbg(&priv->i2c->dev, "%s()\n", __func__);
@@ -2936,31 +2977,16 @@ static int cxd2841er_get_frontend(struct dvb_frontend *fe,
 	else if (priv->state == STATE_ACTIVE_TC)
 		cxd2841er_read_status_tc(fe, &status);
 
+	cxd2841er_read_signal_strength(fe);
+
 	if (status & FE_HAS_LOCK) {
-		cxd2841er_read_signal_strength(fe, &strength);
-		p->strength.len = 1;
-		p->strength.stat[0].scale = FE_SCALE_RELATIVE;
-		p->strength.stat[0].uvalue = strength;
-		cxd2841er_read_snr(fe, &snr);
-		p->cnr.len = 1;
-		p->cnr.stat[0].scale = FE_SCALE_DECIBEL;
-		p->cnr.stat[0].svalue = snr;
-		cxd2841er_read_ucblocks(fe, &errors);
-		p->block_error.len = 1;
-		p->block_error.stat[0].scale = FE_SCALE_COUNTER;
-		p->block_error.stat[0].uvalue = errors;
-		cxd2841er_read_ber(fe, &ber);
-		p->post_bit_error.len = 1;
-		p->post_bit_error.stat[0].scale = FE_SCALE_COUNTER;
-		p->post_bit_error.stat[0].uvalue = ber;
+		cxd2841er_read_snr(fe);
+		cxd2841er_read_ucblocks(fe);
+
+		cxd2841er_read_ber(fe);
 	} else {
-		p->strength.len = 1;
-		p->strength.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
-		p->cnr.len = 1;
 		p->cnr.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
-		p->block_error.len = 1;
 		p->block_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
-		p->post_bit_error.len = 1;
 		p->post_bit_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
 	}
 	return 0;
@@ -3021,6 +3047,12 @@ static int cxd2841er_set_frontend_s(struct dvb_frontend *fe)
 			__func__, carr_offset);
 	}
 done:
+	/* Reset stats */
+	p->strength.stat[0].scale = FE_SCALE_RELATIVE;
+	p->cnr.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+	p->block_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+	p->post_bit_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+
 	return ret;
 }
 
@@ -3382,6 +3414,21 @@ static enum dvbfe_algo cxd2841er_get_algo(struct dvb_frontend *fe)
 	return DVBFE_ALGO_HW;
 }
 
+static void cxd2841er_init_stats(struct dvb_frontend *fe)
+{
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
+
+	p->strength.len = 1;
+	p->strength.stat[0].scale = FE_SCALE_RELATIVE;
+	p->cnr.len = 1;
+	p->cnr.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+	p->block_error.len = 1;
+	p->block_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+	p->post_bit_error.len = 1;
+	p->post_bit_error.stat[0].scale = FE_SCALE_NOT_AVAILABLE;
+}
+
+
 static int cxd2841er_init_s(struct dvb_frontend *fe)
 {
 	struct cxd2841er_priv *priv = fe->demodulator_priv;
@@ -3403,6 +3450,9 @@ static int cxd2841er_init_s(struct dvb_frontend *fe)
 	/* SONY_DEMOD_CONFIG_SAT_IFAGCNEG set to 1 */
 	cxd2841er_write_reg(priv, I2C_SLVT, 0x00, 0xa0);
 	cxd2841er_set_reg_bits(priv, I2C_SLVT, 0xb9, 0x01, 0x01);
+
+	cxd2841er_init_stats(fe);
+
 	return 0;
 }
 
@@ -3422,6 +3472,9 @@ static int cxd2841er_init_tc(struct dvb_frontend *fe)
 	/* SONY_DEMOD_CONFIG_PARALLEL_SEL = 1 */
 	cxd2841er_write_reg(priv, I2C_SLVT, 0x00, 0x00);
 	cxd2841er_set_reg_bits(priv, I2C_SLVT, 0xc4, 0x00, 0x80);
+
+	cxd2841er_init_stats(fe);
+
 	return 0;
 }
 
