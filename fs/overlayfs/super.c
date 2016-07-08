@@ -159,6 +159,13 @@ struct dentry *ovl_entry_real(struct ovl_entry *oe, bool *is_upper)
 	return realdentry;
 }
 
+struct inode *ovl_inode_real(struct inode *inode)
+{
+	bool tmp;
+
+	return d_inode(ovl_entry_real(inode->i_private, &tmp));
+}
+
 struct vfsmount *ovl_entry_mnt_real(struct ovl_entry *oe, struct inode *inode,
 				    bool is_upper)
 {
@@ -176,13 +183,6 @@ struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	return oe->cache;
-}
-
-bool ovl_is_default_permissions(struct inode *inode)
-{
-	struct ovl_fs *ofs = inode->i_sb->s_fs_info;
-
-	return ofs->config.default_permissions;
 }
 
 void ovl_set_dir_cache(struct dentry *dentry, struct ovl_dir_cache *cache)
@@ -304,7 +304,9 @@ static void ovl_dentry_release(struct dentry *dentry)
 	}
 }
 
-static struct dentry *ovl_d_real(struct dentry *dentry, struct inode *inode)
+static struct dentry *ovl_d_real(struct dentry *dentry,
+				 const struct inode *inode,
+				 unsigned int open_flags)
 {
 	struct dentry *real;
 
@@ -312,6 +314,16 @@ static struct dentry *ovl_d_real(struct dentry *dentry, struct inode *inode)
 		if (!inode || inode == d_inode(dentry))
 			return dentry;
 		goto bug;
+	}
+
+	if (d_is_negative(dentry))
+		return dentry;
+
+	if (open_flags) {
+		int err = ovl_open_maybe_copy_up(dentry, open_flags);
+
+		if (err)
+			return ERR_PTR(err);
 	}
 
 	real = ovl_dentry_upper(dentry);
@@ -326,9 +338,7 @@ static struct dentry *ovl_d_real(struct dentry *dentry, struct inode *inode)
 		return real;
 
 	/* Handle recursion */
-	if (real->d_flags & DCACHE_OP_REAL)
-		return real->d_op->d_real(real, inode);
-
+	return d_real(real, inode, open_flags);
 bug:
 	WARN(1, "ovl_d_real(%pd4, %s:%lu\n): real dentry not found\n", dentry,
 	     inode ? inode->i_sb->s_id : "NULL", inode ? inode->i_ino : 0);
@@ -378,13 +388,11 @@ static int ovl_dentry_weak_revalidate(struct dentry *dentry, unsigned int flags)
 
 static const struct dentry_operations ovl_dentry_operations = {
 	.d_release = ovl_dentry_release,
-	.d_select_inode = ovl_d_select_inode,
 	.d_real = ovl_d_real,
 };
 
 static const struct dentry_operations ovl_reval_dentry_operations = {
 	.d_release = ovl_dentry_release,
-	.d_select_inode = ovl_d_select_inode,
 	.d_real = ovl_d_real,
 	.d_revalidate = ovl_dentry_revalidate,
 	.d_weak_revalidate = ovl_dentry_weak_revalidate,
@@ -678,6 +686,7 @@ static const struct super_operations ovl_super_operations = {
 	.statfs		= ovl_statfs,
 	.show_options	= ovl_show_options,
 	.remount_fs	= ovl_remount,
+	.drop_inode	= generic_delete_inode,
 };
 
 enum {
@@ -1158,6 +1167,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_op = &ovl_super_operations;
 	sb->s_root = root_dentry;
 	sb->s_fs_info = ufs;
+	sb->s_flags |= MS_POSIXACL;
 
 	return 0;
 
