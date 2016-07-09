@@ -787,11 +787,17 @@ static void xs_error_report(struct sock *sk)
 		goto out;
 
 	err = -sk->sk_err;
-	if (err == 0)
+	switch (err) {
+	case 0:
 		goto out;
-	/* Is this a reset event? */
-	if (sk->sk_state == TCP_CLOSE)
-		xs_sock_mark_closed(xprt);
+	case -ETIMEDOUT:
+		xprt_force_disconnect(xprt);
+		break;
+	default:
+		/* Is this a reset event? */
+		if (sk->sk_state == TCP_CLOSE)
+			xs_sock_mark_closed(xprt);
+	}
 	dprintk("RPC:       xs_error_report client %p, error=%d...\n",
 			xprt, -err);
 	trace_rpc_socket_error(xprt, sk->sk_socket, err);
