@@ -15,9 +15,9 @@ offset into a video signal.
 Applications can use the following API to select an area in the video
 signal, query the default area and the hardware limits.
 
-**NOTE**: Despite their name, the :ref:`VIDIOC_CROPCAP <VIDIOC_CROPCAP>`,
-:ref:`VIDIOC_G_CROP <VIDIOC_G_CROP>` and :ref:`VIDIOC_S_CROP
-<VIDIOC_G_CROP>` ioctls apply to input as well as output devices.
+.. note:: Despite their name, the :ref:`VIDIOC_CROPCAP <VIDIOC_CROPCAP>`,
+   :ref:`VIDIOC_G_CROP <VIDIOC_G_CROP>` and :ref:`VIDIOC_S_CROP
+   <VIDIOC_G_CROP>` ioctls apply to input as well as output devices.
 
 Scaling requires a source and a target. On a video capture or overlay
 device the source is the video signal, and the cropping ioctls determine
@@ -38,9 +38,9 @@ support scaling or the :ref:`VIDIOC_G_CROP <VIDIOC_G_CROP>` and
 :ref:`VIDIOC_S_CROP <VIDIOC_G_CROP>` ioctls. Their size (and position
 where applicable) will be fixed in this case.
 
-**NOTE:** All capture and output devices must support the
-:ref:`VIDIOC_CROPCAP <VIDIOC_CROPCAP>` ioctl such that applications can
-determine if scaling takes place.
+.. note:: All capture and output devices must support the
+   :ref:`VIDIOC_CROPCAP <VIDIOC_CROPCAP>` ioctl such that applications
+   can determine if scaling takes place.
 
 
 Cropping Structures
@@ -144,11 +144,13 @@ reopening a device, such that piping data into or out of a device will
 work without special preparations. More advanced applications should
 ensure the parameters are suitable before starting I/O.
 
-**NOTE:** on the next two examples, a video capture device is assumed;
-change ``V4L2_BUF_TYPE_VIDEO_CAPTURE`` for other types of device.
+.. note:: On the next two examples, a video capture device is assumed;
+   change ``V4L2_BUF_TYPE_VIDEO_CAPTURE`` for other types of device.
+
+Example: Resetting the cropping parameters
+==========================================
 
 .. code-block:: c
-    :caption: Example 1.11. Resetting the cropping parameters
 
     struct v4l2_cropcap cropcap;
     struct v4l2_crop crop;
@@ -173,8 +175,11 @@ change ``V4L2_BUF_TYPE_VIDEO_CAPTURE`` for other types of device.
 	exit (EXIT_FAILURE);
     }
 
+
+Example: Simple downscaling
+===========================
+
 .. code-block:: c
-    :caption: Example 1.12. Simple downscaling
 
     struct v4l2_cropcap cropcap;
     struct v4l2_format format;
@@ -199,10 +204,12 @@ change ``V4L2_BUF_TYPE_VIDEO_CAPTURE`` for other types of device.
     /* We could check the actual image size now, the actual scaling factor
        or if the driver can scale at all. */
 
-**NOTE:** This example assumes an output device.
+Example: Selecting an output area
+=================================
+
+.. note:: This example assumes an output device.
 
 .. code-block:: c
-    :caption: Example 1.13. Selecting an output area
 
     struct v4l2_cropcap cropcap;
     struct v4l2_crop crop;
@@ -236,10 +243,12 @@ change ``V4L2_BUF_TYPE_VIDEO_CAPTURE`` for other types of device.
 	exit (EXIT_FAILURE);
     }
 
-**NOTE:** This example assumes a video capture device.
+Example: Current scaling factor and pixel aspect
+================================================
+
+.. note:: This example assumes a video capture device.
 
 .. code-block:: c
-    :caption: Example 1.14. Current scaling factor and pixel aspect
 
     struct v4l2_cropcap cropcap;
     struct v4l2_crop crop;

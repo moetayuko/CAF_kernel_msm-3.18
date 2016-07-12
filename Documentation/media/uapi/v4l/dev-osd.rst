@@ -14,10 +14,11 @@ this interface, which borrows structures and ioctls of the
 :ref:`Video Overlay <overlay>` interface.
 
 The OSD function is accessible through the same character special file
-as the :ref:`Video Output <capture>` function. Note the default
-function of such a ``/dev/video`` device is video capturing or output.
-The OSD function is only available after calling the
-:ref:`VIDIOC_S_FMT <VIDIOC_G_FMT>` ioctl.
+as the :ref:`Video Output <capture>` function.
+
+.. note:: The default function of such a ``/dev/video`` device is video
+   capturing or output. The OSD function is only available after calling
+   the :ref:`VIDIOC_S_FMT <VIDIOC_G_FMT>` ioctl.
 
 
 Querying Capabilities
@@ -50,9 +51,10 @@ standard. A V4L2 driver may reject attempts to change the video standard
 (or any other ioctl which would imply a framebuffer size change) with an
 ``EBUSY`` error code until all applications closed the framebuffer device.
 
+Example: Finding a framebuffer device for OSD
+---------------------------------------------
 
 .. code-block:: c
-    :caption: Example 4.1. Finding a framebuffer device for OSD
 
     #include <linux/fb.h>
 

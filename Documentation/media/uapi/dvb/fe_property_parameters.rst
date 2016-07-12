@@ -39,20 +39,26 @@ effect hardware.
 DTV_FREQUENCY
 =============
 
-Central frequency of the channel.
+Frequency of the digital TV transponder/channel.
 
-Notes:
+.. note::
 
-1)For satellite delivery systems, it is measured in kHz. For the other
-ones, it is measured in Hz.
+  #. For satellite delivery systems, the frequency is in kHz.
 
-2)For ISDB-T, the channels are usually transmitted with an offset of
-143kHz. E.g. a valid frequency could be 474143 kHz. The stepping is
-bound to the bandwidth of the channel which is 6MHz.
+  #. For cable and terrestrial delivery systems, the frequency is in
+     Hz.
 
-3)As in ISDB-Tsb the channel consists of only one or three segments the
-frequency step is 429kHz, 3*429 respectively. As for ISDB-T the central
-frequency of the channel is expected.
+  #. On most delivery systems, the frequency is the center frequency
+     of the transponder/channel. The exception is for ISDB-T, where
+     the main carrier has a 1/7 offset from the center.
+
+  #. For ISDB-T, the channels are usually transmitted with an offset of
+     about 143kHz. E.g. a valid frequency could be 474,143 kHz. The
+     stepping is  bound to the bandwidth of the channel which is
+     typically 6MHz.
+
+  #. In ISDB-Tsb, the channel consists of only one or three segments the
+     frequency step is 429kHz, 3*429 respectively.
 
 
 .. _DTV-MODULATION:
@@ -213,23 +219,29 @@ Bandwidth for the channel, in HZ.
 Possible values: ``1712000``, ``5000000``, ``6000000``, ``7000000``,
 ``8000000``, ``10000000``.
 
-Notes:
+.. note::
 
-1) For ISDB-T it should be always 6000000Hz (6MHz)
+  #. DVB-T supports 6, 7 and 8MHz.
 
-2) For ISDB-Tsb it can vary depending on the number of connected
-segments
+  #. DVB-T2 supports 1.172, 5, 6, 7, 8 and 10MHz.
 
-3) Bandwidth doesn't apply for DVB-C transmissions, as the bandwidth for
-DVB-C depends on the symbol rate
+  #. ISDB-T supports 5MHz, 6MHz, 7MHz and 8MHz, although most
+     places use 6MHz.
 
-4) Bandwidth in ISDB-T is fixed (6MHz) or can be easily derived from
-other parameters (DTV_ISDBT_SB_SEGMENT_IDX,
-DTV_ISDBT_SB_SEGMENT_COUNT).
+  #. On DVB-C and DVB-S/S2, the bandwidth depends on the symbol rate.
+     So, the Kernel will silently ignore setting :ref:`DTV-BANDWIDTH-HZ`.
 
-5) DVB-T supports 6, 7 and 8MHz.
+  #. For DVB-C and DVB-S/S2, the Kernel will return an estimation of the
+     bandwidth, calculated from :ref:`DTV-SYMBOL-RATE` and from
+     the rolloff, with is fixed for DVB-C and DVB-S.
 
-6) In addition, DVB-T2 supports 1.172, 5 and 10MHz.
+  #. For DVB-S2, the bandwidth estimation will use :ref:`DTV-ROLLOFF`.
+
+  #. For ISDB-Tsb, it can vary depending on the number of connected
+     segments.
+
+  #. Bandwidth in ISDB-Tsb can be easily derived from other parameters
+     (DTV_ISDBT_SB_SEGMENT_IDX, DTV_ISDBT_SB_SEGMENT_COUNT).
 
 
 .. _DTV-INVERSION:

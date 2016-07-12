@@ -20,13 +20,13 @@ Also, the union didn't have any space left to be expanded without
 breaking userspace. So, the decision was to deprecate the legacy
 union/struct based approach, in favor of a properties set approach.
 
-NOTE: on Linux DVB API version 3, setting a frontend were done via
-:ref:`struct dvb_frontend_parameters <dvb-frontend-parameters>`.
-This got replaced on version 5 (also called "S2API", as this API were
-added originally_enabled to provide support for DVB-S2), because the
-old API has a very limited support to new standards and new hardware.
-This section describes the new and recommended way to set the frontend,
-with suppports all digital TV delivery systems.
+.. note:: On Linux DVB API version 3, setting a frontend were done via
+   :ref:`struct dvb_frontend_parameters <dvb-frontend-parameters>`.
+   This got replaced on version 5 (also called "S2API", as this API were
+   added originally_enabled to provide support for DVB-S2), because the
+   old API has a very limited support to new standards and new hardware.
+   This section describes the new and recommended way to set the frontend,
+   with suppports all digital TV delivery systems.
 
 Example: with the properties based approach, in order to set the tuner
 to a DVB-C channel at 651 kHz, modulated with 256-QAM, FEC 3/4 and
@@ -48,8 +48,13 @@ symbol rate of 5.217 Mbauds, those properties should be sent to
 
 -  :ref:`DTV_TUNE <DTV-TUNE>`
 
-The code that would do the above is:
+The code that would that would do the above is show in
+:ref:`dtv-prop-example`.
 
+.. _dtv-prop-example:
+
+Example: Setting digital TV frontend properties
+===============================================
 
 .. code-block:: c
 
@@ -88,12 +93,12 @@ The code that would do the above is:
 	return 0;
     }
 
-NOTE: While it is possible to directly call the Kernel code like the
-above example, it is strongly recommended to use
-`libdvbv5 <https://linuxtv.org/docs/libdvbv5/index.html>`__, as it
-provides abstraction to work with the supported digital TV standards and
-provides methods for usual operations like program scanning and to
-read/write channel descriptor files.
+.. attention:: While it is possible to directly call the Kernel code like the
+   above example, it is strongly recommended to use
+   `libdvbv5 <https://linuxtv.org/docs/libdvbv5/index.html>`__, as it
+   provides abstraction to work with the supported digital TV standards and
+   provides methods for usual operations like program scanning and to
+   read/write channel descriptor files.
 
 
 .. toctree::

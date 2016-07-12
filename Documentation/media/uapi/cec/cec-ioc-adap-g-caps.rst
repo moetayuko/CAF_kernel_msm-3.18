@@ -31,8 +31,8 @@ Arguments
 Description
 ===========
 
-Note: this documents the proposed CEC API. This API is not yet finalized
-and is currently only available as a staging kernel module.
+.. note:: This documents the proposed CEC API. This API is not yet finalized
+   and is currently only available as a staging kernel module.
 
 All cec devices must support the :ref:`CEC_ADAP_G_CAPS` ioctl. To query
 device information, applications call the ioctl with a pointer to a
@@ -63,7 +63,7 @@ returns the information to the application. The ioctl never fails.
        -  ``name[32]``
 
        -  The name of this CEC adapter. The combination ``driver`` and
-          ``name`` must be unique.
+	  ``name`` must be unique.
 
     -  .. row 3
 
@@ -72,7 +72,7 @@ returns the information to the application. The ioctl never fails.
        -  ``capabilities``
 
        -  The capabilities of the CEC adapter, see
-          :ref:`cec-capabilities`.
+	  :ref:`cec-capabilities`.
 
     -  .. row 4
 
@@ -81,7 +81,7 @@ returns the information to the application. The ioctl never fails.
        -  ``version``
 
        -  CEC Framework API version, formatted with the ``KERNEL_VERSION()``
-          macro.
+	  macro.
 
 
 
@@ -93,52 +93,52 @@ returns the information to the application. The ioctl never fails.
     :widths:       3 1 8
 
 
-    -  .. _`CEC_CAP_PHYS_ADDR`:
+    -  .. _`CEC-CAP-PHYS-ADDR`:
 
        -  ``CEC_CAP_PHYS_ADDR``
 
        -  0x00000001
 
        -  Userspace has to configure the physical address by calling
-          :ref:`CEC_ADAP_S_PHYS_ADDR`. If
-          this capability isn't set, then setting the physical address is
-          handled by the kernel whenever the EDID is set (for an HDMI
-          receiver) or read (for an HDMI transmitter).
+	  :ref:`CEC_ADAP_S_PHYS_ADDR`. If
+	  this capability isn't set, then setting the physical address is
+	  handled by the kernel whenever the EDID is set (for an HDMI
+	  receiver) or read (for an HDMI transmitter).
 
-    -  .. _`CEC_CAP_LOG_ADDRS`:
+    -  .. _`CEC-CAP-LOG-ADDRS`:
 
        -  ``CEC_CAP_LOG_ADDRS``
 
        -  0x00000002
 
        -  Userspace has to configure the logical addresses by calling
-          :ref:`CEC_ADAP_S_LOG_ADDRS`. If
-          this capability isn't set, then the kernel will have configured
-          this.
+	  :ref:`CEC_ADAP_S_LOG_ADDRS`. If
+	  this capability isn't set, then the kernel will have configured
+	  this.
 
-    -  .. _`CEC_CAP_TRANSMIT`:
+    -  .. _`CEC-CAP-TRANSMIT`:
 
        -  ``CEC_CAP_TRANSMIT``
 
        -  0x00000004
 
        -  Userspace can transmit CEC messages by calling
-          :ref:`CEC_TRANSMIT`. This implies that
-          userspace can be a follower as well, since being able to transmit
-          messages is a prerequisite of becoming a follower. If this
-          capability isn't set, then the kernel will handle all CEC
-          transmits and process all CEC messages it receives.
+	  :ref:`CEC_TRANSMIT`. This implies that
+	  userspace can be a follower as well, since being able to transmit
+	  messages is a prerequisite of becoming a follower. If this
+	  capability isn't set, then the kernel will handle all CEC
+	  transmits and process all CEC messages it receives.
 
-    -  .. _`CEC_CAP_PASSTHROUGH`:
+    -  .. _`CEC-CAP-PASSTHROUGH`:
 
        -  ``CEC_CAP_PASSTHROUGH``
 
        -  0x00000008
 
        -  Userspace can use the passthrough mode by calling
-          :ref:`CEC_S_MODE`.
+	  :ref:`CEC_S_MODE`.
 
-    -  .. _`CEC_CAP_RC`:
+    -  .. _`CEC-CAP-RC`:
 
        -  ``CEC_CAP_RC``
 
@@ -146,14 +146,14 @@ returns the information to the application. The ioctl never fails.
 
        -  This adapter supports the remote control protocol.
 
-    -  .. _`CEC_CAP_MONITOR_ALL`:
+    -  .. _`CEC-CAP-MONITOR-ALL`:
 
        -  ``CEC_CAP_MONITOR_ALL``
 
        -  0x00000020
 
        -  The CEC hardware can monitor all messages, not just directed and
-          broadcast messages.
+	  broadcast messages.
 
 
 

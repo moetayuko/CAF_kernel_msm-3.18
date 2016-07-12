@@ -32,8 +32,8 @@ Arguments
 Description
 ===========
 
-Note: this documents the proposed CEC API. This API is not yet finalized
-and is currently only available as a staging kernel module.
+.. note:: This documents the proposed CEC API. This API is not yet finalized
+   and is currently only available as a staging kernel module.
 
 CEC devices can send asynchronous events. These can be retrieved by
 calling the :ref:`CEC_DQEVENT` ioctl. If the file descriptor is in
@@ -50,7 +50,7 @@ the intermediate state changes were lost but it is guaranteed that the
 state did change in between the two events.
 
 
-.. _cec-event-state-change:
+.. _cec-event-state-change_s:
 
 .. flat-table:: struct cec_event_state_change
     :header-rows:  0
@@ -76,7 +76,7 @@ state did change in between the two events.
 
 
 
-.. _cec-event-lost-msgs:
+.. _cec-event-lost-msgs_s:
 
 .. flat-table:: struct cec_event_lost_msgs
     :header-rows:  0
@@ -91,14 +91,14 @@ state did change in between the two events.
        -  ``lost_msgs``
 
        -  Set to the number of lost messages since the filehandle was opened
-          or since the last time this event was dequeued for this
-          filehandle. The messages lost are the oldest messages. So when a
-          new message arrives and there is no more room, then the oldest
-          message is discarded to make room for the new one. The internal
-          size of the message queue guarantees that all messages received in
-          the last two seconds will be stored. Since messages should be
-          replied to within a second according to the CEC specification,
-          this is more than enough.
+	  or since the last time this event was dequeued for this
+	  filehandle. The messages lost are the oldest messages. So when a
+	  new message arrives and there is no more room, then the oldest
+	  message is discarded to make room for the new one. The internal
+	  size of the message queue guarantees that all messages received in
+	  the last two seconds will be stored. Since messages should be
+	  replied to within a second according to the CEC specification,
+	  this is more than enough.
 
 
 
@@ -156,8 +156,8 @@ state did change in between the two events.
 
        -  ``state_change``
 
-       -  The new adapter state as sent by the :ref:`CEC_EVENT_STATE_CHANGE <CEC_EVENT_STATE_CHANGE>`
-          event.
+       -  The new adapter state as sent by the :ref:`CEC_EVENT_STATE_CHANGE <CEC-EVENT-STATE-CHANGE>`
+	  event.
 
     -  .. row 6
 
@@ -166,8 +166,8 @@ state did change in between the two events.
 
        -  ``lost_msgs``
 
-       -  The number of lost messages as sent by the :ref:`CEC_EVENT_LOST_MSGS <CEC_EVENT_LOST_MSGS>`
-          event.
+       -  The number of lost messages as sent by the :ref:`CEC_EVENT_LOST_MSGS <CEC-EVENT-LOST-MSGS>`
+	  event.
 
 
 
@@ -179,24 +179,24 @@ state did change in between the two events.
     :widths:       3 1 16
 
 
-    -  .. _CEC_EVENT_STATE_CHANGE:
+    -  .. _`CEC-EVENT-STATE-CHANGE`:
 
        -  ``CEC_EVENT_STATE_CHANGE``
 
        -  1
 
        -  Generated when the CEC Adapter's state changes. When open() is
-          called an initial event will be generated for that filehandle with
-          the CEC Adapter's state at that time.
+	  called an initial event will be generated for that filehandle with
+	  the CEC Adapter's state at that time.
 
-    -  .. _CEC_EVENT_LOST_MSGS:
+    -  .. _`CEC-EVENT-LOST-MSGS`:
 
        -  ``CEC_EVENT_LOST_MSGS``
 
        -  2
 
        -  Generated if one or more CEC messages were lost because the
-          application didn't dequeue CEC messages fast enough.
+	  application didn't dequeue CEC messages fast enough.
 
 
 
@@ -208,16 +208,16 @@ state did change in between the two events.
     :widths:       3 1 8
 
 
-    -  .. _CEC_EVENT_FL_INITIAL_VALUE:
+    -  .. _`CEC-EVENT-FL-INITIAL-VALUE`:
 
        -  ``CEC_EVENT_FL_INITIAL_VALUE``
 
        -  1
 
        -  Set for the initial events that are generated when the device is
-          opened. See the table above for which events do this. This allows
-          applications to learn the initial state of the CEC adapter at
-          open() time.
+	  opened. See the table above for which events do this. This allows
+	  applications to learn the initial state of the CEC adapter at
+	  open() time.
 
 
 

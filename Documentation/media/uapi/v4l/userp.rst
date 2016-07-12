@@ -26,9 +26,10 @@ No buffers (planes) are allocated beforehand, consequently they are not
 indexed and cannot be queried like mapped buffers with the
 :ref:`VIDIOC_QUERYBUF <VIDIOC_QUERYBUF>` ioctl.
 
+Example: Initiating streaming I/O with user pointers
+====================================================
 
 .. code-block:: c
-    :caption: Example 3.3. Initiating streaming I/O with user pointers
 
     struct v4l2_requestbuffers reqbuf;
 
@@ -85,13 +86,14 @@ available.
 
 To start and stop capturing or output applications call the
 :ref:`VIDIOC_STREAMON <VIDIOC_STREAMON>` and
-:ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>` ioctl. Note
-:ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>` removes all buffers from both
-queues and unlocks all buffers as a side effect. Since there is no
-notion of doing anything "now" on a multitasking system, if an
-application needs to synchronize with another event it should examine
-the struct :ref:`v4l2_buffer <v4l2-buffer>` ``timestamp`` of captured or
-outputted buffers.
+:ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>` ioctl.
+
+.. note:: ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>` removes all buffers from
+   both queues and unlocks all buffers as a side effect. Since there is no
+   notion of doing anything "now" on a multitasking system, if an
+   application needs to synchronize with another event it should examine
+   the struct :ref:`v4l2_buffer <v4l2-buffer>` ``timestamp`` of captured or
+   outputted buffers.
 
 Drivers implementing user pointer I/O must support the
 :ref:`VIDIOC_REQBUFS <VIDIOC_REQBUFS>`, :ref:`VIDIOC_QBUF <VIDIOC_QBUF>`,

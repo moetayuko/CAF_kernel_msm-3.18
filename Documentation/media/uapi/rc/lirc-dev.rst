@@ -9,7 +9,6 @@ LIRC Device Interface
 .. toctree::
     :maxdepth: 1
 
-    lirc_dev_intro
-    lirc_read
-    lirc_write
-    lirc_ioctl
+    lirc-dev-intro
+    lirc-func
+    lirc-header
