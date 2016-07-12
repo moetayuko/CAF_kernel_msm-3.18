@@ -60,6 +60,7 @@
 #include "hash.h"
 #include "props.h"
 #include "qgroup.h"
+#include "dedupe.h"
 
 struct btrfs_iget_args {
 	struct btrfs_key *location;
@@ -105,8 +106,9 @@ static int btrfs_truncate(struct inode *inode);
 static int btrfs_finish_ordered_io(struct btrfs_ordered_extent *ordered_extent);
 static noinline int cow_file_range(struct inode *inode,
 				   struct page *locked_page,
-				   u64 start, u64 end, int *page_started,
-				   unsigned long *nr_written, int unlock);
+				   u64 start, u64 end, u64 delalloc_end,
+				   int *page_started, unsigned long *nr_written,
+				   int unlock, struct btrfs_dedupe_hash *hash);
 static struct extent_map *create_pinned_em(struct inode *inode, u64 start,
 					   u64 len, u64 orig_start,
 					   u64 block_start, u64 block_len,
@@ -585,9 +587,27 @@ cont:
 			will_compress = 0;
 		} else {
 			num_bytes = total_in;
+			*num_added += 1;
+
+			/*
+			 * The async work queues will take care of doing actual
+			 * allocation on disk for these compressed pages, and
+			 * will submit them to the elevator.
+			 */
+			add_async_extent(async_cow, start, num_bytes,
+					total_compressed, pages, nr_pages_ret,
+					compress_type);
+
+			if (start + num_bytes < end) {
+				start += num_bytes;
+				pages = NULL;
+				cond_resched();
+				goto again;
+			}
+			return;
 		}
 	}
-	if (!will_compress && pages) {
+	if (pages) {
 		/*
 		 * the compression code ran but failed to make things smaller,
 		 * free any pages it allocated and our page pointer array
@@ -607,43 +627,23 @@ cont:
 			BTRFS_I(inode)->flags |= BTRFS_INODE_NOCOMPRESS;
 		}
 	}
-	if (will_compress) {
-		*num_added += 1;
-
-		/* the async work queues will take care of doing actual
-		 * allocation on disk for these compressed pages,
-		 * and will submit them to the elevator.
-		 */
-		add_async_extent(async_cow, start, num_bytes,
-				 total_compressed, pages, nr_pages_ret,
-				 compress_type);
-
-		if (start + num_bytes < end) {
-			start += num_bytes;
-			pages = NULL;
-			cond_resched();
-			goto again;
-		}
-	} else {
 cleanup_and_bail_uncompressed:
-		/*
-		 * No compression, but we still need to write the pages in
-		 * the file we've been given so far.  redirty the locked
-		 * page if it corresponds to our extent and set things up
-		 * for the async work queue to run cow_file_range to do
-		 * the normal delalloc dance
-		 */
-		if (page_offset(locked_page) >= start &&
-		    page_offset(locked_page) <= end) {
-			__set_page_dirty_nobuffers(locked_page);
-			/* unlocked later on in the async handlers */
-		}
-		if (redirty)
-			extent_range_redirty_for_io(inode, start, end);
-		add_async_extent(async_cow, start, end - start + 1,
-				 0, NULL, 0, BTRFS_COMPRESS_NONE);
-		*num_added += 1;
-	}
+	/*
+	 * No compression, but we still need to write the pages in the file
+	 * we've been given so far.  redirty the locked page if it corresponds
+	 * to our extent and set things up for the async work queue to run
+	 * cow_file_range to do the normal delalloc dance.
+	 */
+	if (page_offset(locked_page) >= start &&
+	    page_offset(locked_page) <= end)
+		__set_page_dirty_nobuffers(locked_page);
+		/* unlocked later on in the async handlers */
+
+	if (redirty)
+		extent_range_redirty_for_io(inode, start, end);
+	add_async_extent(async_cow, start, end - start + 1, 0, NULL, 0,
+			 BTRFS_COMPRESS_NONE);
+	*num_added += 1;
 
 	return;
 
@@ -712,7 +712,10 @@ retry:
 					     async_extent->start,
 					     async_extent->start +
 					     async_extent->ram_size - 1,
-					     &page_started, &nr_written, 0);
+					     async_extent->start +
+					     async_extent->ram_size - 1,
+					     &page_started, &nr_written, 0,
+					     NULL);
 
 			/* JDM XXX */
 
@@ -925,9 +928,9 @@ static u64 get_extent_allocation_hint(struct inode *inode, u64 start,
  */
 static noinline int cow_file_range(struct inode *inode,
 				   struct page *locked_page,
-				   u64 start, u64 end, int *page_started,
-				   unsigned long *nr_written,
-				   int unlock)
+				   u64 start, u64 end, u64 delalloc_end,
+				   int *page_started, unsigned long *nr_written,
+				   int unlock, struct btrfs_dedupe_hash *hash)
 {
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	u64 alloc_hint = 0;
@@ -1418,7 +1421,8 @@ out_check:
 		if (cow_start != (u64)-1) {
 			ret = cow_file_range(inode, locked_page,
 					     cow_start, found_key.offset - 1,
-					     page_started, nr_written, 1);
+					     end, page_started, nr_written, 1,
+					     NULL);
 			if (ret) {
 				if (!nolock && nocow)
 					btrfs_end_write_no_snapshoting(root);
@@ -1501,8 +1505,8 @@ out_check:
 	}
 
 	if (cow_start != (u64)-1) {
-		ret = cow_file_range(inode, locked_page, cow_start, end,
-				     page_started, nr_written, 1);
+		ret = cow_file_range(inode, locked_page, cow_start, end, end,
+				     page_started, nr_written, 1, NULL);
 		if (ret)
 			goto error;
 	}
@@ -1561,8 +1565,8 @@ static int run_delalloc_range(struct inode *inode, struct page *locked_page,
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
 					 page_started, 0, nr_written);
 	} else if (!inode_need_compress(inode)) {
-		ret = cow_file_range(inode, locked_page, start, end,
-				      page_started, nr_written, 1);
+		ret = cow_file_range(inode, locked_page, start, end, end,
+				      page_started, nr_written, 1, NULL);
 	} else {
 		set_bit(BTRFS_INODE_HAS_ASYNC_EXTENT,
 			&BTRFS_I(inode)->runtime_flags);
@@ -1822,6 +1826,10 @@ static void btrfs_clear_bit_hook(struct inode *inode,
 /*
  * extent_io.c merge_bio_hook, this must check the chunk tree to make sure
  * we don't create bios that span stripes or chunks
+ *
+ * return 1 if page cannot be merged to bio
+ * return 0 if page can be merged to bio
+ * return error otherwise
  */
 int btrfs_merge_bio_hook(int rw, struct page *page, unsigned long offset,
 			 size_t size, struct bio *bio,
@@ -1840,8 +1848,8 @@ int btrfs_merge_bio_hook(int rw, struct page *page, unsigned long offset,
 	map_length = length;
 	ret = btrfs_map_block(root->fs_info, rw, logical,
 			      &map_length, NULL, 0);
-	/* Will always return 0 with map_multi == NULL */
-	BUG_ON(ret < 0);
+	if (ret < 0)
+		return ret;
 	if (map_length < length + size)
 		return 1;
 	return 0;
@@ -5159,10 +5167,17 @@ void btrfs_evict_inode(struct inode *inode)
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_block_rsv *rsv, *global_rsv;
 	int steal_from_global = 0;
-	u64 min_size = btrfs_calc_trunc_metadata_size(root, 1);
+	u64 min_size;
 	int ret;
 
 	trace_btrfs_inode_evict(inode);
+
+	if (!root) {
+		kmem_cache_free(btrfs_inode_cachep, BTRFS_I(inode));
+		return;
+	}
+
+	min_size = btrfs_calc_trunc_metadata_size(root, 1);
 
 	evict_inode_truncate_pages(inode);
 
@@ -5264,7 +5279,7 @@ void btrfs_evict_inode(struct inode *inode)
 		if (steal_from_global) {
 			if (!btrfs_check_space_for_delayed_refs(trans, root))
 				ret = btrfs_block_rsv_migrate(global_rsv, rsv,
-							      min_size);
+							      min_size, 0);
 			else
 				ret = -ENOSPC;
 		}
@@ -9116,7 +9131,7 @@ static int btrfs_truncate(struct inode *inode)
 
 	/* Migrate the slack space for the truncate to our reserve */
 	ret = btrfs_block_rsv_migrate(&root->fs_info->trans_block_rsv, rsv,
-				      min_size);
+				      min_size, 0);
 	BUG_ON(ret);
 
 	/*
@@ -9156,7 +9171,7 @@ static int btrfs_truncate(struct inode *inode)
 		}
 
 		ret = btrfs_block_rsv_migrate(&root->fs_info->trans_block_rsv,
-					      rsv, min_size);
+					      rsv, min_size, 0);
 		BUG_ON(ret);	/* shouldn't happen */
 		trans->block_rsv = rsv;
 	}
@@ -9177,7 +9192,6 @@ static int btrfs_truncate(struct inode *inode)
 		ret = btrfs_end_transaction(trans, root);
 		btrfs_btree_balance_dirty(root);
 	}
-
 out:
 	btrfs_free_block_rsv(root, rsv);
 
@@ -9386,25 +9400,25 @@ int btrfs_init_cachep(void)
 
 	btrfs_trans_handle_cachep = kmem_cache_create("btrfs_trans_handle",
 			sizeof(struct btrfs_trans_handle), 0,
-			SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD, NULL);
+			SLAB_TEMPORARY | SLAB_MEM_SPREAD, NULL);
 	if (!btrfs_trans_handle_cachep)
 		goto fail;
 
 	btrfs_transaction_cachep = kmem_cache_create("btrfs_transaction",
 			sizeof(struct btrfs_transaction), 0,
-			SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD, NULL);
+			SLAB_TEMPORARY | SLAB_MEM_SPREAD, NULL);
 	if (!btrfs_transaction_cachep)
 		goto fail;
 
 	btrfs_path_cachep = kmem_cache_create("btrfs_path",
 			sizeof(struct btrfs_path), 0,
-			SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD, NULL);
+			SLAB_MEM_SPREAD, NULL);
 	if (!btrfs_path_cachep)
 		goto fail;
 
 	btrfs_free_space_cachep = kmem_cache_create("btrfs_free_space",
 			sizeof(struct btrfs_free_space), 0,
-			SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD, NULL);
+			SLAB_MEM_SPREAD, NULL);
 	if (!btrfs_free_space_cachep)
 		goto fail;
 
