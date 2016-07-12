@@ -31,6 +31,7 @@
 #include "async-thread.h"
 #include "free-space-cache.h"
 #include "inode-map.h"
+#include "qgroup.h"
 
 /*
  * backref_node, mapping_node and tree_block start with this
@@ -1754,6 +1755,78 @@ int memcmp_node_keys(struct extent_buffer *eb, int slot,
 }
 
 /*
+ * Helper function to fixup screwed qgroups caused by increased extent ref,
+ * which doesn't follow normal extent ref update behavior.
+ * (Correct behavior is, increase extent ref and modify source root in
+ *  one trans)
+ * No better solution as long as we're doing swapping trick to do balance.
+ */
+static int qgroup_redirty_data_extents(struct btrfs_trans_handle *trans,
+				       struct btrfs_root *root, u64 bytenr,
+				       u64 gen)
+{
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct extent_buffer *leaf;
+	struct btrfs_delayed_ref_root *delayed_refs;
+	int slot;
+	int ret = 0;
+
+	if (!fs_info->quota_enabled || !is_fstree(root->objectid))
+		return 0;
+	if (WARN_ON(!trans))
+		return -EINVAL;
+
+	delayed_refs = &trans->transaction->delayed_refs;
+
+	leaf = read_tree_block(root, bytenr, gen);
+	if (IS_ERR(leaf)) {
+		return PTR_ERR(leaf);
+	} else if (!extent_buffer_uptodate(leaf)) {
+		ret = -EIO;
+		goto out;
+	}
+
+	/* We only care leaf, which may contains EXTENT_DATA */
+	if (btrfs_header_level(leaf) != 0)
+		goto out;
+
+	for (slot = 0; slot < btrfs_header_nritems(leaf); slot++) {
+		struct btrfs_key key;
+		struct btrfs_file_extent_item *fi;
+		struct btrfs_qgroup_extent_record *record;
+		struct btrfs_qgroup_extent_record *exist;
+
+		btrfs_item_key_to_cpu(leaf, &key, slot);
+		if (key.type != BTRFS_EXTENT_DATA_KEY)
+			continue;
+		fi = btrfs_item_ptr(leaf, slot, struct btrfs_file_extent_item);
+		if (btrfs_file_extent_type(leaf, fi) ==
+		    BTRFS_FILE_EXTENT_INLINE ||
+		    btrfs_file_extent_disk_bytenr(leaf, fi) == 0)
+			continue;
+
+		record = kmalloc(sizeof(*record), GFP_NOFS);
+		if (!record) {
+			ret = -ENOMEM;
+			break;
+		}
+		record->bytenr = btrfs_file_extent_disk_bytenr(leaf, fi);
+		record->num_bytes = btrfs_file_extent_disk_num_bytes(leaf, fi);
+		record->old_roots = NULL;
+
+		spin_lock(&delayed_refs->lock);
+		exist = btrfs_qgroup_insert_dirty_extent(delayed_refs, record);
+		spin_unlock(&delayed_refs->lock);
+		if (exist)
+			kfree(record);
+	}
+out:
+	free_extent_buffer(leaf);
+	return ret;
+
+}
+
+/*
  * try to replace tree blocks in fs tree with the new blocks
  * in reloc tree. tree blocks haven't been modified since the
  * reloc tree was create can be replaced.
@@ -1923,7 +1996,28 @@ again:
 					0);
 		BUG_ON(ret);
 
+		/*
+		 * Fix up the screwed up qgroups
+		 *
+		 * For tree blocks with extent data, new data extent's
+		 * backref is already increased with both file tree and data
+		 * reloc tree.
+		 * While trans is committed before we modify file tree.
+		 *
+		 * This makes qgroup can't account new data extents well,
+		 * as the file tree is still referring to old extents, not
+		 * new extents, backref walk will find the new extent only
+		 * referred by data reloc tree.
+		 * So qgroup is screwed up and didn't increase its ref/excl.
+		 *
+		 * Fix it up by re-dirtying qgroup record for data extents in
+		 * new tree blocks
+		 */
+		ret = qgroup_redirty_data_extents(trans, dest, new_bytenr,
+						  new_ptr_gen);
 		btrfs_unlock_up_safe(path, 0);
+		if (ret < 0)
+			break;
 
 		ret = level;
 		break;
