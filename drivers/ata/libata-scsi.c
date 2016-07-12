@@ -2075,8 +2075,8 @@ static unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf)
 		0x03,
 		0x20,	/* SBC-2 (no version claimed) */
 
-		0x02,
-		0x60	/* SPC-3 (no version claimed) */
+		0x03,
+		0x00	/* SPC-3 (no version claimed) */
 	};
 	const u8 versions_zbc[] = {
 		0x00,
@@ -2097,7 +2097,10 @@ static unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf)
 		0,
 		0x5,	/* claim SPC-3 version compatibility */
 		2,
-		95 - 4
+		95 - 4,
+		0,
+		0,
+		2
 	};
 
 	VPRINTK("ENTER\n");
@@ -2109,8 +2112,10 @@ static unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf)
 	    (args->dev->link->ap->pflags & ATA_PFLAG_EXTERNAL))
 		hdr[1] |= (1 << 7);
 
-	if (args->dev->class == ATA_DEV_ZAC)
+	if (args->dev->class == ATA_DEV_ZAC) {
 		hdr[0] = TYPE_ZBC;
+		hdr[2] = 0x7; /* claim SPC-5 version compatibility */
+	}
 
 	memcpy(rbuf, hdr, sizeof(hdr));
 	memcpy(&rbuf[8], "ATA     ", 8);
