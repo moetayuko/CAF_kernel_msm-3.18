@@ -1770,8 +1770,10 @@ struct zs_compact_control {
 	/* Destination page for migration which should be a first page
 	 * of zspage. */
 	struct page *d_page;
-	/* Starting object index within @s_page which used for live object
-	 * in the subpage. */
+	/*
+	 * Starting object index within @s_page which used for live object in
+	 * the subpage.
+	 */
 	int obj_idx;
 
 	unsigned long nr_migrated_obj;
