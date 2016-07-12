@@ -1055,7 +1055,6 @@ static void isolate_freepages(struct compact_control *cc)
 			 * If isolation failed early, do not continue
 			 * needlessly.
 			 */
-			isolate_start_pfn = block_start_pfn;
 			break;
 		}
 	}
