@@ -932,6 +932,7 @@ static const struct {
 						 IB_QP_QKEY),
 				 [IB_QPT_GSI] = (IB_QP_PKEY_INDEX		|
 						 IB_QP_QKEY),
+				 [IB_QPT_RAW_PACKET] = IB_QP_AV,
 			 },
 		},
 	},
@@ -1170,7 +1171,7 @@ int ib_resolve_eth_dmac(struct ib_qp *qp,
 {
 	int           ret = 0;
 
-	if (*qp_attr_mask & IB_QP_AV) {
+	if ((*qp_attr_mask & IB_QP_AV) && (qp->qp_type != IB_QPT_RAW_PACKET)) {
 		if (qp_attr->ah_attr.port_num < rdma_start_port(qp->device) ||
 		    qp_attr->ah_attr.port_num > rdma_end_port(qp->device))
 			return -EINVAL;

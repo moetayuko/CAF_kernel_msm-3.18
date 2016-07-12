@@ -2175,7 +2175,8 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	}
 
 	if (ll == IB_LINK_LAYER_ETHERNET) {
-		if (!(ah->ah_flags & IB_AH_GRH))
+		if (!(ah->ah_flags & IB_AH_GRH) &&
+		    (qp->ibqp.qp_type != IB_QPT_RAW_PACKET))
 			return -EINVAL;
 		memcpy(path->rmac, ah->dmac, sizeof(ah->dmac));
 		path->udp_sport = mlx5_get_roce_udp_sport(dev, port,
