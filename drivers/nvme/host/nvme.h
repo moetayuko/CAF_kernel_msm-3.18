@@ -38,6 +38,9 @@ extern unsigned char admin_timeout;
 extern unsigned char shutdown_timeout;
 #define SHUTDOWN_TIMEOUT	(shutdown_timeout * HZ)
 
+#define NVME_DEFAULT_KATO	5
+#define NVME_KATO_GRACE		10
+
 enum {
 	NVME_NS_LBA		= 0,
 	NVME_NS_LIGHTNVM	= 1,
@@ -71,6 +74,7 @@ enum nvme_ctrl_state {
 	NVME_CTRL_NEW,
 	NVME_CTRL_LIVE,
 	NVME_CTRL_RESETTING,
+	NVME_CTRL_RECONNECTING,
 	NVME_CTRL_DELETING,
 	NVME_CTRL_DEAD,
 };
@@ -80,6 +84,7 @@ struct nvme_ctrl {
 	spinlock_t lock;
 	const struct nvme_ctrl_ops *ops;
 	struct request_queue *admin_q;
+	struct request_queue *connect_q;
 	struct device *dev;
 	struct kref kref;
 	int instance;
@@ -107,10 +112,22 @@ struct nvme_ctrl {
 	u8 event_limit;
 	u8 vwc;
 	u32 vs;
+	u32 sgls;
+	u16 kas;
+	unsigned int kato;
 	bool subsystem;
 	unsigned long quirks;
 	struct work_struct scan_work;
 	struct work_struct async_event_work;
+	struct delayed_work ka_work;
+
+	/* Fabrics only */
+	u16 sqsize;
+	u32 ioccsz;
+	u32 iorcsz;
+	u16 icdoff;
+	u16 maxcmd;
+	struct nvmf_ctrl_options *opts;
 };
 
 /*
@@ -144,7 +161,9 @@ struct nvme_ns {
 };
 
 struct nvme_ctrl_ops {
+	const char *name;
 	struct module *module;
+	bool is_fabrics;
 	int (*reg_read32)(struct nvme_ctrl *ctrl, u32 off, u32 *val);
 	int (*reg_write32)(struct nvme_ctrl *ctrl, u32 off, u32 val);
 	int (*reg_read64)(struct nvme_ctrl *ctrl, u32 off, u64 *val);
@@ -152,6 +171,9 @@ struct nvme_ctrl_ops {
 	void (*free_ctrl)(struct nvme_ctrl *ctrl);
 	void (*post_scan)(struct nvme_ctrl *ctrl);
 	void (*submit_async_event)(struct nvme_ctrl *ctrl, int aer_idx);
+	int (*delete_ctrl)(struct nvme_ctrl *ctrl);
+	const char *(*get_subsysnqn)(struct nvme_ctrl *ctrl);
+	int (*get_address)(struct nvme_ctrl *ctrl, char *buf, int size);
 };
 
 static inline bool nvme_ctrl_ready(struct nvme_ctrl *ctrl)
@@ -177,7 +199,7 @@ static inline u64 nvme_block_nr(struct nvme_ns *ns, sector_t sector)
 
 static inline unsigned nvme_map_len(struct request *rq)
 {
-	if (rq->cmd_flags & REQ_DISCARD)
+	if (req_op(rq) == REQ_OP_DISCARD)
 		return sizeof(struct nvme_dsm_range);
 	else
 		return blk_rq_bytes(rq);
@@ -185,7 +207,7 @@ static inline unsigned nvme_map_len(struct request *rq)
 
 static inline void nvme_cleanup_cmd(struct request *req)
 {
-	if (req->cmd_flags & REQ_DISCARD)
+	if (req_op(req) == REQ_OP_DISCARD)
 		kfree(req->completion_data);
 }
 
@@ -207,6 +229,7 @@ static inline bool nvme_req_needs_retry(struct request *req, u16 status)
 		(jiffies - req->start_time) < req->timeout;
 }
 
+void nvme_cancel_request(struct request *req, void *data, bool reserved);
 bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
 		enum nvme_ctrl_state new_state);
 int nvme_disable_ctrl(struct nvme_ctrl *ctrl, u64 cap);
@@ -230,8 +253,9 @@ void nvme_stop_queues(struct nvme_ctrl *ctrl);
 void nvme_start_queues(struct nvme_ctrl *ctrl);
 void nvme_kill_queues(struct nvme_ctrl *ctrl);
 
+#define NVME_QID_ANY -1
 struct request *nvme_alloc_request(struct request_queue *q,
-		struct nvme_command *cmd, unsigned int flags);
+		struct nvme_command *cmd, unsigned int flags, int qid);
 void nvme_requeue_req(struct request *req);
 int nvme_setup_cmd(struct nvme_ns *ns, struct request *req,
 		struct nvme_command *cmd);
@@ -239,7 +263,7 @@ int nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
 		void *buf, unsigned bufflen);
 int __nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
 		struct nvme_completion *cqe, void *buffer, unsigned bufflen,
-		unsigned timeout);
+		unsigned timeout, int qid, int at_head, int flags);
 int nvme_submit_user_cmd(struct request_queue *q, struct nvme_command *cmd,
 		void __user *ubuffer, unsigned bufflen, u32 *result,
 		unsigned timeout);
@@ -256,6 +280,8 @@ int nvme_get_features(struct nvme_ctrl *dev, unsigned fid, unsigned nsid,
 int nvme_set_features(struct nvme_ctrl *dev, unsigned fid, unsigned dword11,
 			dma_addr_t dma_addr, u32 *result);
 int nvme_set_queue_count(struct nvme_ctrl *ctrl, int *count);
+void nvme_start_keep_alive(struct nvme_ctrl *ctrl);
+void nvme_stop_keep_alive(struct nvme_ctrl *ctrl);
 
 struct sg_io_hdr;
 
