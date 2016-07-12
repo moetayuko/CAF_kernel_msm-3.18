@@ -94,6 +94,27 @@ static irq_hw_number_t cxl_find_afu_irq(struct cxl_context *ctx, int num)
 	return 0;
 }
 
+
+int cxl_set_priv(struct cxl_context *ctx, void *priv)
+{
+	if (!ctx)
+		return -EINVAL;
+
+	ctx->priv = priv;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cxl_set_priv);
+
+void *cxl_get_priv(struct cxl_context *ctx)
+{
+	if (!ctx)
+		return ERR_PTR(-EINVAL);
+
+	return ctx->priv;
+}
+EXPORT_SYMBOL_GPL(cxl_get_priv);
+
 int cxl_allocate_afu_irqs(struct cxl_context *ctx, int num)
 {
 	int res;
@@ -102,7 +123,10 @@ int cxl_allocate_afu_irqs(struct cxl_context *ctx, int num)
 	if (num == 0)
 		num = ctx->afu->pp_irqs;
 	res = afu_allocate_irqs(ctx, num);
-	if (!res && !cpu_has_feature(CPU_FTR_HVMODE)) {
+	if (res)
+		return res;
+
+	if (!cpu_has_feature(CPU_FTR_HVMODE)) {
 		/* In a guest, the PSL interrupt is not multiplexed. It was
 		 * allocated above, and we need to set its handler
 		 */
@@ -110,6 +134,13 @@ int cxl_allocate_afu_irqs(struct cxl_context *ctx, int num)
 		if (hwirq)
 			cxl_map_irq(ctx->afu->adapter, hwirq, cxl_ops->psl_interrupt, ctx, "psl");
 	}
+
+	if (ctx->status == STARTED) {
+		if (cxl_ops->update_ivtes)
+			cxl_ops->update_ivtes(ctx);
+		else WARN(1, "BUG: cxl_allocate_afu_irqs must be called prior to starting the context on this platform\n");
+	}
+
 	return res;
 }
 EXPORT_SYMBOL_GPL(cxl_allocate_afu_irqs);
@@ -322,6 +353,23 @@ struct cxl_context *cxl_fops_get_context(struct file *file)
 	return file->private_data;
 }
 EXPORT_SYMBOL_GPL(cxl_fops_get_context);
+
+void cxl_set_driver_ops(struct cxl_context *ctx,
+			struct cxl_afu_driver_ops *ops)
+{
+	WARN_ON(!ops->fetch_event || !ops->event_delivered);
+	atomic_set(&ctx->afu_driver_events, 0);
+	ctx->afu_driver_ops = ops;
+}
+EXPORT_SYMBOL_GPL(cxl_set_driver_ops);
+
+void cxl_context_events_pending(struct cxl_context *ctx,
+				unsigned int new_events)
+{
+	atomic_add(new_events, &ctx->afu_driver_events);
+	wake_up_all(&ctx->wq);
+}
+EXPORT_SYMBOL_GPL(cxl_context_events_pending);
 
 int cxl_start_work(struct cxl_context *ctx,
 		   struct cxl_ioctl_start_work *work)
