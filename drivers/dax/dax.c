@@ -212,10 +212,8 @@ int devm_create_dax_dev(struct dax_region *dax_region, struct resource *res,
 	dax_dev->dev = dev;
 
 	rc = devm_add_action_or_reset(dax_region->dev, unregister_dax_dev, dev);
-	if (rc)
-		return rc;
 
-	return 0;
+	return rc;
 
  err_create:
 	ida_simple_remove(&dax_minor_ida, minor);

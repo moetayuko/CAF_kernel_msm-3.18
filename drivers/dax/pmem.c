@@ -103,7 +103,7 @@ static int dax_pmem_probe(struct device *dev)
 		return rc;
 
 	rc = devm_add_action_or_reset(dev, dax_pmem_percpu_exit,
-							&dax_pmem->ref);
+				      &dax_pmem->ref);
 	if (rc)
 		return rc;
 
@@ -112,7 +112,7 @@ static int dax_pmem_probe(struct device *dev)
 		return PTR_ERR(addr);
 
 	rc = devm_add_action_or_reset(dev, dax_pmem_percpu_kill,
-							&dax_pmem->ref);
+				      &dax_pmem->ref);
 	if (rc)
 		return rc;
 
