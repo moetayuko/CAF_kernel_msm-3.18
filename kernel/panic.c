@@ -71,6 +71,32 @@ void __weak nmi_panic_self_stop(struct pt_regs *regs)
 	panic_smp_self_stop();
 }
 
+/*
+ * Stop other CPUs in panic.  Architecture dependent code may override this
+ * with more suitable version.  For example, if the architecture supports
+ * crash dump, it should save registers of each stopped CPU and disable
+ * per-CPU features such as virtualization extensions.
+ */
+void __weak panic_smp_send_stop(void)
+{
+	static int cpus_stopped;
+
+	/*
+	 * This function can be called twice in panic path, but obviously
+	 * we execute this only once.
+	 */
+	if (cpus_stopped)
+		return;
+
+	/*
+	 * Note smp_send_stop is the usual smp shutdown function, which
+	 * unfortunately means it may not be hardened to work in a panic
+	 * situation.
+	 */
+	smp_send_stop();
+	cpus_stopped = 1;
+}
+
 atomic_t panic_cpu = ATOMIC_INIT(PANIC_CPU_INVALID);
 
 /*
@@ -125,7 +151,7 @@ void panic(const char *fmt, ...)
 	 * Only one CPU is allowed to execute the panic code from here. For
 	 * multiple parallel invocations of panic, all other CPUs either
 	 * stop themself or will wait until they are stopped by the 1st CPU
-	 * with smp_send_stop().
+	 * with panic_smp_send_stop().
 	 *
 	 * `old_cpu == PANIC_CPU_INVALID' means this is the 1st CPU which
 	 * comes here, so go ahead.
@@ -165,12 +191,7 @@ void panic(const char *fmt, ...)
 		__crash_kexec(NULL);
 	}
 
-	/*
-	 * Note smp_send_stop is the usual smp shutdown function, which
-	 * unfortunately means it may not be hardened to work in a panic
-	 * situation.
-	 */
-	smp_send_stop();
+	panic_smp_send_stop();
 
 	/*
 	 * Run any panic handlers, including those that might need to
@@ -198,10 +219,10 @@ void panic(const char *fmt, ...)
 
 	/*
 	 * We may have ended up stopping the CPU holding the lock (in
-	 * smp_send_stop()) while still having some valuable data in the console
-	 * buffer.  Try to acquire the lock then release it regardless of the
-	 * result.  The release will also print the buffers out.  Locks debug
-	 * should be disabled to avoid reporting bad unlock balance when
+	 * panic_smp_send_stop()) while still having some valuable data in the
+	 * console buffer.  Try to acquire the lock then release it regardless
+	 * of the result.  The release will also print the buffers out.  Locks
+	 * debug should be disabled to avoid reporting bad unlock balance when
 	 * panic() is not being callled from OOPS.
 	 */
 	debug_locks_off();
