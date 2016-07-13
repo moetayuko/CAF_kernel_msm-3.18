@@ -192,7 +192,7 @@ ACPI_INIT_GLOBAL(u8, acpi_gbl_do_not_use_xsdt, FALSE);
 /*
  * Optionally support group module level code.
  */
-ACPI_INIT_GLOBAL(u8, acpi_gbl_group_module_level_code, FALSE);
+ACPI_INIT_GLOBAL(u8, acpi_gbl_group_module_level_code, TRUE);
 
 /*
  * Optionally use 32-bit FADT addresses if and when there is a conflict
@@ -730,6 +730,10 @@ ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_finish_gpe(acpi_handle gpe_device,
 						u32 gpe_number))
+
+ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
+				acpi_mask_gpe(acpi_handle gpe_device,
+					      u32 gpe_number, u8 is_masked))
 
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_mark_gpe_for_wake(acpi_handle gpe_device,
