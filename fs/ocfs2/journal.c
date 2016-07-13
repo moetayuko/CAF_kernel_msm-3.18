@@ -1194,6 +1194,7 @@ static int ocfs2_force_read_journal(struct inode *inode)
 
 			brelse(bh);
 			bh = NULL;
+			p_blkno++;
 		}
 
 		v_blkno += p_blocks;
