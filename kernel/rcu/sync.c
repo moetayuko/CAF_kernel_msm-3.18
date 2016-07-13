@@ -44,7 +44,7 @@ static struct {
 #ifdef CONFIG_PROVE_RCU
 	int  (*held)(void);
 #endif
-} gp_ops[] = {
+} gp_ops[] __read_mostly = {
 	[RCU_SYNC] = {
 		.sync = synchronize_rcu,
 		.call = call_rcu,
