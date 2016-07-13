@@ -153,11 +153,15 @@ static int lp3952_set_pattern_gen_cmd(struct lp3952_led_array *priv,
 {
 	int ret;
 	struct ptrn_gen_cmd line = {
-		.r = r,
-		.g = g,
-		.b = b,
-		.cet = cet,
-		.tt = tt
+		{
+			{
+				.tt = tt,
+				.b = b,
+				.cet = cet,
+				.g = g,
+				.r = r,
+			},
+		},
 	};
 
 	if (cmd_index >= LP3952_CMD_REG_COUNT)
