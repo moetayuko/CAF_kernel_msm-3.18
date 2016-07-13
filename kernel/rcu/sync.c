@@ -70,7 +70,7 @@ enum { CB_IDLE = 0, CB_PENDING, CB_REPLAY };
 
 #define	rss_lock	gp_wait.lock
 
-static bool expedited;
+static bool expedited = IS_ENABLED(CONFIG_RCUSYNC_EXPEDITE);
 module_param(expedited, bool, 0444);
 
 static int __init rcu_sync_early_init(void)
