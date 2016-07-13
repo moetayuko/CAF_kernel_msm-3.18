@@ -438,6 +438,7 @@ static int rockchip_drm_platform_probe(struct platform_device *pdev)
 			is_support_iommu = false;
 		}
 
+		of_node_put(iommu);
 		of_node_get(port->parent);
 		component_match_add_release(dev, &match, release_of,
 					    compare_of, port->parent);
