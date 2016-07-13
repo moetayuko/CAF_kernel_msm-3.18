@@ -142,10 +142,10 @@ struct dentry *ovl_dentry_upper(struct dentry *dentry);
 struct dentry *ovl_dentry_lower(struct dentry *dentry);
 struct dentry *ovl_dentry_real(struct dentry *dentry);
 struct dentry *ovl_entry_real(struct ovl_entry *oe, bool *is_upper);
+struct inode *ovl_inode_real(struct inode *inode);
 struct vfsmount *ovl_entry_mnt_real(struct ovl_entry *oe, struct inode *inode,
 				    bool is_upper);
 struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry);
-bool ovl_is_default_permissions(struct inode *inode);
 void ovl_set_dir_cache(struct dentry *dentry, struct ovl_dir_cache *cache);
 struct dentry *ovl_workdir(struct dentry *dentry);
 int ovl_want_write(struct dentry *dentry);
@@ -179,7 +179,9 @@ ssize_t ovl_getxattr(struct dentry *dentry, struct inode *inode,
 		     const char *name, void *value, size_t size);
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size);
 int ovl_removexattr(struct dentry *dentry, const char *name);
-struct inode *ovl_d_select_inode(struct dentry *dentry, unsigned file_flags);
+struct posix_acl *ovl_get_acl(struct inode *inode, int type);
+int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags);
+int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode,
 			    struct ovl_entry *oe);
@@ -187,6 +189,10 @@ static inline void ovl_copyattr(struct inode *from, struct inode *to)
 {
 	to->i_uid = from->i_uid;
 	to->i_gid = from->i_gid;
+	to->i_mode = from->i_mode;
+	to->i_atime = from->i_atime;
+	to->i_mtime = from->i_mtime;
+	to->i_ctime = from->i_ctime;
 }
 
 /* dir.c */
