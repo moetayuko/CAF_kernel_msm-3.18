@@ -137,8 +137,12 @@ static void cec_queue_event(struct cec_adapter *adap,
 static void cec_queue_msg_fh(struct cec_fh *fh, const struct cec_msg *msg)
 {
 	static const struct cec_event ev_lost_msg = {
+		.ts = 0,
 		.event = CEC_EVENT_LOST_MSGS,
-		.lost_msgs.lost_msgs = 1,
+		.flags = 0,
+		{
+			.lost_msgs.lost_msgs = 1,
+		},
 	};
 	struct cec_msg_entry *entry;
 
@@ -1104,7 +1108,7 @@ static void cec_claim_log_addrs(struct cec_adapter *adap, bool block)
  */
 void __cec_s_phys_addr(struct cec_adapter *adap, u16 phys_addr, bool block)
 {
-	if (phys_addr == adap->phys_addr)
+	if (phys_addr == adap->phys_addr || adap->devnode.unregistered)
 		return;
 
 	if (phys_addr == CEC_PHYS_ADDR_INVALID ||
@@ -1157,6 +1161,9 @@ int __cec_s_log_addrs(struct cec_adapter *adap,
 {
 	u16 type_mask = 0;
 	int i;
+
+	if (adap->devnode.unregistered)
+		return -ENODEV;
 
 	if (!log_addrs || log_addrs->num_log_addrs == 0) {
 		adap->log_addrs.num_log_addrs = 0;
