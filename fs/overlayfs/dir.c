@@ -417,9 +417,9 @@ out_cleanup:
 	goto out_dput2;
 }
 
-static int ovl_create_or_link(struct dentry *dentry, struct inode *inode,
-			      struct kstat *stat, const char *link,
-			      struct dentry *hardlink)
+static int ovl_create_or_link(struct dentry *dentry, int mode,
+			      struct inode *inode, struct kstat *stat,
+			      const char *link, struct dentry *hardlink)
 {
 	int err;
 	const struct cred *old_cred;
@@ -435,6 +435,15 @@ static int ovl_create_or_link(struct dentry *dentry, struct inode *inode,
 	if (override_cred) {
 		override_cred->fsuid = inode->i_uid;
 		override_cred->fsgid = inode->i_gid;
+		if (!hardlink) {
+			err = security_dentry_create_files_as(dentry,
+					mode, &dentry->d_name, old_cred,
+					override_cred);
+			if (err) {
+				put_cred(override_cred);
+				goto out_revert_creds;
+			}
+		}
 		put_cred(override_creds(override_cred));
 		put_cred(override_cred);
 
@@ -445,6 +454,7 @@ static int ovl_create_or_link(struct dentry *dentry, struct inode *inode,
 			err = ovl_create_over_whiteout(dentry, inode, stat,
 							link, hardlink);
 	}
+out_revert_creds:
 	revert_creds(old_cred);
 	if (!err) {
 		struct inode *realinode = d_inode(ovl_dentry_upper(dentry));
@@ -477,7 +487,7 @@ static int ovl_create_object(struct dentry *dentry, int mode, dev_t rdev,
 	inode_init_owner(inode, dentry->d_parent->d_inode, mode);
 	stat.mode = inode->i_mode;
 
-	err = ovl_create_or_link(dentry, inode, &stat, link, NULL);
+	err = ovl_create_or_link(dentry, mode, inode, &stat, link, NULL);
 	if (err)
 		iput(inode);
 
@@ -519,6 +529,7 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 {
 	int err;
 	struct inode *inode;
+	struct dentry *upper;
 
 	err = ovl_want_write(old);
 	if (err)
@@ -531,7 +542,8 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 	inode = d_inode(old);
 	ihold(inode);
 
-	err = ovl_create_or_link(new, inode, NULL, NULL, ovl_dentry_upper(old));
+	upper = ovl_dentry_upper(old);
+	err = ovl_create_or_link(new, upper->d_inode->i_mode, inode, NULL, NULL, ovl_dentry_upper(old));
 	if (err)
 		iput(inode);
 
