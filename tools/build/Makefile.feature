@@ -40,6 +40,8 @@ FEATURE_TESTS_BASIC :=			\
 	libbfd				\
 	libelf				\
 	libelf-getphdrnum		\
+	libelf-gelf_getnote		\
+	libelf-getshdrstrndx		\
 	libelf-mmap			\
 	libnuma				\
 	numa_num_possible_cpus		\

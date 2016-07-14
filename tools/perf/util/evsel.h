@@ -44,6 +44,7 @@ enum {
 	PERF_EVSEL__CONFIG_TERM_CALLGRAPH,
 	PERF_EVSEL__CONFIG_TERM_STACK_USER,
 	PERF_EVSEL__CONFIG_TERM_INHERIT,
+	PERF_EVSEL__CONFIG_TERM_MAX_STACK,
 	PERF_EVSEL__CONFIG_TERM_MAX,
 };
 
@@ -56,6 +57,7 @@ struct perf_evsel_config_term {
 		bool	time;
 		char	*callgraph;
 		u64	stack_user;
+		int	max_stack;
 		bool	inherit;
 	} val;
 };
@@ -259,6 +261,8 @@ static inline char *perf_evsel__strval(struct perf_evsel *evsel,
 
 struct format_field;
 
+u64 format_field__intval(struct format_field *field, struct perf_sample *sample, bool needs_swap);
+
 struct format_field *perf_evsel__field(struct perf_evsel *evsel, const char *name);
 
 #define perf_evsel__match(evsel, t, c)		\
@@ -351,23 +355,7 @@ static inline bool perf_evsel__is_group_event(struct perf_evsel *evsel)
 	return perf_evsel__is_group_leader(evsel) && evsel->nr_members > 1;
 }
 
-/**
- * perf_evsel__is_function_event - Return whether given evsel is a function
- * trace event
- *
- * @evsel - evsel selector to be tested
- *
- * Return %true if event is function trace event
- */
-static inline bool perf_evsel__is_function_event(struct perf_evsel *evsel)
-{
-#define FUNCTION_EVENT "ftrace:function"
-
-	return evsel->name &&
-	       !strncmp(FUNCTION_EVENT, evsel->name, sizeof(FUNCTION_EVENT));
-
-#undef FUNCTION_EVENT
-}
+bool perf_evsel__is_function_event(struct perf_evsel *evsel);
 
 static inline bool perf_evsel__is_bpf_output(struct perf_evsel *evsel)
 {
@@ -430,5 +418,7 @@ typedef int (*attr__fprintf_f)(FILE *, const char *, const char *, void *);
 
 int perf_event_attr__fprintf(FILE *fp, struct perf_event_attr *attr,
 			     attr__fprintf_f attr__fprintf, void *priv);
+
+char *perf_evsel__env_arch(struct perf_evsel *evsel);
 
 #endif /* __PERF_EVSEL_H */
