@@ -100,6 +100,7 @@ static s8 bmi_i2c_read(struct i2c_client *client, u8 reg_addr,
 		}
 
 		if (BMI_MAX_RETRY_I2C_XFER <= retry) {
+			dev_err(&client->dev, "test 3");
 			dev_err(&client->dev, "I2C xfer error");
 			return -EIO;
 		}
@@ -138,6 +139,7 @@ static s8 bmi_i2c_burst_read(struct i2c_client *client, u8 reg_addr,
 	}
 
 	if (BMI_MAX_RETRY_I2C_XFER <= retry) {
+		dev_err(&client->dev, "test 1");
 		dev_err(&client->dev, "I2C xfer error");
 		return -EIO;
 	}
@@ -202,6 +204,7 @@ static s8 bmi_i2c_write(struct i2c_client *client, u8 reg_addr,
 			}
 		}
 		if (BMI_MAX_RETRY_I2C_XFER <= retry) {
+			dev_err(&client->dev, "test 2");
 			dev_err(&client->dev, "I2C xfer error");
 			return -EIO;
 		}
@@ -251,7 +254,7 @@ static int bmi_i2c_probe(struct i2c_client *client,
 {
 		int err = 0;
 		struct bmi_client_data *client_data = NULL;
-
+		
 		dev_info(&client->dev, "BMI160 i2c function probe entrance");
 
 		if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
@@ -276,10 +279,12 @@ static int bmi_i2c_probe(struct i2c_client *client,
 			err = -ENOMEM;
 			goto exit_err_clean;
 		}
-
+		
+		client_data->i2c = client;
 		client_data->device.bus_read = bmi_i2c_read_wrapper;
 		client_data->device.bus_write = bmi_i2c_write_wrapper;
-
+		//dev_set_drvdata(&client->dev, client_data);
+		
 		return bmi_probe(client_data, &client->dev);
 
 exit_err_clean:
@@ -327,7 +332,7 @@ MODULE_DEVICE_TABLE(i2c, bmi_id);
 static const struct of_device_id bmi160_of_match[] = {
 	{ .compatible = "bosch-sensortec,bmi160", },
 	{ .compatible = "bmi160", },
-	{ .compatible = "bosch, bmi160", },
+	{ .compatible = "bosch,bmi160", },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, bmi160_of_match);
