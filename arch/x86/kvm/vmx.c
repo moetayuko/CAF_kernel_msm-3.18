@@ -110,6 +110,13 @@ module_param_named(pml, enable_pml, bool, S_IRUGO);
 
 #define KVM_VMX_TSC_MULTIPLIER_MAX     0xffffffffffffffffULL
 
+/* Guest_tsc -> host_tsc conversion requires 64-bit division.  */
+static int __read_mostly cpu_preemption_timer_multi;
+static bool __read_mostly enable_preemption_timer = 1;
+#ifdef CONFIG_X86_64
+module_param_named(preemption_timer, enable_preemption_timer, bool, S_IRUGO);
+#endif
+
 #define KVM_GUEST_CR0_MASK (X86_CR0_NW | X86_CR0_CD)
 #define KVM_VM_CR0_ALWAYS_ON_UNRESTRICTED_GUEST (X86_CR0_WP | X86_CR0_NE)
 #define KVM_VM_CR0_ALWAYS_ON						\
@@ -421,7 +428,6 @@ struct nested_vmx {
 	struct pi_desc *pi_desc;
 	bool pi_pending;
 	u16 posted_intr_nv;
-	u64 msr_ia32_feature_control;
 
 	struct hrtimer preemption_timer;
 	bool preemption_timer_expired;
@@ -597,11 +603,22 @@ struct vcpu_vmx {
 #define PML_ENTITY_NUM		512
 	struct page *pml_pg;
 
+	/* apic deadline value in host tsc */
+	u64 hv_deadline_tsc;
+
 	u64 current_tsc_ratio;
 
 	bool guest_pkru_valid;
 	u32 guest_pkru;
 	u32 host_pkru;
+
+	/*
+	 * Only bits masked by msr_ia32_feature_control_valid_bits can be set in
+	 * msr_ia32_feature_control. FEATURE_CONTROL_LOCKED is always included
+	 * in msr_ia32_feature_control_valid_bits.
+	 */
+	u64 msr_ia32_feature_control;
+	u64 msr_ia32_feature_control_valid_bits;
 };
 
 enum segment_cache_field {
@@ -1054,6 +1071,61 @@ static inline bool cpu_has_vmx_virtual_intr_delivery(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
 		SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY;
+}
+
+/*
+ * Comment's format: document - errata name - stepping - processor name.
+ * Refer from
+ * https://www.virtualbox.org/svn/vbox/trunk/src/VBox/VMM/VMMR0/HMR0.cpp
+ */
+static u32 vmx_preemption_cpu_tfms[] = {
+/* 323344.pdf - BA86   - D0 - Xeon 7500 Series */
+0x000206E6,
+/* 323056.pdf - AAX65  - C2 - Xeon L3406 */
+/* 322814.pdf - AAT59  - C2 - i7-600, i5-500, i5-400 and i3-300 Mobile */
+/* 322911.pdf - AAU65  - C2 - i5-600, i3-500 Desktop and Pentium G6950 */
+0x00020652,
+/* 322911.pdf - AAU65  - K0 - i5-600, i3-500 Desktop and Pentium G6950 */
+0x00020655,
+/* 322373.pdf - AAO95  - B1 - Xeon 3400 Series */
+/* 322166.pdf - AAN92  - B1 - i7-800 and i5-700 Desktop */
+/*
+ * 320767.pdf - AAP86  - B1 -
+ * i7-900 Mobile Extreme, i7-800 and i7-700 Mobile
+ */
+0x000106E5,
+/* 321333.pdf - AAM126 - C0 - Xeon 3500 */
+0x000106A0,
+/* 321333.pdf - AAM126 - C1 - Xeon 3500 */
+0x000106A1,
+/* 320836.pdf - AAJ124 - C0 - i7-900 Desktop Extreme and i7-900 Desktop */
+0x000106A4,
+ /* 321333.pdf - AAM126 - D0 - Xeon 3500 */
+ /* 321324.pdf - AAK139 - D0 - Xeon 5500 */
+ /* 320836.pdf - AAJ124 - D0 - i7-900 Extreme and i7-900 Desktop */
+0x000106A5,
+};
+
+static inline bool cpu_has_broken_vmx_preemption_timer(void)
+{
+	u32 eax = cpuid_eax(0x00000001), i;
+
+	/* Clear the reserved bits */
+	eax &= ~(0x3U << 14 | 0xfU << 28);
+	for (i = 0; i < ARRAY_SIZE(vmx_preemption_cpu_tfms); i++)
+		if (eax == vmx_preemption_cpu_tfms[i])
+			return true;
+
+	return false;
+}
+
+static inline bool cpu_has_vmx_preemption_timer(void)
+{
+	if (cpu_has_broken_vmx_preemption_timer())
+		return false;
+
+	return vmcs_config.pin_based_exec_ctrl &
+		PIN_BASED_VMX_PREEMPTION_TIMER;
 }
 
 static inline bool cpu_has_vmx_posted_intr(void)
@@ -2865,6 +2937,14 @@ static int vmx_get_vmx_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 *pdata)
 	return 0;
 }
 
+static inline bool vmx_feature_control_msr_valid(struct kvm_vcpu *vcpu,
+						 uint64_t val)
+{
+	uint64_t valid_bits = to_vmx(vcpu)->msr_ia32_feature_control_valid_bits;
+
+	return !(val & ~valid_bits);
+}
+
 /*
  * Reads an msr value (of 'msr_index') into 'pdata'.
  * Returns 0 on success, non-0 otherwise.
@@ -2906,10 +2986,15 @@ static int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			return 1;
 		msr_info->data = vmcs_read64(GUEST_BNDCFGS);
 		break;
-	case MSR_IA32_FEATURE_CONTROL:
-		if (!nested_vmx_allowed(vcpu))
+	case MSR_IA32_MCG_EXT_CTL:
+		if (!msr_info->host_initiated &&
+		    !(to_vmx(vcpu)->msr_ia32_feature_control &
+		      FEATURE_CONTROL_LMCE))
 			return 1;
-		msr_info->data = to_vmx(vcpu)->nested.msr_ia32_feature_control;
+		msr_info->data = vcpu->arch.mcg_ext_ctl;
+		break;
+	case MSR_IA32_FEATURE_CONTROL:
+		msr_info->data = to_vmx(vcpu)->msr_ia32_feature_control;
 		break;
 	case MSR_IA32_VMX_BASIC ... MSR_IA32_VMX_VMFUNC:
 		if (!nested_vmx_allowed(vcpu))
@@ -2999,12 +3084,20 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_IA32_TSC_ADJUST:
 		ret = kvm_set_msr_common(vcpu, msr_info);
 		break;
+	case MSR_IA32_MCG_EXT_CTL:
+		if ((!msr_info->host_initiated &&
+		     !(to_vmx(vcpu)->msr_ia32_feature_control &
+		       FEATURE_CONTROL_LMCE)) ||
+		    (data & ~MCG_EXT_CTL_LMCE_EN))
+			return 1;
+		vcpu->arch.mcg_ext_ctl = data;
+		break;
 	case MSR_IA32_FEATURE_CONTROL:
-		if (!nested_vmx_allowed(vcpu) ||
-		    (to_vmx(vcpu)->nested.msr_ia32_feature_control &
+		if (!vmx_feature_control_msr_valid(vcpu, data) ||
+		    (to_vmx(vcpu)->msr_ia32_feature_control &
 		     FEATURE_CONTROL_LOCKED && !msr_info->host_initiated))
 			return 1;
-		vmx->nested.msr_ia32_feature_control = data;
+		vmx->msr_ia32_feature_control = data;
 		if (msr_info->host_initiated && data == 0)
 			vmx_leave_nested(vcpu);
 		break;
@@ -3299,25 +3392,25 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		      vmx_capability.ept, vmx_capability.vpid);
 	}
 
-	min = VM_EXIT_SAVE_DEBUG_CONTROLS;
+	min = VM_EXIT_SAVE_DEBUG_CONTROLS | VM_EXIT_ACK_INTR_ON_EXIT;
 #ifdef CONFIG_X86_64
 	min |= VM_EXIT_HOST_ADDR_SPACE_SIZE;
 #endif
 	opt = VM_EXIT_SAVE_IA32_PAT | VM_EXIT_LOAD_IA32_PAT |
-		VM_EXIT_ACK_INTR_ON_EXIT | VM_EXIT_CLEAR_BNDCFGS;
+		VM_EXIT_CLEAR_BNDCFGS;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_EXIT_CTLS,
 				&_vmexit_control) < 0)
 		return -EIO;
 
 	min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
-	opt = PIN_BASED_VIRTUAL_NMIS | PIN_BASED_POSTED_INTR;
+	opt = PIN_BASED_VIRTUAL_NMIS | PIN_BASED_POSTED_INTR |
+		 PIN_BASED_VMX_PREEMPTION_TIMER;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PINBASED_CTLS,
 				&_pin_based_exec_control) < 0)
 		return -EIO;
 
 	if (!(_cpu_based_2nd_exec_control &
-		SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY) ||
-		!(_vmexit_control & VM_EXIT_ACK_INTR_ON_EXIT))
+		SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY))
 		_pin_based_exec_control &= ~PIN_BASED_POSTED_INTR;
 
 	min = VM_ENTRY_LOAD_DEBUG_CONTROLS;
@@ -3366,7 +3459,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 
 	/*
 	 * Some cpus support VM_ENTRY_(LOAD|SAVE)_IA32_PERF_GLOBAL_CTRL
-	 * but due to arrata below it can't be used. Workaround is to use
+	 * but due to errata below it can't be used. Workaround is to use
 	 * msr load mechanism to switch IA32_PERF_GLOBAL_CTRL.
 	 *
 	 * VM Exit May Incorrectly Clear IA32_PERF_GLOBAL_CTRL [34:32]
@@ -4783,6 +4876,8 @@ static u32 vmx_pin_based_exec_ctrl(struct vcpu_vmx *vmx)
 
 	if (!kvm_vcpu_apicv_active(&vmx->vcpu))
 		pin_based_exec_ctrl &= ~PIN_BASED_POSTED_INTR;
+	/* Enable the preemption timer dynamically */
+	pin_based_exec_ctrl &= ~PIN_BASED_VMX_PREEMPTION_TIMER;
 	return pin_based_exec_ctrl;
 }
 
@@ -4901,6 +4996,7 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 
 	/* Control */
 	vmcs_write32(PIN_BASED_VM_EXEC_CONTROL, vmx_pin_based_exec_ctrl(vmx));
+	vmx->hv_deadline_tsc = -1;
 
 	vmcs_write32(CPU_BASED_VM_EXEC_CONTROL, vmx_exec_control(vmx));
 
@@ -6391,7 +6487,20 @@ static __init int hardware_setup(void)
 		kvm_x86_ops->enable_log_dirty_pt_masked = NULL;
 	}
 
+	if (cpu_has_vmx_preemption_timer() && enable_preemption_timer) {
+		u64 vmx_msr;
+
+		rdmsrl(MSR_IA32_VMX_MISC, vmx_msr);
+		cpu_preemption_timer_multi =
+			 vmx_msr & VMX_MISC_PREEMPTION_TIMER_RATE_MASK;
+	} else {
+		kvm_x86_ops->set_hv_timer = NULL;
+		kvm_x86_ops->cancel_hv_timer = NULL;
+	}
+
 	kvm_set_posted_intr_wakeup_handler(wakeup_handler);
+
+	kvm_mce_cap_supported |= MCG_LMCE_P;
 
 	return alloc_kvm_area();
 
@@ -6860,7 +6969,7 @@ static int handle_vmon(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
-	if ((vmx->nested.msr_ia32_feature_control & VMXON_NEEDED_FEATURES)
+	if ((vmx->msr_ia32_feature_control & VMXON_NEEDED_FEATURES)
 			!= VMXON_NEEDED_FEATURES) {
 		kvm_inject_gp(vcpu, 0);
 		return 1;
@@ -7565,6 +7674,12 @@ static int handle_pcommit(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
+static int handle_preemption_timer(struct kvm_vcpu *vcpu)
+{
+	kvm_lapic_expired_hv_timer(vcpu);
+	return 1;
+}
+
 /*
  * The exit handlers return 1 if the exit was handled fully and guest execution
  * may resume.  Otherwise they set the kvm_run parameter to indicate what needs
@@ -7616,6 +7731,7 @@ static int (*const kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_XRSTORS]                 = handle_xrstors,
 	[EXIT_REASON_PML_FULL]		      = handle_pml_full,
 	[EXIT_REASON_PCOMMIT]                 = handle_pcommit,
+	[EXIT_REASON_PREEMPTION_TIMER]	      = handle_preemption_timer,
 };
 
 static const int kvm_vmx_max_exit_handlers =
@@ -8459,7 +8575,6 @@ static void vmx_handle_external_intr(struct kvm_vcpu *vcpu)
 			"push %[sp]\n\t"
 #endif
 			"pushf\n\t"
-			"orl $0x200, (%%" _ASM_SP ")\n\t"
 			__ASM_SIZE(push) " $%c[cs]\n\t"
 			"call *%[entry]\n\t"
 			:
@@ -8472,8 +8587,7 @@ static void vmx_handle_external_intr(struct kvm_vcpu *vcpu)
 			[ss]"i"(__KERNEL_DS),
 			[cs]"i"(__KERNEL_CS)
 			);
-	} else
-		local_irq_enable();
+	}
 }
 
 static bool vmx_has_high_real_mode_segbase(void)
@@ -8624,6 +8738,26 @@ static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 					msrs[i].host);
 }
 
+void vmx_arm_hv_timer(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u64 tscl;
+	u32 delta_tsc;
+
+	if (vmx->hv_deadline_tsc == -1)
+		return;
+
+	tscl = rdtsc();
+	if (vmx->hv_deadline_tsc > tscl)
+		/* sure to be 32 bit only because checked on set_hv_timer */
+		delta_tsc = (u32)((vmx->hv_deadline_tsc - tscl) >>
+			cpu_preemption_timer_multi);
+	else
+		delta_tsc = 0;
+
+	vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, delta_tsc);
+}
+
 static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -8672,6 +8806,8 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 
 	atomic_switch_perf_msrs(vmx);
 	debugctlmsr = get_debugctlmsr();
+
+	vmx_arm_hv_timer(vcpu);
 
 	vmx->__launched = vmx->loaded_vmcs->launched;
 	asm(
@@ -8948,6 +9084,8 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 			goto free_vmcs;
 	}
 
+	vmx->msr_ia32_feature_control_valid_bits = FEATURE_CONTROL_LOCKED;
+
 	return &vmx->vcpu;
 
 free_vmcs:
@@ -9095,6 +9233,13 @@ static void vmx_cpuid_update(struct kvm_vcpu *vcpu)
 			vmx->nested.nested_vmx_secondary_ctls_high &=
 				~SECONDARY_EXEC_PCOMMIT;
 	}
+
+	if (nested_vmx_allowed(vcpu))
+		to_vmx(vcpu)->msr_ia32_feature_control_valid_bits |=
+			FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
+	else
+		to_vmx(vcpu)->msr_ia32_feature_control_valid_bits &=
+			~FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 }
 
 static void vmx_set_supported_cpuid(u32 func, struct kvm_cpuid_entry2 *entry)
@@ -10663,6 +10808,64 @@ static int vmx_check_intercept(struct kvm_vcpu *vcpu,
 	return X86EMUL_CONTINUE;
 }
 
+#ifdef CONFIG_X86_64
+/* (a << shift) / divisor, return 1 if overflow otherwise 0 */
+static inline int u64_shl_div_u64(u64 a, unsigned int shift,
+				  u64 divisor, u64 *result)
+{
+	u64 low = a << shift, high = a >> (64 - shift);
+
+	/* To avoid the overflow on divq */
+	if (high >= divisor)
+		return 1;
+
+	/* Low hold the result, high hold rem which is discarded */
+	asm("divq %2\n\t" : "=a" (low), "=d" (high) :
+	    "rm" (divisor), "0" (low), "1" (high));
+	*result = low;
+
+	return 0;
+}
+
+static int vmx_set_hv_timer(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u64 tscl = rdtsc();
+	u64 guest_tscl = kvm_read_l1_tsc(vcpu, tscl);
+	u64 delta_tsc = max(guest_deadline_tsc, guest_tscl) - guest_tscl;
+
+	/* Convert to host delta tsc if tsc scaling is enabled */
+	if (vcpu->arch.tsc_scaling_ratio != kvm_default_tsc_scaling_ratio &&
+			u64_shl_div_u64(delta_tsc,
+				kvm_tsc_scaling_ratio_frac_bits,
+				vcpu->arch.tsc_scaling_ratio,
+				&delta_tsc))
+		return -ERANGE;
+
+	/*
+	 * If the delta tsc can't fit in the 32 bit after the multi shift,
+	 * we can't use the preemption timer.
+	 * It's possible that it fits on later vmentries, but checking
+	 * on every vmentry is costly so we just use an hrtimer.
+	 */
+	if (delta_tsc >> (cpu_preemption_timer_multi + 32))
+		return -ERANGE;
+
+	vmx->hv_deadline_tsc = tscl + delta_tsc;
+	vmcs_set_bits(PIN_BASED_VM_EXEC_CONTROL,
+			PIN_BASED_VMX_PREEMPTION_TIMER);
+	return 0;
+}
+
+static void vmx_cancel_hv_timer(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	vmx->hv_deadline_tsc = -1;
+	vmcs_clear_bits(PIN_BASED_VM_EXEC_CONTROL,
+			PIN_BASED_VMX_PREEMPTION_TIMER);
+}
+#endif
+
 static void vmx_sched_in(struct kvm_vcpu *vcpu, int cpu)
 {
 	if (ple_gap)
@@ -10707,7 +10910,7 @@ static void vmx_enable_log_dirty_pt_masked(struct kvm *kvm,
  *   this case, return 1, otherwise, return 0.
  *
  */
-static int vmx_pre_block(struct kvm_vcpu *vcpu)
+static int pi_pre_block(struct kvm_vcpu *vcpu)
 {
 	unsigned long flags;
 	unsigned int dest;
@@ -10774,7 +10977,18 @@ static int vmx_pre_block(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
-static void vmx_post_block(struct kvm_vcpu *vcpu)
+static int vmx_pre_block(struct kvm_vcpu *vcpu)
+{
+	if (pi_pre_block(vcpu))
+		return 1;
+
+	if (kvm_lapic_hv_timer_in_use(vcpu))
+		kvm_lapic_switch_to_sw_timer(vcpu);
+
+	return 0;
+}
+
+static void pi_post_block(struct kvm_vcpu *vcpu)
 {
 	struct pi_desc *pi_desc = vcpu_to_pi_desc(vcpu);
 	struct pi_desc old, new;
@@ -10814,6 +11028,14 @@ static void vmx_post_block(struct kvm_vcpu *vcpu)
 			vcpu->pre_pcpu), flags);
 		vcpu->pre_pcpu = -1;
 	}
+}
+
+static void vmx_post_block(struct kvm_vcpu *vcpu)
+{
+	if (kvm_x86_ops->set_hv_timer)
+		kvm_lapic_switch_to_hv_timer(vcpu);
+
+	pi_post_block(vcpu);
 }
 
 /*
@@ -10903,6 +11125,16 @@ static int vmx_update_pi_irte(struct kvm *kvm, unsigned int host_irq,
 out:
 	srcu_read_unlock(&kvm->irq_srcu, idx);
 	return ret;
+}
+
+static void vmx_setup_mce(struct kvm_vcpu *vcpu)
+{
+	if (vcpu->arch.mcg_cap & MCG_LMCE_P)
+		to_vmx(vcpu)->msr_ia32_feature_control_valid_bits |=
+			FEATURE_CONTROL_LMCE;
+	else
+		to_vmx(vcpu)->msr_ia32_feature_control_valid_bits &=
+			~FEATURE_CONTROL_LMCE;
 }
 
 static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
@@ -11029,6 +11261,13 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
 	.pmu_ops = &intel_pmu_ops,
 
 	.update_pi_irte = vmx_update_pi_irte,
+
+#ifdef CONFIG_X86_64
+	.set_hv_timer = vmx_set_hv_timer,
+	.cancel_hv_timer = vmx_cancel_hv_timer,
+#endif
+
+	.setup_mce = vmx_setup_mce,
 };
 
 static int __init vmx_init(void)
