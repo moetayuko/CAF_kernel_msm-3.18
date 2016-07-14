@@ -308,7 +308,7 @@ static void pr_err_with_code(const char *msg, int err)
 
 	pr_err("%s", msg);
 	pr_debug(" Reason: %s (Code: %d)",
-		 strerror_r(-err, sbuf, sizeof(sbuf)), err);
+		 str_error_r(-err, sbuf, sizeof(sbuf)), err);
 	pr_err("\n");
 }
 
@@ -370,7 +370,7 @@ static int del_perf_probe_caches(struct strfilter *filter)
 	struct str_node *nd;
 	int ret;
 
-	bidlist = build_id_cache__list_all();
+	bidlist = build_id_cache__list_all(false);
 	if (!bidlist) {
 		ret = -errno;
 		pr_debug("Failed to get buildids: %d\n", ret);

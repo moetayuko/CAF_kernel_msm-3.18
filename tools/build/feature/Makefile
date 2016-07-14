@@ -17,6 +17,7 @@ FILES=					\
 	test-cplus-demangle.bin		\
 	test-libelf.bin			\
 	test-libelf-getphdrnum.bin	\
+	test-libelf-gelf_getnote.bin	\
 	test-libelf-getshdrstrndx.bin	\
 	test-libelf-mmap.bin		\
 	test-libnuma.bin		\
@@ -44,7 +45,8 @@ FILES=					\
 	test-zlib.bin			\
 	test-lzma.bin			\
 	test-bpf.bin			\
-	test-get_cpuid.bin
+	test-get_cpuid.bin		\
+	test-sdt.bin
 
 FILES := $(addprefix $(OUTPUT),$(FILES))
 
@@ -97,6 +99,9 @@ $(OUTPUT)test-libelf-mmap.bin:
 	$(BUILD) -lelf
 
 $(OUTPUT)test-libelf-getphdrnum.bin:
+	$(BUILD) -lelf
+
+$(OUTPUT)test-libelf-gelf_getnote.bin:
 	$(BUILD) -lelf
 
 $(OUTPUT)test-libelf-getshdrstrndx.bin:
@@ -207,6 +212,9 @@ $(OUTPUT)test-get_cpuid.bin:
 	$(BUILD)
 
 $(OUTPUT)test-bpf.bin:
+	$(BUILD)
+
+$(OUTPUT)test-sdt.bin:
 	$(BUILD)
 
 -include $(OUTPUT)*.d

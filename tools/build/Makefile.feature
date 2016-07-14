@@ -40,6 +40,7 @@ FEATURE_TESTS_BASIC :=			\
 	libbfd				\
 	libelf				\
 	libelf-getphdrnum		\
+	libelf-gelf_getnote		\
 	libelf-getshdrstrndx		\
 	libelf-mmap			\
 	libnuma				\
@@ -61,7 +62,8 @@ FEATURE_TESTS_BASIC :=			\
 	zlib				\
 	lzma				\
 	get_cpuid			\
-	bpf
+	bpf				\
+	sdt
 
 # FEATURE_TESTS_BASIC + FEATURE_TESTS_EXTRA is the complete list
 # of all feature tests
