@@ -1056,6 +1056,12 @@ static const struct xattr_handler *ovl_xattr_handlers[] = {
 	NULL
 };
 
+static const struct xattr_handler *ovl_xattr_noacl_handlers[] = {
+	&ovl_own_xattr_handler,
+	&ovl_other_xattr_handler,
+	NULL,
+};
+
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct path upperpath = { NULL, NULL };
@@ -1268,7 +1274,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_magic = OVERLAYFS_SUPER_MAGIC;
 	sb->s_op = &ovl_super_operations;
-	sb->s_xattr = ovl_xattr_handlers;
+	if (IS_ENABLED(CONFIG_FS_POSIX_ACL))
+		sb->s_xattr = ovl_xattr_handlers;
+	else
+		sb->s_xattr = ovl_xattr_noacl_handlers;
 	sb->s_root = root_dentry;
 	sb->s_fs_info = ufs;
 	sb->s_flags |= MS_POSIXACL;
