@@ -29,7 +29,7 @@
 
 static u32 supported_cpuidle_states;
 
-int pnv_save_sprs_for_winkle(void)
+static int pnv_save_sprs_for_winkle(void)
 {
 	int cpu;
 	int rc;
@@ -285,6 +285,9 @@ static int __init pnv_init_idle_states(void)
 	}
 
 	pnv_alloc_idle_core_states();
+
+	if (supported_cpuidle_states & OPAL_PM_NAP_ENABLED)
+		ppc_md.power_save = power7_idle;
 out_free:
 	kfree(flags);
 out:
