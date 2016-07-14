@@ -20,7 +20,7 @@
 #include <linux/seq_file.h>
 #include <linux/memblock.h>
 
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <linux/io.h>
 
 #include "internal.h"
@@ -583,6 +583,9 @@ repeat:
 			memblock_insert_region(type, idx, base, end - base,
 					       nid, flags);
 	}
+
+	if (!nr_new)
+		return 0;
 
 	/*
 	 * If this was the first round, resize array and repeat for actual

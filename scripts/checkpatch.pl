@@ -55,6 +55,7 @@ my $spelling_file = "$D/spelling.txt";
 my $codespell = 0;
 my $codespellfile = "/usr/share/codespell/dictionary.txt";
 my $color = 1;
+my $allow_c99_comments = 1;
 
 sub help {
 	my ($exitcode) = @_;
@@ -1143,6 +1144,11 @@ sub sanitise_line {
 	} elsif ($res =~ /^.\s*\#\s*(?:error|warning)\s+(.*)\b/) {
 		my $clean = 'X' x length($1);
 		$res =~ s@(\#\s*(?:error|warning)\s+).*@$1$clean@;
+	}
+
+	if ($allow_c99_comments && $res =~ m@(//.*$)@) {
+		my $match = $1;
+		$res =~ s/\Q$match\E/"$;" x length($match)/e;
 	}
 
 	return $res;
@@ -2762,6 +2768,10 @@ sub process {
 			# #defines with only strings
 			} elsif ($line =~ /^\+\s*$String\s*(?:\s*|,|\)\s*;)\s*$/ ||
 				 $line =~ /^\+\s*#\s*define\s+\w+\s+$String$/) {
+				$msg_type = "";
+
+			# EFI_GUID is another special case
+			} elsif ($line =~ /^\+.*\bEFI_GUID\s*\(/) {
 				$msg_type = "";
 
 			# Otherwise set the alternate message types

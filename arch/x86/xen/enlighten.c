@@ -1323,7 +1323,8 @@ static void xen_crash_shutdown(struct pt_regs *regs)
 static int
 xen_panic_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
-	xen_reboot(SHUTDOWN_crash);
+	if (!kexec_crash_loaded())
+		xen_reboot(SHUTDOWN_crash);
 	return NOTIFY_DONE;
 }
 

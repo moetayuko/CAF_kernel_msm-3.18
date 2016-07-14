@@ -26,7 +26,6 @@
 #include <linux/nmi.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/interrupt.h>			/* For in_interrupt() */
 #include <linux/delay.h>
 #include <linux/smp.h>
 #include <linux/security.h>
@@ -48,7 +47,7 @@
 #include <linux/uio.h>
 
 #include <asm/uaccess.h>
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
@@ -425,6 +424,8 @@ static u32 truncate_msg(u16 *text_len, u16 *trunc_msg_len,
 	return msg_used_size(*text_len + *trunc_msg_len, 0, pad_len);
 }
 
+static u64 printk_get_ts(void);
+
 /* insert record into the buffer, discard old ones, update heads */
 static int log_store(int facility, int level,
 		     enum log_flags flags, u64 ts_nsec,
@@ -473,7 +474,7 @@ static int log_store(int facility, int level,
 	if (ts_nsec > 0)
 		msg->ts_nsec = ts_nsec;
 	else
-		msg->ts_nsec = local_clock();
+		msg->ts_nsec = printk_get_ts();
 	memset(log_dict(msg) + dict_len, 0, pad_len);
 	msg->len = size;
 
@@ -986,6 +987,11 @@ module_param(ignore_loglevel, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(ignore_loglevel,
 		 "ignore loglevel setting (prints all kernel messages to the console)");
 
+static bool suppress_message_printing(int level)
+{
+	return (level >= console_loglevel && !ignore_loglevel);
+}
+
 #ifdef CONFIG_BOOT_PRINTK_DELAY
 
 static int boot_delay; /* msecs delay after each printk during bootup */
@@ -1015,7 +1021,7 @@ static void boot_delay_msec(int level)
 	unsigned long timeout;
 
 	if ((boot_delay == 0 || system_state != SYSTEM_BOOTING)
-		|| (level >= console_loglevel && !ignore_loglevel)) {
+		|| suppress_message_printing(level)) {
 		return;
 	}
 
@@ -1041,8 +1047,74 @@ static inline void boot_delay_msec(int level)
 }
 #endif
 
-static bool printk_time = IS_ENABLED(CONFIG_PRINTK_TIME);
-module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
+static int printk_time = CONFIG_PRINTK_TIME;
+
+/*
+ * Real clock & 32-bit systems:  Selecting the real clock printk timestamp may
+ * lead to unlikely situations where a timestamp is wrong because the real time
+ * offset is read without the protection of a sequence lock in the call to
+ * ktime_get_log_ts() in printk_get_ts() below.
+ */
+static int printk_time_param_set(const char *val,
+				 const struct kernel_param *kp)
+{
+	char *param = strstrip((char *)val);
+
+	if (strlen(param) != 1)
+		return -EINVAL;
+
+	switch (param[0]) {
+	/* 0/N/n = disabled */
+	case '0':
+	case 'N':
+	case 'n':
+		printk_time = 0;
+		break;
+	/* 1/Y/y = local clock */
+	case '1':
+	case 'Y':
+	case 'y':
+		printk_time = 1;
+		break;
+	/* 2 = monotonic clock */
+	case '2':
+		printk_time = 2;
+		break;
+	/* 3 = real clock */
+	case '3':
+		printk_time = 3;
+		break;
+	default:
+		pr_warn("printk: invalid timestamp value\n");
+		return -EINVAL;
+		break;
+	}
+
+	pr_info("printk: timestamp set to %d.\n", printk_time);
+	return 0;
+}
+
+static struct kernel_param_ops printk_time_param_ops = {
+	.set = printk_time_param_set,
+	.get = param_get_int,
+};
+
+module_param_cb(time, &printk_time_param_ops, &printk_time, S_IRUGO);
+
+static u64 printk_get_ts(void)
+{
+	u64 mono, offset_real;
+
+	if (printk_time <= 1)
+		return local_clock();
+
+	mono = ktime_get_log_ts(&offset_real);
+
+	if (printk_time == 2)
+		return mono;
+
+	return mono + offset_real;
+}
 
 static size_t print_time(u64 ts, char *buf)
 {
@@ -1439,8 +1511,6 @@ static void call_console_drivers(int level,
 
 	trace_console(text, len);
 
-	if (level >= console_loglevel && !ignore_loglevel)
-		return;
 	if (!console_drivers)
 		return;
 
@@ -1562,7 +1632,7 @@ static bool cont_add(int facility, int level, const char *text, size_t len)
 		cont.facility = facility;
 		cont.level = level;
 		cont.owner = current;
-		cont.ts_nsec = local_clock();
+		cont.ts_nsec = printk_get_ts();
 		cont.flags = 0;
 		cont.cons = 0;
 		cont.flushed = false;
@@ -1802,7 +1872,28 @@ asmlinkage int printk_emit(int facility, int level,
 }
 EXPORT_SYMBOL(printk_emit);
 
-int vprintk_default(const char *fmt, va_list args)
+#ifdef CONFIG_PRINTK
+#define define_pr_level(func, loglevel)				\
+asmlinkage __visible void func(const char *fmt, ...)		\
+{								\
+	va_list args;						\
+								\
+	va_start(args, fmt);					\
+	vprintk_default(loglevel, fmt, args);			\
+	va_end(args);						\
+}								\
+EXPORT_SYMBOL(func)
+
+define_pr_level(__pr_emerg, LOGLEVEL_EMERG);
+define_pr_level(__pr_alert, LOGLEVEL_ALERT);
+define_pr_level(__pr_crit, LOGLEVEL_CRIT);
+define_pr_level(__pr_err, LOGLEVEL_ERR);
+define_pr_level(__pr_warn, LOGLEVEL_WARNING);
+define_pr_level(__pr_notice, LOGLEVEL_NOTICE);
+define_pr_level(__pr_info, LOGLEVEL_INFO);
+#endif
+
+int vprintk_default(int level, const char *fmt, va_list args)
 {
 	int r;
 
@@ -1812,7 +1903,7 @@ int vprintk_default(const char *fmt, va_list args)
 		return r;
 	}
 #endif
-	r = vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
+	r = vprintk_emit(0, level, NULL, 0, fmt, args);
 
 	return r;
 }
@@ -1845,7 +1936,7 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	int r;
 
 	va_start(args, fmt);
-	r = vprintk_func(fmt, args);
+	r = vprintk_func(LOGLEVEL_DEFAULT, fmt, args);
 	va_end(args);
 
 	return r;
@@ -1888,6 +1979,7 @@ static void call_console_drivers(int level,
 static size_t msg_print_text(const struct printk_log *msg, enum log_flags prev,
 			     bool syslog, char *buf, size_t size) { return 0; }
 static size_t cont_print_text(char *text, size_t size) { return 0; }
+static bool suppress_message_printing(int level) { return false; }
 
 /* Still needs to be defined for users */
 DEFINE_PER_CPU(printk_func_t, printk_func);
@@ -2167,6 +2259,13 @@ static void console_cont_flush(char *text, size_t size)
 	if (!cont.len)
 		goto out;
 
+	if (suppress_message_printing(cont.level)) {
+		cont.cons = cont.len;
+		if (cont.flushed)
+			cont.len = 0;
+		goto out;
+	}
+
 	/*
 	 * We still queue earlier records, likely because the console was
 	 * busy. The earlier ones need to be printed before this one, we
@@ -2270,10 +2369,13 @@ skip:
 			break;
 
 		msg = log_from_idx(console_idx);
-		if (msg->flags & LOG_NOCONS) {
+		level = msg->level;
+		if ((msg->flags & LOG_NOCONS) ||
+				suppress_message_printing(level)) {
 			/*
 			 * Skip record we have buffered and already printed
-			 * directly to the console when we received it.
+			 * directly to the console when we received it, and
+			 * record that has level above the console loglevel.
 			 */
 			console_idx = log_next(console_idx);
 			console_seq++;
@@ -2287,7 +2389,6 @@ skip:
 			goto skip;
 		}
 
-		level = msg->level;
 		len += msg_print_text(msg, console_prev, false,
 				      text + len, sizeof(text) - len);
 		if (nr_ext_console_drivers) {

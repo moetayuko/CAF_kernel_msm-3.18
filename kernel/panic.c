@@ -71,6 +71,32 @@ void __weak nmi_panic_self_stop(struct pt_regs *regs)
 	panic_smp_self_stop();
 }
 
+/*
+ * Stop other CPUs in panic.  Architecture dependent code may override this
+ * with more suitable version.  For example, if the architecture supports
+ * crash dump, it should save registers of each stopped CPU and disable
+ * per-CPU features such as virtualization extensions.
+ */
+void __weak panic_smp_send_stop(void)
+{
+	static int cpus_stopped;
+
+	/*
+	 * This function can be called twice in panic path, but obviously
+	 * we execute this only once.
+	 */
+	if (cpus_stopped)
+		return;
+
+	/*
+	 * Note smp_send_stop is the usual smp shutdown function, which
+	 * unfortunately means it may not be hardened to work in a panic
+	 * situation.
+	 */
+	smp_send_stop();
+	cpus_stopped = 1;
+}
+
 atomic_t panic_cpu = ATOMIC_INIT(PANIC_CPU_INVALID);
 
 /*
@@ -108,6 +134,7 @@ void panic(const char *fmt, ...)
 	long i, i_next = 0;
 	int state = 0;
 	int old_cpu, this_cpu;
+	bool _crash_kexec_post_notifiers = crash_kexec_post_notifiers;
 
 	/*
 	 * Disable local interrupts. This will prevent panic_smp_self_stop
@@ -125,7 +152,7 @@ void panic(const char *fmt, ...)
 	 * Only one CPU is allowed to execute the panic code from here. For
 	 * multiple parallel invocations of panic, all other CPUs either
 	 * stop themself or will wait until they are stopped by the 1st CPU
-	 * with smp_send_stop().
+	 * with panic_smp_send_stop().
 	 *
 	 * `old_cpu == PANIC_CPU_INVALID' means this is the 1st CPU which
 	 * comes here, so go ahead.
@@ -160,17 +187,12 @@ void panic(const char *fmt, ...)
 	 *
 	 * Bypass the panic_cpu check and call __crash_kexec directly.
 	 */
-	if (!crash_kexec_post_notifiers) {
+	if (!_crash_kexec_post_notifiers) {
 		printk_nmi_flush_on_panic();
 		__crash_kexec(NULL);
 	}
 
-	/*
-	 * Note smp_send_stop is the usual smp shutdown function, which
-	 * unfortunately means it may not be hardened to work in a panic
-	 * situation.
-	 */
-	smp_send_stop();
+	panic_smp_send_stop();
 
 	/*
 	 * Run any panic handlers, including those that might need to
@@ -191,17 +213,17 @@ void panic(const char *fmt, ...)
 	 *
 	 * Bypass the panic_cpu check and call __crash_kexec directly.
 	 */
-	if (crash_kexec_post_notifiers)
+	if (_crash_kexec_post_notifiers)
 		__crash_kexec(NULL);
 
 	bust_spinlocks(0);
 
 	/*
 	 * We may have ended up stopping the CPU holding the lock (in
-	 * smp_send_stop()) while still having some valuable data in the console
-	 * buffer.  Try to acquire the lock then release it regardless of the
-	 * result.  The release will also print the buffers out.  Locks debug
-	 * should be disabled to avoid reporting bad unlock balance when
+	 * panic_smp_send_stop()) while still having some valuable data in the
+	 * console buffer.  Try to acquire the lock then release it regardless
+	 * of the result.  The release will also print the buffers out.  Locks
+	 * debug should be disabled to avoid reporting bad unlock balance when
 	 * panic() is not being callled from OOPS.
 	 */
 	debug_locks_off();
@@ -571,13 +593,7 @@ EXPORT_SYMBOL(__stack_chk_fail);
 core_param(panic, panic_timeout, int, 0644);
 core_param(pause_on_oops, pause_on_oops, int, 0644);
 core_param(panic_on_warn, panic_on_warn, int, 0644);
-
-static int __init setup_crash_kexec_post_notifiers(char *s)
-{
-	crash_kexec_post_notifiers = true;
-	return 0;
-}
-early_param("crash_kexec_post_notifiers", setup_crash_kexec_post_notifiers);
+core_param(crash_kexec_post_notifiers, crash_kexec_post_notifiers, bool, 0644);
 
 static int __init oops_setup(char *s)
 {
