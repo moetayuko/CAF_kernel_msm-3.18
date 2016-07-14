@@ -298,7 +298,7 @@ out:
  * that it expects something not of the given type.
  *
  * @access is formed from the NFSD_MAY_* constants defined in
- * include/linux/nfsd/nfsd.h.
+ * fs/nfsd/vfs.h.
  */
 __be32
 fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, umode_t type, int access)
@@ -533,7 +533,7 @@ fh_compose(struct svc_fh *fhp, struct svc_export *exp, struct dentry *dentry,
 	 * the reference filehandle (if it is in the same export)
 	 * or the export options.
 	 */
-	 set_version_and_fsid_type(fhp, exp, ref_fh);
+	set_version_and_fsid_type(fhp, exp, ref_fh);
 
 	if (ref_fh == fhp)
 		fh_put(ref_fh);
