@@ -3260,6 +3260,11 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			energy efficiency by requiring that the kthreads
 			periodically wake up to do the polling.
 
+	rcusync.expedited	[KNL]
+			Specify that the rcusync mechanism use expedited
+			grace periods.  As of mid-2016, this affects
+			per-CPU rwsems.
+
 	rcutree.blimit=	[KNL]
 			Set maximum number of finished RCU callbacks to
 			process in one batch.

@@ -22,6 +22,14 @@
 
 #include <linux/rcu_sync.h>
 #include <linux/sched.h>
+#include <linux/moduleparam.h>
+#include <linux/module.h>
+
+MODULE_ALIAS("rcusync");
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "rcusync."
 
 #ifdef CONFIG_PROVE_RCU
 #define __INIT_HELD(func)	.held = func,
@@ -29,14 +37,14 @@
 #define __INIT_HELD(func)
 #endif
 
-static const struct {
+static struct {
 	void (*sync)(void);
 	void (*call)(struct rcu_head *, void (*)(struct rcu_head *));
 	void (*wait)(void);
 #ifdef CONFIG_PROVE_RCU
 	int  (*held)(void);
 #endif
-} gp_ops[] = {
+} gp_ops[] __read_mostly = {
 	[RCU_SYNC] = {
 		.sync = synchronize_rcu,
 		.call = call_rcu,
@@ -61,6 +69,20 @@ enum { GP_IDLE = 0, GP_PENDING, GP_PASSED };
 enum { CB_IDLE = 0, CB_PENDING, CB_REPLAY };
 
 #define	rss_lock	gp_wait.lock
+
+static bool expedited = IS_ENABLED(CONFIG_RCUSYNC_EXPEDITE);
+module_param(expedited, bool, 0444);
+
+static int __init rcu_sync_early_init(void)
+{
+	if (expedited) {
+		gp_ops[RCU_SYNC].sync = synchronize_rcu_expedited;
+		gp_ops[RCU_SCHED_SYNC].sync = synchronize_sched_expedited;
+		gp_ops[RCU_BH_SYNC].sync = synchronize_rcu_bh_expedited;
+	}
+	return 0;
+}
+early_initcall(rcu_sync_early_init);
 
 #ifdef CONFIG_PROVE_RCU
 void rcu_sync_lockdep_assert(struct rcu_sync *rsp)
