@@ -2438,14 +2438,14 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 		ret = init_first_rw_device(trans, root, device);
 		unlock_chunks(root);
 		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			goto error_trans;
 		}
 	}
 
 	ret = btrfs_add_device(trans, root, device);
 	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
+		btrfs_abort_transaction(trans, ret);
 		goto error_trans;
 	}
 
@@ -2454,7 +2454,7 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 
 		ret = btrfs_finish_sprout(trans, root);
 		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			goto error_trans;
 		}
 
@@ -2840,7 +2840,7 @@ int btrfs_remove_chunk(struct btrfs_trans_handle *trans,
 					    &dev_extent_len);
 		if (ret) {
 			mutex_unlock(&fs_devices->device_list_mutex);
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			goto out;
 		}
 
@@ -2859,7 +2859,7 @@ int btrfs_remove_chunk(struct btrfs_trans_handle *trans,
 			ret = btrfs_update_device(trans, map->stripes[i].dev);
 			if (ret) {
 				mutex_unlock(&fs_devices->device_list_mutex);
-				btrfs_abort_transaction(trans, root, ret);
+				btrfs_abort_transaction(trans, ret);
 				goto out;
 			}
 		}
@@ -2868,7 +2868,7 @@ int btrfs_remove_chunk(struct btrfs_trans_handle *trans,
 
 	ret = btrfs_free_chunk(trans, root, chunk_objectid, chunk_offset);
 	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
+		btrfs_abort_transaction(trans, ret);
 		goto out;
 	}
 
@@ -2877,14 +2877,14 @@ int btrfs_remove_chunk(struct btrfs_trans_handle *trans,
 	if (map->type & BTRFS_BLOCK_GROUP_SYSTEM) {
 		ret = btrfs_del_sys_chunk(root, chunk_objectid, chunk_offset);
 		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			goto out;
 		}
 	}
 
 	ret = btrfs_remove_block_group(trans, extent_root, chunk_offset, em);
 	if (ret) {
-		btrfs_abort_transaction(trans, extent_root, ret);
+		btrfs_abort_transaction(trans, ret);
 		goto out;
 	}
 
@@ -2941,7 +2941,7 @@ static int btrfs_relocate_chunk(struct btrfs_root *root, u64 chunk_offset)
 	 * chunk tree entries
 	 */
 	ret = btrfs_remove_chunk(trans, root, chunk_offset);
-	btrfs_end_transaction(trans, root);
+	btrfs_end_transaction(trans, extent_root);
 	return ret;
 }
 
@@ -3944,7 +3944,7 @@ int btrfs_resume_balance_async(struct btrfs_fs_info *fs_info)
 	}
 	spin_unlock(&fs_info->balance_lock);
 
-	if (btrfs_test_opt(fs_info->tree_root, SKIP_BALANCE)) {
+	if (btrfs_test_opt(fs_info, SKIP_BALANCE)) {
 		btrfs_info(fs_info, "force skipping balance");
 		return 0;
 	}
@@ -4299,7 +4299,7 @@ int btrfs_create_uuid_tree(struct btrfs_fs_info *fs_info)
 				      BTRFS_UUID_TREE_OBJECTID);
 	if (IS_ERR(uuid_root)) {
 		ret = PTR_ERR(uuid_root);
-		btrfs_abort_transaction(trans, tree_root, ret);
+		btrfs_abort_transaction(trans, ret);
 		btrfs_end_transaction(trans, tree_root);
 		return ret;
 	}
@@ -4573,8 +4573,7 @@ static void check_raid56_incompat_flag(struct btrfs_fs_info *info, u64 type)
 	btrfs_set_fs_incompat(info, RAID56);
 }
 
-#define BTRFS_MAX_DEVS(r) ((BTRFS_LEAF_DATA_SIZE(r)		\
-			- sizeof(struct btrfs_item)		\
+#define BTRFS_MAX_DEVS(r) ((BTRFS_MAX_ITEM_SIZE(r)		\
 			- sizeof(struct btrfs_chunk))		\
 			/ sizeof(struct btrfs_stripe) + 1)
 
@@ -6455,7 +6454,8 @@ static int read_one_chunk(struct btrfs_root *root, struct btrfs_key *key,
 				   BTRFS_UUID_SIZE);
 		map->stripes[i].dev = btrfs_find_device(root->fs_info, devid,
 							uuid, NULL);
-		if (!map->stripes[i].dev && !btrfs_test_opt(root, DEGRADED)) {
+		if (!map->stripes[i].dev &&
+		    !btrfs_test_opt(root->fs_info, DEGRADED)) {
 			free_extent_map(em);
 			return -EIO;
 		}
@@ -6523,7 +6523,7 @@ static struct btrfs_fs_devices *open_seed_devices(struct btrfs_root *root,
 
 	fs_devices = find_fsid(fsid);
 	if (!fs_devices) {
-		if (!btrfs_test_opt(root, DEGRADED))
+		if (!btrfs_test_opt(root->fs_info, DEGRADED))
 			return ERR_PTR(-ENOENT);
 
 		fs_devices = alloc_fs_devices(fsid);
@@ -6585,7 +6585,7 @@ static int read_one_dev(struct btrfs_root *root,
 
 	device = btrfs_find_device(root->fs_info, devid, dev_uuid, fs_uuid);
 	if (!device) {
-		if (!btrfs_test_opt(root, DEGRADED))
+		if (!btrfs_test_opt(root->fs_info, DEGRADED))
 			return -EIO;
 
 		device = add_missing_dev(root, fs_devices, devid, dev_uuid);
@@ -6594,7 +6594,7 @@ static int read_one_dev(struct btrfs_root *root,
 		btrfs_warn(root->fs_info, "devid %llu uuid %pU missing",
 				devid, dev_uuid);
 	} else {
-		if (!device->bdev && !btrfs_test_opt(root, DEGRADED))
+		if (!device->bdev && !btrfs_test_opt(root->fs_info, DEGRADED))
 			return -EIO;
 
 		if(!device->bdev && !device->missing) {
