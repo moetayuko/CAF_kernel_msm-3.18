@@ -27,9 +27,8 @@
 #include "print-tree.h"
 #include "compression.h"
 
-#define __MAX_CSUM_ITEMS(r, size) ((unsigned long)(((BTRFS_LEAF_DATA_SIZE(r) - \
-				   sizeof(struct btrfs_item) * 2) / \
-				  size) - 1))
+#define __MAX_CSUM_ITEMS(r, size) \
+	((unsigned long)(((BTRFS_MAX_ITEM_SIZE(r) * 2) / size) - 1))
 
 #define MAX_CSUM_ITEMS(r, size) (min_t(u32, __MAX_CSUM_ITEMS(r, size), \
 				       PAGE_SIZE))
@@ -699,7 +698,7 @@ int btrfs_del_csums(struct btrfs_trans_handle *trans,
 			 */
 			ret = btrfs_split_item(trans, root, path, &key, offset);
 			if (ret && ret != -EAGAIN) {
-				btrfs_abort_transaction(trans, root, ret);
+				btrfs_abort_transaction(trans, ret);
 				goto out;
 			}
 
