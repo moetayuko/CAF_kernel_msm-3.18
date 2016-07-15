@@ -4,6 +4,26 @@
 #include <linux/huge_mm.h>
 #include <linux/swap.h>
 
+#ifdef CONFIG_HIGHMEM
+extern atomic_t highmem_file_pages;
+
+static inline void acct_highmem_file_pages(int zid, enum lru_list lru,
+							int nr_pages)
+{
+	if (is_highmem_idx(zid) && is_file_lru(lru)) {
+		if (nr_pages > 0)
+			atomic_add(nr_pages, &highmem_file_pages);
+		else
+			atomic_sub(nr_pages, &highmem_file_pages);
+	}
+}
+#else
+static inline void acct_highmem_file_pages(int zid, enum lru_list lru,
+							int nr_pages)
+{
+}
+#endif
+
 /**
  * page_is_file_cache - should the page be on a file LRU or anon LRU?
  * @page: the page to test
@@ -23,25 +43,30 @@ static inline int page_is_file_cache(struct page *page)
 }
 
 static __always_inline void __update_lru_size(struct lruvec *lruvec,
-				enum lru_list lru, int nr_pages)
+				enum lru_list lru, enum zone_type zid,
+				int nr_pages)
 {
-	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, nr_pages);
+	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+
+	__mod_node_page_state(pgdat, NR_LRU_BASE + lru, nr_pages);
+	acct_highmem_file_pages(zid, lru, nr_pages);
 }
 
 static __always_inline void update_lru_size(struct lruvec *lruvec,
-				enum lru_list lru, int nr_pages)
+				enum lru_list lru, enum zone_type zid,
+				int nr_pages)
 {
 #ifdef CONFIG_MEMCG
-	mem_cgroup_update_lru_size(lruvec, lru, nr_pages);
+	mem_cgroup_update_lru_size(lruvec, lru, zid, nr_pages);
 #else
-	__update_lru_size(lruvec, lru, nr_pages);
+	__update_lru_size(lruvec, lru, zid, nr_pages);
 #endif
 }
 
 static __always_inline void add_page_to_lru_list(struct page *page,
 				struct lruvec *lruvec, enum lru_list lru)
 {
-	update_lru_size(lruvec, lru, hpage_nr_pages(page));
+	update_lru_size(lruvec, lru, page_zonenum(page), hpage_nr_pages(page));
 	list_add(&page->lru, &lruvec->lists[lru]);
 }
 
@@ -49,7 +74,7 @@ static __always_inline void del_page_from_lru_list(struct page *page,
 				struct lruvec *lruvec, enum lru_list lru)
 {
 	list_del(&page->lru);
-	update_lru_size(lruvec, lru, -hpage_nr_pages(page));
+	update_lru_size(lruvec, lru, page_zonenum(page), -hpage_nr_pages(page));
 }
 
 /**

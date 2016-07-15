@@ -60,6 +60,7 @@
 #include <linux/jump_label.h>
 #include <linux/pfn.h>
 #include <linux/bsearch.h>
+#include <linux/dynamic_debug.h>
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 
@@ -264,7 +265,7 @@ static void module_assert_mutex_or_preempt(void)
 	if (unlikely(!debug_locks))
 		return;
 
-	WARN_ON(!rcu_read_lock_sched_held() &&
+	WARN_ON_ONCE(!rcu_read_lock_sched_held() &&
 		!lockdep_is_held(&module_mutex));
 #endif
 }
