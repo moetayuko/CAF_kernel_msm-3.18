@@ -116,7 +116,6 @@ static int i2c_acpi_find_resource(struct acpi_resource *ares, void *data)
 	struct i2c_acpi_lookup *lookup = data;
 	struct i2c_board_info *info = lookup->info;
 	struct acpi_resource_i2c_serialbus *sb;
-	acpi_handle adapter_handle;
 	acpi_status status;
 
 	if (info->addr || ares->type != ACPI_RESOURCE_TYPE_SERIAL_BUS)
@@ -126,21 +125,18 @@ static int i2c_acpi_find_resource(struct acpi_resource *ares, void *data)
 	if (sb->type != ACPI_RESOURCE_SERIAL_TYPE_I2C)
 		return 1;
 
-	/*
-	 * Extract the ResourceSource and make sure that the handle matches
-	 * with the I2C adapter handle.
-	 */
 	status = acpi_get_handle(lookup->device_handle,
 				 sb->resource_source.string_ptr,
-				 &adapter_handle);
-	if (ACPI_SUCCESS(status) && adapter_handle == lookup->adapter_handle) {
-		info->addr = sb->slave_address;
-		if (sb->access_mode == ACPI_I2C_10BIT_MODE)
-			info->flags |= I2C_CLIENT_TEN;
-		/* Save speed of the slowest device */
-		if (sb->connection_speed < lookup->min_speed)
-			lookup->min_speed = sb->connection_speed;
-	}
+				 &lookup->adapter_handle);
+	if (!ACPI_SUCCESS(status))
+		return 1;
+
+	info->addr = sb->slave_address;
+	if (sb->access_mode == ACPI_I2C_10BIT_MODE)
+		info->flags |= I2C_CLIENT_TEN;
+	/* Save speed of the slowest device */
+	if (sb->connection_speed < lookup->min_speed)
+		lookup->min_speed = sb->connection_speed;
 
 	return 1;
 }
@@ -201,6 +197,93 @@ static acpi_status i2c_acpi_slave_lookup(acpi_handle handle, u32 level,
 			"failed to add I2C device %s from ACPI\n",
 			dev_name(&adev->dev));
 	}
+
+	return AE_OK;
+}
+
+static int i2c_acpi_get_info(struct acpi_device *adev,
+			     struct i2c_board_info *info,
+			     acpi_handle *adapter_handle)
+{
+	struct list_head resource_list;
+	struct resource_entry *entry;
+	struct i2c_acpi_lookup lookup;
+	int ret;
+
+	if (acpi_bus_get_status(adev) || !adev->status.present ||
+	    acpi_device_enumerated(adev))
+		return -EINVAL;
+
+	memset(info, 0, sizeof(*info));
+	info->fwnode = acpi_fwnode_handle(adev);
+
+	memset(&lookup, 0, sizeof(lookup));
+	lookup.device_handle = acpi_device_handle(adev);
+	lookup.info = info;
+
+	/* Look up for I2cSerialBus resource */
+	INIT_LIST_HEAD(&resource_list);
+	ret = acpi_dev_get_resources(adev, &resource_list,
+				     i2c_acpi_find_resource, &lookup);
+	acpi_dev_free_resource_list(&resource_list);
+
+	if (ret < 0 || !info->addr)
+		return -EINVAL;
+
+	*adapter_handle = lookup.adapter_handle;
+
+	/* Then fill IRQ number if any */
+	ret = acpi_dev_get_resources(adev, &resource_list, NULL, NULL);
+	if (ret < 0)
+		return -EINVAL;
+
+	resource_list_for_each_entry(entry, &resource_list) {
+		if (resource_type(entry->res) == IORESOURCE_IRQ) {
+			info->irq = entry->res->start;
+			break;
+		}
+	}
+
+	acpi_dev_free_resource_list(&resource_list);
+
+	strlcpy(info->type, dev_name(&adev->dev), sizeof(info->type));
+
+	return 0;
+}
+
+static void i2c_acpi_register_device(struct i2c_adapter *adapter,
+				     struct acpi_device *adev,
+				     struct i2c_board_info *info)
+{
+	adev->power.flags.ignore_parent = true;
+	acpi_device_set_enumerated(adev);
+
+	if (!i2c_new_device(adapter, info)) {
+		adev->power.flags.ignore_parent = false;
+		dev_err(&adapter->dev,
+			"failed to add I2C device %s from ACPI\n",
+			dev_name(&adev->dev));
+	}
+}
+
+static acpi_status i2c_acpi_add_device(acpi_handle handle, u32 level,
+				       void *data, void **return_value)
+{
+	struct i2c_adapter *adapter = data;
+	struct acpi_device *adev;
+	acpi_handle adapter_handle;
+	struct i2c_board_info info;
+
+	if (acpi_bus_get_device(handle, &adev))
+		return AE_OK;
+
+	if (i2c_acpi_get_info(adev, &info, &adapter_handle))
+		return AE_OK;
+
+	if (adapter_handle != ACPI_HANDLE(&adapter->dev))
+		return AE_OK;
+
+	i2c_acpi_register_device(adapter, adev, &info);
 
 	return AE_OK;
 }
@@ -271,8 +354,80 @@ u32 i2c_acpi_find_bus_speed(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(i2c_acpi_find_bus_speed);
 
+static int i2c_acpi_match_adapter(struct device *dev, void *data)
+{
+	struct i2c_adapter *adapter = i2c_verify_adapter(dev);
+
+	if (!adapter)
+		return 0;
+
+	return ACPI_HANDLE(dev) == (acpi_handle)data;
+}
+
+static int i2c_acpi_match_device(struct device *dev, void *data)
+{
+	return ACPI_COMPANION(dev) == data;
+}
+
+static struct i2c_adapter *i2c_acpi_find_adapter_by_handle(acpi_handle handle)
+{
+	struct device *dev;
+
+	dev = bus_find_device(&i2c_bus_type, NULL, handle,
+			      i2c_acpi_match_adapter);
+	return dev ? i2c_verify_adapter(dev) : NULL;
+}
+
+static struct i2c_client *i2c_acpi_find_client_by_adev(struct acpi_device *adev)
+{
+	struct device *dev;
+
+	dev = bus_find_device(&i2c_bus_type, NULL, adev, i2c_acpi_match_device);
+	return dev ? i2c_verify_client(dev) : NULL;
+}
+
+static int i2c_acpi_notify(struct notifier_block *nb, unsigned long value,
+			   void *arg)
+{
+	struct acpi_device *adev = arg;
+	struct i2c_board_info info;
+	acpi_handle adapter_handle;
+	struct i2c_adapter *adapter;
+	struct i2c_client *client;
+
+	switch (value) {
+	case ACPI_RECONFIG_DEVICE_ADD:
+		if (i2c_acpi_get_info(adev, &info, &adapter_handle))
+			break;
+
+		adapter = i2c_acpi_find_adapter_by_handle(adapter_handle);
+		if (!adapter)
+			break;
+
+		i2c_acpi_register_device(adapter, adev, &info);
+		break;
+	case ACPI_RECONFIG_DEVICE_REMOVE:
+		if (!acpi_device_enumerated(adev))
+			break;
+
+		client = i2c_acpi_find_client_by_adev(adev);
+		if (!client)
+			break;
+
+		i2c_unregister_device(client);
+		put_device(&client->dev);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block i2c_acpi_notifier = {
+	.notifier_call = i2c_acpi_notify,
+};
 #else /* CONFIG_ACPI */
 static inline void i2c_acpi_register_devices(struct i2c_adapter *adap) { }
+extern struct notifier_block i2c_acpi_notifier;
 #endif /* CONFIG_ACPI */
 
 #ifdef CONFIG_ACPI_I2C_OPREGION
@@ -1177,6 +1332,8 @@ void i2c_unregister_device(struct i2c_client *client)
 {
 	if (client->dev.of_node)
 		of_node_clear_flag(client->dev.of_node, OF_POPULATED);
+	if (ACPI_COMPANION(&client->dev))
+		acpi_device_clear_enumerated(ACPI_COMPANION(&client->dev));
 	device_unregister(&client->dev);
 }
 EXPORT_SYMBOL_GPL(i2c_unregister_device);
@@ -2216,6 +2373,8 @@ static int __init i2c_init(void)
 
 	if (IS_ENABLED(CONFIG_OF_DYNAMIC))
 		WARN_ON(of_reconfig_notifier_register(&i2c_of_notifier));
+	if (IS_ENABLED(CONFIG_ACPI))
+		WARN_ON(acpi_reconfig_notifier_register(&i2c_acpi_notifier));
 
 	return 0;
 
@@ -2231,6 +2390,8 @@ bus_err:
 
 static void __exit i2c_exit(void)
 {
+	if (IS_ENABLED(CONFIG_ACPI))
+		WARN_ON(acpi_reconfig_notifier_unregister(&i2c_acpi_notifier));
 	if (IS_ENABLED(CONFIG_OF_DYNAMIC))
 		WARN_ON(of_reconfig_notifier_unregister(&i2c_of_notifier));
 	i2c_del_driver(&dummy_driver);
