@@ -277,6 +277,8 @@ broadcom/dt2
 		contains reset/for-4.8
 	sti/late
 		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-late-v4.8
+	at91/dt-3
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux.git tags/at91-ab-4.8-dt3
 
 next/dt64
 	patch
