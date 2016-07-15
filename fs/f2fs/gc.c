@@ -593,11 +593,11 @@ static void move_encrypted_block(struct inode *inode, block_t bidx)
 	/* write page */
 	lock_page(fio.encrypted_page);
 
-	if (unlikely(!PageUptodate(fio.encrypted_page))) {
+	if (unlikely(fio.encrypted_page->mapping != META_MAPPING(fio.sbi))) {
 		err = -EIO;
 		goto put_page_out;
 	}
-	if (unlikely(fio.encrypted_page->mapping != META_MAPPING(fio.sbi))) {
+	if (unlikely(!PageUptodate(fio.encrypted_page))) {
 		err = -EIO;
 		goto put_page_out;
 	}
@@ -617,9 +617,9 @@ static void move_encrypted_block(struct inode *inode, block_t bidx)
 	f2fs_submit_page_mbio(&fio);
 
 	f2fs_update_data_blkaddr(&dn, newaddr);
-	set_inode_flag(F2FS_I(inode), FI_APPEND_WRITE);
+	set_inode_flag(inode, FI_APPEND_WRITE);
 	if (page->index == 0)
-		set_inode_flag(F2FS_I(inode), FI_FIRST_BLOCK_WRITTEN);
+		set_inode_flag(inode, FI_FIRST_BLOCK_WRITTEN);
 put_page_out:
 	f2fs_put_page(fio.encrypted_page, 1);
 recover_block:
@@ -653,12 +653,23 @@ static void move_data_page(struct inode *inode, block_t bidx, int gc_type)
 			.page = page,
 			.encrypted_page = NULL,
 		};
+		bool is_dirty = PageDirty(page);
+		int err;
+
+retry:
 		set_page_dirty(page);
 		f2fs_wait_on_page_writeback(page, DATA, true);
 		if (clear_page_dirty_for_io(page))
 			inode_dec_dirty_pages(inode);
+
 		set_cold_data(page);
-		do_write_data_page(&fio);
+
+		err = do_write_data_page(&fio);
+		if (err == -ENOMEM && is_dirty) {
+			congestion_wait(BLK_RW_ASYNC, HZ/50);
+			goto retry;
+		}
+
 		clear_cold_data(page);
 	}
 out:
@@ -777,7 +788,6 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 {
 	struct page *sum_page;
 	struct f2fs_summary_block *sum;
-	struct blk_plug plug;
 	unsigned int segno = start_segno;
 	unsigned int end_segno = start_segno + sbi->segs_per_sec;
 	int seg_freed = 0;
@@ -795,9 +805,11 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 		unlock_page(sum_page);
 	}
 
-	blk_start_plug(&plug);
-
 	for (segno = start_segno; segno < end_segno; segno++) {
+
+		if (get_valid_blocks(sbi, segno, 1) == 0)
+			continue;
+
 		/* find segment summary of victim */
 		sum_page = find_get_page(META_MAPPING(sbi),
 					GET_SUM_BLOCK(sbi, segno));
@@ -829,8 +841,6 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 	if (gc_type == FG_GC)
 		f2fs_submit_merged_bio(sbi,
 				(type == SUM_TYPE_NODE) ? NODE : DATA, WRITE);
-
-	blk_finish_plug(&plug);
 
 	if (gc_type == FG_GC) {
 		while (start_segno < end_segno)
