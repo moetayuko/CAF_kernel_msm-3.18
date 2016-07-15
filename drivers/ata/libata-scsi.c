@@ -3082,6 +3082,9 @@ static unsigned int ata_scsi_pass_thru(struct ata_queued_cmd *qc)
 		goto invalid_fld;
 	}
 
+	if (ata_is_ncq(tf->protocol) && (cdb[2] & 0x3) == 0)
+		tf->protocol = ATA_PROT_NCQ_NODATA;
+
 	/* enable LBA */
 	tf->flags |= ATA_TFLAG_LBA;
 
@@ -3465,7 +3468,7 @@ static unsigned int ata_scsi_zbc_in_xlat(struct ata_queued_cmd *qc)
 		goto invalid_param_len;
 	}
 	sect = n_block / 512;
-	options = cdb[14];
+	options = cdb[14] & 0xbf;
 
 	if (ata_ncq_enabled(qc->dev) &&
 	    ata_fpdma_zac_mgmt_in_supported(qc->dev)) {
@@ -3475,7 +3478,7 @@ static unsigned int ata_scsi_zbc_in_xlat(struct ata_queued_cmd *qc)
 		tf->nsect = qc->tag << 3;
 		tf->feature = sect & 0xff;
 		tf->hob_feature = (sect >> 8) & 0xff;
-		tf->auxiliary = ATA_SUBCMD_ZAC_MGMT_IN_REPORT_ZONES;
+		tf->auxiliary = ATA_SUBCMD_ZAC_MGMT_IN_REPORT_ZONES | (options << 8);
 	} else {
 		tf->command = ATA_CMD_ZAC_MGMT_IN;
 		tf->feature = ATA_SUBCMD_ZAC_MGMT_IN_REPORT_ZONES;
@@ -3517,7 +3520,7 @@ static unsigned int ata_scsi_zbc_out_xlat(struct ata_queued_cmd *qc)
 	struct scsi_cmnd *scmd = qc->scsicmd;
 	struct ata_device *dev = qc->dev;
 	const u8 *cdb = scmd->cmnd;
-	u8 reset_all, sa;
+	u8 all, sa;
 	u64 block;
 	u32 n_block;
 	u16 fp = (u16)-1;
@@ -3544,20 +3547,20 @@ static unsigned int ata_scsi_zbc_out_xlat(struct ata_queued_cmd *qc)
 	if (block > dev->n_sectors)
 		goto out_of_range;
 
-	reset_all = cdb[14] & 0x1;
+	all = cdb[14] & 0x1;
 
 	if (ata_ncq_enabled(qc->dev) &&
 	    ata_fpdma_zac_mgmt_out_supported(qc->dev)) {
-		tf->protocol = ATA_PROT_NCQ;
+		tf->protocol = ATA_PROT_NCQ_NODATA;
 		tf->command = ATA_CMD_NCQ_NON_DATA;
-		tf->hob_nsect = ATA_SUBCMD_NCQ_NON_DATA_ZAC_MGMT_OUT;
+		tf->feature = ATA_SUBCMD_NCQ_NON_DATA_ZAC_MGMT_OUT;
 		tf->nsect = qc->tag << 3;
-		tf->auxiliary = sa | (reset_all & 0x1) << 8;
+		tf->auxiliary = sa | ((u16)all << 8);
 	} else {
 		tf->protocol = ATA_PROT_NODATA;
 		tf->command = ATA_CMD_ZAC_MGMT_OUT;
 		tf->feature = sa;
-		tf->hob_feature = reset_all & 0x1;
+		tf->hob_feature = all;
 	}
 	tf->lbah = (block >> 16) & 0xff;
 	tf->lbam = (block >> 8) & 0xff;
