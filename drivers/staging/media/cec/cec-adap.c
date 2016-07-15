@@ -284,12 +284,11 @@ static void cec_data_cancel(struct cec_data *data)
 		list_del_init(&data->list);
 
 	/* Mark it as an error */
-	data->msg.ts = ktime_get_ns();
+	data->msg.tx_ts = ktime_get_ns();
 	data->msg.tx_status = CEC_TX_STATUS_ERROR |
 			      CEC_TX_STATUS_MAX_RETRIES;
 	data->attempts = 0;
 	data->msg.tx_error_cnt = 1;
-	data->msg.reply = 0;
 	/* Queue transmitted message for monitoring purposes */
 	cec_queue_msg_monitor(data->adap, &data->msg, 1);
 
@@ -459,6 +458,7 @@ void cec_transmit_done(struct cec_adapter *adap, u8 status, u8 arb_lost_cnt,
 {
 	struct cec_data *data;
 	struct cec_msg *msg;
+	u64 ts = ktime_get_ns();
 
 	dprintk(2, "cec_transmit_done %02x\n", status);
 	mutex_lock(&adap->lock);
@@ -477,7 +477,7 @@ void cec_transmit_done(struct cec_adapter *adap, u8 status, u8 arb_lost_cnt,
 
 	/* Drivers must fill in the status! */
 	WARN_ON(status == 0);
-	msg->ts = ktime_get_ns();
+	msg->tx_ts = ts;
 	msg->tx_status |= status;
 	msg->tx_arb_lost_cnt += arb_lost_cnt;
 	msg->tx_nack_cnt += nack_cnt;
@@ -510,16 +510,8 @@ void cec_transmit_done(struct cec_adapter *adap, u8 status, u8 arb_lost_cnt,
 	/* Queue transmitted message for monitoring purposes */
 	cec_queue_msg_monitor(adap, msg, 1);
 
-	/*
-	 * Clear reply and timeout on error or if the adapter is no longer
-	 * configured. It makes no sense to wait for a reply in that case.
-	 */
-	if (!(status & CEC_TX_STATUS_OK) || !adap->is_configured) {
-		msg->reply = 0;
-		msg->timeout = 0;
-	}
-
-	if (msg->timeout) {
+	if ((status & CEC_TX_STATUS_OK) && adap->is_configured &&
+	    msg->timeout) {
 		/*
 		 * Queue the message into the wait queue if we want to wait
 		 * for a reply.
@@ -561,7 +553,7 @@ static void cec_wait_timeout(struct work_struct *work)
 
 	/* Mark the message as timed out */
 	list_del_init(&data->list);
-	data->msg.ts = ktime_get_ns();
+	data->msg.rx_ts = ktime_get_ns();
 	data->msg.rx_status = CEC_RX_STATUS_TIMEOUT;
 	cec_data_completed(data);
 unlock:
@@ -611,6 +603,7 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 			 * easy to handle it here so the behavior will be
 			 * consistent.
 			 */
+			msg->tx_ts = ktime_get_ns();
 			msg->tx_status = CEC_TX_STATUS_NACK |
 					 CEC_TX_STATUS_MAX_RETRIES;
 			msg->tx_nack_cnt = 1;
@@ -647,6 +640,8 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 		dprintk(2, "cec_transmit_msg: %*ph%s\n",
 			msg->len, msg->msg, !block ? " (nb)" : "");
 
+	msg->rx_ts = 0;
+	msg->tx_ts = 0;
 	msg->rx_status = 0;
 	msg->tx_status = 0;
 	msg->tx_arb_lost_cnt = 0;
@@ -763,13 +758,17 @@ void cec_received_msg(struct cec_adapter *adap, struct cec_msg *msg)
 	bool is_reply = false;
 	bool valid_la = true;
 
-	mutex_lock(&adap->lock);
-	msg->ts = ktime_get_ns();
+	if (WARN_ON(!msg->len || msg->len > CEC_MAX_MSG_SIZE))
+		return;
+
+	msg->rx_ts = ktime_get_ns();
 	msg->rx_status = CEC_RX_STATUS_OK;
-	msg->tx_status = 0;
 	msg->sequence = msg->reply = msg->timeout = 0;
+	msg->tx_status = 0;
+	msg->tx_ts = 0;
 	msg->flags = 0;
 
+	mutex_lock(&adap->lock);
 	dprintk(2, "cec_received_msg: %*ph\n", msg->len, msg->msg);
 
 	/* Check if this message was for us (directed or broadcast). */
@@ -791,7 +790,6 @@ void cec_received_msg(struct cec_adapter *adap, struct cec_msg *msg)
 		 */
 		list_for_each_entry(data, &adap->wait_queue, list) {
 			struct cec_msg *dst = &data->msg;
-			u8 dst_reply;
 
 			/* Does the command match? */
 			if ((abort && cmd != dst->msg[1]) ||
@@ -804,15 +802,12 @@ void cec_received_msg(struct cec_adapter *adap, struct cec_msg *msg)
 				continue;
 
 			/* We got a reply */
-			msg->sequence = dst->sequence;
-			msg->tx_status = dst->tx_status;
-			dst_reply = dst->reply;
-			*dst = *msg;
-			dst->reply = dst_reply;
-			if (abort) {
-				dst->reply = 0;
+			memcpy(dst->msg, msg->msg, msg->len);
+			dst->len = msg->len;
+			dst->rx_ts = msg->rx_ts;
+			dst->rx_status = msg->rx_status;
+			if (abort)
 				dst->rx_status |= CEC_RX_STATUS_FEATURE_ABORT;
-			}
 			/* Remove it from the wait_queue */
 			list_del_init(&data->list);
 
