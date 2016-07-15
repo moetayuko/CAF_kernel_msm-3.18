@@ -86,7 +86,7 @@ next/soc
 		ARM: davinci: fix build break because of undeclared dm365_evm_snd_data
 	sti/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-soc-for-v4.8
-	samsung/soc-3
+	<no branch> (3981b11fda14ea0b459043d97c68db0a614ec9f8)
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-soc-4.8-3
 
 next/arm64
@@ -121,6 +121,98 @@ next/arm64
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig64-4.8
 	tegra/arm64-defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-arm64-defconfig
+	patch
+		arm64: remove duplicate PWM entry in defconfig
+
+next/defconfig
+	samsung/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8
+	at91/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig
+	brcm/defconfig
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/defconfig
+	keystone/config
+		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone tags/keystone_config_for_4.8
+	socfpga/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_defconfig_updates_for_v4.8
+	qcom/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-defconfig-for-4.8
+	imx/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-defconfig-4.8
+	samsung/defconfig2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8-2
+	patch
+		ARM: config: Add a multi_v4t_defconfig
+	rockchip/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-defconfig-for-v4.8
+	at91/defconfig2
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig2
+	sunxi/defconfig
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-defconfig-for-4.8
+	patch
+		ARM: configs: lpc18xx: enable adc and dac iio drivers
+	<no branch> (afd9dc4562c5838323a3909cc717a8617307c253)
+		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-defconfig-for-v4.8
+	omap/defconfig-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/defconfig-v2-signed
+
+next/drivers
+	reset/for-4.8
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8
+	samsung/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8
+	renesas/rcar-sysc
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-rcar-sysc-for-v4.8
+	at91/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-drivers
+	reset/for-4.8-2
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8-2
+	samsung/mfc
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-exynos-mfc-4.8
+		contains depends/exynos-mfc
+	brcm/drivers
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/drivers
+	at91/drivers2
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-drivers2
+	drivers/scpi
+		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/scpi-updates-4.8
+	omap/gpmc
+		https://github.com/rogerq/linux tags/gpmc-omap-for-v4.8
+	qcom/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8
+	samsung/drivers2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-2
+	patch
+		clk: clps711x: Changing the compatibility string to match with the smallest supported chip
+		clocksource: clps711x: Changing the compatibility string to match with the smallest supported chip
+		irqchip: clps711x: Changing the compatibility string to match with the smallest supported chip
+		serial: clps711x: Changing the compatibility string to match with the smallest supported chip
+		pwm: clps711x: Changing the compatibility string to match with the smallest supported chip
+		input: clps711x-keypad: Changing the compatibility string to match with the smallest supported chip
+		video: clps711x-fb: Changing the compatibility string to match with the smallest supported chip
+	renesas/rcar-sysc2
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-rcar-sysc2-for-v4.8
+	tegra/bus
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-bus
+	tegra/memory
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-memory
+	tegra/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-soc
+	reset/for-4.8-3
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8-3
+	omap/ir-rx51
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/ir-rx51-signed
+	patch
+		firmware: scpi: add CONFIG_OF dependency
+		soc: raspberrypi-power: add CONFIG_OF dependency
+	brcm/maintainer
+		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/maintainers-part2
+	<no branch> (6c8e99d874c96200ce985d19b407d49ed3306226)
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8-2
+	ux500/cleanup
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson tags/ux500-cleanup-bundle
+	samsung/drivers-3
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-3
 
 next/dt
 	samsung/dt
@@ -180,6 +272,11 @@ broadcom/dt2
 		https://github.com/rjarzmik/linux tags/pxa-dt-4.7
 	tegra/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-arm-dt
+	reset/for-4.8-2
+		Merge branch 'reset/for-4.8-2' into next/dt
+		contains reset/for-4.8
+	sti/late
+		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-late-v4.8
 
 next/dt64
 	patch
@@ -216,106 +313,19 @@ next/dt64
 		Revert "ARM64: DTS: meson-gxbb: switch ethernet to real clock"
 	renesas/arm64-dt-2
 		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-dt2-for-v4.8
-	juno/dt
+	<no branch> (f7b636a8d83c7c1285c55248e35458e03a007df3)
 		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/juno-dt-4.8
 	samsung/dt64
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-dt64-4.8-2
-
-next/defconfig
-	samsung/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8
-	at91/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig
-	brcm/defconfig
-		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/defconfig
-	keystone/config
-		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone tags/keystone_config_for_4.8
-	socfpga/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_defconfig_updates_for_v4.8
-	qcom/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-defconfig-for-4.8
-	imx/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-defconfig-4.8
-	samsung/defconfig2
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.8-2
-	patch
-		ARM: config: Add a multi_v4t_defconfig
-	rockchip/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-defconfig-for-v4.8
-	at91/defconfig2
-		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-defconfig2
-	sunxi/defconfig
-		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-defconfig-for-4.8
-	patch
-		ARM: configs: lpc18xx: enable adc and dac iio drivers
-	sti/defconfig
-		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-defconfig-for-v4.8
-	omap/defconfig-2
-		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/defconfig-v2-signed
-
-next/drivers
-	reset/for-4.8
-		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8
-	samsung/drivers
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8
-	renesas/rcar-sysc
-		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-rcar-sysc-for-v4.8
-	at91/drivers
-		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-drivers
 	reset/for-4.8-2
-		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8-2
-	samsung/mfc
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-exynos-mfc-4.8
-		contains depends/exynos-mfc
-	brcm/drivers
-		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/drivers
-	at91/drivers2
-		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-drivers2
-	drivers/scpi
-		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/scpi-updates-4.8
-	omap/gpmc
-		https://github.com/rogerq/linux tags/gpmc-omap-for-v4.8
-	qcom/drivers
-		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8
-	samsung/drivers2
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-2
-	patch
-		clk: clps711x: Changing the compatibility string to match with the smallest supported chip
-		clocksource: clps711x: Changing the compatibility string to match with the smallest supported chip
-		irqchip: clps711x: Changing the compatibility string to match with the smallest supported chip
-		serial: clps711x: Changing the compatibility string to match with the smallest supported chip
-		pwm: clps711x: Changing the compatibility string to match with the smallest supported chip
-		input: clps711x-keypad: Changing the compatibility string to match with the smallest supported chip
-		video: clps711x-fb: Changing the compatibility string to match with the smallest supported chip
-	renesas/rcar-sysc2
-		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-rcar-sysc2-for-v4.8
-	tegra/bus
-		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-bus
-	tegra/memory
-		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-memory
-	tegra/soc
-		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-soc
-	reset/for-4.8-3
-		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.8-3
-	omap/ir-rx51
-		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/ir-rx51-signed
-	patch
-		firmware: scpi: add CONFIG_OF dependency
-		soc: raspberrypi-power: add CONFIG_OF dependency
-	brcm/maintainer
-		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/maintainers-part2
-	qcom/drivers-2
-		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.8-2
-	ux500/cleanup
-		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson tags/ux500-cleanup-bundle
-	samsung/drivers-3
-		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.8-3
-
-next/late
+		Merge branch 'reset/for-4.8-2' into next/dt64
+		contains reset/for-4.8
+	renesas/rcar-sysc
+		Merge branch 'renesas/rcar-sysc' into next/dt64
+	<no branch> (e452b818db48dc2c7edb5afd62de47ae0363aec2)
+		Merge Tegra clk changes into next/dt64
 	hisi/dt-2
 		git://github.com/hisilicon/linux-hisi tags/hi6220-dt-for-4.8-2
-	sti/late
-		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-late-v4.8
-	renesas/arm64-dt-2
-		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-dt2-for-v4.8
-		contains renesas/arm64-dt
+	tegra/dt64
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-arm64-dt
+
