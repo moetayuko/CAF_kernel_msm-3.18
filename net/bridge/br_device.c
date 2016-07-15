@@ -104,8 +104,16 @@ static int br_dev_init(struct net_device *dev)
 		return -ENOMEM;
 
 	err = br_vlan_init(br);
-	if (err)
+	if (err) {
 		free_percpu(br->stats);
+		return err;
+	}
+
+	err = br_multicast_init_stats(br);
+	if (err) {
+		free_percpu(br->stats);
+		br_vlan_flush(br);
+	}
 	br_set_lockdep_class(dev);
 
 	return err;
@@ -341,6 +349,8 @@ static const struct net_device_ops br_netdev_ops = {
 	.ndo_add_slave		 = br_add_slave,
 	.ndo_del_slave		 = br_del_slave,
 	.ndo_fix_features        = br_fix_features,
+	.ndo_neigh_construct	 = netdev_default_l2upper_neigh_construct,
+	.ndo_neigh_destroy	 = netdev_default_l2upper_neigh_destroy,
 	.ndo_fdb_add		 = br_fdb_add,
 	.ndo_fdb_del		 = br_fdb_delete,
 	.ndo_fdb_dump		 = br_fdb_dump,
