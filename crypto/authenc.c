@@ -206,7 +206,6 @@ static int crypto_authenc_encrypt(struct aead_request *req)
 	struct scatterlist *src, *dst;
 	int err;
 
-	sg_init_table(areq_ctx->src, 2);
 	src = scatterwalk_ffwd(areq_ctx->src, req->src, req->assoclen);
 	dst = src;
 
@@ -215,7 +214,6 @@ static int crypto_authenc_encrypt(struct aead_request *req)
 		if (err)
 			return err;
 
-		sg_init_table(areq_ctx->dst, 2);
 		dst = scatterwalk_ffwd(areq_ctx->dst, req->dst, req->assoclen);
 	}
 
@@ -251,14 +249,11 @@ static int crypto_authenc_decrypt_tail(struct aead_request *req,
 	if (crypto_memneq(ihash, ahreq->result, authsize))
 		return -EBADMSG;
 
-	sg_init_table(areq_ctx->src, 2);
 	src = scatterwalk_ffwd(areq_ctx->src, req->src, req->assoclen);
 	dst = src;
 
-	if (req->src != req->dst) {
-		sg_init_table(areq_ctx->dst, 2);
+	if (req->src != req->dst)
 		dst = scatterwalk_ffwd(areq_ctx->dst, req->dst, req->assoclen);
-	}
 
 	ablkcipher_request_set_tfm(abreq, ctx->enc);
 	ablkcipher_request_set_callback(abreq, aead_request_flags(req),
@@ -397,7 +392,8 @@ static int crypto_authenc_create(struct crypto_template *tmpl,
 		return -EINVAL;
 
 	auth = ahash_attr_alg(tb[1], CRYPTO_ALG_TYPE_HASH,
-			       CRYPTO_ALG_TYPE_AHASH_MASK);
+			      CRYPTO_ALG_TYPE_AHASH_MASK |
+			      crypto_requires_sync(algt->type, algt->mask));
 	if (IS_ERR(auth))
 		return PTR_ERR(auth);
 
@@ -443,7 +439,8 @@ static int crypto_authenc_create(struct crypto_template *tmpl,
 		     enc->cra_driver_name) >= CRYPTO_MAX_ALG_NAME)
 		goto err_drop_enc;
 
-	inst->alg.base.cra_flags = enc->cra_flags & CRYPTO_ALG_ASYNC;
+	inst->alg.base.cra_flags = (auth_base->cra_flags | enc->cra_flags) &
+				   CRYPTO_ALG_ASYNC;
 	inst->alg.base.cra_priority = enc->cra_priority * 10 +
 				      auth_base->cra_priority;
 	inst->alg.base.cra_blocksize = enc->cra_blocksize;
