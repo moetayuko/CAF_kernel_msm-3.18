@@ -30,8 +30,8 @@
  * SOFTWARE.
  */
 
-#ifndef IB_RXE_H
-#define IB_RXE_H
+#ifndef RDMA_USER_RXE_H
+#define RDMA_USER_RXE_H
 
 #include <linux/types.h>
 
@@ -141,4 +141,4 @@ struct rxe_recv_wqe {
 	struct rxe_dma_info	dma;
 };
 
-#endif /* IB_RXE_H */
+#endif /* RDMA_USER_RXE_H */
