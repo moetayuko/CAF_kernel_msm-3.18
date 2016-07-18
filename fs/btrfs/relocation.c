@@ -31,6 +31,7 @@
 #include "async-thread.h"
 #include "free-space-cache.h"
 #include "inode-map.h"
+#include "qgroup.h"
 
 /*
  * backref_node, mapping_node and tree_block start with this
@@ -235,12 +236,12 @@ static void backref_cache_cleanup(struct backref_cache *cache)
 	cache->last_trans = 0;
 
 	for (i = 0; i < BTRFS_MAX_LEVEL; i++)
-		BUG_ON(!list_empty(&cache->pending[i]));
-	BUG_ON(!list_empty(&cache->changed));
-	BUG_ON(!list_empty(&cache->detached));
-	BUG_ON(!RB_EMPTY_ROOT(&cache->rb_root));
-	BUG_ON(cache->nr_nodes);
-	BUG_ON(cache->nr_edges);
+		ASSERT(list_empty(&cache->pending[i]));
+	ASSERT(list_empty(&cache->changed));
+	ASSERT(list_empty(&cache->detached));
+	ASSERT(RB_EMPTY_ROOT(&cache->rb_root));
+	ASSERT(!cache->nr_nodes);
+	ASSERT(!cache->nr_edges);
 }
 
 static struct backref_node *alloc_backref_node(struct backref_cache *cache)
@@ -1171,8 +1172,12 @@ out:
 			lower = list_entry(useless.next,
 					   struct backref_node, list);
 			list_del_init(&lower->list);
+			if (lower == node)
+				node = NULL;
 			free_backref_node(cache, lower);
 		}
+
+		free_backref_node(cache, node);
 		return ERR_PTR(err);
 	}
 	ASSERT(!node || !node->detached);
@@ -1719,7 +1724,7 @@ int replace_file_extents(struct btrfs_trans_handle *trans,
 					   btrfs_header_owner(leaf),
 					   key.objectid, key.offset);
 		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			break;
 		}
 
@@ -1727,7 +1732,7 @@ int replace_file_extents(struct btrfs_trans_handle *trans,
 					parent, btrfs_header_owner(leaf),
 					key.objectid, key.offset);
 		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+			btrfs_abort_transaction(trans, ret);
 			break;
 		}
 	}
@@ -1747,6 +1752,79 @@ int memcmp_node_keys(struct extent_buffer *eb, int slot,
 	btrfs_node_key(eb, &key1, slot);
 	btrfs_node_key(path->nodes[level], &key2, path->slots[level]);
 	return memcmp(&key1, &key2, sizeof(key1));
+}
+
+/*
+ * Helper function to fixup screwed qgroups caused by increased extent ref,
+ * which doesn't follow normal extent ref update behavior.
+ * (Correct behavior is, increase extent ref and modify source root in
+ *  one trans)
+ * No better solution as long as we're doing swapping trick to do balance.
+ */
+static int qgroup_redirty_data_extents(struct btrfs_trans_handle *trans,
+				       struct btrfs_root *root, u64 bytenr,
+				       u64 gen)
+{
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct extent_buffer *leaf;
+	struct btrfs_delayed_ref_root *delayed_refs;
+	int slot;
+	int ret = 0;
+
+	if (!fs_info->quota_enabled || !is_fstree(root->objectid))
+		return 0;
+	if (WARN_ON(!trans))
+		return -EINVAL;
+
+	delayed_refs = &trans->transaction->delayed_refs;
+
+	leaf = read_tree_block(root, bytenr, gen);
+	if (IS_ERR(leaf)) {
+		return PTR_ERR(leaf);
+	} else if (!extent_buffer_uptodate(leaf)) {
+		ret = -EIO;
+		goto out;
+	}
+
+	/* We only care leaf, which may contains EXTENT_DATA */
+	if (btrfs_header_level(leaf) != 0)
+		goto out;
+
+	for (slot = 0; slot < btrfs_header_nritems(leaf); slot++) {
+		struct btrfs_key key;
+		struct btrfs_file_extent_item *fi;
+		struct btrfs_qgroup_extent_record *record;
+		struct btrfs_qgroup_extent_record *exist;
+
+		btrfs_item_key_to_cpu(leaf, &key, slot);
+		if (key.type != BTRFS_EXTENT_DATA_KEY)
+			continue;
+		fi = btrfs_item_ptr(leaf, slot, struct btrfs_file_extent_item);
+		if (btrfs_file_extent_type(leaf, fi) ==
+		    BTRFS_FILE_EXTENT_INLINE ||
+		    btrfs_file_extent_disk_bytenr(leaf, fi) == 0)
+			continue;
+
+		record = kmalloc(sizeof(*record), GFP_NOFS);
+		if (!record) {
+			ret = -ENOMEM;
+			break;
+		}
+		record->bytenr = btrfs_file_extent_disk_bytenr(leaf, fi);
+		record->num_bytes = btrfs_file_extent_disk_num_bytes(leaf, fi);
+		record->old_roots = NULL;
+
+		spin_lock(&delayed_refs->lock);
+		exist = btrfs_qgroup_insert_dirty_extent(fs_info, delayed_refs,
+				record);
+		spin_unlock(&delayed_refs->lock);
+		if (exist)
+			kfree(record);
+	}
+out:
+	free_extent_buffer(leaf);
+	return ret;
+
 }
 
 /*
@@ -1919,7 +1997,28 @@ again:
 					0);
 		BUG_ON(ret);
 
+		/*
+		 * Fix up the screwed up qgroups
+		 *
+		 * For tree blocks with extent data, new data extent's
+		 * backref is already increased with both file tree and data
+		 * reloc tree.
+		 * While trans is committed before we modify file tree.
+		 *
+		 * This makes qgroup can't account new data extents well,
+		 * as the file tree is still referring to old extents, not
+		 * new extents, backref walk will find the new extent only
+		 * referred by data reloc tree.
+		 * So qgroup is screwed up and didn't increase its ref/excl.
+		 *
+		 * Fix it up by re-dirtying qgroup record for data extents in
+		 * new tree blocks
+		 */
+		ret = qgroup_redirty_data_extents(trans, dest, new_bytenr,
+						  new_ptr_gen);
 		btrfs_unlock_up_safe(path, 0);
+		if (ret < 0)
+			break;
 
 		ret = level;
 		break;
@@ -2604,25 +2703,28 @@ static int reserve_metadata_space(struct btrfs_trans_handle *trans,
 
 	trans->block_rsv = rc->block_rsv;
 	rc->reserved_bytes += num_bytes;
+
+	/*
+	 * We are under a transaction here so we can only do limited flushing.
+	 * If we get an enospc just kick back -EAGAIN so we know to drop the
+	 * transaction and try to refill when we can flush all the things.
+	 */
 	ret = btrfs_block_rsv_refill(root, rc->block_rsv, num_bytes,
-				BTRFS_RESERVE_FLUSH_ALL);
+				BTRFS_RESERVE_FLUSH_LIMIT);
 	if (ret) {
-		if (ret == -EAGAIN) {
-			tmp = rc->extent_root->nodesize *
-				RELOCATION_RESERVED_NODES;
-			while (tmp <= rc->reserved_bytes)
-				tmp <<= 1;
-			/*
-			 * only one thread can access block_rsv at this point,
-			 * so we don't need hold lock to protect block_rsv.
-			 * we expand more reservation size here to allow enough
-			 * space for relocation and we will return earlier in
-			 * enospc case.
-			 */
-			rc->block_rsv->size = tmp + rc->extent_root->nodesize *
-					      RELOCATION_RESERVED_NODES;
-		}
-		return ret;
+		tmp = rc->extent_root->nodesize * RELOCATION_RESERVED_NODES;
+		while (tmp <= rc->reserved_bytes)
+			tmp <<= 1;
+		/*
+		 * only one thread can access block_rsv at this point,
+		 * so we don't need hold lock to protect block_rsv.
+		 * we expand more reservation size here to allow enough
+		 * space for relocation and we will return eailer in
+		 * enospc case.
+		 */
+		rc->block_rsv->size = tmp + rc->extent_root->nodesize *
+			RELOCATION_RESERVED_NODES;
+		return -EAGAIN;
 	}
 
 	return 0;
@@ -3871,6 +3973,7 @@ static noinline_for_stack
 int prepare_to_relocate(struct reloc_control *rc)
 {
 	struct btrfs_trans_handle *trans;
+	int ret;
 
 	rc->block_rsv = btrfs_alloc_block_rsv(rc->extent_root,
 					      BTRFS_BLOCK_RSV_TEMP);
@@ -3885,6 +3988,11 @@ int prepare_to_relocate(struct reloc_control *rc)
 	rc->reserved_bytes = 0;
 	rc->block_rsv->size = rc->extent_root->nodesize *
 			      RELOCATION_RESERVED_NODES;
+	ret = btrfs_block_rsv_refill(rc->extent_root,
+				     rc->block_rsv, rc->block_rsv->size,
+				     BTRFS_RESERVE_FLUSH_ALL);
+	if (ret)
+		return ret;
 
 	rc->create_reloc_tree = 1;
 	set_reloc_control(rc);
@@ -4643,7 +4751,7 @@ int btrfs_reloc_post_snapshot(struct btrfs_trans_handle *trans,
 	if (rc->merge_reloc_tree) {
 		ret = btrfs_block_rsv_migrate(&pending->block_rsv,
 					      rc->block_rsv,
-					      rc->nodes_relocated);
+					      rc->nodes_relocated, 1);
 		if (ret)
 			return ret;
 	}
