@@ -85,11 +85,17 @@ struct vb2_threadio_data;
  * @mmap:	setup a userspace mapping for a given memory buffer under
  *		the provided virtual memory region.
  *
- * Required ops for USERPTR types: get_userptr, put_userptr.
- * Required ops for MMAP types: alloc, put, num_users, mmap.
- * Required ops for read/write access types: alloc, put, num_users, vaddr.
- * Required ops for DMABUF types: attach_dmabuf, detach_dmabuf, map_dmabuf,
- *				  unmap_dmabuf.
+ * Those operations are used by the videobuf2 core to implement the memory
+ * handling/memory allocators for each type of supported streaming I/O method.
+ *
+ * .. note::
+ *    #) Required ops for USERPTR types: get_userptr, put_userptr.
+ *
+ *    #) Required ops for MMAP types: alloc, put, num_users, mmap.
+ *
+ *    #) Required ops for read/write access types: alloc, put, num_users, vaddr.
+ *
+ *    #) Required ops for DMABUF types: attach_dmabuf, detach_dmabuf, map_dmabuf, unmap_dmabuf.
  */
 struct vb2_mem_ops {
 	void		*(*alloc)(struct device *dev, const struct dma_attrs *attrs,
@@ -278,19 +284,19 @@ struct vb2_buffer {
  *			second time with the actually allocated number of
  *			buffers to verify if that is OK.
  *			The driver should return the required number of buffers
- *			in *num_buffers, the required number of planes per
- *			buffer in *num_planes, the size of each plane should be
+ *			in \*num_buffers, the required number of planes per
+ *			buffer in \*num_planes, the size of each plane should be
  *			set in the sizes[] array and optional per-plane
  *			allocator specific device in the alloc_devs[] array.
  *			When called from VIDIOC_REQBUFS, *num_planes == 0, the
  *			driver has to use the currently configured format to
- *			determine the plane sizes and *num_buffers is the total
+ *			determine the plane sizes and \*num_buffers is the total
  *			number of buffers that are being allocated. When called
- *			from VIDIOC_CREATE_BUFS, *num_planes != 0 and it
+ *			from VIDIOC_CREATE_BUFS, \*num_planes != 0 and it
  *			describes the requested number of planes and sizes[]
  *			contains the requested plane sizes. If either
- *			*num_planes or the requested sizes are invalid callback
- *			must return -EINVAL. In this case *num_buffers are
+ *			\*num_planes or the requested sizes are invalid callback
+ *			must return -EINVAL. In this case \*num_buffers are
  *			being allocated additionally to q->num_buffers.
  * @wait_prepare:	release any locks taken while calling vb2 functions;
  *			it is called before an ioctl needs to wait for a new
