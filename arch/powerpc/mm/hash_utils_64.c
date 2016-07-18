@@ -321,6 +321,15 @@ int htab_remove_mapping(unsigned long vstart, unsigned long vend,
 	return ret;
 }
 
+static bool disable_1tb_segments = false;
+
+static int __init parse_disable_1tb_segments(char *p)
+{
+	disable_1tb_segments = true;
+	return 0;
+}
+early_param("disable_1tb_segments", parse_disable_1tb_segments);
+
 static int __init htab_dt_scan_seg_sizes(unsigned long node,
 					 const char *uname, int depth,
 					 void *data)
@@ -339,6 +348,12 @@ static int __init htab_dt_scan_seg_sizes(unsigned long node,
 	for (; size >= 4; size -= 4, ++prop) {
 		if (be32_to_cpu(prop[0]) == 40) {
 			DBG("1T segment support detected\n");
+
+			if (disable_1tb_segments) {
+				DBG("1T segments disabled by command line\n");
+				break;
+			}
+
 			cur_cpu_spec->mmu_features |= MMU_FTR_1T_SEGMENT;
 			return 1;
 		}
@@ -699,10 +714,9 @@ int remove_section_mapping(unsigned long start, unsigned long end)
 #endif /* CONFIG_MEMORY_HOTPLUG */
 
 static void __init hash_init_partition_table(phys_addr_t hash_table,
-					     unsigned long pteg_count)
+					     unsigned long htab_size)
 {
 	unsigned long ps_field;
-	unsigned long htab_size;
 	unsigned long patb_size = 1UL << PATB_SIZE_SHIFT;
 
 	/*
@@ -710,7 +724,7 @@ static void __init hash_init_partition_table(phys_addr_t hash_table,
 	 * We can ignore that for lpid 0
 	 */
 	ps_field = 0;
-	htab_size =  __ilog2(pteg_count) - 11;
+	htab_size =  __ilog2(htab_size) - 18;
 
 	BUILD_BUG_ON_MSG((PATB_SIZE_SHIFT > 24), "Partition table size too large.");
 	partition_tb = __va(memblock_alloc_base(patb_size, patb_size,
@@ -724,7 +738,7 @@ static void __init hash_init_partition_table(phys_addr_t hash_table,
 	 * For now UPRT is 0 for us.
 	 */
 	partition_tb->patb1 = 0;
-	DBG("Partition table %p\n", partition_tb);
+	pr_info("Partition table %p\n", partition_tb);
 	/*
 	 * update partition table control register,
 	 * 64 K size.
@@ -796,7 +810,7 @@ static void __init htab_initialize(void)
 		htab_address = __va(table);
 
 		/* htab absolute addr + encoded htabsize */
-		_SDR1 = table + __ilog2(pteg_count) - 11;
+		_SDR1 = table + __ilog2(htab_size_bytes) - 18;
 
 		/* Initialize the HPT with no entries */
 		memset((void *)table, 0, htab_size_bytes);
@@ -805,7 +819,7 @@ static void __init htab_initialize(void)
 			/* Set SDR1 */
 			mtspr(SPRN_SDR1, _SDR1);
 		else
-			hash_init_partition_table(table, pteg_count);
+			hash_init_partition_table(table, htab_size_bytes);
 	}
 
 	prot = pgprot_val(PAGE_KERNEL);
@@ -932,6 +946,7 @@ void __init hash__early_init_mmu(void)
 	 */
 	htab_initialize();
 
+	pr_info("Initializing hash mmu with SLB\n");
 	/* Initialize SLB management */
 	slb_initialize();
 }

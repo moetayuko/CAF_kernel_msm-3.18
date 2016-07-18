@@ -145,6 +145,15 @@
 #define MSR_64BIT	0
 #endif
 
+/* Power Management - Processor Stop Status and Control Register Fields */
+#define PSSCR_RL_MASK		0x0000000F /* Requested Level */
+#define PSSCR_MTL_MASK		0x000000F0 /* Maximum Transition Level */
+#define PSSCR_TR_MASK		0x00000300 /* Transition State */
+#define PSSCR_PSLL_MASK		0x000F0000 /* Power-Saving Level Limit */
+#define PSSCR_EC		0x00100000 /* Exit Criterion */
+#define PSSCR_ESL		0x00200000 /* Enable State Loss */
+#define PSSCR_SD		0x00400000 /* Status Disable */
+
 /* Floating Point Status and Control Register (FPSCR) Fields */
 #define FPSCR_FX	0x80000000	/* FPU exception summary */
 #define FPSCR_FEX	0x40000000	/* FPU enabled exception summary */
@@ -268,6 +277,7 @@
 #define   DSISR_KEYFAULT	0x00200000	/* Key fault */
 #define SPRN_TBRL	0x10C	/* Time Base Read Lower Register (user, R/O) */
 #define SPRN_TBRU	0x10D	/* Time Base Read Upper Register (user, R/O) */
+#define SPRN_CIR	0x11B	/* Chip Information Register (hyper, R/0) */
 #define SPRN_TBWL	0x11C	/* Time Base Lower Register (super, R/W) */
 #define SPRN_TBWU	0x11D	/* Time Base Upper Register (super, R/W) */
 #define SPRN_TBU40	0x11E	/* Timebase upper 40 bits (hyper, R/W) */
@@ -282,15 +292,19 @@
 #define SPRN_HRMOR	0x139	/* Real mode offset register */
 #define SPRN_HSRR0	0x13A	/* Hypervisor Save/Restore 0 */
 #define SPRN_HSRR1	0x13B	/* Hypervisor Save/Restore 1 */
+#define SPRN_LMRR	0x32D	/* Load Monitor Region Register */
+#define SPRN_LMSER	0x32E	/* Load Monitor Section Enable Register */
 #define SPRN_IC		0x350	/* Virtual Instruction Count */
 #define SPRN_VTB	0x351	/* Virtual Time Base */
 #define SPRN_LDBAR	0x352	/* LD Base Address Register */
 #define SPRN_PMICR	0x354   /* Power Management Idle Control Reg */
 #define SPRN_PMSR	0x355   /* Power Management Status Reg */
 #define SPRN_PMMAR	0x356	/* Power Management Memory Activity Register */
+#define SPRN_PSSCR	0x357	/* Processor Stop Status and Control Register (ISA 3.0) */
 #define SPRN_PMCR	0x374	/* Power Management Control Register */
 
 /* HFSCR and FSCR bit numbers are the same */
+#define FSCR_LM_LG	11	/* Enable Load Monitor Registers */
 #define FSCR_TAR_LG	8	/* Enable Target Address Register */
 #define FSCR_EBB_LG	7	/* Enable Event Based Branching */
 #define FSCR_TM_LG	5	/* Enable Transactional Memory */
@@ -300,10 +314,12 @@
 #define FSCR_VECVSX_LG	1	/* Enable VMX/VSX  */
 #define FSCR_FP_LG	0	/* Enable Floating Point */
 #define SPRN_FSCR	0x099	/* Facility Status & Control Register */
+#define   FSCR_LM	__MASK(FSCR_LM_LG)
 #define   FSCR_TAR	__MASK(FSCR_TAR_LG)
 #define   FSCR_EBB	__MASK(FSCR_EBB_LG)
 #define   FSCR_DSCR	__MASK(FSCR_DSCR_LG)
 #define SPRN_HFSCR	0xbe	/* HV=1 Facility Status & Control Register */
+#define   HFSCR_LM	__MASK(FSCR_LM_LG)
 #define   HFSCR_TAR	__MASK(FSCR_TAR_LG)
 #define   HFSCR_EBB	__MASK(FSCR_EBB_LG)
 #define   HFSCR_TM	__MASK(FSCR_TM_LG)
@@ -332,6 +348,7 @@
 #define   LPCR_AIL_0	0x00000000	/* MMU off exception offset 0x0 */
 #define   LPCR_AIL_3	0x01800000	/* MMU on exception offset 0xc00...4xxx */
 #define   LPCR_ONL	0x00040000	/* online - PURR/SPURR count */
+#define   LPCR_LD	0x00020000	/* large decremeter */
 #define   LPCR_PECE	0x0001f000	/* powersave exit cause enable */
 #define     LPCR_PECEDP	0x00010000	/* directed priv dbells cause exit */
 #define     LPCR_PECEDH	0x00008000	/* directed hyp dbells cause exit */
@@ -346,8 +363,10 @@
 #define   LPCR_LPES1   0x00000004      /* LPAR Env selector 1 */
 #define   LPCR_LPES_SH	2
 #define   LPCR_RMI     0x00000002      /* real mode is cache inhibit */
+#define   LPCR_HVICE   0x00000002      /* P9: HV interrupt enable */
 #define   LPCR_HDICE   0x00000001      /* Hyp Decr enable (HV,PR,EE) */
 #define   LPCR_UPRT    0x00400000      /* Use Process Table (ISA 3) */
+#define   LPCR_HR      0x00100000
 #ifndef SPRN_LPID
 #define SPRN_LPID	0x13F	/* Logical Partition Identifier */
 #endif
