@@ -11,6 +11,10 @@
 
 #include "internal.h"
 
+/*
+ * TODO: teach PAGE_OWNER_STACK_DEPTH (__dump_page_owner and save_stack)
+ * to use off stack temporal storage
+ */
 #define PAGE_OWNER_STACK_DEPTH (16)
 
 static bool page_owner_disabled = true;
