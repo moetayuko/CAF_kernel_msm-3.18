@@ -117,8 +117,7 @@ static int __control_devkmsg(char *str)
 		devkmsg_log = DEVKMSG_LOG_MASK_DEFAULT;
 		return 9;
 	}
-	else
-		return -EINVAL;
+	return -EINVAL;
 }
 
 static int __init control_devkmsg(char *str)
