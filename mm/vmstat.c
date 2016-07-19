@@ -983,7 +983,7 @@ const char * const vmstat_text[] = {
 	"pswpout",
 
 	TEXTS_FOR_ZONES("pgalloc")
-	TEXTS_FOR_ZONES("pgstall")
+	TEXTS_FOR_ZONES("allocstall")
 	TEXTS_FOR_ZONES("pgskip")
 
 	"pgfree",
