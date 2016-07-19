@@ -3631,8 +3631,18 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 	 */
 	ata_msense_caching(dev->id, mpage, false);
 	for (i = 0; i < CACHE_MPAGE_LEN - 2; i++) {
-		if (i == 0)
-			continue;
+		/* Check the first byte */
+		if (i == 0) {
+			/* except the WCE bit */
+			if (mpage[i + 2] & 0xfb != buf[i] & 0xfb) {
+				*fp = i;
+				return -EINVAL;
+			} else {
+				continue;
+			}
+		}
+
+		/* Check the remaining bytes */
 		if (mpage[i + 2] != buf[i]) {
 			*fp = i;
 			return -EINVAL;
@@ -3686,8 +3696,18 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 	 */
 	ata_msense_control(dev, mpage, false);
 	for (i = 0; i < CONTROL_MPAGE_LEN - 2; i++) {
-		if (i == 0)
-			continue;
+		/* Check the first byte */
+		if (i == 0) {
+			/* except the D_SENSE bit */
+			if (mpage[i + 2] & 0xfb != buf[i] & 0xfb) {
+				*fp = i;
+				return -EINVAL;
+			} else {
+				continue;
+			}
+		}
+
+		/* Check the remaining bytes */
 		if (mpage[2 + i] != buf[i]) {
 			*fp = i;
 			return -EINVAL;
