@@ -970,11 +970,13 @@ out:
  * @page: the PageAnon page that we want to replace with kpage
  * @kpage: the PageKsm page that we want to map instead of page,
  *         or NULL the first time when we want to use page as kpage.
+ * @anon_vma: output the anon_vma of page used as kpage
  *
  * This function returns 0 if the pages were merged, -EFAULT otherwise.
  */
 static int try_to_merge_one_page(struct vm_area_struct *vma,
-				 struct page *page, struct page *kpage)
+				 struct page *page, struct page *kpage,
+				 struct anon_vma **anon_vma)
 {
 	pte_t orig_pte = __pte(0);
 	int err = -EFAULT;
@@ -1014,6 +1016,8 @@ static int try_to_merge_one_page(struct vm_area_struct *vma,
 			 * PageAnon+anon_vma to PageKsm+NULL stable_node:
 			 * stable_tree_insert() will update stable_node.
 			 */
+			if (anon_vma != NULL)
+				*anon_vma = page_anon_vma(page);
 			set_page_stable_node(page, NULL);
 			mark_page_accessed(page);
 			/*
@@ -1054,6 +1058,7 @@ static int try_to_merge_with_ksm_page(struct rmap_item *rmap_item,
 {
 	struct mm_struct *mm = rmap_item->mm;
 	struct vm_area_struct *vma;
+	struct anon_vma *anon_vma = NULL;
 	int err = -EFAULT;
 
 	down_read(&mm->mmap_sem);
@@ -1061,7 +1066,7 @@ static int try_to_merge_with_ksm_page(struct rmap_item *rmap_item,
 	if (!vma)
 		goto out;
 
-	err = try_to_merge_one_page(vma, page, kpage);
+	err = try_to_merge_one_page(vma, page, kpage, &anon_vma);
 	if (err)
 		goto out;
 
@@ -1069,7 +1074,10 @@ static int try_to_merge_with_ksm_page(struct rmap_item *rmap_item,
 	remove_rmap_item_from_tree(rmap_item);
 
 	/* Must get reference to anon_vma while still holding mmap_sem */
-	rmap_item->anon_vma = vma->anon_vma;
+	if (anon_vma != NULL)
+		rmap_item->anon_vma = anon_vma;
+	else
+		rmap_item->anon_vma = vma->anon_vma;
 	get_anon_vma(vma->anon_vma);
 out:
 	up_read(&mm->mmap_sem);
@@ -1433,6 +1441,11 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 	}
 
 	remove_rmap_item_from_tree(rmap_item);
+
+	if (kpage == page) {
+		put_page(kpage);
+		return;
+	}
 
 	if (kpage) {
 		err = try_to_merge_with_ksm_page(rmap_item, page, kpage);
