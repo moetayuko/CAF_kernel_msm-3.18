@@ -2414,6 +2414,8 @@ static inline bool should_continue_reclaim(struct pglist_data *pgdat,
 	/* If compaction would go ahead or the allocation would succeed, stop */
 	for (z = 0; z <= sc->reclaim_idx; z++) {
 		struct zone *zone = &pgdat->node_zones[z];
+		if (!populated_zone(zone))
+			continue;
 
 		switch (compaction_suitable(zone, sc->order, 0, sc->reclaim_idx)) {
 		case COMPACT_PARTIAL:
