@@ -4336,7 +4336,7 @@ void show_free_areas(unsigned int filter)
 			K(node_page_state(pgdat, NR_SHMEM)),
 			K(node_page_state(pgdat, NR_WRITEBACK_TEMP)),
 			K(node_page_state(pgdat, NR_UNSTABLE_NFS)),
-			node_page_state(zone->zone_pgdat, NR_PAGES_SCANNED),
+			node_page_state(pgdat, NR_PAGES_SCANNED),
 			!pgdat_reclaimable(pgdat) ? "yes" : "no");
 	}
 
