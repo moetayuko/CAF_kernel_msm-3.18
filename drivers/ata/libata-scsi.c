@@ -3618,7 +3618,6 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 	 * The first two bytes of def_cache_mpage are a header, so offsets
 	 * in mpage are off by 2 compared to buf.  Same for len.
 	 */
-
 	if (len != CACHE_MPAGE_LEN - 2) {
 		if (len < CACHE_MPAGE_LEN - 2)
 			*fp = len;
@@ -3626,8 +3625,6 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 			*fp = CACHE_MPAGE_LEN - 2;
 		return -EINVAL;
 	}
-
-	wce = buf[0] & (1 << 2);
 
 	/*
 	 * Check that read-only bits are not modified.
@@ -3641,6 +3638,8 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 			return -EINVAL;
 		}
 	}
+
+	wce = buf[0] & (1 << 2);
 
 	tf->flags |= ATA_TFLAG_DEVICE | ATA_TFLAG_ISADDR;
 	tf->protocol = ATA_PROT_NODATA;
@@ -3674,7 +3673,6 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 	 * The first two bytes of def_control_mpage are a header, so offsets
 	 * in mpage are off by 2 compared to buf.  Same for len.
 	 */
-
 	if (len != CONTROL_MPAGE_LEN - 2) {
 		if (len < CONTROL_MPAGE_LEN - 2)
 			*fp = len;
@@ -3682,8 +3680,6 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 			*fp = CONTROL_MPAGE_LEN - 2;
 		return -EINVAL;
 	}
-
-	d_sense = buf[0] & (1 << 2);
 
 	/*
 	 * Check that read-only bits are not modified.
@@ -3697,7 +3693,10 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 			return -EINVAL;
 		}
 	}
-	if (d_sense & (1 << 2))
+
+	d_sense = buf[0] & (1 << 2);
+
+	if (d_sense)
 		dev->flags |= ATA_DFLAG_D_SENSE;
 	else
 		dev->flags &= ~ATA_DFLAG_D_SENSE;
