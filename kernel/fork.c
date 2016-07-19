@@ -476,7 +476,7 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		tmp->vm_userfaultfd_ctx = NULL_VM_UFFD_CTX;
 		file = tmp->vm_file;
 		if (file) {
-			struct inode *inode = file_inode(file);
+			struct inode *inode = locks_inode(file);
 			struct address_space *mapping = file->f_mapping;
 
 			get_file(file);

@@ -685,6 +685,7 @@ static int do_dentry_open(struct file *f,
 			  const struct cred *cred)
 {
 	static const struct file_operations empty_fops = {};
+	struct inode *lkinode = locks_inode(f);
 	int error;
 
 	f->f_mode = OPEN_FMODE(f->f_flags) | FMODE_LSEEK |
@@ -701,12 +702,12 @@ static int do_dentry_open(struct file *f,
 	}
 
 	if (f->f_mode & FMODE_WRITE && !special_file(inode->i_mode)) {
-		error = get_write_access(inode);
+		error = get_write_access(lkinode);
 		if (unlikely(error))
 			goto cleanup_file;
 		error = __mnt_want_write(f->f_path.mnt);
 		if (unlikely(error)) {
-			put_write_access(inode);
+			put_write_access(lkinode);
 			goto cleanup_file;
 		}
 		f->f_mode |= FMODE_WRITER;
@@ -726,7 +727,7 @@ static int do_dentry_open(struct file *f,
 	if (error)
 		goto cleanup_all;
 
-	error = break_lease(inode, f->f_flags);
+	error = break_lease(lkinode, f->f_flags);
 	if (error)
 		goto cleanup_all;
 
@@ -755,7 +756,7 @@ static int do_dentry_open(struct file *f,
 cleanup_all:
 	fops_put(f->f_op);
 	if (f->f_mode & FMODE_WRITER) {
-		put_write_access(inode);
+		put_write_access(lkinode);
 		__mnt_drop_write(f->f_path.mnt);
 	}
 cleanup_file:
