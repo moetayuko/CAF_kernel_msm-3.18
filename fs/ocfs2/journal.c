@@ -1172,14 +1172,12 @@ static int ocfs2_force_read_journal(struct inode *inode)
 			goto bail;
 		}
 
-		for (i = 0; i < p_blocks; i++) {
+		for (i = 0; i < p_blocks; i++, p_blkno++) {
 			bh = __find_get_block(osb->sb->s_bdev, p_blkno,
 					osb->sb->s_blocksize);
 			/* block not cached. */
-			if (!bh) {
-				p_blkno++;
+			if (!bh)
 				continue;
-			}
 
 			brelse(bh);
 			bh = NULL;
@@ -1194,7 +1192,6 @@ static int ocfs2_force_read_journal(struct inode *inode)
 
 			brelse(bh);
 			bh = NULL;
-			p_blkno++;
 		}
 
 		v_blkno += p_blocks;
