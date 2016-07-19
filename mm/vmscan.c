@@ -3134,12 +3134,13 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 
 		/*
 		 * If the number of buffer_heads exceeds the maximum allowed
-		 * then consider reclaiming from all zones. This is not
-		 * specific to highmem which may not exist but it is it is
-		 * expected that buffer_heads are stripped in writeback.
-		 * Reclaim may still not go ahead if all eligible zones
-		 * for the original allocation request are balanced to
-		 * avoid excessive reclaim from kswapd.
+		 * then consider reclaiming from all zones. This has a dual
+		 * purpose -- on 64-bit systems it is expected that
+		 * buffer_heads are stripped during active rotation. On 32-bit
+		 * systems, highmem pages can pin lowmem memory and shrinking
+		 * buffers can relieve lowmem pressure. Reclaim may still not
+		 * go ahead if all eligible zones for the original allocation
+		 * request are balanced to avoid excessive reclaim from kswapd.
 		 */
 		if (buffer_heads_over_limit) {
 			for (i = MAX_NR_ZONES - 1; i >= 0; i--) {
