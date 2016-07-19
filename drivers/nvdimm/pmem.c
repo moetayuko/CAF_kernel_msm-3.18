@@ -29,22 +29,9 @@
 #include <linux/slab.h>
 #include <linux/pmem.h>
 #include <linux/nd.h>
+#include "pmem.h"
 #include "pfn.h"
 #include "nd.h"
-
-struct pmem_device {
-	/* One contiguous memory region per device */
-	phys_addr_t		phys_addr;
-	/* when non-zero this device is hosting a 'pfn' instance */
-	phys_addr_t		data_offset;
-	u64			pfn_flags;
-	void __pmem		*virt_addr;
-	/* immutable base size of the namespace */
-	size_t			size;
-	/* trim size when namespace capacity has been section aligned */
-	u32			pfn_pad;
-	struct badblocks	bb;
-};
 
 static void pmem_clear_poison(struct pmem_device *pmem, phys_addr_t offset,
 		unsigned int len)
@@ -163,7 +150,8 @@ static int pmem_rw_page(struct block_device *bdev, sector_t sector,
 	return rc;
 }
 
-static long pmem_direct_access(struct block_device *bdev, sector_t sector,
+/* see "strong" declaration in tools/testing/nvdimm/pmem-dax.c */
+__weak long pmem_direct_access(struct block_device *bdev, sector_t sector,
 		      void __pmem **kaddr, pfn_t *pfn, long size)
 {
 	struct pmem_device *pmem = bdev->bd_queue->queuedata;
@@ -195,7 +183,7 @@ static void pmem_release_queue(void *q)
 	blk_cleanup_queue(q);
 }
 
-void pmem_release_disk(void *disk)
+static void pmem_release_disk(void *disk)
 {
 	del_gendisk(disk);
 	put_disk(disk);
@@ -269,10 +257,8 @@ static int pmem_attach_disk(struct device *dev,
 	 * At release time the queue must be dead before
 	 * devm_memremap_pages is unwound
 	 */
-	if (devm_add_action(dev, pmem_release_queue, q)) {
-		blk_cleanup_queue(q);
+	if (devm_add_action_or_reset(dev, pmem_release_queue, q))
 		return -ENOMEM;
-	}
 
 	if (IS_ERR(addr))
 		return PTR_ERR(addr);
@@ -289,10 +275,6 @@ static int pmem_attach_disk(struct device *dev,
 	disk = alloc_disk_node(0, nid);
 	if (!disk)
 		return -ENOMEM;
-	if (devm_add_action(dev, pmem_release_disk, disk)) {
-		put_disk(disk);
-		return -ENOMEM;
-	}
 
 	disk->fops		= &pmem_fops;
 	disk->queue		= q;
@@ -305,6 +287,10 @@ static int pmem_attach_disk(struct device *dev,
 	nvdimm_badblocks_populate(to_nd_region(dev->parent), &pmem->bb, res);
 	disk->bb = &pmem->bb;
 	device_add_disk(dev, disk);
+
+	if (devm_add_action_or_reset(dev, pmem_release_disk, disk))
+		return -ENOMEM;
+
 	revalidate_disk(disk);
 
 	return 0;
