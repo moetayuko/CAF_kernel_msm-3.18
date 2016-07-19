@@ -13,6 +13,7 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   gpu/index
    kernel-documentation
    media/media_uapi
    media/media_drivers
