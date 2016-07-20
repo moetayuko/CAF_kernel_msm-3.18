@@ -19,12 +19,19 @@
 #include "callchain.h"
 #include "strlist.h"
 
-struct callchain_param	callchain_param = {
-	.mode	= CHAIN_GRAPH_ABS,
-	.min_percent = 0.5,
-	.order  = ORDER_CALLEE,
-	.key	= CCKEY_FUNCTION,
-	.value	= CCVAL_PERCENT,
+#define CALLCHAIN_PARAM_DEFAULT			\
+	.mode		= CHAIN_GRAPH_ABS,	\
+	.min_percent	= 0.5,			\
+	.order		= ORDER_CALLEE,		\
+	.key		= CCKEY_FUNCTION,	\
+	.value		= CCVAL_PERCENT,	\
+
+struct callchain_param callchain_param = {
+	CALLCHAIN_PARAM_DEFAULT
+};
+
+struct callchain_param callchain_param_default = {
+	CALLCHAIN_PARAM_DEFAULT
 };
 
 /*
@@ -738,4 +745,20 @@ void print_binary(unsigned char *data, size_t len,
 		}
 	}
 	printer(BINARY_PRINT_DATA_END, -1, extra);
+}
+
+int is_printable_array(char *p, unsigned int len)
+{
+	unsigned int i;
+
+	if (!p || !len || p[len - 1] != 0)
+		return 0;
+
+	len--;
+
+	for (i = 0; i < len; i++) {
+		if (!isprint(p[i]) && !isspace(p[i]))
+			return 0;
+	}
+	return 1;
 }
