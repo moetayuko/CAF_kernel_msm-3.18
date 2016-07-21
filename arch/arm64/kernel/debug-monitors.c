@@ -151,7 +151,6 @@ static int debug_monitors_init(void)
 	/* Clear the OS lock. */
 	on_each_cpu(clear_os_lock, NULL, 1);
 	isb();
-	local_dbg_enable();
 
 	/* Register hotplug handler. */
 	__register_cpu_notifier(&os_lock_nb);
@@ -166,21 +165,12 @@ postcore_initcall(debug_monitors_init);
  */
 static void set_regs_spsr_ss(struct pt_regs *regs)
 {
-	unsigned long spsr;
-
-	spsr = regs->pstate;
-	spsr &= ~DBG_SPSR_SS;
-	spsr |= DBG_SPSR_SS;
-	regs->pstate = spsr;
+	regs->pstate |= DBG_SPSR_SS;
 }
 
 static void clear_regs_spsr_ss(struct pt_regs *regs)
 {
-	unsigned long spsr;
-
-	spsr = regs->pstate;
-	spsr &= ~DBG_SPSR_SS;
-	regs->pstate = spsr;
+	regs->pstate &= ~DBG_SPSR_SS;
 }
 
 /* EL1 Single Step Handler hooks */
