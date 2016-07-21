@@ -37,7 +37,6 @@
 #include <asm/serial.h>
 #include <asm/udbg.h>
 #include <asm/mmu_context.h>
-#include <asm/epapr_hcalls.h>
 #include <asm/code-patching.h>
 
 #define DBG(fmt...)
@@ -62,9 +61,7 @@ int icache_bsize;
 int ucache_bsize;
 
 /*
- * We're called here very early in the boot.  We determine the machine
- * type and call the appropriate low-level setup functions.
- *  -- Cort <cort@fsmlabs.com>
+ * We're called here very early in the boot.
  *
  * Note that the kernel may be running at an address which is different
  * from the address that it was linked at, so we must use RELOC/PTRRELOC
@@ -105,6 +102,10 @@ notrace unsigned long __init early_init(unsigned long dt_ptr)
 
 
 /*
+ * This is run before start_kernel(), the kernel has been relocated
+ * and we are running with enough of the MMU enabled to have our
+ * proper kernel virtual addresses
+ *
  * Find out what kind of machine we're on and save any data we need
  * from the early boot process (devtree is copied on pmac by prom_init()).
  * This is called very early on the boot process, after a minimal
@@ -122,8 +123,6 @@ notrace void __init machine_init(u64 dt_ptr)
 
 	/* Do some early initialization based on the flat device tree */
 	early_init_devtree(__va(dt_ptr));
-
-	epapr_paravirt_early_init();
 
 	early_init_mmu();
 

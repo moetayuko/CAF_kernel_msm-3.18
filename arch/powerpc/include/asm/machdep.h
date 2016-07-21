@@ -111,8 +111,8 @@ struct machdep_calls {
 	/* To setup PHBs when using automatic OF platform driver for PCI */
 	int		(*pci_setup_phb)(struct pci_controller *host);
 
-	void		(*restart)(char *cmd);
-	void		(*halt)(void);
+	void __noreturn	(*restart)(char *cmd);
+	void __noreturn (*halt)(void);
 	void		(*panic)(char *str);
 	void		(*cpu_die)(void);
 
@@ -256,7 +256,8 @@ struct machdep_calls {
 #ifdef CONFIG_ARCH_RANDOM
 	int (*get_random_seed)(unsigned long *v);
 #endif
-	int (*update_partition_table)(u64);
+	int (*register_process_table)(unsigned long base, unsigned long page_size,
+				      unsigned long tbl_size);
 };
 
 extern void e500_idle(void);

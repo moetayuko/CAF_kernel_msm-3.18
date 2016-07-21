@@ -68,7 +68,6 @@
 #include <asm/code-patching.h>
 #include <asm/kvm_ppc.h>
 #include <asm/hugetlb.h>
-#include <asm/epapr_hcalls.h>
 #include <asm/livepatch.h>
 
 #ifdef DEBUG
@@ -270,8 +269,6 @@ void __init early_setup(unsigned long dt_ptr)
 	 */
 	early_init_devtree(__va(dt_ptr));
 
-	epapr_paravirt_early_init();
-
 	/* Now we know the logical id of our boot cpu, setup the paca. */
 	setup_paca(&paca[boot_cpuid]);
 	fixup_boot_paca();
@@ -279,9 +276,11 @@ void __init early_setup(unsigned long dt_ptr)
 	/* Probe the machine type */
 	probe_machine();
 
+	/*
+	 * Setup the trampolines from the lowmem exception vectors
+	 * to the kdump kernel when not using a relocatable kernel.
+	 */
 	setup_kdump_trampoline();
-
-	DBG("Found, Initializing memory management...\n");
 
 	/* Initialize the hash table or TLB handling */
 	early_init_mmu();
@@ -321,7 +320,7 @@ void __init early_setup(unsigned long dt_ptr)
 #ifdef CONFIG_SMP
 void early_setup_secondary(void)
 {
-	/* Mark interrupts enabled in PACA */
+	/* Mark interrupts disabled in PACA */
 	get_paca()->soft_enabled = 0;
 
 	/* Initialize the hash table or TLB handling */
