@@ -97,7 +97,6 @@ static inline u64 div_ext_fp(u64 x, u64 y)
  *			read from MPERF MSR between last and current sample
  * @tsc:		Difference of time stamp counter between last and
  *			current sample
- * @freq:		Effective frequency calculated from APERF/MPERF
  * @time:		Current time from scheduler
  *
  * This structure is used in the cpudata structure to store performance sample
@@ -109,7 +108,6 @@ struct sample {
 	u64 aperf;
 	u64 mperf;
 	u64 tsc;
-	int freq;
 	u64 time;
 };
 
@@ -808,7 +806,8 @@ static void __init intel_pstate_sysfs_expose_params(void)
 static void intel_pstate_hwp_enable(struct cpudata *cpudata)
 {
 	/* First disable HWP notification interrupt as we don't process them */
-	wrmsrl_on_cpu(cpudata->cpu, MSR_HWP_INTERRUPT, 0x00);
+	if (static_cpu_has(X86_FEATURE_HWP_NOTIFY))
+		wrmsrl_on_cpu(cpudata->cpu, MSR_HWP_INTERRUPT, 0x00);
 
 	wrmsrl_on_cpu(cpudata->cpu, MSR_PM_ENABLE, 0x1);
 }
@@ -1134,17 +1133,12 @@ static void intel_pstate_get_min_max(struct cpudata *cpu, int *min, int *max)
 	*min = clamp_t(int, min_perf, cpu->pstate.min_pstate, max_perf);
 }
 
-static inline void intel_pstate_record_pstate(struct cpudata *cpu, int pstate)
-{
-	trace_cpu_frequency(pstate * cpu->pstate.scaling, cpu->cpu);
-	cpu->pstate.current_pstate = pstate;
-}
-
 static void intel_pstate_set_min_pstate(struct cpudata *cpu)
 {
 	int pstate = cpu->pstate.min_pstate;
 
-	intel_pstate_record_pstate(cpu, pstate);
+	trace_cpu_frequency(pstate * cpu->pstate.scaling, cpu->cpu);
+	cpu->pstate.current_pstate = pstate;
 	/*
 	 * Generally, there is no guarantee that this code will always run on
 	 * the CPU being updated, so force the register update to run on the
@@ -1304,10 +1298,11 @@ static inline void intel_pstate_update_pstate(struct cpudata *cpu, int pstate)
 
 	intel_pstate_get_min_max(cpu, &min_perf, &max_perf);
 	pstate = clamp_t(int, pstate, min_perf, max_perf);
+	trace_cpu_frequency(pstate * cpu->pstate.scaling, cpu->cpu);
 	if (pstate == cpu->pstate.current_pstate)
 		return;
 
-	intel_pstate_record_pstate(cpu, pstate);
+	cpu->pstate.current_pstate = pstate;
 	wrmsrl(MSR_IA32_PERF_CTL, pstate_funcs.get_val(cpu, pstate));
 }
 
