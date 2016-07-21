@@ -4214,7 +4214,7 @@ pte_t *huge_pmd_share(struct mm_struct *mm, unsigned long addr, pud_t *pud)
 	struct vm_area_struct *svma;
 	unsigned long saddr;
 	pte_t *spte = NULL;
-	pte_t *pte;
+	pte_t *pte, entry;
 	spinlock_t *ptl;
 
 	if (!vma_shareable(vma, addr))
@@ -4240,6 +4240,11 @@ pte_t *huge_pmd_share(struct mm_struct *mm, unsigned long addr, pud_t *pud)
 
 	ptl = huge_pte_lockptr(hstate_vma(vma), mm, spte);
 	spin_lock(ptl);
+	entry = huge_ptep_get(spte);
+	if (is_hugetlb_entry_migration(entry) ||
+			is_hugetlb_entry_hwpoisoned(entry)) {
+		goto out_unlock;
+	}
 	if (pud_none(*pud)) {
 		pud_populate(mm, pud,
 				(pmd_t *)((unsigned long)spte & PAGE_MASK));
@@ -4247,6 +4252,8 @@ pte_t *huge_pmd_share(struct mm_struct *mm, unsigned long addr, pud_t *pud)
 	} else {
 		put_page(virt_to_page(spte));
 	}
+
+out_unlock:
 	spin_unlock(ptl);
 out:
 	pte = (pte_t *)pmd_alloc(mm, pud, addr);
