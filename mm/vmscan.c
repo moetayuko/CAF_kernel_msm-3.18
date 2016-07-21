@@ -3784,7 +3784,6 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
 		struct pglist_data *pagepgdat = page_pgdat(page);
 
 		pgscanned++;
-		pagepgdat = page_pgdat(page);
 		if (pagepgdat != pgdat) {
 			if (pgdat)
 				spin_unlock_irq(&pgdat->lru_lock);
