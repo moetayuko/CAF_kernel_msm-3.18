@@ -10,6 +10,7 @@ fixes
 		MAINTAINERS: update STi maintainer list
 		ARM: tegra: beaver: Allow SD card voltage to be changed
 		arm64: dts: Fix RTC by providing rtc_src clock
+		ARM: tegra: fix erroneous address in dts
 
 next/fixes-non-critical
 
@@ -30,6 +31,10 @@ next/cleanup
 		ARM: s3c64xx: avoid warning about 'struct device_node'
 	tegra/soc2
 		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.8-arm-soc
+	patch
+		ARM: mps2: fix typo
+	mvebu/cleanup-2
+		git://git.infradead.org/linux-mvebu tags/mvebu-cleanup-4.8-2
 
 next/soc
 	renesas/soc
@@ -266,7 +271,6 @@ next/dt
 	hisi/dt
 		git://github.com/hisilicon/linux-hisi tags/hisi-armv7-soc-dt-for-4.8-v2
 	brcm/dt2
-broadcom/dt2
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.8/devicetree-part2
 	pxa/dt
 		https://github.com/rjarzmik/linux tags/pxa-dt-4.7
@@ -278,7 +282,13 @@ broadcom/dt2
 	sti/late
 		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-late-v4.8
 	at91/dt-3
-		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux.git tags/at91-ab-4.8-dt3
+		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-ab-4.8-dt3
+	sunxi/dt-2
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-dt-for-4.8-2-bis
+	mvebu/dt
+		git://git.infradead.org/linux-mvebu tags/mvebu-dt-4.8-1
+	renesas/dt-fixes
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-dt-fixes-for-v4.8
 
 next/dt64
 	patch
