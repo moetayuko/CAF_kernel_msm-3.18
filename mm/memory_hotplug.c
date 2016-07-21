@@ -1557,12 +1557,15 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 	int move_pages = NR_OFFLINE_AT_ONCE_PAGES;
 	int not_managed = 0;
 	int ret = 0;
+	int nid = NUMA_NO_NODE;
 	LIST_HEAD(source);
 
 	for (pfn = start_pfn; pfn < end_pfn && move_pages > 0; pfn++) {
 		if (!pfn_valid(pfn))
 			continue;
 		page = pfn_to_page(pfn);
+		if (nid == NUMA_NO_NODE)
+			nid = next_node_in(page_to_nid(page), node_online_map);
 
 		if (PageHuge(page)) {
 			struct page *head = compound_head(page);
@@ -1615,7 +1618,7 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 		 * alloc_migrate_target should be improooooved!!
 		 * migrate_pages returns # of failed pages.
 		 */
-		ret = migrate_pages(&source, alloc_migrate_target, NULL, 0,
+		ret = migrate_pages(&source, alloc_migrate_target, NULL, nid,
 					MIGRATE_SYNC, MR_MEMORY_HOTPLUG);
 		if (ret)
 			putback_movable_pages(&source);

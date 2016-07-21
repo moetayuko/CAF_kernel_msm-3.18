@@ -280,18 +280,20 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 	return pfn < end_pfn ? -EBUSY : 0;
 }
 
-struct page *alloc_migrate_target(struct page *page, unsigned long private,
+struct page *alloc_migrate_target(struct page *page, unsigned long nid,
 				  int **resultp)
 {
 	/*
-	 * TODO: allocate a destination hugepage from a nearest neighbor node,
+	 * hugeTLB: allocate a destination page from a nearest neighbor node,
 	 * accordance with memory policy of the user process if possible. For
 	 * now as a simple work-around, we use the next node for destination.
+	 * Normal page: use prefer mempolicy for destination if called by
+	 * hotplug, use default mempolicy for destination if called by cma.
 	 */
 	if (PageHuge(page))
 		return alloc_huge_page_node(page_hstate(compound_head(page)),
 					    next_node_in(page_to_nid(page),
 							 node_online_map));
 	else
-		return alloc_page(GFP_HIGHUSER_MOVABLE);
+		return alloc_pages_node(nid, GFP_HIGHUSER_MOVABLE, 0);
 }
