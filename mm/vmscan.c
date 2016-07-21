@@ -2611,7 +2611,6 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 			 */
 			if (IS_ENABLED(CONFIG_COMPACTION) &&
 			    sc->order > PAGE_ALLOC_COSTLY_ORDER &&
-			    zonelist_zone_idx(z) <= sc->reclaim_idx &&
 			    compaction_ready(zone, sc)) {
 				sc->compaction_ready = true;
 				continue;
