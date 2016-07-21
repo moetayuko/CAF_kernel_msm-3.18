@@ -45,6 +45,7 @@ enum {
 	PERF_EVSEL__CONFIG_TERM_STACK_USER,
 	PERF_EVSEL__CONFIG_TERM_INHERIT,
 	PERF_EVSEL__CONFIG_TERM_MAX_STACK,
+	PERF_EVSEL__CONFIG_TERM_OVERWRITE,
 	PERF_EVSEL__CONFIG_TERM_MAX,
 };
 
@@ -59,6 +60,7 @@ struct perf_evsel_config_term {
 		u64	stack_user;
 		int	max_stack;
 		bool	inherit;
+		bool	overwrite;
 	} val;
 };
 
@@ -114,7 +116,6 @@ struct perf_evsel {
 	bool			tracking;
 	bool			per_pkg;
 	bool			precise_max;
-	bool			overwrite;
 	/* parse modifier helper */
 	int			exclude_GH;
 	int			nr_members;
@@ -355,23 +356,7 @@ static inline bool perf_evsel__is_group_event(struct perf_evsel *evsel)
 	return perf_evsel__is_group_leader(evsel) && evsel->nr_members > 1;
 }
 
-/**
- * perf_evsel__is_function_event - Return whether given evsel is a function
- * trace event
- *
- * @evsel - evsel selector to be tested
- *
- * Return %true if event is function trace event
- */
-static inline bool perf_evsel__is_function_event(struct perf_evsel *evsel)
-{
-#define FUNCTION_EVENT "ftrace:function"
-
-	return evsel->name &&
-	       !strncmp(FUNCTION_EVENT, evsel->name, sizeof(FUNCTION_EVENT));
-
-#undef FUNCTION_EVENT
-}
+bool perf_evsel__is_function_event(struct perf_evsel *evsel);
 
 static inline bool perf_evsel__is_bpf_output(struct perf_evsel *evsel)
 {
