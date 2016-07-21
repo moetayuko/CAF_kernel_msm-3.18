@@ -267,7 +267,6 @@ struct tegra_pcie {
 	struct list_head buses;
 	struct resource *cs;
 
-	struct resource all;
 	struct resource io;
 	struct resource pio;
 	struct resource mem;
@@ -616,21 +615,11 @@ static int tegra_pcie_setup(int nr, struct pci_sys_data *sys)
 	sys->mem_offset = pcie->offset.mem;
 	sys->io_offset = pcie->offset.io;
 
-	err = devm_request_resource(pcie->dev, &pcie->all, &pcie->io);
+	err = devm_request_resource(pcie->dev, &iomem_resource, &pcie->io);
 	if (err < 0)
 		return err;
 
-	err = devm_request_resource(pcie->dev, &ioport_resource, &pcie->pio);
-	if (err < 0)
-		return err;
-
-	err = devm_request_resource(pcie->dev, &pcie->all, &pcie->mem);
-	if (err < 0)
-		return err;
-
-	err = devm_request_resource(pcie->dev, &pcie->all, &pcie->prefetch);
-	if (err)
-		return err;
+	pci_remap_iospace(&pcie->pio, pcie->io.start);
 
 	pci_add_resource_offset(&sys->resources, &pcie->pio, sys->io_offset);
 	pci_add_resource_offset(&sys->resources, &pcie->mem, sys->mem_offset);
@@ -638,7 +627,9 @@ static int tegra_pcie_setup(int nr, struct pci_sys_data *sys)
 				sys->mem_offset);
 	pci_add_resource(&sys->resources, &pcie->busn);
 
-	pci_remap_iospace(&pcie->pio, pcie->io.start);
+	err = devm_request_pci_bus_resources(pcie->dev, &sys->resources);
+	if (err < 0)
+		return err;
 
 	return 1;
 }
@@ -1816,12 +1807,6 @@ static int tegra_pcie_parse_dt(struct tegra_pcie *pcie)
 	struct resource res;
 	int err;
 
-	memset(&pcie->all, 0, sizeof(pcie->all));
-	pcie->all.flags = IORESOURCE_MEM;
-	pcie->all.name = np->full_name;
-	pcie->all.start = ~0;
-	pcie->all.end = 0;
-
 	if (of_pci_range_parser_init(&parser, np)) {
 		dev_err(pcie->dev, "missing \"ranges\" property\n");
 		return -EINVAL;
@@ -1874,17 +1859,7 @@ static int tegra_pcie_parse_dt(struct tegra_pcie *pcie)
 			}
 			break;
 		}
-
-		if (res.start <= pcie->all.start)
-			pcie->all.start = res.start;
-
-		if (res.end >= pcie->all.end)
-			pcie->all.end = res.end;
 	}
-
-	err = devm_request_resource(pcie->dev, &iomem_resource, &pcie->all);
-	if (err < 0)
-		return err;
 
 	err = of_pci_parse_bus_range(np, &pcie->busn);
 	if (err < 0) {
