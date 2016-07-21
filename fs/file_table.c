@@ -216,7 +216,7 @@ static void __fput(struct file *file)
 	if ((file->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_dec(inode);
 	if (file->f_mode & FMODE_WRITER) {
-		put_write_access(inode);
+		put_write_access(locks_inode(file));
 		__mnt_drop_write(mnt);
 	}
 	file->f_path.dentry = NULL;
