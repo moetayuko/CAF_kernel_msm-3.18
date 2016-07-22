@@ -931,8 +931,10 @@ void __init hash__early_init_mmu(void)
 		ps3_early_mm_init();
 	else if (firmware_has_feature(FW_FEATURE_LPAR))
 		hpte_init_lpar();
+#ifdef CONFIG_PPC_NATIVE
 	else
 		hpte_init_native();
+#endif
 
 	/* Initialize the MMU Hash table and create the linear mapping
 	 * of memory. Has to be done before SLB initialization as this is
