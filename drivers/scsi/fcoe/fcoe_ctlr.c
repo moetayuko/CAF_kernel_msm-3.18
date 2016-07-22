@@ -991,7 +991,7 @@ static int fcoe_ctlr_parse_adv(struct fcoe_ctlr *fip,
 			LIBFCOE_FIP_DBG(fip, "unexpected descriptor type %x "
 					"in FIP adv\n", desc->fip_dtype);
 			/* standard says ignore unknown descriptors >= 128 */
-			if (desc->fip_dtype < FIP_DT_VENDOR_BASE)
+			if (desc->fip_dtype < FIP_DT_NON_CRITICAL)
 				return -EINVAL;
 			break;
 		}
@@ -1232,7 +1232,7 @@ static void fcoe_ctlr_recv_els(struct fcoe_ctlr *fip, struct sk_buff *skb)
 			LIBFCOE_FIP_DBG(fip, "unexpected descriptor type %x "
 					"in FIP adv\n", desc->fip_dtype);
 			/* standard says ignore unknown descriptors >= 128 */
-			if (desc->fip_dtype < FIP_DT_VENDOR_BASE)
+			if (desc->fip_dtype < FIP_DT_NON_CRITICAL)
 				goto drop;
 			if (desc_cnt <= 2) {
 				LIBFCOE_FIP_DBG(fip, "FIP descriptors "
@@ -1410,7 +1410,7 @@ static void fcoe_ctlr_recv_clr_vlink(struct fcoe_ctlr *fip,
 			break;
 		default:
 			/* standard says ignore unknown descriptors >= 128 */
-			if (desc->fip_dtype < FIP_DT_VENDOR_BASE)
+			if (desc->fip_dtype < FIP_DT_NON_CRITICAL)
 				goto err;
 			break;
 		}
@@ -2338,7 +2338,7 @@ static int fcoe_ctlr_vn_parse(struct fcoe_ctlr *fip,
 			LIBFCOE_FIP_DBG(fip, "unexpected descriptor type %x "
 					"in FIP probe\n", dtype);
 			/* standard says ignore unknown descriptors >= 128 */
-			if (dtype < FIP_DT_VENDOR_BASE)
+			if (dtype < FIP_DT_NON_CRITICAL)
 				return -EINVAL;
 			break;
 		}
@@ -2496,14 +2496,13 @@ static int fcoe_ctlr_vn_lookup(struct fcoe_ctlr *fip, u32 port_id, u8 *mac)
 	struct fcoe_rport *frport;
 	int ret = -1;
 
-	rcu_read_lock();
 	rdata = lport->tt.rport_lookup(lport, port_id);
 	if (rdata) {
 		frport = fcoe_ctlr_rport(rdata);
 		memcpy(mac, frport->enode_mac, ETH_ALEN);
 		ret = 0;
+		kref_put(&rdata->kref, lport->tt.rport_destroy);
 	}
-	rcu_read_unlock();
 	return ret;
 }
 
@@ -2585,11 +2584,7 @@ static void fcoe_ctlr_vn_beacon(struct fcoe_ctlr *fip,
 		fcoe_ctlr_vn_send(fip, FIP_SC_VN_PROBE_REQ, fcoe_all_vn2vn, 0);
 		return;
 	}
-	mutex_lock(&lport->disc.disc_mutex);
 	rdata = lport->tt.rport_lookup(lport, new->ids.port_id);
-	if (rdata)
-		kref_get(&rdata->kref);
-	mutex_unlock(&lport->disc.disc_mutex);
 	if (rdata) {
 		if (rdata->ids.node_name == new->ids.node_name &&
 		    rdata->ids.port_name == new->ids.port_name) {
@@ -2869,7 +2864,7 @@ unlock:
  * when nothing is happening.
  */
 static void fcoe_ctlr_mode_set(struct fc_lport *lport, struct fcoe_ctlr *fip,
-			       enum fip_state fip_mode)
+			       enum fip_mode fip_mode)
 {
 	void *priv;
 
