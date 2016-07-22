@@ -211,9 +211,9 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 		return io->ci_result;
 	io->ci_lockreq = CILR_NEVER;
 
-	rw = head->bi_rw;
+	rw = bio_data_dir(head);
 	for (bio = head; bio ; bio = bio->bi_next) {
-		LASSERT(rw == bio->bi_rw);
+		LASSERT(rw == bio_data_dir(bio));
 
 		offset = (pgoff_t)(bio->bi_iter.bi_sector << 9) + lo->lo_offset;
 		bio_for_each_segment(bvec, bio, iter) {
@@ -305,7 +305,7 @@ static unsigned int loop_get_bio(struct lloop_device *lo, struct bio **req)
 	/* TODO: need to split the bio, too bad. */
 	LASSERT(first->bi_vcnt <= LLOOP_MAX_SEGMENTS);
 
-	rw = first->bi_rw;
+	rw = bio_data_dir(first);
 	bio = &lo->lo_bio;
 	while (*bio && (*bio)->bi_rw == rw) {
 		CDEBUG(D_INFO, "bio sector %llu size %u count %u vcnt%u\n",
@@ -336,7 +336,6 @@ static unsigned int loop_get_bio(struct lloop_device *lo, struct bio **req)
 static blk_qc_t loop_make_request(struct request_queue *q, struct bio *old_bio)
 {
 	struct lloop_device *lo = q->queuedata;
-	int rw = bio_rw(old_bio);
 	int inactive;
 
 	blk_queue_split(q, &old_bio, q->bio_split);
@@ -354,13 +353,15 @@ static blk_qc_t loop_make_request(struct request_queue *q, struct bio *old_bio)
 	if (inactive)
 		goto err;
 
-	if (rw == WRITE) {
+	switch (bio_op(old_bio)) {
+	case REQ_OP_WRITE:
 		if (lo->lo_flags & LO_FLAGS_READ_ONLY)
 			goto err;
-	} else if (rw == READA) {
-		rw = READ;
-	} else if (rw != READ) {
-		CERROR("lloop: unknown command (%x)\n", rw);
+		break;
+	case REQ_OP_READ:
+		break;
+	default:
+		CERROR("lloop: unknown command (%x)\n", bio_op(old_bio));
 		goto err;
 	}
 	loop_add_bio(lo, old_bio);
