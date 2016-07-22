@@ -68,7 +68,7 @@ static irqreturn_t rv8803_handle_irq(int irq, void *dev_id)
 	do {
 		flags = i2c_smbus_read_byte_data(client, RV8803_FLAG);
 		try++;
-	} while ((flags == -ENXIO) && (try < 3));
+	} while (((flags == -ENXIO) || (flags == -EIO)) && (try < 4));
 	if (flags <= 0) {
 		mutex_unlock(&rv8803->flags_lock);
 		return IRQ_NONE;
@@ -210,10 +210,7 @@ static int rv8803_get_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	alrm->time.tm_sec  = 0;
 	alrm->time.tm_min  = bcd2bin(alarmvals[0] & 0x7f);
 	alrm->time.tm_hour = bcd2bin(alarmvals[1] & 0x3f);
-	alrm->time.tm_wday = -1;
 	alrm->time.tm_mday = bcd2bin(alarmvals[2] & 0x3f);
-	alrm->time.tm_mon  = -1;
-	alrm->time.tm_year = -1;
 
 	alrm->enabled = !!(rv8803->ctrl & RV8803_CTRL_AIE);
 	alrm->pending = (flags & RV8803_FLAG_AF) && alrm->enabled;
@@ -452,7 +449,7 @@ static int rv8803_probe(struct i2c_client *client,
 	do {
 		flags = i2c_smbus_read_byte_data(client, RV8803_FLAG);
 		try++;
-	} while ((flags == -ENXIO) && (try < 3));
+	} while (((flags == -ENXIO) || (flags == -EIO)) && (try < 4));
 
 	if (flags < 0)
 		return flags;
@@ -493,7 +490,7 @@ static int rv8803_probe(struct i2c_client *client,
 		err = i2c_smbus_write_byte_data(rv8803->client, RV8803_EXT,
 						RV8803_EXT_WADA);
 		try++;
-	} while ((err == -ENXIO) && (try < 3));
+	} while (((err == -ENXIO) || (flags == -EIO)) && (try < 4));
 	if (err)
 		return err;
 
