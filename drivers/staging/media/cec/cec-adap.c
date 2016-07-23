@@ -156,10 +156,10 @@ static void cec_queue_msg_fh(struct cec_fh *fh, const struct cec_msg *msg)
 	list_add_tail(&entry->list, &fh->msgs);
 
 	/*
-	 * if the queue now has more than CEC_MAX_MSG_QUEUE_SZ
+	 * if the queue now has more than CEC_MAX_MSG_RX_QUEUE_SZ
 	 * messages, drop the oldest one and send a lost message event.
 	 */
-	if (fh->queued_msgs == CEC_MAX_MSG_QUEUE_SZ) {
+	if (fh->queued_msgs == CEC_MAX_MSG_RX_QUEUE_SZ) {
 		list_del(&entry->list);
 		goto lost_msgs;
 	}
@@ -278,10 +278,13 @@ static void cec_data_cancel(struct cec_data *data)
 	 * It's either the current transmit, or it is a pending
 	 * transmit. Take the appropriate action to clear it.
 	 */
-	if (data->adap->transmitting == data)
+	if (data->adap->transmitting == data) {
 		data->adap->transmitting = NULL;
-	else
+	} else {
 		list_del_init(&data->list);
+		if (!(data->msg.tx_status & CEC_TX_STATUS_OK))
+			data->adap->transmit_queue_sz--;
+	}
 
 	/* Mark it as an error */
 	data->msg.tx_ts = ktime_get_ns();
@@ -329,7 +332,7 @@ int cec_thread_func(void *_adap)
 			 */
 			err = wait_event_interruptible_timeout(adap->kthread_waitq,
 				kthread_should_stop() ||
-				adap->phys_addr == CEC_PHYS_ADDR_INVALID ||
+				(!adap->is_configured && !adap->is_configuring) ||
 				(!adap->transmitting &&
 				 !list_empty(&adap->transmit_queue)),
 				msecs_to_jiffies(CEC_XFER_TIMEOUT_MS));
@@ -344,7 +347,7 @@ int cec_thread_func(void *_adap)
 
 		mutex_lock(&adap->lock);
 
-		if (adap->phys_addr == CEC_PHYS_ADDR_INVALID ||
+		if ((!adap->is_configured && !adap->is_configuring) ||
 		    kthread_should_stop()) {
 			/*
 			 * If the adapter is disabled, or we're asked to stop,
@@ -405,6 +408,7 @@ int cec_thread_func(void *_adap)
 		data = list_first_entry(&adap->transmit_queue,
 					struct cec_data, list);
 		list_del_init(&data->list);
+		adap->transmit_queue_sz--;
 		/* Make this the current transmitting message */
 		adap->transmitting = data;
 
@@ -498,6 +502,7 @@ void cec_transmit_done(struct cec_adapter *adap, u8 status, u8 arb_lost_cnt,
 		data->attempts--;
 		/* Add the message in front of the transmit queue */
 		list_add(&data->list, &adap->transmit_queue);
+		adap->transmit_queue_sz++;
 		goto wake_thread;
 	}
 
@@ -574,6 +579,19 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 	unsigned int timeout;
 	int res = 0;
 
+	msg->rx_ts = 0;
+	msg->tx_ts = 0;
+	msg->rx_status = 0;
+	msg->tx_status = 0;
+	msg->tx_arb_lost_cnt = 0;
+	msg->tx_nack_cnt = 0;
+	msg->tx_low_drive_cnt = 0;
+	msg->tx_error_cnt = 0;
+	msg->flags = 0;
+	msg->sequence = ++adap->sequence;
+	if (!msg->sequence)
+		msg->sequence = ++adap->sequence;
+
 	if (msg->reply && msg->timeout == 0) {
 		/* Make sure the timeout isn't 0. */
 		msg->timeout = 1000;
@@ -588,6 +606,7 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 		dprintk(1, "cec_transmit_msg: can't reply for poll msg\n");
 		return -EINVAL;
 	}
+	memset(msg->msg + msg->len, 0, sizeof(msg->msg) - msg->len);
 	if (msg->len == 1) {
 		if (cec_msg_initiator(msg) != 0xf ||
 		    cec_msg_destination(msg) == 0xf) {
@@ -624,6 +643,9 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 	if (!adap->is_configured && !adap->is_configuring)
 		return -ENONET;
 
+	if (adap->transmit_queue_sz >= CEC_MAX_MSG_TX_QUEUE_SZ)
+		return -EBUSY;
+
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
@@ -640,14 +662,6 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 		dprintk(2, "cec_transmit_msg: %*ph%s\n",
 			msg->len, msg->msg, !block ? " (nb)" : "");
 
-	msg->rx_ts = 0;
-	msg->tx_ts = 0;
-	msg->rx_status = 0;
-	msg->tx_status = 0;
-	msg->tx_arb_lost_cnt = 0;
-	msg->tx_nack_cnt = 0;
-	msg->tx_low_drive_cnt = 0;
-	msg->tx_error_cnt = 0;
 	data->msg = *msg;
 	data->fh = fh;
 	data->adap = adap;
@@ -673,10 +687,10 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 	init_completion(&data->c);
 	INIT_DELAYED_WORK(&data->work, cec_wait_timeout);
 
-	data->msg.sequence = adap->sequence++;
 	if (fh)
 		list_add_tail(&data->xfer_list, &fh->xfer_list);
 	list_add_tail(&data->list, &adap->transmit_queue);
+	adap->transmit_queue_sz++;
 	if (!adap->transmitting)
 		wake_up_interruptible(&adap->kthread_waitq);
 
@@ -767,6 +781,7 @@ void cec_received_msg(struct cec_adapter *adap, struct cec_msg *msg)
 	msg->tx_status = 0;
 	msg->tx_ts = 0;
 	msg->flags = 0;
+	memset(msg->msg + msg->len, 0, sizeof(msg->msg) - msg->len);
 
 	mutex_lock(&adap->lock);
 	dprintk(2, "cec_received_msg: %*ph\n", msg->len, msg->msg);
@@ -1195,13 +1210,8 @@ int __cec_s_log_addrs(struct cec_adapter *adap,
 				return -EINVAL;
 			}
 
-	if (log_addrs->cec_version < CEC_OP_CEC_VERSION_2_0) {
-		memset(log_addrs->all_device_types, 0,
-		       sizeof(log_addrs->all_device_types));
-		memset(log_addrs->features, 0, sizeof(log_addrs->features));
-	}
-
 	for (i = 0; i < log_addrs->num_log_addrs; i++) {
+		const u8 feature_sz = ARRAY_SIZE(log_addrs->features[0]);
 		u8 *features = log_addrs->features[i];
 		bool op_is_dev_features = false;
 
@@ -1230,21 +1240,19 @@ int __cec_s_log_addrs(struct cec_adapter *adap,
 			dprintk(1, "unknown logical address type\n");
 			return -EINVAL;
 		}
-		if (log_addrs->cec_version < CEC_OP_CEC_VERSION_2_0)
-			continue;
-
-		for (i = 0; i < ARRAY_SIZE(log_addrs->features[0]); i++) {
+		for (i = 0; i < feature_sz; i++) {
 			if ((features[i] & 0x80) == 0) {
 				if (op_is_dev_features)
 					break;
 				op_is_dev_features = true;
 			}
 		}
-		if (!op_is_dev_features ||
-		    i == ARRAY_SIZE(log_addrs->features[0])) {
+		if (!op_is_dev_features || i == feature_sz) {
 			dprintk(1, "malformed features\n");
 			return -EINVAL;
 		}
+		/* Zero unused part of the feature array */
+		memset(features + i, 0, feature_sz - i);
 	}
 
 	if (log_addrs->cec_version >= CEC_OP_CEC_VERSION_2_0) {
@@ -1264,6 +1272,15 @@ int __cec_s_log_addrs(struct cec_adapter *adap,
 				return -EINVAL;
 			}
 		}
+	}
+
+	/* Zero unused LAs */
+	for (i = log_addrs->num_log_addrs; i < CEC_MAX_LOG_ADDRS; i++) {
+		log_addrs->primary_device_type[i] = 0;
+		log_addrs->log_addr_type[i] = 0;
+		log_addrs->all_device_types[i] = 0;
+		memset(log_addrs->features[i], 0,
+		       sizeof(log_addrs->features[i]));
 	}
 
 	log_addrs->log_addr_mask = adap->log_addrs.log_addr_mask;
@@ -1615,15 +1632,19 @@ int cec_adap_status(struct seq_file *file, void *priv)
 			   adap->monitor_all_cnt);
 	data = adap->transmitting;
 	if (data)
-		seq_printf(file, "transmitting message: %*ph (reply: %02x)\n",
-			   data->msg.len, data->msg.msg, data->msg.reply);
+		seq_printf(file, "transmitting message: %*ph (reply: %02x, timeout: %ums)\n",
+			   data->msg.len, data->msg.msg, data->msg.reply,
+			   data->msg.timeout);
+	seq_printf(file, "pending transmits: %u\n", adap->transmit_queue_sz);
 	list_for_each_entry(data, &adap->transmit_queue, list) {
-		seq_printf(file, "queued tx message: %*ph (reply: %02x)\n",
-			   data->msg.len, data->msg.msg, data->msg.reply);
+		seq_printf(file, "queued tx message: %*ph (reply: %02x, timeout: %ums)\n",
+			   data->msg.len, data->msg.msg, data->msg.reply,
+			   data->msg.timeout);
 	}
 	list_for_each_entry(data, &adap->wait_queue, list) {
-		seq_printf(file, "message waiting for reply: %*ph (reply: %02x)\n",
-			   data->msg.len, data->msg.msg, data->msg.reply);
+		seq_printf(file, "message waiting for reply: %*ph (reply: %02x, timeout: %ums)\n",
+			   data->msg.len, data->msg.msg, data->msg.reply,
+			   data->msg.timeout);
 	}
 
 	call_void_op(adap, adap_status, file);

@@ -2,9 +2,9 @@
 
 .. include:: <isonum.txt>
 
-##############################
-Linux Media Infrastructure API
-##############################
+########################################
+Linux Media Infrastructure userspace API
+########################################
 
 **Copyright** |copy| 2009-2016 : LinuxTV Developers
 
@@ -14,11 +14,12 @@ any later version published by the Free Software Foundation. A copy of
 the license is included in the chapter entitled "GNU Free Documentation
 License".
 
+.. class:: toc-title
 
-.. contents::
+        Table of Contents
 
 .. toctree::
-    :maxdepth: 5
+    :maxdepth: 1
 
     intro
     uapi/v4l/v4l2
