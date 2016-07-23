@@ -10,12 +10,8 @@ extern atomic_t highmem_file_pages;
 static inline void acct_highmem_file_pages(int zid, enum lru_list lru,
 							int nr_pages)
 {
-	if (is_highmem_idx(zid) && is_file_lru(lru)) {
-		if (nr_pages > 0)
-			atomic_add(nr_pages, &highmem_file_pages);
-		else
-			atomic_sub(nr_pages, &highmem_file_pages);
-	}
+	if (is_highmem_idx(zid) && is_file_lru(lru))
+		atomic_add(nr_pages, &highmem_file_pages);
 }
 #else
 static inline void acct_highmem_file_pages(int zid, enum lru_list lru,
