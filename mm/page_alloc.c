@@ -1724,7 +1724,8 @@ static bool check_new_pages(struct page *page, unsigned int order)
 	return false;
 }
 
-void post_alloc_hook(struct page *page, unsigned int order, gfp_t gfp_flags)
+inline void post_alloc_hook(struct page *page, unsigned int order,
+				gfp_t gfp_flags)
 {
 	set_page_private(page, 0);
 	set_page_refcounted(page);
