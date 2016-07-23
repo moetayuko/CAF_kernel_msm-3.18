@@ -1819,7 +1819,7 @@ define_pr_level(__pr_crit, LOGLEVEL_CRIT);
 define_pr_level(__pr_err, LOGLEVEL_ERR);
 define_pr_level(__pr_warn, LOGLEVEL_WARNING);
 define_pr_level(__pr_notice, LOGLEVEL_NOTICE);
-define_pr_level(__pr_info, LOGLEVEL_NOTICE);
+define_pr_level(__pr_info, LOGLEVEL_INFO);
 #endif
 
 int vprintk_default(int level, const char *fmt, va_list args)
