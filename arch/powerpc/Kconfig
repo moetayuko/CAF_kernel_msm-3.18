@@ -165,6 +165,7 @@ config PPC
 	select ARCH_HAS_UBSAN_SANITIZE_ALL
 	select ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
 	select HAVE_LIVEPATCH if HAVE_DYNAMIC_FTRACE_WITH_REGS
+	select HAVE_VIRT_CPU_ACCOUNTING
 	select GENERIC_CPU_AUTOPROBE
 
 config GENERIC_CSUM
@@ -1056,6 +1057,11 @@ config CONSISTENT_SIZE
 config PIN_TLB
 	bool "Pinned Kernel TLBs (860 ONLY)"
 	depends on ADVANCED_OPTIONS && 8xx
+
+config PIN_TLB_IMMR
+	bool "Pinned TLB for IMMR"
+	depends on PIN_TLB
+	default y
 endmenu
 
 if PPC64
