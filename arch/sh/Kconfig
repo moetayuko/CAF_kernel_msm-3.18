@@ -278,7 +278,6 @@ config CPU_SUBTYPE_SH7203
 	select CPU_HAS_FPU
 	select SYS_SUPPORTS_SH_CMT
 	select SYS_SUPPORTS_SH_MTU2
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 
 config CPU_SUBTYPE_SH7206
@@ -367,7 +366,6 @@ config CPU_SUBTYPE_SH7720
 	select CPU_SH3
 	select CPU_HAS_DSP
 	select SYS_SUPPORTS_SH_CMT
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select USB_OHCI_SH if USB_OHCI_HCD
 	select PINCTRL
 	help
@@ -433,7 +431,6 @@ config CPU_SUBTYPE_SH7723
 	select ARCH_SHMOBILE
 	select ARCH_SPARSEMEM_ENABLE
 	select SYS_SUPPORTS_SH_CMT
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 	help
 	  Select SH7723 if you have an SH-MobileR2 CPU.
@@ -445,7 +442,6 @@ config CPU_SUBTYPE_SH7724
 	select ARCH_SHMOBILE
 	select ARCH_SPARSEMEM_ENABLE
 	select SYS_SUPPORTS_SH_CMT
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 	help
 	  Select SH7724 if you have an SH-MobileR2R CPU.
@@ -454,7 +450,6 @@ config CPU_SUBTYPE_SH7734
 	bool "Support SH7734 processor"
 	select CPU_SH4A
 	select CPU_SHX2
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 	help
 	  Select SH7734 if you have a SH4A SH7734 CPU.
@@ -463,7 +458,6 @@ config CPU_SUBTYPE_SH7757
 	bool "Support SH7757 processor"
 	select CPU_SH4A
 	select CPU_SHX2
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 	help
 	  Select SH7757 if you have a SH4A SH7757 CPU.
@@ -489,7 +483,6 @@ config CPU_SUBTYPE_SH7785
 	select CPU_SHX2
 	select ARCH_SPARSEMEM_ENABLE
 	select SYS_SUPPORTS_NUMA
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 
 config CPU_SUBTYPE_SH7786
@@ -498,7 +491,6 @@ config CPU_SUBTYPE_SH7786
 	select CPU_SHX3
 	select CPU_HAS_PTEAEX
 	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select USB_OHCI_SH if USB_OHCI_HCD
 	select USB_EHCI_SH if USB_EHCI_HCD
 	select PINCTRL
@@ -508,7 +500,7 @@ config CPU_SUBTYPE_SHX3
 	select CPU_SH4A
 	select CPU_SHX3
 	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
-	select ARCH_REQUIRE_GPIOLIB
+	select GPIOLIB
 	select PINCTRL
 
 # SH4AL-DSP Processor Support
@@ -527,7 +519,6 @@ config CPU_SUBTYPE_SH7722
 	select ARCH_SPARSEMEM_ENABLE
 	select SYS_SUPPORTS_NUMA
 	select SYS_SUPPORTS_SH_CMT
-	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select PINCTRL
 
 config CPU_SUBTYPE_SH7366
