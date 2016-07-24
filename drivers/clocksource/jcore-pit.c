@@ -142,7 +142,7 @@ static int jcore_pit_cpu_notify(struct notifier_block *self,
 	return NOTIFY_OK;
 }
 
-static irqreturn_t timer_interrupt(int irq, void *dev_id)
+static irqreturn_t jcore_timer_interrupt(int irq, void *dev_id)
 {
 	struct jcore_pit *pit = this_cpu_ptr(dev_id);
 
@@ -224,7 +224,7 @@ static void __init jcore_pit_init(struct device_node *node)
 		goto out;
 	}
 
-	err = request_irq(pit_irq, timer_interrupt,
+	err = request_irq(pit_irq, jcore_timer_interrupt,
 		IRQF_TIMER | IRQF_PERCPU, "jcore_pit", pit_percpu);
 	if (err) {
 		pr_err("pit irq request failed: %d\n", err);
