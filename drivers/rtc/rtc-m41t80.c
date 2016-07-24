@@ -320,10 +320,8 @@ static int m41t80_read_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	alrm->time.tm_sec  = bcd2bin(alarmvals[4] & 0x7f);
 	alrm->time.tm_min  = bcd2bin(alarmvals[3] & 0x7f);
 	alrm->time.tm_hour = bcd2bin(alarmvals[2] & 0x3f);
-	alrm->time.tm_wday = -1;
 	alrm->time.tm_mday = bcd2bin(alarmvals[1] & 0x3f);
 	alrm->time.tm_mon  = bcd2bin(alarmvals[0] & 0x3f);
-	alrm->time.tm_year = -1;
 
 	alrm->enabled = !!(alarmvals[0] & M41T80_ALMON_AFE);
 	alrm->pending = (flags & M41T80_FLAGS_AF) && alrm->enabled;
@@ -831,10 +829,9 @@ static int m41t80_probe(struct i2c_client *client,
 		return rc;
 	}
 
-	rc = devm_add_action(&client->dev, m41t80_remove_sysfs_group,
-			     &client->dev);
+	rc = devm_add_action_or_reset(&client->dev, m41t80_remove_sysfs_group,
+				      &client->dev);
 	if (rc) {
-		m41t80_remove_sysfs_group(&client->dev);
 		dev_err(&client->dev,
 			"Failed to add sysfs cleanup action: %d\n", rc);
 		return rc;
