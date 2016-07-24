@@ -144,6 +144,7 @@ static size_t copy_page_to_iter_iovec(struct page *page, size_t offset, size_t b
 	buf = iov->iov_base + skip;
 	copy = min(bytes, iov->iov_len - skip);
 
+#ifdef CONFIG_HIGHMEM
 	if (!fault_in_pages_writeable(buf, copy)) {
 		kaddr = kmap_atomic(page);
 		from = kaddr + offset;
@@ -175,6 +176,8 @@ static size_t copy_page_to_iter_iovec(struct page *page, size_t offset, size_t b
 		copy = min(bytes, iov->iov_len - skip);
 	}
 	/* Too bad - revert to non-atomic kmap */
+#endif
+
 	kaddr = kmap(page);
 	from = kaddr + offset;
 	left = __copy_to_user(buf, from, copy);
@@ -193,7 +196,10 @@ static size_t copy_page_to_iter_iovec(struct page *page, size_t offset, size_t b
 		bytes -= copy;
 	}
 	kunmap(page);
+
+#ifdef CONFIG_HIGHMEM
 done:
+#endif
 	if (skip == iov->iov_len) {
 		iov++;
 		skip = 0;
@@ -225,6 +231,7 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 	buf = iov->iov_base + skip;
 	copy = min(bytes, iov->iov_len - skip);
 
+#ifdef CONFIG_HIGHMEM
 	if (!fault_in_pages_readable(buf, copy)) {
 		kaddr = kmap_atomic(page);
 		to = kaddr + offset;
@@ -256,6 +263,8 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 		copy = min(bytes, iov->iov_len - skip);
 	}
 	/* Too bad - revert to non-atomic kmap */
+#endif
+
 	kaddr = kmap(page);
 	to = kaddr + offset;
 	left = __copy_from_user(to, buf, copy);
@@ -274,7 +283,10 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 		bytes -= copy;
 	}
 	kunmap(page);
+
+#ifdef CONFIG_HIGHMEM
 done:
+#endif
 	if (skip == iov->iov_len) {
 		iov++;
 		skip = 0;

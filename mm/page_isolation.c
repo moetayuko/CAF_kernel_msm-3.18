@@ -7,6 +7,7 @@
 #include <linux/pageblock-flags.h>
 #include <linux/memory.h>
 #include <linux/hugetlb.h>
+#include <linux/page_owner.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -80,7 +81,7 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 {
 	struct zone *zone;
 	unsigned long flags, nr_pages;
-	struct page *isolated_page = NULL;
+	bool isolated_page = false;
 	unsigned int order;
 	unsigned long page_idx, buddy_idx;
 	struct page *buddy;
@@ -108,9 +109,7 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 			if (pfn_valid_within(page_to_pfn(buddy)) &&
 			    !is_migrate_isolate_page(buddy)) {
 				__isolate_free_page(page, order);
-				kernel_map_pages(page, (1 << order), 1);
-				set_page_refcounted(page);
-				isolated_page = page;
+				isolated_page = true;
 			}
 		}
 	}
@@ -128,8 +127,10 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	zone->nr_isolate_pageblock--;
 out:
 	spin_unlock_irqrestore(&zone->lock, flags);
-	if (isolated_page)
-		__free_pages(isolated_page, order);
+	if (isolated_page) {
+		post_alloc_hook(page, order, __GFP_MOVABLE);
+		__free_pages(page, order);
+	}
 }
 
 static inline struct page *
@@ -279,23 +280,20 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 	return pfn < end_pfn ? -EBUSY : 0;
 }
 
-struct page *alloc_migrate_target(struct page *page, unsigned long private,
+struct page *alloc_migrate_target(struct page *page, unsigned long nid,
 				  int **resultp)
 {
-	gfp_t gfp_mask = GFP_USER | __GFP_MOVABLE;
-
 	/*
-	 * TODO: allocate a destination hugepage from a nearest neighbor node,
+	 * hugeTLB: allocate a destination page from a nearest neighbor node,
 	 * accordance with memory policy of the user process if possible. For
 	 * now as a simple work-around, we use the next node for destination.
+	 * Normal page: use prefer mempolicy for destination if called by
+	 * hotplug, use default mempolicy for destination if called by cma.
 	 */
 	if (PageHuge(page))
 		return alloc_huge_page_node(page_hstate(compound_head(page)),
 					    next_node_in(page_to_nid(page),
 							 node_online_map));
-
-	if (PageHighMem(page))
-		gfp_mask |= __GFP_HIGHMEM;
-
-	return alloc_page(gfp_mask);
+	else
+		return alloc_pages_node(nid, GFP_HIGHUSER_MOVABLE, 0);
 }
