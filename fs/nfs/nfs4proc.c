@@ -2882,11 +2882,10 @@ static void nfs4_close_prepare(struct rpc_task *task, void *data)
 			call_close |= is_wronly;
 		else if (is_wronly)
 			calldata->arg.fmode |= FMODE_WRITE;
+		if (calldata->arg.fmode != (FMODE_READ|FMODE_WRITE))
+			call_close |= is_rdwr;
 	} else if (is_rdwr)
 		calldata->arg.fmode |= FMODE_READ|FMODE_WRITE;
-
-	if (calldata->arg.fmode == 0)
-		call_close |= is_rdwr;
 
 	if (!nfs4_valid_open_stateid(state))
 		call_close = 0;
@@ -3531,7 +3530,7 @@ static void nfs_fixup_secinfo_attributes(struct nfs_fattr *fattr)
 }
 
 static int nfs4_proc_lookup_common(struct rpc_clnt **clnt, struct inode *dir,
-				   struct qstr *name, struct nfs_fh *fhandle,
+				   const struct qstr *name, struct nfs_fh *fhandle,
 				   struct nfs_fattr *fattr, struct nfs4_label *label)
 {
 	struct nfs4_exception exception = { };
@@ -3573,7 +3572,7 @@ out:
 	return err;
 }
 
-static int nfs4_proc_lookup(struct inode *dir, struct qstr *name,
+static int nfs4_proc_lookup(struct inode *dir, const struct qstr *name,
 			    struct nfs_fh *fhandle, struct nfs_fattr *fattr,
 			    struct nfs4_label *label)
 {
@@ -3589,7 +3588,7 @@ static int nfs4_proc_lookup(struct inode *dir, struct qstr *name,
 }
 
 struct rpc_clnt *
-nfs4_proc_lookup_mountpoint(struct inode *dir, struct qstr *name,
+nfs4_proc_lookup_mountpoint(struct inode *dir, const struct qstr *name,
 			    struct nfs_fh *fhandle, struct nfs_fattr *fattr)
 {
 	struct rpc_clnt *client = NFS_CLIENT(dir);
@@ -3748,7 +3747,7 @@ out:
 	return status;
 }
 
-static int _nfs4_proc_remove(struct inode *dir, struct qstr *name)
+static int _nfs4_proc_remove(struct inode *dir, const struct qstr *name)
 {
 	struct nfs_server *server = NFS_SERVER(dir);
 	struct nfs_removeargs args = {
@@ -3771,7 +3770,7 @@ static int _nfs4_proc_remove(struct inode *dir, struct qstr *name)
 	return status;
 }
 
-static int nfs4_proc_remove(struct inode *dir, struct qstr *name)
+static int nfs4_proc_remove(struct inode *dir, const struct qstr *name)
 {
 	struct nfs4_exception exception = { };
 	int err;
@@ -3854,7 +3853,7 @@ static int nfs4_proc_rename_done(struct rpc_task *task, struct inode *old_dir,
 	return 1;
 }
 
-static int _nfs4_proc_link(struct inode *inode, struct inode *dir, struct qstr *name)
+static int _nfs4_proc_link(struct inode *inode, struct inode *dir, const struct qstr *name)
 {
 	struct nfs_server *server = NFS_SERVER(inode);
 	struct nfs4_link_arg arg = {
@@ -3901,7 +3900,7 @@ out:
 	return status;
 }
 
-static int nfs4_proc_link(struct inode *inode, struct inode *dir, struct qstr *name)
+static int nfs4_proc_link(struct inode *inode, struct inode *dir, const struct qstr *name)
 {
 	struct nfs4_exception exception = { };
 	int err;
@@ -3923,7 +3922,7 @@ struct nfs4_createdata {
 };
 
 static struct nfs4_createdata *nfs4_alloc_createdata(struct inode *dir,
-		struct qstr *name, struct iattr *sattr, u32 ftype)
+		const struct qstr *name, struct iattr *sattr, u32 ftype)
 {
 	struct nfs4_createdata *data;
 
@@ -7924,8 +7923,8 @@ nfs4_layoutget_handle_exception(struct rpc_task *task,
 			break;
 		}
 		lo = NFS_I(inode)->layout;
-		if (lo && nfs4_stateid_match(&lgp->args.stateid,
-					&lo->plh_stateid)) {
+		if (lo && !test_bit(NFS_LAYOUT_INVALID_STID, &lo->plh_flags) &&
+		    nfs4_stateid_match_other(&lgp->args.stateid, &lo->plh_stateid)) {
 			LIST_HEAD(head);
 
 			/*
@@ -7936,10 +7935,10 @@ nfs4_layoutget_handle_exception(struct rpc_task *task,
 			pnfs_mark_matching_lsegs_invalid(lo, &head, NULL, 0);
 			spin_unlock(&inode->i_lock);
 			pnfs_free_lseg_list(&head);
+			status = -EAGAIN;
+			goto out;
 		} else
 			spin_unlock(&inode->i_lock);
-		status = -EAGAIN;
-		goto out;
 	}
 
 	status = nfs4_handle_exception(server, status, exception);
@@ -8036,7 +8035,10 @@ nfs4_proc_layoutget(struct nfs4_layoutget *lgp, long *timeout, gfp_t gfp_flags)
 		.flags = RPC_TASK_ASYNC,
 	};
 	struct pnfs_layout_segment *lseg = NULL;
-	struct nfs4_exception exception = { .timeout = *timeout };
+	struct nfs4_exception exception = {
+		.inode = inode,
+		.timeout = *timeout,
+	};
 	int status = 0;
 
 	dprintk("--> %s\n", __func__);
