@@ -10,6 +10,9 @@
 #ifndef __ASM_SH_SPINLOCK_CAS_H
 #define __ASM_SH_SPINLOCK_CAS_H
 
+#include <asm/barrier.h>
+#include <asm/processor.h>
+
 static inline unsigned __sl_cas(volatile unsigned *p, unsigned old, unsigned new)
 {
 	__asm__ __volatile__("cas.l %1,%0,@r0"
@@ -25,8 +28,11 @@ static inline unsigned __sl_cas(volatile unsigned *p, unsigned old, unsigned new
 
 #define arch_spin_is_locked(x)		((x)->lock <= 0)
 #define arch_spin_lock_flags(lock, flags) arch_spin_lock(lock)
-#define arch_spin_unlock_wait(x) \
-	do { while (arch_spin_is_locked(x)) cpu_relax(); } while (0)
+
+static inline void arch_spin_unlock_wait(arch_spinlock_t *lock)
+{
+	smp_cond_load_acquire(&lock->lock, VAL > 0);
+}
 
 static inline void arch_spin_lock(arch_spinlock_t *lock)
 {

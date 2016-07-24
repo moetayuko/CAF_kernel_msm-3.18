@@ -23,7 +23,7 @@
 #include <linux/sched.h>
 #include <linux/kprobes.h>
 #include <linux/bootmem.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/mm.h>
 #include <linux/page-flags.h>
 #include <linux/highmem.h>
@@ -521,9 +521,7 @@ static void set_aliased_prot(void *v, pgprot_t prot)
 
 	preempt_disable();
 
-	pagefault_disable();	/* Avoid warnings due to being atomic. */
-	__get_user(dummy, (unsigned char __user __force *)v);
-	pagefault_enable();
+	probe_kernel_read(&dummy, v, 1);
 
 	if (HYPERVISOR_update_va_mapping((unsigned long)v, pte, 0))
 		BUG();
