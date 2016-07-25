@@ -219,4 +219,5 @@ module_platform_driver(jcore_spi_driver);
 
 MODULE_DESCRIPTION("J-Core SPI driver");
 MODULE_AUTHOR("Rich Felker <dalias@libc.org>");
+MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:" DRV_NAME);
