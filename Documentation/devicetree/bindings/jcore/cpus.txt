@@ -1,0 +1,49 @@
+===================
+J-Core cpu bindings
+===================
+
+The J-Core processors are open source CPU cores that can be built as FPGA
+soft cores or ASICs. The device tree is also responsible for describing the
+cache controls and, for SMP configurations, all details of the SMP method.
+
+The current version of this document covers only uniprocessor configurations.
+
+
+---------------------
+Top-level "cpus" node
+---------------------
+
+Required properties:
+
+- #address-cells: Must be 1.
+
+- #size-cells: Must be 0.
+
+
+--------------------
+Individual cpu nodes
+--------------------
+
+Required properties:
+
+- device_type: Must be "cpu".
+
+- compatible: Must be "jcore,j2".
+
+- reg: The sequential, zero-based hardware cpu number. Must be 0 on
+  uniprocessor systems.
+
+Optional properties:
+
+- clock-frequency: Clock frequency of the cpu in Hz.
+
+
+---------------------
+Cache controller node
+---------------------
+
+Required properties:
+
+- compatible: Must be "jcore,cache".
+
+- reg: A memory range for the cache controller registers.
