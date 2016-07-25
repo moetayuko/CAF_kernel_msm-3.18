@@ -17,6 +17,7 @@
 #include "tool.h"
 #include "header.h"
 #include "vdso.h"
+#include "probe-file.h"
 
 
 static bool no_buildid_cache;
@@ -165,8 +166,7 @@ retry:
 	return NULL;
 }
 
-static char *build_id_cache__linkname(const char *sbuild_id, char *bf,
-				      size_t size)
+char *build_id_cache__linkname(const char *sbuild_id, char *bf, size_t size)
 {
 	char *tmp = bf;
 	int ret = asnprintf(&bf, size, "%s/.build-id/%.2s/%s", buildid_dir,
@@ -174,6 +174,61 @@ static char *build_id_cache__linkname(const char *sbuild_id, char *bf,
 	if (ret < 0 || (tmp && size < (unsigned int)ret))
 		return NULL;
 	return bf;
+}
+
+char *build_id_cache__origname(const char *sbuild_id)
+{
+	char *linkname;
+	char buf[PATH_MAX];
+	char *ret = NULL, *p;
+	size_t offs = 5;	/* == strlen("../..") */
+
+	linkname = build_id_cache__linkname(sbuild_id, NULL, 0);
+	if (!linkname)
+		return NULL;
+
+	if (readlink(linkname, buf, PATH_MAX) < 0)
+		goto out;
+	/* The link should be "../..<origpath>/<sbuild_id>" */
+	p = strrchr(buf, '/');	/* Cut off the "/<sbuild_id>" */
+	if (p && (p > buf + offs)) {
+		*p = '\0';
+		if (buf[offs + 1] == '[')
+			offs++;	/*
+				 * This is a DSO name, like [kernel.kallsyms].
+				 * Skip the first '/', since this is not the
+				 * cache of a regular file.
+				 */
+		ret = strdup(buf + offs);	/* Skip "../..[/]" */
+	}
+out:
+	free(linkname);
+	return ret;
+}
+
+/* Check if the given build_id cache is valid on current running system */
+static bool build_id_cache__valid_id(char *sbuild_id)
+{
+	char real_sbuild_id[SBUILD_ID_SIZE] = "";
+	char *pathname;
+	int ret = 0;
+	bool result = false;
+
+	pathname = build_id_cache__origname(sbuild_id);
+	if (!pathname)
+		return false;
+
+	if (!strcmp(pathname, DSO__NAME_KALLSYMS))
+		ret = sysfs__sprintf_build_id("/", real_sbuild_id);
+	else if (pathname[0] == '/')
+		ret = filename__sprintf_build_id(pathname, real_sbuild_id);
+	else
+		ret = -EINVAL;	/* Should we support other special DSO cache? */
+	if (ret >= 0)
+		result = (strcmp(sbuild_id, real_sbuild_id) == 0);
+	free(pathname);
+
+	return result;
 }
 
 static const char *build_id_cache__basename(bool is_kallsyms, bool is_vdso)
@@ -387,6 +442,130 @@ void disable_buildid_cache(void)
 	no_buildid_cache = true;
 }
 
+static bool lsdir_bid_head_filter(const char *name __maybe_unused,
+				  struct dirent *d __maybe_unused)
+{
+	return (strlen(d->d_name) == 2) &&
+		isxdigit(d->d_name[0]) && isxdigit(d->d_name[1]);
+}
+
+static bool lsdir_bid_tail_filter(const char *name __maybe_unused,
+				  struct dirent *d __maybe_unused)
+{
+	int i = 0;
+	while (isxdigit(d->d_name[i]) && i < SBUILD_ID_SIZE - 3)
+		i++;
+	return (i == SBUILD_ID_SIZE - 3) && (d->d_name[i] == '\0');
+}
+
+struct strlist *build_id_cache__list_all(bool validonly)
+{
+	struct strlist *toplist, *linklist = NULL, *bidlist;
+	struct str_node *nd, *nd2;
+	char *topdir, *linkdir = NULL;
+	char sbuild_id[SBUILD_ID_SIZE];
+
+	/* for filename__ functions */
+	if (validonly)
+		symbol__init(NULL);
+
+	/* Open the top-level directory */
+	if (asprintf(&topdir, "%s/.build-id/", buildid_dir) < 0)
+		return NULL;
+
+	bidlist = strlist__new(NULL, NULL);
+	if (!bidlist)
+		goto out;
+
+	toplist = lsdir(topdir, lsdir_bid_head_filter);
+	if (!toplist) {
+		pr_debug("Error in lsdir(%s): %d\n", topdir, errno);
+		/* If there is no buildid cache, return an empty list */
+		if (errno == ENOENT)
+			goto out;
+		goto err_out;
+	}
+
+	strlist__for_each_entry(nd, toplist) {
+		if (asprintf(&linkdir, "%s/%s", topdir, nd->s) < 0)
+			goto err_out;
+		/* Open the lower-level directory */
+		linklist = lsdir(linkdir, lsdir_bid_tail_filter);
+		if (!linklist) {
+			pr_debug("Error in lsdir(%s): %d\n", linkdir, errno);
+			goto err_out;
+		}
+		strlist__for_each_entry(nd2, linklist) {
+			if (snprintf(sbuild_id, SBUILD_ID_SIZE, "%s%s",
+				     nd->s, nd2->s) != SBUILD_ID_SIZE - 1)
+				goto err_out;
+			if (validonly && !build_id_cache__valid_id(sbuild_id))
+				continue;
+			if (strlist__add(bidlist, sbuild_id) < 0)
+				goto err_out;
+		}
+		strlist__delete(linklist);
+		zfree(&linkdir);
+	}
+
+out_free:
+	strlist__delete(toplist);
+out:
+	free(topdir);
+
+	return bidlist;
+
+err_out:
+	strlist__delete(linklist);
+	zfree(&linkdir);
+	strlist__delete(bidlist);
+	bidlist = NULL;
+	goto out_free;
+}
+
+static bool str_is_build_id(const char *maybe_sbuild_id, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		if (!isxdigit(maybe_sbuild_id[i]))
+			return false;
+	}
+	return true;
+}
+
+/* Return the valid complete build-id */
+char *build_id_cache__complement(const char *incomplete_sbuild_id)
+{
+	struct strlist *bidlist;
+	struct str_node *nd, *cand = NULL;
+	char *sbuild_id = NULL;
+	size_t len = strlen(incomplete_sbuild_id);
+
+	if (len >= SBUILD_ID_SIZE ||
+	    !str_is_build_id(incomplete_sbuild_id, len))
+		return NULL;
+
+	bidlist = build_id_cache__list_all(true);
+	if (!bidlist)
+		return NULL;
+
+	strlist__for_each_entry(nd, bidlist) {
+		if (strncmp(nd->s, incomplete_sbuild_id, len) != 0)
+			continue;
+		if (cand) {	/* Error: There are more than 2 candidates. */
+			cand = NULL;
+			break;
+		}
+		cand = nd;
+	}
+	if (cand)
+		sbuild_id = strdup(cand->s);
+	strlist__delete(bidlist);
+
+	return sbuild_id;
+}
+
 char *build_id_cache__cachedir(const char *sbuild_id, const char *name,
 			       bool is_kallsyms, bool is_vdso)
 {
@@ -427,6 +606,30 @@ int build_id_cache__list_build_ids(const char *pathname,
 
 	return ret;
 }
+
+#if defined(HAVE_LIBELF_SUPPORT) && defined(HAVE_GELF_GETNOTE_SUPPORT)
+static int build_id_cache__add_sdt_cache(const char *sbuild_id,
+					  const char *realname)
+{
+	struct probe_cache *cache;
+	int ret;
+
+	cache = probe_cache__new(sbuild_id);
+	if (!cache)
+		return -1;
+
+	ret = probe_cache__scan_sdt(cache, realname);
+	if (ret >= 0) {
+		pr_debug("Found %d SDTs in %s\n", ret, realname);
+		if (probe_cache__commit(cache) < 0)
+			ret = -1;
+	}
+	probe_cache__delete(cache);
+	return ret;
+}
+#else
+#define build_id_cache__add_sdt_cache(sbuild_id, realname) (0)
+#endif
 
 int build_id_cache__add_s(const char *sbuild_id, const char *name,
 			  bool is_kallsyms, bool is_vdso)
@@ -485,6 +688,11 @@ int build_id_cache__add_s(const char *sbuild_id, const char *name,
 
 	if (symlink(tmp, linkname) == 0)
 		err = 0;
+
+	/* Update SDT cache : error is just warned */
+	if (build_id_cache__add_sdt_cache(sbuild_id, realname) < 0)
+		pr_debug("Failed to update/scan SDT cache for %s\n", realname);
+
 out_free:
 	if (!is_kallsyms)
 		free(realname);

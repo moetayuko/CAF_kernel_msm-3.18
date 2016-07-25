@@ -218,6 +218,14 @@ static struct test generic_tests[] = {
 		.func = test__cpu_map_print,
 	},
 	{
+		.desc = "Test SDT event probing",
+		.func = test__sdt_event,
+	},
+	{
+		.desc = "Test is_printable_array function",
+		.func = test__is_printable_array,
+	},
+	{
 		.func = NULL,
 	},
 };
@@ -258,7 +266,7 @@ static int run_test(struct test *test, int subtest)
 
 	if (child < 0) {
 		pr_err("failed to fork test: %s\n",
-			strerror_r(errno, sbuf, sizeof(sbuf)));
+			str_error_r(errno, sbuf, sizeof(sbuf)));
 		return -1;
 	}
 

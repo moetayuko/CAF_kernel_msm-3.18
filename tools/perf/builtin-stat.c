@@ -290,8 +290,12 @@ perf_evsel__write_stat_event(struct perf_evsel *counter, u32 cpu, u32 thread,
 static int read_counter(struct perf_evsel *counter)
 {
 	int nthreads = thread_map__nr(evsel_list->threads);
-	int ncpus = perf_evsel__nr_cpus(counter);
-	int cpu, thread;
+	int ncpus, cpu, thread;
+
+	if (target__has_cpu(&target))
+		ncpus = perf_evsel__nr_cpus(counter);
+	else
+		ncpus = 1;
 
 	if (!counter->supported)
 		return -ENOENT;
@@ -596,7 +600,7 @@ try_again:
 	if (perf_evlist__apply_filters(evsel_list, &counter)) {
 		error("failed to set filter \"%s\" on event %s with %d (%s)\n",
 			counter->filter, perf_evsel__name(counter), errno,
-			strerror_r(errno, msg, sizeof(msg)));
+			str_error_r(errno, msg, sizeof(msg)));
 		return -1;
 	}
 
@@ -637,7 +641,7 @@ try_again:
 		wait(&status);
 
 		if (workload_exec_errno) {
-			const char *emsg = strerror_r(workload_exec_errno, msg, sizeof(msg));
+			const char *emsg = str_error_r(workload_exec_errno, msg, sizeof(msg));
 			pr_err("Workload failed: %s\n", emsg);
 			return -1;
 		}

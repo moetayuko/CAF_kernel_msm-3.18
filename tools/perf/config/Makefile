@@ -115,7 +115,7 @@ endif
 FEATURE_CHECK_CFLAGS-libbabeltrace := $(LIBBABELTRACE_CFLAGS)
 FEATURE_CHECK_LDFLAGS-libbabeltrace := $(LIBBABELTRACE_LDFLAGS) -lbabeltrace-ctf
 
-FEATURE_CHECK_CFLAGS-bpf = -I. -I$(srctree)/tools/include -I$(srctree)/arch/$(ARCH)/include/uapi -I$(srctree)/include/uapi
+FEATURE_CHECK_CFLAGS-bpf = -I. -I$(srctree)/tools/include -I$(srctree)/tools/arch/$(ARCH)/include/uapi -I$(srctree)/tools/include/uapi
 # include ARCH specific config
 -include $(src-perf)/arch/$(ARCH)/Makefile
 
@@ -206,11 +206,11 @@ endif
 
 CFLAGS += -I$(src-perf)/util/include
 CFLAGS += -I$(src-perf)/arch/$(ARCH)/include
+CFLAGS += -I$(srctree)/tools/include/uapi
 CFLAGS += -I$(srctree)/tools/include/
-CFLAGS += -I$(srctree)/arch/$(ARCH)/include/uapi
-CFLAGS += -I$(srctree)/arch/$(ARCH)/include
-CFLAGS += -I$(srctree)/include/uapi
-CFLAGS += -I$(srctree)/include
+CFLAGS += -I$(srctree)/tools/arch/$(ARCH)/include/uapi
+CFLAGS += -I$(srctree)/tools/arch/$(ARCH)/include/
+CFLAGS += -I$(srctree)/tools/arch/$(ARCH)/
 
 # $(obj-perf)      for generated common-cmds.h
 # $(obj-perf)/util for generated bison/flex headers
@@ -309,6 +309,16 @@ ifndef NO_LIBELF
     CFLAGS += -DHAVE_ELF_GETPHDRNUM_SUPPORT
   endif
 
+  ifeq ($(feature-libelf-gelf_getnote), 1)
+    CFLAGS += -DHAVE_GELF_GETNOTE_SUPPORT
+  else
+    msg := $(warning gelf_getnote() not found on libelf, SDT support disabled);
+  endif
+
+  ifeq ($(feature-libelf-getshdrstrndx), 1)
+    CFLAGS += -DHAVE_ELF_GETSHDRSTRNDX_SUPPORT
+  endif
+
   ifndef NO_DWARF
     ifeq ($(origin PERF_HAVE_DWARF_REGS), undefined)
       msg := $(warning DWARF register mappings have not been defined for architecture $(ARCH), DWARF support disabled);
@@ -344,6 +354,16 @@ ifndef NO_LIBELF
 
   endif # NO_LIBBPF
 endif # NO_LIBELF
+
+ifndef NO_SDT
+  ifneq ($(feature-sdt), 1)
+    msg := $(warning No sys/sdt.h found, no SDT events are defined, please install systemtap-sdt-devel or systemtap-sdt-dev);
+    NO_SDT := 1;
+  else
+    CFLAGS += -DHAVE_SDT_EVENT
+    $(call detected,CONFIG_SDT_EVENT)
+  endif
+endif
 
 ifdef PERF_HAVE_JITDUMP
   ifndef NO_DWARF

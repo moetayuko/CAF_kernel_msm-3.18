@@ -4,6 +4,19 @@
  * Copyright (C) 2013-2015 Alexei Starovoitov <ast@kernel.org>
  * Copyright (C) 2015 Wang Nan <wangnan0@huawei.com>
  * Copyright (C) 2015 Huawei Inc.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License (not later!)
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this program; if not,  see <http://www.gnu.org/licenses>
  */
 #ifndef __BPF_LIBBPF_H
 #define __BPF_LIBBPF_H
@@ -26,6 +39,7 @@ enum libbpf_errno {
 	LIBBPF_ERRNO__VERIFY,	/* Kernel verifier blocks program loading */
 	LIBBPF_ERRNO__PROG2BIG,	/* Program too big */
 	LIBBPF_ERRNO__KVER,	/* Incorrect kernel version */
+	LIBBPF_ERRNO__PROGTYPE,	/* Kernel doesn't support this program type */
 	__LIBBPF_ERRNO__END,
 };
 
@@ -150,6 +164,15 @@ int bpf_program__set_prep(struct bpf_program *prog, int nr_instance,
 			  bpf_program_prep_t prep);
 
 int bpf_program__nth_fd(struct bpf_program *prog, int n);
+
+/*
+ * Adjust type of bpf program. Default is kprobe.
+ */
+int bpf_program__set_tracepoint(struct bpf_program *prog);
+int bpf_program__set_kprobe(struct bpf_program *prog);
+
+bool bpf_program__is_tracepoint(struct bpf_program *prog);
+bool bpf_program__is_kprobe(struct bpf_program *prog);
 
 /*
  * We don't need __attribute__((packed)) now since it is
