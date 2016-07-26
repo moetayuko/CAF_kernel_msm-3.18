@@ -786,6 +786,7 @@ EXPORT_SYMBOL_GPL(rio_unmap_outb_region);
  * @local: Indicate a local master port or remote device access
  * @destid: Destination ID of the device
  * @hopcount: Number of switch hops to the device
+ * @rmap: pointer to location to store register map type info
  */
 u32
 rio_mport_get_physefb(struct rio_mport *port, int local,
