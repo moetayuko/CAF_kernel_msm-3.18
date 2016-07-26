@@ -29,7 +29,6 @@
 #include <linux/mmzone.h>
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
-#include <linux/mm.h>
 
 struct mem_cgroup;
 struct page;
