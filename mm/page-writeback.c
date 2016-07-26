@@ -322,8 +322,8 @@ static unsigned long highmem_dirtyable_memory(unsigned long total)
 			nr_pages = zone_page_state(z, NR_FREE_PAGES);
 			/* watch for underflows */
 			nr_pages -= min(nr_pages, high_wmark_pages(z));
-			nr_pages += zone_page_state(z, NR_INACTIVE_FILE);
-			nr_pages += zone_page_state(z, NR_ACTIVE_FILE);
+			nr_pages += zone_page_state(z, NR_ZONE_INACTIVE_FILE);
+			nr_pages += zone_page_state(z, NR_ZONE_ACTIVE_FILE);
 			x += nr_pages;
 		}
 	}
