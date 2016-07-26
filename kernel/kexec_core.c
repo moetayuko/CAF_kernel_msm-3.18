@@ -215,10 +215,10 @@ int sanity_check_segment_list(struct kimage *image)
 			return -EINVAL;
 	}
 
-	/* Verity all segment size donnot exceed the specified size.
-	 * if segment size from user space is too large,  a large
-	 * amount of time will be wasted when allocating page. so,
-	 * softlockup may be come up.
+	/*
+	 * Verify that no segment is larger than half of memory.  If a segment
+	 * from userspace is too large,  a large amount of time will be wasted
+	 * allocating pages, which can cause a soft lockup.
 	 */
 	for (i = 0; i < nr_segments; i++) {
 		if (image->segment[i].memsz > (totalram_pages / 2))
