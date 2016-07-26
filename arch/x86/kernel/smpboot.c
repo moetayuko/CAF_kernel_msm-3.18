@@ -43,7 +43,7 @@
 
 #include <linux/init.h>
 #include <linux/smp.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/percpu.h>
 #include <linux/bootmem.h>
@@ -1108,17 +1108,8 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 	common_cpu_up(cpu, tidle);
 
-	/*
-	 * We have to walk the irq descriptors to setup the vector
-	 * space for the cpu which comes online.  Prevent irq
-	 * alloc/free across the bringup.
-	 */
-	irq_lock_sparse();
-
 	err = do_boot_cpu(apicid, cpu, tidle);
-
 	if (err) {
-		irq_unlock_sparse();
 		pr_err("do_boot_cpu failed(%d) to wakeup CPU#%u\n", err, cpu);
 		return -EIO;
 	}
@@ -1135,8 +1126,6 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 		cpu_relax();
 		touch_nmi_watchdog();
 	}
-
-	irq_unlock_sparse();
 
 	return 0;
 }
@@ -1292,7 +1281,6 @@ void __init native_smp_prepare_cpus(unsigned int max_cpus)
 	cpumask_copy(cpu_callin_mask, cpumask_of(0));
 	mb();
 
-	current_thread_info()->cpu = 0;  /* needed? */
 	for_each_possible_cpu(i) {
 		zalloc_cpumask_var(&per_cpu(cpu_sibling_map, i), GFP_KERNEL);
 		zalloc_cpumask_var(&per_cpu(cpu_core_map, i), GFP_KERNEL);

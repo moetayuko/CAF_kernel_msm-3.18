@@ -8,6 +8,9 @@ extern void xen_send_IPI_allbutself(int vector);
 extern void xen_send_IPI_all(int vector);
 extern void xen_send_IPI_self(int vector);
 
+extern int xen_smp_intr_init(unsigned int cpu);
+extern void xen_smp_intr_free(unsigned int cpu);
+
 #ifdef CONFIG_XEN_PVH
 extern void xen_pvh_early_cpu_init(int cpu, bool entry);
 #else
