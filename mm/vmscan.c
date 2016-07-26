@@ -2691,7 +2691,7 @@ retry:
 	delayacct_freepages_start();
 
 	if (global_reclaim(sc))
-		__count_zid_vm_events(PGSTALL, sc->reclaim_idx, 1);
+		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
 
 	do {
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
