@@ -267,6 +267,7 @@ static int asm9260_rtc_probe(struct platform_device *pdev)
 	if (!priv)
 		return -ENOMEM;
 
+	spin_lock_init(&priv->lock);
 	priv->dev = &pdev->dev;
 	platform_set_drvdata(pdev, priv);
 
