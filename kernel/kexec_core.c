@@ -221,13 +221,13 @@ int sanity_check_segment_list(struct kimage *image)
 	 * allocating pages, which can cause a soft lockup.
 	 */
 	for (i = 0; i < nr_segments; i++) {
-		if (image->segment[i].memsz > (totalram_pages / 2))
+		if (image->segment[i].memsz > (totalram_pages << 12) / 2)
 			return -EINVAL;
 
 		total_segments += image->segment[i].memsz;
 	}
 
-	if (total_segments > (totalram_pages / 2))
+	if (total_segments > (totalram_pages << 12) / 2)
 		return -EINVAL;
 
 	/*
