@@ -1652,13 +1652,12 @@ static int current_may_throttle(void)
 		bdi_write_congested(current->backing_dev_info);
 }
 
-static inline bool inactive_reclaimable_pages(struct lruvec *lruvec,
-				struct scan_control *sc,
-				enum lru_list lru)
+static bool inactive_reclaimable_pages(struct lruvec *lruvec,
+				struct scan_control *sc, enum lru_list lru)
 {
 	int zid;
 	struct zone *zone;
-	bool file = is_file_lru(lru);
+	int file = is_file_lru(lru);
 	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
 
 	if (!global_reclaim(sc))
