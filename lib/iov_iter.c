@@ -242,8 +242,7 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 	buf = iov->iov_base + skip;
 	copy = min(bytes, iov->iov_len - skip);
 
-#ifdef CONFIG_HIGHMEM
-	if (!fault_in_pages_readable(buf, copy)) {
+	if (IS_ENABLED(CONFIG_HIGHMEM) && !fault_in_pages_readable(buf, copy)) {
 		kaddr = kmap_atomic(page);
 		to = kaddr + offset;
 
@@ -274,7 +273,6 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 		copy = min(bytes, iov->iov_len - skip);
 	}
 	/* Too bad - revert to non-atomic kmap */
-#endif
 
 	kaddr = kmap(page);
 	to = kaddr + offset;
@@ -295,9 +293,7 @@ static size_t copy_page_from_iter_iovec(struct page *page, size_t offset, size_t
 	}
 	kunmap(page);
 
-#ifdef CONFIG_HIGHMEM
 done:
-#endif
 	if (skip == iov->iov_len) {
 		iov++;
 		skip = 0;
