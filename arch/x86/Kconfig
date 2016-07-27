@@ -80,6 +80,7 @@ config X86
 	select HAVE_ALIGNED_STRUCT_PAGE		if SLUB
 	select HAVE_AOUT			if X86_32
 	select HAVE_ARCH_AUDITSYSCALL
+	select HAVE_ARCH_HARDENED_USERCOPY
 	select HAVE_ARCH_HUGE_VMAP		if X86_64 || X86_PAE
 	select HAVE_ARCH_JUMP_LABEL
 	select HAVE_ARCH_KASAN			if X86_64 && SPARSEMEM_VMEMMAP
@@ -91,6 +92,7 @@ config X86
 	select HAVE_ARCH_SOFT_DIRTY		if X86_64
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_ARCH_TRANSPARENT_HUGEPAGE
+	select HAVE_ARCH_WITHIN_STACK_FRAMES
 	select HAVE_EBPF_JIT			if X86_64
 	select HAVE_CC_STACKPROTECTOR
 	select HAVE_CMPXCHG_DOUBLE
@@ -2439,6 +2441,15 @@ config PCI_CNB20LE_QUIRK
 	  You should say N unless you know you need this.
 
 source "drivers/pci/Kconfig"
+
+config ISA_BUS
+	bool "ISA-style bus support on modern systems" if EXPERT
+	select ISA_BUS_API
+	help
+	  Enables ISA-style drivers on modern systems. This is necessary to
+	  support PC/104 devices on X86_64 platforms.
+
+	  If unsure, say N.
 
 # x86_64 have no ISA slots, but can have ISA-style DMA.
 config ISA_DMA_API
