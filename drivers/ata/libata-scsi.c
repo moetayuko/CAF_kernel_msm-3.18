@@ -3618,7 +3618,6 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 	 * The first two bytes of def_cache_mpage are a header, so offsets
 	 * in mpage are off by 2 compared to buf.  Same for len.
 	 */
-
 	if (len != CACHE_MPAGE_LEN - 2) {
 		if (len < CACHE_MPAGE_LEN - 2)
 			*fp = len;
@@ -3627,20 +3626,30 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 		return -EINVAL;
 	}
 
-	wce = buf[0] & (1 << 2);
-
 	/*
 	 * Check that read-only bits are not modified.
 	 */
 	ata_msense_caching(dev->id, mpage, false);
 	for (i = 0; i < CACHE_MPAGE_LEN - 2; i++) {
-		if (i == 0)
-			continue;
+		/* Check the first byte */
+		if (i == 0) {
+			/* except the WCE bit */
+			if (mpage[i + 2] & 0xfb != buf[i] & 0xfb) {
+				*fp = i;
+				return -EINVAL;
+			} else {
+				continue;
+			}
+		}
+
+		/* Check the remaining bytes */
 		if (mpage[i + 2] != buf[i]) {
 			*fp = i;
 			return -EINVAL;
 		}
 	}
+
+	wce = buf[0] & (1 << 2);
 
 	tf->flags |= ATA_TFLAG_DEVICE | ATA_TFLAG_ISADDR;
 	tf->protocol = ATA_PROT_NODATA;
@@ -3674,7 +3683,6 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 	 * The first two bytes of def_control_mpage are a header, so offsets
 	 * in mpage are off by 2 compared to buf.  Same for len.
 	 */
-
 	if (len != CONTROL_MPAGE_LEN - 2) {
 		if (len < CONTROL_MPAGE_LEN - 2)
 			*fp = len;
@@ -3683,21 +3691,32 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 		return -EINVAL;
 	}
 
-	d_sense = buf[0] & (1 << 2);
-
 	/*
 	 * Check that read-only bits are not modified.
 	 */
 	ata_msense_control(dev, mpage, false);
 	for (i = 0; i < CONTROL_MPAGE_LEN - 2; i++) {
-		if (i == 0)
-			continue;
+		/* Check the first byte */
+		if (i == 0) {
+			/* except the D_SENSE bit */
+			if (mpage[i + 2] & 0xfb != buf[i] & 0xfb) {
+				*fp = i;
+				return -EINVAL;
+			} else {
+				continue;
+			}
+		}
+
+		/* Check the remaining bytes */
 		if (mpage[2 + i] != buf[i]) {
 			*fp = i;
 			return -EINVAL;
 		}
 	}
-	if (d_sense & (1 << 2))
+
+	d_sense = buf[0] & (1 << 2);
+
+	if (d_sense)
 		dev->flags |= ATA_DFLAG_D_SENSE;
 	else
 		dev->flags &= ~ATA_DFLAG_D_SENSE;
