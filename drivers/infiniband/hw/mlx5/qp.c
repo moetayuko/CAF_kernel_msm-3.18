@@ -3982,7 +3982,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			   get_fence(fence, wr), next_fence,
 			   mlx5_ib_opcode[wr->opcode]);
 skip_psv:
-		if (0)
+		if (IS_BUILTIN(CONFIG_MLX5_INFINIBAND_VERBOSE))
 			dump_wqe(qp, idx, size);
 	}
 
