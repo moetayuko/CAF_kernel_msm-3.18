@@ -117,8 +117,7 @@ static int __control_devkmsg(char *str)
 		devkmsg_log = DEVKMSG_LOG_MASK_DEFAULT;
 		return 9;
 	}
-	else
-		return -EINVAL;
+	return -EINVAL;
 }
 
 static int __init control_devkmsg(char *str)
@@ -741,8 +740,8 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	if (devkmsg_log & DEVKMSG_LOG_MASK_OFF)
 		return len;
 
-	/* Ratelimit when not explicitly enabled or when we're not booting. */
-	if ((system_state != SYSTEM_BOOTING) && !(devkmsg_log & DEVKMSG_LOG_MASK_ON)) {
+	/* Ratelimit when not explicitly enabled. */
+	if (!(devkmsg_log & DEVKMSG_LOG_MASK_ON)) {
 		if (!___ratelimit(&user->rs, current->comm))
 			return ret;
 	}
