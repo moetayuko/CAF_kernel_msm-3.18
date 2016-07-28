@@ -217,20 +217,19 @@ int sanity_check_segment_list(struct kimage *image)
 	}
 
 	/*
-	 * Verify that no segment is larger than half of memory.
-	 * If a segment from userspace is too large, a large amount
-	 * of time will be wasted allocating pages, which can cause
-	 * * a soft lockup.
+	 * Verify that no more than half of memory will be consumed. If the
+	 * request from userspace is too large, a large amount of time will be
+	 * wasted allocating pages, which can cause a soft lockup.
 	 */
 	for (i = 0; i < nr_segments; i++) {
 		if (PAGE_COUNT(image->segment[i].memsz) > totalram_pages / 2)
-			return result;
+			return -EINVAL;
 
 		total_pages += PAGE_COUNT(image->segment[i].memsz);
 	}
 
 	if (total_pages > totalram_pages / 2)
-		return result;
+		return -EINVAL;
 
 	/*
 	 * Verify we have good destination addresses.  Normally
