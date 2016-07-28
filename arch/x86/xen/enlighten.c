@@ -34,9 +34,7 @@
 #include <linux/edd.h>
 #include <linux/frame.h>
 
-#ifdef CONFIG_KEXEC_CORE
 #include <linux/kexec.h>
-#endif
 
 #include <xen/xen.h>
 #include <xen/events.h>
