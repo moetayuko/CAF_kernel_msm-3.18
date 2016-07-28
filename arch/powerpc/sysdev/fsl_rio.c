@@ -698,11 +698,6 @@ int fsl_rio_setup(struct platform_device *dev)
 			RIO_INB_ATMU_REGS_PORT2_OFFSET));
 
 
-		/* Set to receive any dist ID for serial RapidIO controller. */
-		if (port->phy_type == RIO_PHY_SERIAL)
-			out_be32((priv->regs_win
-				+ RIO_ISR_AACR + i*0x80), RIO_ISR_AACR_AA);
-
 		/* Configure maintenance transaction window */
 		out_be32(&priv->maint_atmu_regs->rowbar,
 			port->iores.start >> 12);
