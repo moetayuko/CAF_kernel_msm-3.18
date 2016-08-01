@@ -579,11 +579,8 @@ static int proc_oom_score(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long totalpages = totalram_pages + total_swap_pages;
 	unsigned long points = 0;
 
-	read_lock(&tasklist_lock);
-	if (pid_alive(task))
-		points = oom_badness(task, NULL, NULL, totalpages) *
-						1000 / totalpages;
-	read_unlock(&tasklist_lock);
+	points = oom_badness(task, NULL, NULL, totalpages) *
+					1000 / totalpages;
 	seq_printf(m, "%lu\n", points);
 
 	return 0;
@@ -2288,16 +2285,25 @@ static ssize_t timerslack_ns_write(struct file *file, const char __user *buf,
 	if (!p)
 		return -ESRCH;
 
-	if (ptrace_may_access(p, PTRACE_MODE_ATTACH_FSCREDS)) {
-		task_lock(p);
-		if (slack_ns == 0)
-			p->timer_slack_ns = p->default_timer_slack_ns;
-		else
-			p->timer_slack_ns = slack_ns;
-		task_unlock(p);
-	} else
+	if (!capable(CAP_SYS_NICE)) {
 		count = -EPERM;
+		goto out;
+	}
 
+	err = security_task_setscheduler(p);
+	if (err) {
+		count = err;
+		goto out;
+	}
+
+	task_lock(p);
+	if (slack_ns == 0)
+		p->timer_slack_ns = p->default_timer_slack_ns;
+	else
+		p->timer_slack_ns = slack_ns;
+	task_unlock(p);
+
+out:
 	put_task_struct(p);
 
 	return count;
@@ -2307,19 +2313,26 @@ static int timerslack_ns_show(struct seq_file *m, void *v)
 {
 	struct inode *inode = m->private;
 	struct task_struct *p;
-	int err =  0;
+	int err = 0;
 
 	p = get_proc_task(inode);
 	if (!p)
 		return -ESRCH;
 
-	if (ptrace_may_access(p, PTRACE_MODE_ATTACH_FSCREDS)) {
-		task_lock(p);
-		seq_printf(m, "%llu\n", p->timer_slack_ns);
-		task_unlock(p);
-	} else
+	if (!capable(CAP_SYS_NICE)) {
 		err = -EPERM;
+		goto out;
+	}
 
+	err = security_task_getscheduler(p);
+	if (err)
+		goto out;
+
+	task_lock(p);
+	seq_printf(m, "%llu\n", p->timer_slack_ns);
+	task_unlock(p);
+
+out:
 	put_task_struct(p);
 
 	return err;
