@@ -174,26 +174,7 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr,
 
 	return count;
 }
-
-static ssize_t state_store(struct device *dev, struct device_attribute *attr,
-			   const char *buf, size_t count)
-{
-	u32 state;
-	ssize_t ret = 0;
-	struct extcon_dev *edev = dev_get_drvdata(dev);
-
-	ret = sscanf(buf, "0x%x", &state);
-	if (ret == 0)
-		ret = -EINVAL;
-	else
-		ret = extcon_set_state(edev, state);
-
-	if (ret < 0)
-		return ret;
-
-	return count;
-}
-static DEVICE_ATTR_RW(state);
+static DEVICE_ATTR_RO(state);
 
 static ssize_t name_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
@@ -243,7 +224,7 @@ static ssize_t cable_state_show(struct device *dev,
  * Note that the notifier provides which bits are changed in the state
  * variable with the val parameter (second) to the callback.
  */
-int extcon_update_state(struct extcon_dev *edev, u32 mask, u32 state)
+static int extcon_update_state(struct extcon_dev *edev, u32 mask, u32 state)
 {
 	char name_buf[120];
 	char state_buf[120];
@@ -319,24 +300,6 @@ int extcon_update_state(struct extcon_dev *edev, u32 mask, u32 state)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(extcon_update_state);
-
-/**
- * extcon_set_state() - Set the cable attach states of the extcon device.
- * @edev:	the extcon device
- * @state:	new cable attach status for @edev
- *
- * Note that notifier provides which bits are changed in the state
- * variable with the val parameter (second) to the callback.
- */
-int extcon_set_state(struct extcon_dev *edev, u32 state)
-{
-	if (!edev)
-		return -EINVAL;
-
-	return extcon_update_state(edev, 0xffffffff, state);
-}
-EXPORT_SYMBOL_GPL(extcon_set_state);
 
 /**
  * extcon_get_cable_state_() - Get the status of a specific cable.
@@ -846,13 +809,13 @@ struct extcon_dev *extcon_get_edev_by_phandle(struct device *dev, int index)
 		return ERR_PTR(-EINVAL);
 
 	if (!dev->of_node) {
-		dev_err(dev, "device does not have a device node entry\n");
+		dev_dbg(dev, "device does not have a device node entry\n");
 		return ERR_PTR(-EINVAL);
 	}
 
 	node = of_parse_phandle(dev->of_node, "extcon", index);
 	if (!node) {
-		dev_err(dev, "failed to get phandle in %s node\n",
+		dev_dbg(dev, "failed to get phandle in %s node\n",
 			dev->of_node->full_name);
 		return ERR_PTR(-ENODEV);
 	}
