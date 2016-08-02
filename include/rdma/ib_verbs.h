@@ -1629,9 +1629,18 @@ struct ib_flow_spec_ib {
 	struct ib_flow_ib_filter mask;
 };
 
+enum ib_ipv4_flags {
+	IB_IPV4_DONT_FRAG = 0x2,
+	IB_IPV4_MORE_FRAG = 0X4
+};
+
 struct ib_flow_ipv4_filter {
 	__be32	src_ip;
 	__be32	dst_ip;
+	u8	proto;
+	u8	tos;
+	u8	ttl;
+	u8	flags;
 	/* Must be last */
 	u8	real_sz[0];
 };
