@@ -249,16 +249,8 @@ befs_find_brun_direct(struct super_block *sb, const befs_data_stream *data,
 	int i;
 	const befs_block_run *array = data->direct;
 	befs_blocknr_t sum;
-	befs_blocknr_t max_block =
-	    data->max_direct_range >> BEFS_SB(sb)->block_shift;
 
 	befs_debug(sb, "---> %s, find %lu", __func__, (unsigned long)blockno);
-
-	if (blockno > max_block) {
-		befs_error(sb, "%s passed block outside of direct region",
-			   __func__);
-		return BEFS_ERR;
-	}
 
 	for (i = 0, sum = 0; i < BEFS_NUM_DIRECT_BLOCKS;
 	     sum += array[i].len, i++) {
@@ -275,6 +267,8 @@ befs_find_brun_direct(struct super_block *sb, const befs_data_stream *data,
 		}
 	}
 
+	befs_error(sb, "%s failed to find file block %lu", __func__,
+		   (unsigned long)blockno);
 	befs_debug(sb, "---> %s ERROR", __func__);
 	return BEFS_ERR;
 }
@@ -326,11 +320,12 @@ befs_find_brun_indirect(struct super_block *sb,
 
 	/* Examine blocks of the indirect run one at a time */
 	for (i = 0; i < indirect.len; i++) {
-		indirblock = befs_bread(sb, indirblockno + i);
+		indirblock = sb_bread(sb, indirblockno + i);
 		if (indirblock == NULL) {
-			befs_debug(sb, "---> %s failed to read "
+			befs_error(sb, "---> %s failed to read "
 				   "disk block %lu from the indirect brun",
 				   __func__, (unsigned long)indirblockno + i);
+			befs_debug(sb, "<--- %s ERROR", __func__);
 			return BEFS_ERR;
 		}
 
@@ -430,10 +425,9 @@ befs_find_brun_dblindirect(struct super_block *sb,
 	struct buffer_head *indir_block;
 	befs_block_run indir_run;
 	befs_disk_inode_addr *iaddr_array;
-	struct befs_sb_info *befs_sb = BEFS_SB(sb);
 
 	befs_blocknr_t indir_start_blk =
-	    data->max_indirect_range >> befs_sb->block_shift;
+	    data->max_indirect_range >> BEFS_SB(sb)->block_shift;
 
 	off_t dbl_indir_off = blockno - indir_start_blk;
 
@@ -471,7 +465,7 @@ befs_find_brun_dblindirect(struct super_block *sb,
 	}
 
 	dbl_indir_block =
-	    befs_bread(sb, iaddr2blockno(sb, &data->double_indirect) +
+	    sb_bread(sb, iaddr2blockno(sb, &data->double_indirect) +
 					dbl_which_block);
 	if (dbl_indir_block == NULL) {
 		befs_error(sb, "%s couldn't read the "
@@ -479,7 +473,6 @@ befs_find_brun_dblindirect(struct super_block *sb,
 			   (unsigned long)
 			   iaddr2blockno(sb, &data->double_indirect) +
 			   dbl_which_block);
-		brelse(dbl_indir_block);
 		return BEFS_ERR;
 	}
 
@@ -499,12 +492,11 @@ befs_find_brun_dblindirect(struct super_block *sb,
 	}
 
 	indir_block =
-	    befs_bread(sb, iaddr2blockno(sb, &indir_run) + which_block);
+	    sb_bread(sb, iaddr2blockno(sb, &indir_run) + which_block);
 	if (indir_block == NULL) {
 		befs_error(sb, "%s couldn't read the indirect block "
 			   "at blockno %lu", __func__, (unsigned long)
 			   iaddr2blockno(sb, &indir_run) + which_block);
-		brelse(indir_block);
 		return BEFS_ERR;
 	}
 
