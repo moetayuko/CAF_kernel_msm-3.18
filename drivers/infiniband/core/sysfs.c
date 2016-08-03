@@ -531,6 +531,7 @@ static PORT_PMA_ATTR(port_xmit_data		    , 12, 32, 192);
 static PORT_PMA_ATTR(port_rcv_data		    , 13, 32, 224);
 static PORT_PMA_ATTR(port_xmit_packets		    , 14, 32, 256);
 static PORT_PMA_ATTR(port_rcv_packets		    , 15, 32, 288);
+static PORT_PMA_ATTR(port_xmit_wait		    ,  0, 32, 320);
 
 /*
  * Counters added by extended set
@@ -561,6 +562,7 @@ static struct attribute *pma_attrs[] = {
 	&port_pma_attr_port_rcv_data.attr.attr,
 	&port_pma_attr_port_xmit_packets.attr.attr,
 	&port_pma_attr_port_rcv_packets.attr.attr,
+	&port_pma_attr_port_xmit_wait.attr.attr,
 	NULL
 };
 
@@ -580,6 +582,7 @@ static struct attribute *pma_attrs_ext[] = {
 	&port_pma_attr_ext_port_xmit_data.attr.attr,
 	&port_pma_attr_ext_port_rcv_data.attr.attr,
 	&port_pma_attr_ext_port_xmit_packets.attr.attr,
+	&port_pma_attr_port_xmit_wait.attr.attr,
 	&port_pma_attr_ext_port_rcv_packets.attr.attr,
 	&port_pma_attr_ext_unicast_rcv_packets.attr.attr,
 	&port_pma_attr_ext_unicast_xmit_packets.attr.attr,
@@ -605,6 +608,7 @@ static struct attribute *pma_attrs_noietf[] = {
 	&port_pma_attr_ext_port_rcv_data.attr.attr,
 	&port_pma_attr_ext_port_xmit_packets.attr.attr,
 	&port_pma_attr_ext_port_rcv_packets.attr.attr,
+	&port_pma_attr_port_xmit_wait.attr.attr,
 	NULL
 };
 
