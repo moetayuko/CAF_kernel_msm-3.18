@@ -175,9 +175,12 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 	if (ctx->fw == NULL)
 		goto sst_load_base_firmware_failed;
 
-	ret = snd_skl_parse_uuids(ctx, BXT_ADSP_FW_BIN_HDR_OFFSET);
-	if (ret < 0)
-		goto sst_load_base_firmware_failed;
+	/* prase uuids on first boot */
+	if (skl->is_first_boot) {
+		ret = snd_skl_parse_uuids(ctx, ctx->fw, BXT_ADSP_FW_BIN_HDR_OFFSET, 0);
+		if (ret < 0)
+			goto sst_load_base_firmware_failed;
+	}
 
 	stripped_fw.data = ctx->fw->data;
 	stripped_fw.size = ctx->fw->size;
@@ -397,6 +400,19 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	skl->cores.count = 2;
 	skl->boot_complete = false;
 	init_waitqueue_head(&skl->boot_wait);
+	skl->is_first_boot = true;
+
+	if (dsp)
+		*dsp = skl;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(bxt_sst_dsp_init);
+
+int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx)
+{
+	int ret;
+	struct sst_dsp *sst = ctx->dsp;
 
 	ret = sst->fw_ops.load_fw(sst);
 	if (ret < 0) {
@@ -406,13 +422,11 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 
 	skl_dsp_init_core_state(sst);
 
-	if (dsp)
-		*dsp = skl;
+	ctx->is_first_boot = false;
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(bxt_sst_dsp_init);
-
+EXPORT_SYMBOL_GPL(bxt_sst_init_fw);
 
 void bxt_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx)
 {
