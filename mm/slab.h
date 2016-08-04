@@ -427,6 +427,7 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s, gfp_t flags,
  */
 struct kmem_cache_node {
 	spinlock_t list_lock;
+	atomic_long_t nr_slabs;
 
 #ifdef CONFIG_SLAB
 	struct list_head slabs_partial;	/* partial list first, better asm code */
@@ -445,7 +446,6 @@ struct kmem_cache_node {
 	unsigned long nr_partial;
 	struct list_head partial;
 #ifdef CONFIG_SLUB_DEBUG
-	atomic_long_t nr_slabs;
 	atomic_long_t total_objects;
 	struct list_head full;
 #endif
@@ -456,6 +456,19 @@ struct kmem_cache_node {
 static inline struct kmem_cache_node *get_node(struct kmem_cache *s, int node)
 {
 	return s->node[node];
+}
+
+/* Tracking of the number of slabs for /proc/slabinfo and debugging purposes */
+static inline unsigned long slabs_node(struct kmem_cache *s, int node)
+{
+	struct kmem_cache_node *n = get_node(s, node);
+
+	return atomic_long_read(&n->nr_slabs);
+}
+
+static inline unsigned long node_nr_slabs(struct kmem_cache_node *n)
+{
+	return atomic_long_read(&n->nr_slabs);
 }
 
 /*
