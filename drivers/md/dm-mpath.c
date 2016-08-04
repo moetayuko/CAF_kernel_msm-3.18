@@ -733,7 +733,8 @@ static int queue_if_no_path(struct multipath *m, bool queue_if_no_path,
 	spin_lock_irqsave(&m->lock, flags);
 
 	if (save_old_value) {
-		if (test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags))
+		if (test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags) ||
+		    test_bit(MPATHF_SAVED_QUEUE_IF_NO_PATH, &m->flags))
 			set_bit(MPATHF_SAVED_QUEUE_IF_NO_PATH, &m->flags);
 		else
 			clear_bit(MPATHF_SAVED_QUEUE_IF_NO_PATH, &m->flags);
