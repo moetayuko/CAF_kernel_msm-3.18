@@ -859,6 +859,11 @@ static int compare_of(struct device *dev, void *data)
 	return dev->of_node == data;
 }
 
+static void release_of(struct device *dev, void *data)
+{
+	of_node_put(data);
+}
+
 /*
  * Identify what components need to be added by parsing what remote-endpoints
  * our MDP output ports are connected to. In the case of LVDS on MDP4, there
@@ -918,9 +923,9 @@ static int add_components_mdp(struct device *mdp_dev,
 			continue;
 		}
 
-		component_match_add(master_dev, matchptr, compare_of, intf);
+		component_match_add_release(master_dev, matchptr, release_of,
+					    compare_of, intf);
 
-		of_node_put(intf);
 		of_node_put(ep_node);
 	}
 
@@ -961,8 +966,8 @@ static int add_display_components(struct device *dev,
 		put_device(mdp_dev);
 
 		/* add the MDP component itself */
-		component_match_add(dev, matchptr, compare_of,
-				    mdp_dev->of_node);
+		component_match_add_release(dev, matchptr, release_of,
+					    compare_of, mdp_dev->of_node);
 	} else {
 		/* MDP4 */
 		mdp_dev = dev;
@@ -995,9 +1000,7 @@ static int add_gpu_components(struct device *dev,
 	if (!np)
 		return 0;
 
-	component_match_add(dev, matchptr, compare_of, np);
-
-	of_node_put(np);
+	component_match_add_release(dev, matchptr, release_of, compare_of, np);
 
 	return 0;
 }
