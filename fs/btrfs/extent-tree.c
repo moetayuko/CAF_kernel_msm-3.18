@@ -2661,7 +2661,10 @@ static noinline int __btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 
 		btrfs_free_delayed_extent_op(extent_op);
 		if (ret) {
+			spin_lock(&delayed_refs->lock);
 			locked_ref->processing = 0;
+			delayed_refs->num_heads_ready++;
+			spin_unlock(&delayed_refs->lock);
 			btrfs_delayed_ref_unlock(locked_ref);
 			btrfs_put_delayed_ref(ref);
 			btrfs_debug(fs_info, "run_one_delayed_ref returned %d", ret);
@@ -3709,6 +3712,8 @@ again:
 			goto again;
 		}
 		spin_unlock(&cur_trans->dirty_bgs_lock);
+	} else if (ret < 0) {
+		btrfs_cleanup_dirty_bgs(cur_trans, root);
 	}
 
 	btrfs_free_path(path);
@@ -4293,6 +4298,9 @@ int btrfs_check_data_free_space(struct inode *inode, u64 start, u64 len)
 	 * range, but don't impact performance on quota disable case.
 	 */
 	ret = btrfs_qgroup_reserve_data(inode, start, len);
+	if (ret < 0)
+		/* Qgroup reserve failed, need to cleanup reserved data space */
+		btrfs_free_reserved_data_space(inode, start, len);
 	return ret;
 }
 
@@ -9942,6 +9950,7 @@ void btrfs_put_block_group_cache(struct btrfs_fs_info *info)
 		block_group->iref = 0;
 		block_group->inode = NULL;
 		spin_unlock(&block_group->lock);
+		ASSERT(block_group->io_ctl.inode == NULL);
 		iput(inode);
 		last = block_group->key.objectid + block_group->key.offset;
 		btrfs_put_block_group(block_group);
@@ -9999,6 +10008,10 @@ int btrfs_free_block_groups(struct btrfs_fs_info *info)
 			free_excluded_extents(info->extent_root, block_group);
 
 		btrfs_remove_free_space_cache(block_group);
+		ASSERT(list_empty(&block_group->dirty_list));
+		ASSERT(list_empty(&block_group->io_list));
+		ASSERT(list_empty(&block_group->bg_list));
+		ASSERT(atomic_read(&block_group->count) == 1);
 		btrfs_put_block_group(block_group);
 
 		spin_lock(&info->block_group_cache_lock);
