@@ -44,6 +44,8 @@ struct simple_card_data {
 #define simple_priv_to_link(priv, i) ((priv)->snd_card.dai_link + i)
 #define simple_priv_to_props(priv, i) ((priv)->dai_props + i)
 
+#define DAI	"sound-dai"
+#define CELL	"#sound-dai-cells"
 #define PREFIX	"simple-audio-card,"
 
 #define asoc_simple_card_init_hp(card, sjack, prefix)\
@@ -236,78 +238,6 @@ static int asoc_simple_card_dai_init(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
-static int
-asoc_simple_card_sub_parse_of(struct device_node *np,
-			      struct asoc_simple_dai *dai,
-			      struct device_node **p_node,
-			      const char **name,
-			      int *args_count)
-{
-	struct of_phandle_args args;
-	struct clk *clk;
-	u32 val;
-	int ret;
-
-	if (!np)
-		return 0;
-
-	/*
-	 * Get node via "sound-dai = <&phandle port>"
-	 * it will be used as xxx_of_node on soc_bind_dai_link()
-	 */
-	ret = of_parse_phandle_with_args(np, "sound-dai",
-					 "#sound-dai-cells", 0, &args);
-	if (ret)
-		return ret;
-
-	*p_node = args.np;
-
-	if (args_count)
-		*args_count = args.args_count;
-
-	/* Get dai->name */
-	if (name) {
-		ret = snd_soc_of_get_dai_name(np, name);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (!dai)
-		return 0;
-
-	/* Parse TDM slot */
-	ret = snd_soc_of_parse_tdm_slot(np, &dai->tx_slot_mask,
-					&dai->rx_slot_mask,
-					&dai->slots, &dai->slot_width);
-	if (ret)
-		return ret;
-
-	/*
-	 * Parse dai->sysclk come from "clocks = <&xxx>"
-	 * (if system has common clock)
-	 *  or "system-clock-frequency = <xxx>"
-	 *  or device's module clock.
-	 */
-	if (of_property_read_bool(np, "clocks")) {
-		clk = of_clk_get(np, 0);
-		if (IS_ERR(clk)) {
-			ret = PTR_ERR(clk);
-			return ret;
-		}
-
-		dai->sysclk = clk_get_rate(clk);
-		dai->clk = clk;
-	} else if (!of_property_read_u32(np, "system-clock-frequency", &val)) {
-		dai->sysclk = val;
-	} else {
-		clk = of_clk_get(args.np, 0);
-		if (!IS_ERR(clk))
-			dai->sysclk = clk_get_rate(clk);
-	}
-
-	return 0;
-}
-
 static int asoc_simple_card_dai_link_of(struct device_node *node,
 					struct simple_card_data *priv,
 					int idx,
@@ -316,12 +246,14 @@ static int asoc_simple_card_dai_link_of(struct device_node *node,
 	struct device *dev = simple_priv_to_dev(priv);
 	struct snd_soc_dai_link *dai_link = simple_priv_to_link(priv, idx);
 	struct simple_dai_props *dai_props = simple_priv_to_props(priv, idx);
+	struct asoc_simple_dai *cpu_dai = &dai_props->cpu_dai;
+	struct asoc_simple_dai *codec_dai = &dai_props->codec_dai;
 	struct device_node *cpu = NULL;
 	struct device_node *plat = NULL;
 	struct device_node *codec = NULL;
 	char prop[128];
 	char *prefix = "";
-	int ret, cpu_args;
+	int ret, single_cpu;
 	u32 val;
 
 	/* For single DAI link & old style of DT node */
@@ -351,22 +283,38 @@ static int asoc_simple_card_dai_link_of(struct device_node *node,
 	if (!of_property_read_u32(node, "mclk-fs", &val))
 		dai_props->mclk_fs = val;
 
-	ret = asoc_simple_card_sub_parse_of(cpu, &dai_props->cpu_dai,
-					    &dai_link->cpu_of_node,
-					    &dai_link->cpu_dai_name,
-					    &cpu_args);
+	ret = asoc_simple_card_parse_cpu(cpu, dai_link,
+					 DAI, CELL, &single_cpu);
 	if (ret < 0)
 		goto dai_link_of_err;
 
-	ret = asoc_simple_card_sub_parse_of(codec, &dai_props->codec_dai,
-					    &dai_link->codec_of_node,
-					    &dai_link->codec_dai_name, NULL);
+	ret = asoc_simple_card_parse_codec(codec, dai_link, DAI, CELL);
 	if (ret < 0)
 		goto dai_link_of_err;
 
-	ret = asoc_simple_card_sub_parse_of(plat, NULL,
-					    &dai_link->platform_of_node,
-					    NULL, NULL);
+	ret = asoc_simple_card_parse_platform(plat, dai_link, DAI, CELL);
+	if (ret < 0)
+		goto dai_link_of_err;
+
+	ret = snd_soc_of_parse_tdm_slot(cpu,	&cpu_dai->tx_slot_mask,
+						&cpu_dai->rx_slot_mask,
+						&cpu_dai->slots,
+						&cpu_dai->slot_width);
+	if (ret < 0)
+		goto dai_link_of_err;
+
+	ret = snd_soc_of_parse_tdm_slot(codec,	&codec_dai->tx_slot_mask,
+						&codec_dai->rx_slot_mask,
+						&codec_dai->slots,
+						&codec_dai->slot_width);
+	if (ret < 0)
+		goto dai_link_of_err;
+
+	ret = asoc_simple_card_parse_clk_cpu(cpu, dai_link, cpu_dai);
+	if (ret < 0)
+		goto dai_link_of_err;
+
+	ret = asoc_simple_card_parse_clk_codec(codec, dai_link, codec_dai);
 	if (ret < 0)
 		goto dai_link_of_err;
 
@@ -407,7 +355,7 @@ static int asoc_simple_card_dai_link_of(struct device_node *node,
 	 *	fmt_single_name()
 	 *	fmt_multiple_name()
 	 */
-	if (!cpu_args)
+	if (single_cpu)
 		dai_link->cpu_dai_name = NULL;
 
 dai_link_of_err:
