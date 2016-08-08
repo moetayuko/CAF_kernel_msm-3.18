@@ -1275,7 +1275,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_xattr = ovl_xattr_noacl_handlers;
 	sb->s_root = root_dentry;
 	sb->s_fs_info = ufs;
-	sb->s_flags |= MS_POSIXACL;
+	sb->s_flags |= MS_POSIXACL | MS_NOREMOTELOCK;
 
 	return 0;
 
