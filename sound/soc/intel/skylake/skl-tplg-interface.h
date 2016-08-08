@@ -210,7 +210,8 @@ struct skl_dfw_module {
 	u32 is_dynamic_in_pin:1;
 	u32 is_dynamic_out_pin:1;
 	u32 is_loadable:1;
-	u32 rsvd3:11;
+	u32 proc_domain:1;
+	u32 rsvd3:10;
 
 	struct skl_dfw_pipe pipe;
 	struct skl_dfw_module_fmt in_fmt[MAX_IN_QUEUE];
@@ -226,6 +227,18 @@ struct skl_dfw_algo_data {
 	u32 param_id;
 	u32 max;
 	char params[0];
+} __packed;
+
+#define LIB_NAME_LENGTH	128
+#define HDA_MAX_LIB	16
+
+struct lib_info {
+	char name[LIB_NAME_LENGTH];
+} __packed;
+
+struct skl_dfw_manifest {
+	u32 lib_count;
+	struct lib_info lib[HDA_MAX_LIB];
 } __packed;
 
 #endif
