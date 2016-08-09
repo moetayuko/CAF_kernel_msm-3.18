@@ -85,7 +85,7 @@ struct befs_btree_node {
 };
 
 /* local constants */
-static const befs_off_t befs_bt_inval = 0xffffffffffffffffULL;
+static const befs_off_t BEFS_BT_INVAL = 0xffffffffffffffffULL;
 
 /* local functions */
 static int befs_btree_seekleaf(struct super_block *sb, const befs_data_stream *ds,
@@ -156,8 +156,6 @@ befs_bt_read_super(struct super_block *sb, const befs_data_stream *ds,
 	sup->max_depth = fs32_to_cpu(sb, od_sup->max_depth);
 	sup->data_type = fs32_to_cpu(sb, od_sup->data_type);
 	sup->root_node_ptr = fs64_to_cpu(sb, od_sup->root_node_ptr);
-	sup->free_node_ptr = fs64_to_cpu(sb, od_sup->free_node_ptr);
-	sup->max_size = fs64_to_cpu(sb, od_sup->max_size);
 
 	brelse(bh);
 	if (sup->magic != BEFS_BTREE_MAGIC) {
@@ -183,8 +181,8 @@ befs_bt_read_super(struct super_block *sb, const befs_data_stream *ds,
  * Calls befs_read_datastream to read in the indicated btree node and
  * makes sure its header fields are in cpu byteorder, byteswapping if
  * necessary.
- * Note: node->bh must be NULL when this function called first
- * time. Don't forget brelse(node->bh) after last call.
+ * Note: node->bh must be NULL when this function is called the first time.
+ * Don't forget brelse(node->bh) after last call.
  *
  * On success, returns BEFS_OK and *@node contains the btree node that
  * starts at @node_off, with the node->head fields in cpu byte order.
@@ -301,7 +299,8 @@ befs_btree_find(struct super_block *sb, const befs_data_stream *ds,
 	kfree(this_node);
 
 	if (res != BEFS_BT_MATCH) {
-		befs_debug(sb, "<--- %s Key %s not found", __func__, key);
+		befs_error(sb, "<--- %s Key %s not found", __func__, key);
+		befs_debug(sb, "<--- %s ERROR", __func__);
 		*value = 0;
 		return BEFS_BT_NOT_FOUND;
 	}
@@ -348,8 +347,6 @@ befs_find_key(struct super_block *sb, struct befs_btree_node *node,
 
 	befs_debug(sb, "---> %s %s", __func__, findkey);
 
-	*value = 0;
-
 	findkey_len = strlen(findkey);
 
 	/* if node can not contain key, just skeep this node */
@@ -358,7 +355,8 @@ befs_find_key(struct super_block *sb, struct befs_btree_node *node,
 
 	eq = befs_compare_strings(thiskey, keylen, findkey, findkey_len);
 	if (eq < 0) {
-		befs_debug(sb, "<--- %s %s not found", __func__, findkey);
+		befs_error(sb, "<--- %s %s not found", __func__, findkey);
+		befs_debug(sb, "<--- %s ERROR", __func__);
 		return BEFS_BT_NOT_FOUND;
 	}
 
@@ -422,7 +420,7 @@ befs_btree_read(struct super_block *sb, const befs_data_stream *ds,
 {
 	struct befs_btree_node *this_node;
 	befs_btree_super bt_super;
-	befs_off_t node_off = 0;
+	befs_off_t node_off;
 	int cur_key;
 	fs64 *valarray;
 	char *keystart;
@@ -467,7 +465,7 @@ befs_btree_read(struct super_block *sb, const befs_data_stream *ds,
 	while (key_sum + this_node->head.all_key_count <= key_no) {
 
 		/* no more nodes to look in: key_no is too large */
-		if (this_node->head.right == befs_bt_inval) {
+		if (this_node->head.right == BEFS_BT_INVAL) {
 			*keysize = 0;
 			*value = 0;
 			befs_debug(sb,
@@ -608,7 +606,7 @@ static int
 befs_leafnode(struct befs_btree_node *node)
 {
 	/* all interior nodes (and only interior nodes) have an overflow node */
-	if (node->head.overflow == befs_bt_inval)
+	if (node->head.overflow == BEFS_BT_INVAL)
 		return 1;
 	else
 		return 0;
