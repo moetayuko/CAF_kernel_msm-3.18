@@ -210,9 +210,9 @@ EXPORT_SYMBOL(boot_cpu_data);
 
 
 #if !defined(CONFIG_X86_PAE) || defined(CONFIG_X86_64)
-__visible unsigned long mmu_cr4_features;
+__visible unsigned long mmu_cr4_features __ro_after_init;
 #else
-__visible unsigned long mmu_cr4_features = X86_CR4_PAE;
+__visible unsigned long mmu_cr4_features __ro_after_init = X86_CR4_PAE;
 #endif
 
 /* Boot loader ID and version as integers, for the benefit of proc_dointvec */
@@ -936,8 +936,6 @@ void __init setup_arch(char **cmdline_p)
 
 	x86_init.oem.arch_setup();
 
-	kernel_randomize_memory();
-
 	iomem_resource.end = (1ULL << boot_cpu_data.x86_phys_bits) - 1;
 	setup_memory_map();
 	parse_setup_data();
@@ -1054,6 +1052,12 @@ void __init setup_arch(char **cmdline_p)
 		max_pfn = e820_end_of_ram_pfn();
 
 	max_possible_pfn = max_pfn;
+
+	/*
+	 * Define random base addresses for memory sections after max_pfn is
+	 * defined and before each memory section base is used.
+	 */
+	kernel_randomize_memory();
 
 #ifdef CONFIG_X86_32
 	/* max_low_pfn get updated here */
