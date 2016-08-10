@@ -14,7 +14,7 @@
 #include "super.h"
 
 /**
- * load_befs_sb -- Read from disk and properly byteswap all the fields
+ * befs_load_sb -- Read from disk and properly byteswap all the fields
  * of the befs superblock
  *
  *
@@ -44,6 +44,8 @@ befs_load_sb(struct super_block *sb, befs_super_block * disk_sb)
 	befs_sb->blocks_per_ag = fs32_to_cpu(sb, disk_sb->blocks_per_ag);
 	befs_sb->ag_shift = fs32_to_cpu(sb, disk_sb->ag_shift);
 	befs_sb->num_ags = fs32_to_cpu(sb, disk_sb->num_ags);
+
+	befs_sb->flags = fs32_to_cpu(sb, disk_sb->flags);
 
 	befs_sb->log_blocks = fsrun_to_cpu(sb, disk_sb->log_blocks);
 	befs_sb->log_start = fs64_to_cpu(sb, disk_sb->log_start);
@@ -101,7 +103,7 @@ befs_check_sb(struct super_block *sb)
 		return BEFS_ERR;
 	}
 
-	if (befs_sb->log_start != befs_sb->log_end) {
+	if (befs_sb->log_start != befs_sb->log_end || befs_sb->flags == BEFS_DIRTY) {
 		befs_error(sb, "Filesystem not clean! There are blocks in the "
 			   "journal. You must boot into BeOS and mount this volume "
 			   "to make it clean.");
