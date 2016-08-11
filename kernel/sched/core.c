@@ -74,6 +74,7 @@
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
 #include <linux/frame.h>
+#include <linux/prefetch.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -1264,7 +1265,7 @@ static void __migrate_swap_task(struct task_struct *p, int cpu)
 		/*
 		 * Task isn't running anymore; make it appear like we migrated
 		 * it before it went to sleep. This means on wakeup we make the
-		 * previous cpu our targer instead of where it really is.
+		 * previous cpu our target instead of where it really is.
 		 */
 		p->wake_cpu = cpu;
 	}
@@ -2072,6 +2073,7 @@ out:
 /**
  * try_to_wake_up_local - try to wake up a local task with rq lock held
  * @p: the thread to be awakened
+ * @cookie: context's cookie for pinning
  *
  * Put @p on the run-queue if it's not already there. The caller must
  * ensure that this_rq() is locked, @p is bound to this_rq() and not
@@ -2972,6 +2974,23 @@ EXPORT_PER_CPU_SYMBOL(kstat);
 EXPORT_PER_CPU_SYMBOL(kernel_cpustat);
 
 /*
+ * The function fair_sched_class.update_curr accesses the struct curr
+ * and its field curr->exec_start; when called from task_sched_runtime(),
+ * we observe a high rate of cache misses in practice.
+ * Prefetching this data results in improved performance.
+ */
+static inline void prefetch_curr_exec_start(struct task_struct *p)
+{
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	struct sched_entity *curr = (&p->se)->cfs_rq->curr;
+#else
+	struct sched_entity *curr = (&task_rq(p)->cfs)->curr;
+#endif
+	prefetch(curr);
+	prefetch(&curr->exec_start);
+}
+
+/*
  * Return accounted runtime for the task.
  * In case the task is currently running, return the runtime plus current's
  * pending runtime that have not been accounted yet.
@@ -3005,6 +3024,7 @@ unsigned long long task_sched_runtime(struct task_struct *p)
 	 * thread, breaking clock_gettime().
 	 */
 	if (task_current(rq, p) && task_on_rq_queued(p)) {
+		prefetch_curr_exec_start(p);
 		update_rq_clock(rq);
 		p->sched_class->update_curr(rq);
 	}
@@ -3151,6 +3171,9 @@ static inline void preempt_latency_stop(int val) { }
  */
 static noinline void __schedule_bug(struct task_struct *prev)
 {
+	/* Save this before calling printk(), since that will clobber it */
+	unsigned long preempt_disable_ip = get_preempt_disable_ip(current);
+
 	if (oops_in_progress)
 		return;
 
@@ -3161,13 +3184,12 @@ static noinline void __schedule_bug(struct task_struct *prev)
 	print_modules();
 	if (irqs_disabled())
 		print_irqtrace_events(prev);
-#ifdef CONFIG_DEBUG_PREEMPT
-	if (in_atomic_preempt_off()) {
+	if (IS_ENABLED(CONFIG_DEBUG_PREEMPT)
+	    && in_atomic_preempt_off()) {
 		pr_err("Preemption disabled at:");
-		print_ip_sym(current->preempt_disable_ip);
+		print_ip_sym(preempt_disable_ip);
 		pr_cont("\n");
 	}
-#endif
 	if (panic_on_warn)
 		panic("scheduling while atomic\n");
 
@@ -7551,6 +7573,7 @@ EXPORT_SYMBOL(__might_sleep);
 void ___might_sleep(const char *file, int line, int preempt_offset)
 {
 	static unsigned long prev_jiffy;	/* ratelimiting */
+	unsigned long preempt_disable_ip;
 
 	rcu_sleep_check(); /* WARN_ON_ONCE() by default, no rate limit reqd. */
 	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
@@ -7560,6 +7583,9 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
 		return;
 	prev_jiffy = jiffies;
+
+	/* Save this before calling printk(), since that will clobber it */
+	preempt_disable_ip = get_preempt_disable_ip(current);
 
 	printk(KERN_ERR
 		"BUG: sleeping function called from invalid context at %s:%d\n",
@@ -7575,14 +7601,14 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	debug_show_held_locks(current);
 	if (irqs_disabled())
 		print_irqtrace_events(current);
-#ifdef CONFIG_DEBUG_PREEMPT
-	if (!preempt_count_equals(preempt_offset)) {
+	if (IS_ENABLED(CONFIG_DEBUG_PREEMPT)
+	    && !preempt_count_equals(preempt_offset)) {
 		pr_err("Preemption disabled at:");
-		print_ip_sym(current->preempt_disable_ip);
+		print_ip_sym(preempt_disable_ip);
 		pr_cont("\n");
 	}
-#endif
 	dump_stack();
+	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
 }
 EXPORT_SYMBOL(___might_sleep);
 #endif
