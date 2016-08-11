@@ -111,7 +111,7 @@ static void find_start_end(unsigned long flags, unsigned long *begin,
 		*begin = 0x40000000;
 		*end = 0x80000000;
 		if (current->flags & PF_RANDOMIZE) {
-			*begin = randomize_page(*begin, 0x02000000);
+			*begin = randomize_addr(*begin, 0x02000000);
 		}
 	} else {
 		*begin = current->mm->mmap_legacy_base;
