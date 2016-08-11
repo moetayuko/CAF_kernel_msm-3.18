@@ -4089,7 +4089,7 @@ static struct mem_cgroup *mem_cgroup_id_get_online(struct mem_cgroup *memcg)
 		 * The root cgroup cannot be destroyed, so it's refcount must
 		 * always be >= 1.
 		 */
-		if (memcg == root_mem_cgroup) {
+		if (WARN_ON_ONCE(memcg == root_mem_cgroup)) {
 			VM_BUG_ON(1);
 			break;
 		}
