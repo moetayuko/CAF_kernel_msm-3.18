@@ -2100,23 +2100,30 @@ unsigned long get_random_long(void)
 }
 EXPORT_SYMBOL(get_random_long);
 
-/*
- * randomize_range() returns a start address such that
+/**
+ * randomize_addr - Generate a random, page aligned address
+ * @start:	The smallest acceptable address the caller will take.
+ * @range:	The size of the area, starting at @start, within which the
+ *		random address must fall.
  *
- *    [...... <range> .....]
- *  start                  end
+ * Before page alignment, the random address generated can be any value from
+ * @start, to @start + @range - 1 inclusive.
  *
- * a <range> with size "len" starting at the return value is inside in the
- * area defined by [start, end], but is otherwise randomized.
+ * If @start + @range would overflow, @range is capped.
+ *
+ * Return: A page aligned address within [start, start + range).  On error,
+ * @start is returned.
  */
 unsigned long
-randomize_range(unsigned long start, unsigned long end, unsigned long len)
+randomize_addr(unsigned long start, unsigned long range)
 {
-	unsigned long range = end - len - start;
+	if (range == 0)
+		return start;
 
-	if (end <= start + len)
-		return 0;
-	return PAGE_ALIGN(get_random_int() % range + start);
+	if (start > ULONG_MAX - range)
+		range = ULONG_MAX - start;
+
+	return PAGE_ALIGN(get_random_long() % range + start);
 }
 
 /* Interface for in-kernel drivers of true hardware RNGs.
