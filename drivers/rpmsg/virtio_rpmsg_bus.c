@@ -528,7 +528,7 @@ static struct rpmsg_channel *rpmsg_create_channel(struct virtproc_info *vrp,
 	 * rpmsg server channels has predefined local address (for now),
 	 * and their existence needs to be announced remotely
 	 */
-	rpdev->announce = rpdev->src != RPMSG_ADDR_ANY ? true : false;
+	rpdev->announce = rpdev->src != RPMSG_ADDR_ANY;
 
 	strncpy(rpdev->id.name, chinfo->name, RPMSG_NAME_SIZE);
 
@@ -865,7 +865,7 @@ static void rpmsg_recv_done(struct virtqueue *rvq)
 		msgs_received++;
 
 		msg = virtqueue_get_buf(rvq, &len);
-	};
+	}
 
 	dev_dbg(dev, "Received %u messages\n", msgs_received);
 
