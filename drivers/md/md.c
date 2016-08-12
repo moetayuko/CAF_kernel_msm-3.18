@@ -5576,8 +5576,7 @@ static int md_set_readonly(struct mddev *mddev, struct block_device *bdev)
 	mutex_lock(&mddev->open_mutex);
 	if ((mddev->pers && atomic_read(&mddev->openers) > !!bdev) ||
 	    mddev->sync_thread ||
-	    test_bit(MD_RECOVERY_RUNNING, &mddev->recovery) ||
-	    (bdev && !test_bit(MD_STILL_CLOSED, &mddev->flags))) {
+	    test_bit(MD_RECOVERY_RUNNING, &mddev->recovery)) {
 		printk("md: %s still in use.\n",mdname(mddev));
 		if (did_freeze) {
 			clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
@@ -5639,8 +5638,7 @@ static int do_md_stop(struct mddev *mddev, int mode,
 	if ((mddev->pers && atomic_read(&mddev->openers) > !!bdev) ||
 	    mddev->sysfs_active ||
 	    mddev->sync_thread ||
-	    test_bit(MD_RECOVERY_RUNNING, &mddev->recovery) ||
-	    (bdev && !test_bit(MD_STILL_CLOSED, &mddev->flags))) {
+	    test_bit(MD_RECOVERY_RUNNING, &mddev->recovery)) {
 		printk("md: %s still in use.\n",mdname(mddev));
 		mutex_unlock(&mddev->open_mutex);
 		if (did_freeze) {
@@ -6829,7 +6827,7 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 			err = -EBUSY;
 			goto out;
 		}
-		set_bit(MD_STILL_CLOSED, &mddev->flags);
+		set_bit(MD_CLOSING, &mddev->flags);
 		mutex_unlock(&mddev->open_mutex);
 		sync_blockdev(bdev);
 	}
@@ -7078,9 +7076,13 @@ static int md_open(struct block_device *bdev, fmode_t mode)
 	if ((err = mutex_lock_interruptible(&mddev->open_mutex)))
 		goto out;
 
+	if (test_bit(MD_CLOSING, &mddev->flags)) {
+		mutex_unlock(&mddev->open_mutex);
+		return -ENODEV;
+	}
+
 	err = 0;
 	atomic_inc(&mddev->openers);
-	clear_bit(MD_STILL_CLOSED, &mddev->flags);
 	mutex_unlock(&mddev->open_mutex);
 
 	check_disk_change(bdev);
