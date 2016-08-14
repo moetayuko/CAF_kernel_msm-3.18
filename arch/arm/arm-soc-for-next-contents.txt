@@ -1,0 +1,24 @@
+fixes
+	patch
+		arm64: dts: Fix RTC by providing rtc_src clock
+		ARM: do away with final ARCH_REQUIRE_GPIOLIB
+		MAINTAINER: alpine: add a mailing list
+		ARM: shmobile: don't call platform_can_secondary_boot on UP
+		Revert "ARM: aspeed: adapt defconfigs for new CONFIG_PRINTK_TIME"
+
+next/fixes-non-critical
+
+next/cleanup
+
+next/soc
+
+next/arm64
+
+next/dt
+
+next/dt64
+
+next/defconfig
+
+next/drivers
+
