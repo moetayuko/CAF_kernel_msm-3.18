@@ -15,21 +15,18 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/slab.h>
-#include <linux/jiffies.h>
+#include <linux/bitops.h>
+#include <linux/err.h>
 #include <linux/i2c.h>
+#include <linux/init.h>
+#include <linux/jiffies.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
-#include <linux/err.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
 #include <linux/sysfs.h>
 
 #define DEVNAME "lm95241"
@@ -54,26 +51,25 @@ static const unsigned short normal_i2c[] = {
 #define LM95241_REG_RW_REMOTE_MODEL	0x30
 
 /* LM95241 specific bitfields */
-#define CFG_STOP 0x40
-#define CFG_CR0076 0x00
-#define CFG_CR0182 0x10
-#define CFG_CR1000 0x20
-#define CFG_CR2700 0x30
-#define R1MS_SHIFT 0
-#define R2MS_SHIFT 2
-#define R1MS_MASK (0x01 << (R1MS_SHIFT))
-#define R2MS_MASK (0x01 << (R2MS_SHIFT))
-#define R1DF_SHIFT 1
-#define R2DF_SHIFT 2
-#define R1DF_MASK (0x01 << (R1DF_SHIFT))
-#define R2DF_MASK (0x01 << (R2DF_SHIFT))
-#define R1FE_MASK 0x01
-#define R2FE_MASK 0x05
-#define TT1_SHIFT 0
-#define TT2_SHIFT 4
-#define TT_OFF 0
-#define TT_ON 1
-#define TT_MASK 7
+#define CFG_STOP	BIT(6)
+#define CFG_CR0076	0x00
+#define CFG_CR0182	BIT(4)
+#define CFG_CR1000	BIT(5)
+#define CFG_CR2700	(BIT(4) | BIT(5))
+#define CFG_CRMASK	(BIT(4) | BIT(5))
+#define R1MS_MASK	BIT(0)
+#define R2MS_MASK	BIT(2)
+#define R1DF_MASK	BIT(1)
+#define R2DF_MASK	BIT(2)
+#define R1FE_MASK	BIT(0)
+#define R2FE_MASK	BIT(2)
+#define R1DM		BIT(0)
+#define R2DM		BIT(1)
+#define TT1_SHIFT	0
+#define TT2_SHIFT	4
+#define TT_OFF		0
+#define TT_ON		1
+#define TT_MASK		7
 #define NATSEMI_MAN_ID	0x01
 #define LM95231_CHIP_ID	0xA1
 #define LM95241_CHIP_ID	0xA4
@@ -91,11 +87,12 @@ static const u8 lm95241_reg_address[] = {
 struct lm95241_data {
 	struct i2c_client *client;
 	struct mutex update_lock;
-	unsigned long last_updated, interval;	/* in jiffies */
+	unsigned long last_updated;	/* in jiffies */
+	unsigned long interval;		/* in milli-seconds */
 	char valid;		/* zero until following fields are valid */
 	/* registers values */
 	u8 temp[ARRAY_SIZE(lm95241_reg_address)];
-	u8 config, model, trutherm;
+	u8 status, config, model, trutherm;
 };
 
 /* Conversions */
@@ -118,7 +115,8 @@ static struct lm95241_data *lm95241_update_device(struct device *dev)
 
 	mutex_lock(&data->update_lock);
 
-	if (time_after(jiffies, data->last_updated + data->interval) ||
+	if (time_after(jiffies, data->last_updated
+		       + msecs_to_jiffies(data->interval)) ||
 	    !data->valid) {
 		int i;
 
@@ -127,6 +125,9 @@ static struct lm95241_data *lm95241_update_device(struct device *dev)
 			data->temp[i]
 			  = i2c_smbus_read_byte_data(client,
 						     lm95241_reg_address[i]);
+
+		data->status = i2c_smbus_read_byte_data(client,
+							LM95241_REG_R_STATUS);
 		data->last_updated = jiffies;
 		data->valid = 1;
 	}
@@ -144,7 +145,7 @@ static ssize_t show_input(struct device *dev, struct device_attribute *attr,
 	int index = to_sensor_dev_attr(attr)->index;
 
 	return snprintf(buf, PAGE_SIZE - 1, "%d\n",
-			index == 0 || (data->config & (1 << (index / 2))) ?
+			index == 0 || (data->config & BIT(index / 2)) ?
 		temp_from_reg_signed(data->temp[index], data->temp[index + 1]) :
 		temp_from_reg_unsigned(data->temp[index],
 				       data->temp[index + 1]));
@@ -204,7 +205,7 @@ static ssize_t show_min(struct device *dev, struct device_attribute *attr,
 
 	return snprintf(buf, PAGE_SIZE - 1,
 			data->config & to_sensor_dev_attr(attr)->index ?
-			"-127000\n" : "0\n");
+			"-128000\n" : "0\n");
 }
 
 static ssize_t set_min(struct device *dev, struct device_attribute *attr,
@@ -214,8 +215,6 @@ static ssize_t set_min(struct device *dev, struct device_attribute *attr,
 	long val;
 
 	if (kstrtol(buf, 10, &val) < 0)
-		return -EINVAL;
-	if (val < -128000)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -241,7 +240,7 @@ static ssize_t show_max(struct device *dev, struct device_attribute *attr,
 
 	return snprintf(buf, PAGE_SIZE - 1,
 			data->config & to_sensor_dev_attr(attr)->index ?
-			"127000\n" : "255000\n");
+			"127875\n" : "255875\n");
 }
 
 static ssize_t set_max(struct device *dev, struct device_attribute *attr,
@@ -251,8 +250,6 @@ static ssize_t set_max(struct device *dev, struct device_attribute *attr,
 	long val;
 
 	if (kstrtol(buf, 10, &val) < 0)
-		return -EINVAL;
-	if (val >= 256000)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -271,13 +268,21 @@ static ssize_t set_max(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+static ssize_t show_fault(struct device *dev, struct device_attribute *attr,
+			  char *buf)
+{
+	struct lm95241_data *data = lm95241_update_device(dev);
+
+	return snprintf(buf, PAGE_SIZE - 1, "%d",
+			!!(data->status & to_sensor_dev_attr(attr)->index));
+}
+
 static ssize_t show_interval(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
 	struct lm95241_data *data = lm95241_update_device(dev);
 
-	return snprintf(buf, PAGE_SIZE - 1, "%lu\n", 1000 * data->interval
-			/ HZ);
+	return snprintf(buf, PAGE_SIZE - 1, "%lu\n", data->interval);
 }
 
 static ssize_t set_interval(struct device *dev, struct device_attribute *attr,
@@ -285,11 +290,35 @@ static ssize_t set_interval(struct device *dev, struct device_attribute *attr,
 {
 	struct lm95241_data *data = dev_get_drvdata(dev);
 	unsigned long val;
+	int convrate;
+	u8 config;
 
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	data->interval = val * HZ / 1000;
+	mutex_lock(&data->update_lock);
+
+	config = data->config & ~CFG_CRMASK;
+
+	if (val < 130) {
+		convrate = 76;
+		config |= CFG_CR0076;
+	} else if (val < 590) {
+		convrate = 182;
+		config |= CFG_CR0182;
+	} else if (val < 1850) {
+		convrate = 1000;
+		config |= CFG_CR1000;
+	} else {
+		convrate = 2700;
+		config |= CFG_CR2700;
+	}
+
+	data->interval = convrate;
+	data->config = config;
+	i2c_smbus_write_byte_data(data->client, LM95241_REG_RW_CONFIG,
+				  config);
+	mutex_unlock(&data->update_lock);
 
 	return count;
 }
@@ -309,6 +338,8 @@ static SENSOR_DEVICE_ATTR(temp2_max, S_IWUSR | S_IRUGO, show_max, set_max,
 			  R1DF_MASK);
 static SENSOR_DEVICE_ATTR(temp3_max, S_IWUSR | S_IRUGO, show_max, set_max,
 			  R2DF_MASK);
+static SENSOR_DEVICE_ATTR(temp2_fault, S_IRUGO, show_fault, NULL, R1DM);
+static SENSOR_DEVICE_ATTR(temp3_fault, S_IRUGO, show_fault, NULL, R2DM);
 static DEVICE_ATTR(update_interval, S_IWUSR | S_IRUGO, show_interval,
 		   set_interval);
 
@@ -322,6 +353,8 @@ static struct attribute *lm95241_attrs[] = {
 	&sensor_dev_attr_temp3_min.dev_attr.attr,
 	&sensor_dev_attr_temp2_max.dev_attr.attr,
 	&sensor_dev_attr_temp3_max.dev_attr.attr,
+	&sensor_dev_attr_temp2_fault.dev_attr.attr,
+	&sensor_dev_attr_temp3_fault.dev_attr.attr,
 	&dev_attr_update_interval.attr,
 	NULL
 };
@@ -362,8 +395,8 @@ static int lm95241_detect(struct i2c_client *new_client,
 static void lm95241_init_client(struct i2c_client *client,
 				struct lm95241_data *data)
 {
-	data->interval = HZ;	/* 1 sec default */
-	data->config = CFG_CR0076;
+	data->interval = 1000;
+	data->config = CFG_CR1000;
 	data->trutherm = (TT_OFF << TT1_SHIFT) | (TT_OFF << TT2_SHIFT);
 
 	i2c_smbus_write_byte_data(client, LM95241_REG_RW_CONFIG, data->config);
