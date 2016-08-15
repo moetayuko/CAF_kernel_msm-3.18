@@ -473,6 +473,14 @@ skl_tplg_init_pipe_modules(struct skl *skl, struct skl_pipe *pipe)
 		w = w_module->w;
 		mconfig = w->priv;
 
+		/* check if module ids are populated */
+		if (mconfig->id.module_id < 0) {
+			dev_err(skl->skl_sst->dev,
+					"module %pUL id not populated\n",
+					(uuid_le *)mconfig->guid);
+			return -EIO;
+		}
+
 		/* check resource available */
 		if (!skl_is_pipe_mcps_avail(skl, mconfig))
 			return -ENOMEM;
@@ -1621,11 +1629,11 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt,
 	w->priv = mconfig;
 	memcpy(&mconfig->guid, &dfw_config->uuid, 16);
 
-	ret = snd_skl_get_module_info(skl->skl_sst, mconfig->guid, dfw_config);
-	if (ret < 0)
-		return ret;
-
-	mconfig->id.module_id = dfw_config->module_id;
+	/*
+	 * module binary can be loaded later, so set it to query when
+	 * module is load for a use case
+	 */
+	mconfig->id.module_id = -1;
 	mconfig->id.instance_id = dfw_config->instance_id;
 	mconfig->mcps = dfw_config->max_mcps;
 	mconfig->ibs = dfw_config->ibs;
@@ -1634,6 +1642,7 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt,
 	mconfig->max_in_queue = dfw_config->max_in_queue;
 	mconfig->max_out_queue = dfw_config->max_out_queue;
 	mconfig->is_loadable = dfw_config->is_loadable;
+	mconfig->domain = dfw_config->proc_domain;
 	skl_tplg_fill_fmt(mconfig->in_fmt, dfw_config->in_fmt,
 						MODULE_MAX_IN_PINS);
 	skl_tplg_fill_fmt(mconfig->out_fmt, dfw_config->out_fmt,
@@ -1767,11 +1776,33 @@ static int skl_tplg_control_load(struct snd_soc_component *cmpnt,
 	return 0;
 }
 
+static int skl_manifest_load(struct snd_soc_component *cmpnt,
+				struct snd_soc_tplg_manifest *manifest)
+{
+	struct skl_dfw_manifest *minfo;
+	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(cmpnt);
+	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	struct skl *skl = ebus_to_skl(ebus);
+	int ret = 0;
+
+	minfo = &skl->skl_sst->manifest;
+	memcpy(minfo, manifest->priv.data, sizeof(struct skl_dfw_manifest));
+
+	if (minfo->lib_count > HDA_MAX_LIB) {
+		dev_err(bus->dev, "Exceeding max Library count. Got:%d\n",
+					minfo->lib_count);
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
 static struct snd_soc_tplg_ops skl_tplg_ops  = {
 	.widget_load = skl_tplg_widget_load,
 	.control_load = skl_tplg_control_load,
 	.bytes_ext_ops = skl_tlv_ops,
 	.bytes_ext_ops_count = ARRAY_SIZE(skl_tlv_ops),
+	.manifest = skl_manifest_load,
 };
 
 /*
