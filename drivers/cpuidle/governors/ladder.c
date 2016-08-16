@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/jiffies.h>
 #include <linux/tick.h>
+#include <linux/cpu.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
@@ -69,8 +70,14 @@ static int ladder_select_state(struct cpuidle_driver *drv,
 {
 	struct ladder_device *ldev = this_cpu_ptr(&ladder_devices);
 	struct ladder_device_state *last_state;
+	struct device *device = get_cpu_device(dev->cpu);
 	int last_residency, last_idx = ldev->last_state_idx;
 	int latency_req = pm_qos_request(PM_QOS_CPU_DMA_LATENCY);
+	int resume_latency = dev_pm_qos_read_value(device);
+
+	/* resume_latency is 0 means no restriction */
+	if (resume_latency && resume_latency < latency_req)
+		latency_req = resume_latency;
 
 	/* Special case when user has set very strict latency requirement */
 	if (unlikely(latency_req == 0)) {
