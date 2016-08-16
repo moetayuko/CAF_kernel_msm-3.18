@@ -19,6 +19,7 @@ import os
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 sys.path.insert(0, os.path.abspath('sphinx'))
+from load_config import loadConfig
 
 # -- General configuration ------------------------------------------------
 
@@ -131,7 +132,7 @@ pygments_style = 'sphinx'
 todo_include_todos = False
 
 primary_domain = 'C'
-highlight_language = 'C'
+highlight_language = 'guess'
 
 # -- Options for HTML output ----------------------------------------------
 
@@ -268,7 +269,9 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'TheLinuxKernel.tex', 'The Linux Kernel Documentation',
+    ('kernel-documentation', 'kernel-documentation.tex', 'The Linux Kernel Documentation',
+     'The kernel development community', 'manual'),
+    ('gpu/index', 'gpu.tex', 'Linux GPU Driver Developer\'s Guide',
      'The kernel development community', 'manual'),
 ]
 
@@ -419,3 +422,9 @@ pdf_documents = [
 # line arguments.
 kerneldoc_bin = '../scripts/kernel-doc'
 kerneldoc_srctree = '..'
+
+# ------------------------------------------------------------------------------
+# Since loadConfig overwrites settings from the global namespace, it has to be
+# the last statement in the conf.py file
+# ------------------------------------------------------------------------------
+loadConfig(globals())
