@@ -115,8 +115,10 @@ static int atmel_pdmic_cpu_dai_startup(struct snd_pcm_substream *substream,
 		return ret;
 
 	ret =  clk_prepare_enable(dd->pclk);
-	if (ret)
+	if (ret) {
+		clk_disable_unprepare(dd->gclk);
 		return ret;
+	}
 
 	/* Clear all bits in the Control Register(PDMIC_CR) */
 	regmap_write(dd->regmap, PDMIC_CR, 0);
@@ -283,7 +285,7 @@ static const DECLARE_TLV_DB_RANGE(mic_gain_tlv,
 	8, ARRAY_SIZE(mic_gain_table)-1, TLV_DB_SCALE_ITEM(-6500, 100, 0),
 );
 
-int pdmic_get_mic_volsw(struct snd_kcontrol *kcontrol,
+static int pdmic_get_mic_volsw(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
@@ -357,8 +359,10 @@ static int atmel_pdmic_codec_probe(struct snd_soc_codec *codec)
 
 static struct snd_soc_codec_driver soc_codec_dev_pdmic = {
 	.probe		= atmel_pdmic_codec_probe,
-	.controls	= atmel_pdmic_snd_controls,
-	.num_controls	= ARRAY_SIZE(atmel_pdmic_snd_controls),
+	.component_driver = {
+		.controls		= atmel_pdmic_snd_controls,
+		.num_controls		= ARRAY_SIZE(atmel_pdmic_snd_controls),
+	},
 };
 
 /* codec dai component */
