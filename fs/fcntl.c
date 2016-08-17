@@ -270,6 +270,7 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	/* 32-bit arches must use fcntl64() */
 	case F_OFD_GETLK:
 #endif
+	case F_OFD_GETLK32:
 	case F_GETLK:
 		err = fcntl_getlk(filp, cmd, (struct flock __user *) arg);
 		break;
@@ -278,7 +279,8 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_OFD_SETLK:
 	case F_OFD_SETLKW:
 #endif
-		/* Fallthrough */
+	case F_OFD_SETLK32:
+	case F_OFD_SETLKW32:
 	case F_SETLK:
 	case F_SETLKW:
 		err = fcntl_setlk(fd, filp, cmd, (struct flock __user *) arg);

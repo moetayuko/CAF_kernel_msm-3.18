@@ -2065,7 +2065,7 @@ int fcntl_getlk(struct file *filp, unsigned int cmd, struct flock __user *l)
 	if (error)
 		goto out;
 
-	if (cmd == F_OFD_GETLK) {
+	if (cmd == F_OFD_GETLK || cmd == F_OFD_GETLK32) {
 		error = -EINVAL;
 		if (flock.l_pid != 0)
 			goto out;
@@ -2222,6 +2222,7 @@ int fcntl_setlk(unsigned int fd, struct file *filp, unsigned int cmd,
 	 */
 	switch (cmd) {
 	case F_OFD_SETLK:
+	case F_OFD_SETLK32:
 		error = -EINVAL;
 		if (flock.l_pid != 0)
 			goto out;
@@ -2231,6 +2232,7 @@ int fcntl_setlk(unsigned int fd, struct file *filp, unsigned int cmd,
 		file_lock->fl_owner = filp;
 		break;
 	case F_OFD_SETLKW:
+	case F_OFD_SETLKW32:
 		error = -EINVAL;
 		if (flock.l_pid != 0)
 			goto out;
