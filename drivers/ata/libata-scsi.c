@@ -3610,7 +3610,7 @@ static int ata_mselect_caching(struct ata_queued_cmd *qc,
 {
 	struct ata_taskfile *tf = &qc->tf;
 	struct ata_device *dev = qc->dev;
-	char mpage[CACHE_MPAGE_LEN];
+	u8 mpage[CACHE_MPAGE_LEN];
 	u8 wce;
 	int i;
 
@@ -3666,7 +3666,7 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 			       const u8 *buf, int len, u16 *fp)
 {
 	struct ata_device *dev = qc->dev;
-	char mpage[CONTROL_MPAGE_LEN];
+	u8 mpage[CONTROL_MPAGE_LEN];
 	u8 d_sense;
 	int i;
 
@@ -3701,8 +3701,6 @@ static int ata_mselect_control(struct ata_queued_cmd *qc,
 		dev->flags |= ATA_DFLAG_D_SENSE;
 	else
 		dev->flags &= ~ATA_DFLAG_D_SENSE;
-	qc->scsicmd->result = SAM_STAT_GOOD;
-	qc->scsicmd->scsi_done(qc->scsicmd);
 	return 0;
 }
 
@@ -3829,6 +3827,8 @@ static unsigned int ata_scsi_mode_select_xlat(struct ata_queued_cmd *qc)
 		if (ata_mselect_control(qc, p, pg_len, &fp) < 0) {
 			fp += hdr_len + bd_len;
 			goto invalid_param;
+		} else {
+			goto skip; /* No ATA command to send */
 		}
 		break;
 	default:		/* invalid page code */
