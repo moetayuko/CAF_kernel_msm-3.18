@@ -40,6 +40,7 @@
 
 #include "../include/lustre_acl.h"
 #include "../include/obd_class.h"
+#include "../include/lustre_lmv.h"
 #include "../include/lustre_fid.h"
 #include "../include/lprocfs_status.h"
 #include "../include/lustre_param.h"
@@ -504,15 +505,15 @@ static int mdc_get_lustre_md(struct obd_export *exp,
 				goto out;
 			}
 
-			rc = obd_unpackmd(md_exp, (void *)&md->mea, lmv,
+			rc = obd_unpackmd(md_exp, (void *)&md->lmv, lmv,
 					  lmvsize);
 			if (rc < 0)
 				goto out;
 
-			if (rc < sizeof(*md->mea)) {
+			if (rc < sizeof(*md->lmv)) {
 				CDEBUG(D_INFO,
-				       "size too small: rc < sizeof(*md->mea) (%d < %d)\n",
-					rc, (int)sizeof(*md->mea));
+				       "size too small: rc < sizeof(*md->lmv) (%d < %d)\n",
+					rc, (int)sizeof(*md->lmv));
 				rc = -EPROTO;
 				goto out;
 			}

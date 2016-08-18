@@ -1039,12 +1039,18 @@ static int ll_statahead_thread(void *arg)
 	__u64		     pos    = 0;
 	int		       first  = 0;
 	int		       rc     = 0;
+	struct md_op_data *op_data;
 	struct ll_dir_chain       chain;
 	struct l_wait_info	lwi    = { 0 };
 
 	thread->t_pid = current_pid();
 	CDEBUG(D_READA, "statahead thread starting: sai %p, parent %pd\n",
 	       sai, parent);
+
+	op_data = ll_prep_md_op_data(NULL, dir, dir, NULL, 0, 0,
+				     LUSTRE_OPC_ANY, dir);
+	if (IS_ERR(op_data))
+		return PTR_ERR(op_data);
 
 	if (sbi->ll_flags & LL_SBI_AGL_ENABLED)
 		ll_start_agl(parent, sai);
@@ -1069,9 +1075,9 @@ static int ll_statahead_thread(void *arg)
 
 		if (IS_ERR(page)) {
 			rc = PTR_ERR(page);
-			CDEBUG(D_READA, "error reading dir "DFID" at %llu/%llu: [rc %d] [parent %u]\n",
+			CDEBUG(D_READA, "error reading dir "DFID" at %llu/%llu: opendir_pid = %u: rc = %d\n",
 			       PFID(ll_inode2fid(dir)), pos, sai->sai_index,
-			       rc, plli->lli_opendir_pid);
+			       plli->lli_opendir_pid, rc);
 			goto out;
 		}
 
@@ -1218,24 +1224,21 @@ do_it:
 
 			rc = 0;
 			goto out;
-		} else if (1) {
+		} else {
 			/*
 			 * chain is exhausted.
 			 * Normal case: continue to the next page.
 			 */
 			ll_release_page(page, le32_to_cpu(dp->ldp_flags) &
 					      LDF_COLLIDE);
+			sai->sai_in_readpage = 1;
 			page = ll_get_dir_page(dir, pos, &chain);
-		} else {
-			LASSERT(le32_to_cpu(dp->ldp_flags) & LDF_COLLIDE);
-			ll_release_page(page, 1);
-			/*
-			 * go into overflow page.
-			 */
+			sai->sai_in_readpage = 0;
 		}
 	}
 
 out:
+	ll_finish_md_op_data(op_data);
 	if (sai->sai_agl_valid) {
 		spin_lock(&plli->lli_agl_lock);
 		thread_set_flags(agl_thread, SVC_STOPPING);
@@ -1357,9 +1360,10 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			struct ll_inode_info *lli = ll_i2info(dir);
 
 			rc = PTR_ERR(page);
-			CERROR("error reading dir "DFID" at %llu: [rc %d] [parent %u]\n",
+			CERROR("%s: error reading dir "DFID" at %llu: opendir_pid = %u : rc = %d\n",
+			       ll_get_fsname(dir->i_sb, NULL, 0),
 			       PFID(ll_inode2fid(dir)), pos,
-			       rc, lli->lli_opendir_pid);
+			       lli->lli_opendir_pid, rc);
 			break;
 		}
 
@@ -1426,8 +1430,8 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			 * End of directory reached.
 			 */
 			ll_release_page(page, 0);
-			break;
-		} else if (1) {
+			goto out;
+		} else {
 			/*
 			 * chain is exhausted
 			 * Normal case: continue to the next page.
@@ -1435,12 +1439,6 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			ll_release_page(page, le32_to_cpu(dp->ldp_flags) &
 					      LDF_COLLIDE);
 			page = ll_get_dir_page(dir, pos, &chain);
-		} else {
-			/*
-			 * go into overflow page.
-			 */
-			LASSERT(le32_to_cpu(dp->ldp_flags) & LDF_COLLIDE);
-			ll_release_page(page, 1);
 		}
 	}
 
@@ -1553,6 +1551,11 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
 			ll_sai_unplug(sai, entry);
 			return entry ? 1 : -EAGAIN;
 		}
+
+		/* if statahead is busy in readdir, help it do post-work */
+		while (!ll_sa_entry_stated(entry) && sai->sai_in_readpage &&
+		       !sa_received_empty(sai))
+			ll_post_statahead(sai);
 
 		if (!ll_sa_entry_stated(entry)) {
 			sai->sai_index_wait = entry->se_index;

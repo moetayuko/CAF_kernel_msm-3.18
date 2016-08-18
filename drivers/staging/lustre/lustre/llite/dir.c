@@ -489,16 +489,16 @@ static __u16 ll_dirent_type_get(struct lu_dirent *ent)
 	return type;
 }
 
-int ll_dir_read(struct inode *inode, struct dir_context *ctx)
+int ll_dir_read(struct inode *inode, __u64 *ppos, struct md_op_data *op_data,
+		struct dir_context *ctx)
 {
-	struct ll_inode_info *info       = ll_i2info(inode);
 	struct ll_sb_info    *sbi	= ll_i2sbi(inode);
-	__u64		   pos		= ctx->pos;
-	int		   api32      = ll_need_32bit_api(sbi);
-	int		   hash64     = sbi->ll_flags & LL_SBI_64BIT_HASH;
+	__u64		   pos		= *ppos;
+	int		   is_api32 = ll_need_32bit_api(sbi);
+	int		   is_hash64 = sbi->ll_flags & LL_SBI_64BIT_HASH;
 	struct page	  *page;
 	struct ll_dir_chain   chain;
-	int		   done = 0;
+	bool		   done = false;
 	int		   rc = 0;
 
 	ll_dir_chain_init(&chain);
@@ -508,95 +508,85 @@ int ll_dir_read(struct inode *inode, struct dir_context *ctx)
 	while (rc == 0 && !done) {
 		struct lu_dirpage *dp;
 		struct lu_dirent  *ent;
+		__u64 hash;
+		__u64 next;
 
-		if (!IS_ERR(page)) {
-			/*
-			 * If page is empty (end of directory is reached),
-			 * use this value.
-			 */
-			__u64 hash = MDS_DIR_END_OFF;
-			__u64 next;
-
-			dp = page_address(page);
-			for (ent = lu_dirent_start(dp); ent && !done;
-			     ent = lu_dirent_next(ent)) {
-				__u16	  type;
-				int	    namelen;
-				struct lu_fid  fid;
-				__u64	  lhash;
-				__u64	  ino;
-
-				/*
-				 * XXX: implement correct swabbing here.
-				 */
-
-				hash = le64_to_cpu(ent->lde_hash);
-				if (hash < pos)
-					/*
-					 * Skip until we find target hash
-					 * value.
-					 */
-					continue;
-
-				namelen = le16_to_cpu(ent->lde_namelen);
-				if (namelen == 0)
-					/*
-					 * Skip dummy record.
-					 */
-					continue;
-
-				if (api32 && hash64)
-					lhash = hash >> 32;
-				else
-					lhash = hash;
-				fid_le_to_cpu(&fid, &ent->lde_fid);
-				ino = cl_fid_build_ino(&fid, api32);
-				type = ll_dirent_type_get(ent);
-				ctx->pos = lhash;
-				/* For 'll_nfs_get_name_filldir()', it will try
-				 * to access the 'ent' through its 'lde_name',
-				 * so the parameter 'name' for 'ctx->actor()'
-				 * must be part of the 'ent'.
-				 */
-				done = !dir_emit(ctx, ent->lde_name,
-						 namelen, ino, type);
-			}
-			next = le64_to_cpu(dp->ldp_hash_end);
-			if (!done) {
-				pos = next;
-				if (pos == MDS_DIR_END_OFF) {
-					/*
-					 * End of directory reached.
-					 */
-					done = 1;
-					ll_release_page(page, 0);
-				} else if (1 /* chain is exhausted*/) {
-					/*
-					 * Normal case: continue to the next
-					 * page.
-					 */
-					ll_release_page(page,
-					    le32_to_cpu(dp->ldp_flags) &
-							LDF_COLLIDE);
-					next = pos;
-					page = ll_get_dir_page(inode, pos,
-							       &chain);
-				} else {
-					/*
-					 * go into overflow page.
-					 */
-					LASSERT(le32_to_cpu(dp->ldp_flags) &
-						LDF_COLLIDE);
-					ll_release_page(page, 1);
-				}
-			} else {
-				pos = hash;
-				ll_release_page(page, 0);
-			}
-		} else {
+		if (IS_ERR(page)) {
 			rc = PTR_ERR(page);
-			CERROR("error reading dir "DFID" at %lu: rc %d\n",
-			       PFID(&info->lli_fid), (unsigned long)pos, rc);
+			break;
+		}
+
+		hash = MDS_DIR_END_OFF;
+		dp = page_address(page);
+		for (ent = lu_dirent_start(dp); ent && !done;
+		     ent = lu_dirent_next(ent)) {
+			__u16	  type;
+			int	    namelen;
+			struct lu_fid  fid;
+			__u64	  lhash;
+			__u64	  ino;
+
+			/*
+			 * XXX: implement correct swabbing here.
+			 */
+
+			hash = le64_to_cpu(ent->lde_hash);
+			if (hash < pos)
+				/*
+				 * Skip until we find target hash
+				 * value.
+				 */
+				continue;
+
+			namelen = le16_to_cpu(ent->lde_namelen);
+			if (namelen == 0)
+				/*
+				 * Skip dummy record.
+				 */
+				continue;
+
+			if (is_api32 && is_hash64)
+				lhash = hash >> 32;
+			else
+				lhash = hash;
+			fid_le_to_cpu(&fid, &ent->lde_fid);
+			ino = cl_fid_build_ino(&fid, is_api32);
+			type = ll_dirent_type_get(ent);
+			ctx->pos = lhash;
+			/* For 'll_nfs_get_name_filldir()', it will try
+			 * to access the 'ent' through its 'lde_name',
+			 * so the parameter 'name' for 'ctx->actor()'
+			 * must be part of the 'ent'.
+			 */
+			done = !dir_emit(ctx, ent->lde_name,
+					 namelen, ino, type);
+		}
+
+		if (done) {
+			pos = hash;
+			ll_release_page(page, 0);
+			break;
+		}
+
+		next = le64_to_cpu(dp->ldp_hash_end);
+		pos = next;
+		if (pos == MDS_DIR_END_OFF) {
+			/*
+			 * End of directory reached.
+			 */
+			done = 1;
+			ll_release_page(page, 0);
+		} else {
+			/*
+			 * Normal case: continue to the next
+			 * page.
+			 */
+			ll_release_page(page,
+					le32_to_cpu(dp->ldp_flags) &
+					LDF_COLLIDE);
+			next = pos;
+			page = ll_get_dir_page(inode, pos,
+					       &chain);
 		}
 	}
 
@@ -613,9 +603,10 @@ static int ll_readdir(struct file *filp, struct dir_context *ctx)
 	__u64 pos = lfd ? lfd->lfd_pos : 0;
 	int			hash64	= sbi->ll_flags & LL_SBI_64BIT_HASH;
 	int			api32	= ll_need_32bit_api(sbi);
+	struct md_op_data *op_data;
 	int			rc;
 
-	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p) pos %lu/%llu 32bit_api %d\n",
+	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p) pos/size %lu/%llu 32bit_api %d\n",
 	       PFID(ll_inode2fid(inode)), inode, (unsigned long)pos,
 	       i_size_read(inode), api32);
 
@@ -627,19 +618,30 @@ static int ll_readdir(struct file *filp, struct dir_context *ctx)
 		goto out;
 	}
 
+	op_data = ll_prep_md_op_data(NULL, inode, inode, NULL, 0, 0,
+				     LUSTRE_OPC_ANY, inode);
+	if (IS_ERR(op_data)) {
+		rc = PTR_ERR(op_data);
+		goto out;
+	}
+
 	ctx->pos = pos;
-	rc = ll_dir_read(inode, ctx);
+	rc = ll_dir_read(inode, &pos, op_data, ctx);
+	pos = ctx->pos;
 	if (lfd)
-		lfd->lfd_pos = ctx->pos;
-	if (ctx->pos == MDS_DIR_END_OFF) {
+		lfd->lfd_pos = pos;
+
+	if (pos == MDS_DIR_END_OFF) {
 		if (api32)
-			ctx->pos = LL_DIR_END_OFF_32BIT;
+			pos = LL_DIR_END_OFF_32BIT;
 		else
-			ctx->pos = LL_DIR_END_OFF;
+			pos = LL_DIR_END_OFF;
 	} else {
 		if (api32 && hash64)
-			ctx->pos >>= 32;
+			pos >>= 32;
 	}
+	ctx->pos = pos;
+	ll_finish_md_op_data(op_data);
 	filp->f_version = inode->i_version;
 
 out:
