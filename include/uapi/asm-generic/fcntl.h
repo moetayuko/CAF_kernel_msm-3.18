@@ -148,6 +148,10 @@
 #define F_OFD_SETLK	37
 #define F_OFD_SETLKW	38
 
+#define F_OFD_GETLK32	39
+#define F_OFD_SETLK32	40
+#define F_OFD_SETLKW32	41
+
 #define F_OWNER_TID	0
 #define F_OWNER_PID	1
 #define F_OWNER_PGRP	2

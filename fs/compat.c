@@ -426,6 +426,9 @@ COMPAT_SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 	case F_GETLK:
 	case F_SETLK:
 	case F_SETLKW:
+	case F_OFD_GETLK32:
+	case F_OFD_SETLK32:
+	case F_OFD_SETLKW32:
 		ret = get_compat_flock(&f, compat_ptr(arg));
 		if (ret != 0)
 			break;
