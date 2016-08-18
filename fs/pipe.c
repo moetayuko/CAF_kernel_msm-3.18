@@ -1122,14 +1122,23 @@ long pipe_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (!nr_pages)
 			goto out;
 
-		if (!capable(CAP_SYS_RESOURCE) && size > pipe_max_size) {
-			ret = -EPERM;
-			goto out;
-		} else if ((too_many_pipe_buffers_hard(pipe->user) ||
-			    too_many_pipe_buffers_soft(pipe->user)) &&
-		           !capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN)) {
-			ret = -EPERM;
-			goto out;
+		/*
+		 * If trying to increase the pipe capacity, check that an
+		 * unprivileged user is not trying to exceed various limits.
+		 * (Decreasing the pipe capacity is always permitted, even
+		 * if the user is currently over a limit.)
+		 */
+		if (nr_pages > pipe->buffers) {
+			if (!capable(CAP_SYS_RESOURCE) && size > pipe_max_size) {
+				ret = -EPERM;
+				goto out;
+			} else if ((too_many_pipe_buffers_hard(pipe->user) ||
+				too_many_pipe_buffers_soft(pipe->user)) &&
+				!capable(CAP_SYS_RESOURCE) &&
+				!capable(CAP_SYS_ADMIN)) {
+				ret = -EPERM;
+				goto out;
+			}
 		}
 		ret = pipe_set_size(pipe, nr_pages);
 		break;
