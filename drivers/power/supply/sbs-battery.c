@@ -41,6 +41,7 @@ enum {
 	REG_TIME_TO_EMPTY,
 	REG_TIME_TO_FULL,
 	REG_STATUS,
+	REG_CAPACITY_LEVEL,
 	REG_CYCLE_COUNT,
 	REG_SERIAL_NUMBER,
 	REG_REMAINING_CAPACITY,
@@ -68,6 +69,7 @@ enum sbs_battery_mode {
 #define MANUFACTURER_ACCESS_SLEEP	0x0011
 
 /* battery status value bits */
+#define BATTERY_INITIALIZED		0x80
 #define BATTERY_DISCHARGING		0x40
 #define BATTERY_FULL_CHARGED		0x20
 #define BATTERY_FULL_DISCHARGED		0x10
@@ -110,6 +112,8 @@ static const struct chip_data {
 		SBS_DATA(POWER_SUPPLY_PROP_TIME_TO_FULL_AVG, 0x13, 0, 65535),
 	[REG_STATUS] =
 		SBS_DATA(POWER_SUPPLY_PROP_STATUS, 0x16, 0, 65535),
+	[REG_CAPACITY_LEVEL] =
+		SBS_DATA(POWER_SUPPLY_PROP_CAPACITY_LEVEL, 0x16, 0, 65535),
 	[REG_CYCLE_COUNT] =
 		SBS_DATA(POWER_SUPPLY_PROP_CYCLE_COUNT, 0x17, 0, 65535),
 	[REG_DESIGN_CAPACITY] =
@@ -131,6 +135,7 @@ static const struct chip_data {
 
 static enum power_supply_property sbs_properties[] = {
 	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
@@ -162,7 +167,6 @@ struct sbs_info {
 	bool				is_present;
 	bool				gpio_detect;
 	bool				enable_detection;
-	int				irq;
 	int				last_state;
 	int				poll_time;
 	struct delayed_work		work;
@@ -377,8 +381,23 @@ static int sbs_get_battery_property(struct i2c_client *client,
 	if (ret >= sbs_data[reg_offset].min_value &&
 	    ret <= sbs_data[reg_offset].max_value) {
 		val->intval = ret;
-		if (psp != POWER_SUPPLY_PROP_STATUS)
+		if (psp == POWER_SUPPLY_PROP_CAPACITY_LEVEL) {
+			if (!(ret & BATTERY_INITIALIZED))
+				val->intval =
+					POWER_SUPPLY_CAPACITY_LEVEL_UNKNOWN;
+			else if (ret & BATTERY_FULL_CHARGED)
+				val->intval =
+					POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+			else if (ret & BATTERY_FULL_DISCHARGED)
+				val->intval =
+					POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+			else
+				val->intval =
+					POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
 			return 0;
+		} else if (psp != POWER_SUPPLY_PROP_STATUS) {
+			return 0;
+		}
 
 		if (ret & BATTERY_FULL_CHARGED)
 			val->intval = POWER_SUPPLY_STATUS_FULL;
@@ -590,6 +609,7 @@ static int sbs_get_property(struct power_supply *psy,
 		break;
 
 	case POWER_SUPPLY_PROP_STATUS:
+	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
@@ -661,7 +681,8 @@ done:
 
 static irqreturn_t sbs_irq(int irq, void *devid)
 {
-	struct power_supply *battery = devid;
+	struct sbs_info *chip = devid;
+	struct power_supply *battery = chip->power_supply;
 
 	power_supply_changed(battery);
 
@@ -819,7 +840,7 @@ static int sbs_probe(struct i2c_client *client,
 	if (!sbs_desc->name)
 		return -ENOMEM;
 
-	chip = kzalloc(sizeof(struct sbs_info), GFP_KERNEL);
+	chip = devm_kzalloc(&client->dev, sizeof(struct sbs_info), GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
 
@@ -869,17 +890,15 @@ static int sbs_probe(struct i2c_client *client,
 		goto skip_gpio;
 	}
 
-	rc = request_irq(irq, sbs_irq,
+	rc = devm_request_threaded_irq(&client->dev, irq, NULL, sbs_irq,
 		IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
-		dev_name(&client->dev), chip->power_supply);
+		dev_name(&client->dev), chip);
 	if (rc) {
 		dev_warn(&client->dev, "Failed to request irq: %d\n", rc);
 		gpio_free(pdata->battery_detect);
 		chip->gpio_detect = false;
 		goto skip_gpio;
 	}
-
-	chip->irq = irq;
 
 skip_gpio:
 	/*
@@ -896,7 +915,7 @@ skip_gpio:
 		}
 	}
 
-	chip->power_supply = power_supply_register(&client->dev, sbs_desc,
+	chip->power_supply = devm_power_supply_register(&client->dev, sbs_desc,
 						   &psy_cfg);
 	if (IS_ERR(chip->power_supply)) {
 		dev_err(&client->dev,
@@ -915,12 +934,8 @@ skip_gpio:
 	return 0;
 
 exit_psupply:
-	if (chip->irq)
-		free_irq(chip->irq, chip->power_supply);
 	if (chip->gpio_detect)
 		gpio_free(pdata->battery_detect);
-
-	kfree(chip);
 
 	return rc;
 }
@@ -929,17 +944,10 @@ static int sbs_remove(struct i2c_client *client)
 {
 	struct sbs_info *chip = i2c_get_clientdata(client);
 
-	if (chip->irq)
-		free_irq(chip->irq, chip->power_supply);
 	if (chip->gpio_detect)
 		gpio_free(chip->pdata->battery_detect);
 
-	power_supply_unregister(chip->power_supply);
-
 	cancel_delayed_work_sync(&chip->work);
-
-	kfree(chip);
-	chip = NULL;
 
 	return 0;
 }
