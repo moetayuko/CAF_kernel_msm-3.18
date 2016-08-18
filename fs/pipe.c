@@ -610,16 +610,20 @@ static void account_pipe_buffers(struct pipe_inode_info *pipe,
 	atomic_long_add(new - old, &pipe->user->pipe_bufs);
 }
 
-static bool too_many_pipe_buffers_soft(struct user_struct *user)
+static bool too_many_pipe_buffers_soft(struct user_struct *user,
+				       unsigned int nr_pages)
 {
 	return pipe_user_pages_soft &&
-	       atomic_long_read(&user->pipe_bufs) >= pipe_user_pages_soft;
+	       atomic_long_read(&user->pipe_bufs) + nr_pages >=
+			pipe_user_pages_soft;
 }
 
-static bool too_many_pipe_buffers_hard(struct user_struct *user)
+static bool too_many_pipe_buffers_hard(struct user_struct *user,
+				       unsigned int nr_pages)
 {
 	return pipe_user_pages_hard &&
-	       atomic_long_read(&user->pipe_bufs) >= pipe_user_pages_hard;
+	       atomic_long_read(&user->pipe_bufs) + nr_pages >=
+			pipe_user_pages_hard;
 }
 
 struct pipe_inode_info *alloc_pipe_info(void)
@@ -631,13 +635,13 @@ struct pipe_inode_info *alloc_pipe_info(void)
 		unsigned long pipe_bufs = PIPE_DEF_BUFFERS;
 		struct user_struct *user = get_current_user();
 
-		if (!too_many_pipe_buffers_hard(user)) {
-			if (too_many_pipe_buffers_soft(user))
-				pipe_bufs = 1;
+		if (too_many_pipe_buffers_soft(user, PIPE_DEF_BUFFERS))
+			pipe_bufs = 1;
+
+		if (!too_many_pipe_buffers_hard(user, pipe_bufs))
 			pipe->bufs = kcalloc(pipe_bufs,
 					     sizeof(struct pipe_buffer),
 					     GFP_KERNEL_ACCOUNT);
-		}
 
 		if (pipe->bufs) {
 			init_waitqueue_head(&pipe->wait);
@@ -1132,8 +1136,8 @@ long pipe_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
 			if (!capable(CAP_SYS_RESOURCE) && size > pipe_max_size) {
 				ret = -EPERM;
 				goto out;
-			} else if ((too_many_pipe_buffers_hard(pipe->user) ||
-				too_many_pipe_buffers_soft(pipe->user)) &&
+			} else if ((too_many_pipe_buffers_hard(pipe->user, nr_pages) ||
+				too_many_pipe_buffers_soft(pipe->user, nr_pages)) &&
 				!capable(CAP_SYS_RESOURCE) &&
 				!capable(CAP_SYS_ADMIN)) {
 				ret = -EPERM;
