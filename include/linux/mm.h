@@ -1913,7 +1913,7 @@ extern int __meminit __early_pfn_to_nid(unsigned long pfn,
 					struct mminit_pfnnid_cache *state);
 #endif
 
-extern void set_dma_reserve(unsigned long new_dma_reserve);
+extern void set_memory_reserve(unsigned long nr_reserve, bool inc);
 extern void memmap_init_zone(unsigned long, int, unsigned long,
 				unsigned long, enum memmap_context);
 extern void setup_per_zone_wmarks(void);
