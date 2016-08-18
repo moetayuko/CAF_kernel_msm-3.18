@@ -435,7 +435,7 @@ struct rproc {
 	struct idr notifyids;
 	int index;
 	struct work_struct crash_handler;
-	unsigned crash_cnt;
+	unsigned int crash_cnt;
 	struct completion crash_comp;
 	bool recovery_disabled;
 	int max_notifyid;
@@ -489,8 +489,8 @@ struct rproc_vdev {
 
 struct rproc *rproc_get_by_phandle(phandle phandle);
 struct rproc *rproc_alloc(struct device *dev, const char *name,
-				const struct rproc_ops *ops,
-				const char *firmware, int len);
+			  const struct rproc_ops *ops,
+			  const char *firmware, int len);
 void rproc_put(struct rproc *rproc);
 int rproc_add(struct rproc *rproc);
 int rproc_del(struct rproc *rproc);
