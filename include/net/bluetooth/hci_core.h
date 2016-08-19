@@ -399,7 +399,9 @@ struct hci_dev {
 	struct delayed_work	rpa_expired;
 	bdaddr_t		rpa;
 
+#if IS_ENABLED(CONFIG_BT_LEDS)
 	struct led_trigger	*power_led;
+#endif
 
 	int (*open)(struct hci_dev *hdev);
 	int (*close)(struct hci_dev *hdev);
@@ -1026,8 +1028,8 @@ int hci_resume_dev(struct hci_dev *hdev);
 int hci_reset_dev(struct hci_dev *hdev);
 int hci_recv_frame(struct hci_dev *hdev, struct sk_buff *skb);
 int hci_recv_diag(struct hci_dev *hdev, struct sk_buff *skb);
-void hci_set_hw_info(struct hci_dev *hdev, const char *fmt, ...);
-void hci_set_fw_info(struct hci_dev *hdev, const char *fmt, ...);
+__printf(2, 3) void hci_set_hw_info(struct hci_dev *hdev, const char *fmt, ...);
+__printf(2, 3) void hci_set_fw_info(struct hci_dev *hdev, const char *fmt, ...);
 int hci_dev_open(__u16 dev);
 int hci_dev_close(__u16 dev);
 int hci_dev_do_close(struct hci_dev *hdev);
