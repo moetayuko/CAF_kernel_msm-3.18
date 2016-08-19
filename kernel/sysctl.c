@@ -2274,8 +2274,7 @@ static int do_proc_dointvec(struct ctl_table *table, int write,
 int proc_dointvec(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-    return do_proc_dointvec(table,write,buffer,lenp,ppos,
-		    	    NULL,NULL);
+    return do_proc_dointvec(table, write, buffer, lenp, ppos, NULL, NULL);
 }
 
 /**
@@ -2294,7 +2293,7 @@ int proc_dointvec(struct ctl_table *table, int write,
 int proc_douintvec(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-    return do_proc_dointvec(table,write,buffer,lenp,ppos,
+    return do_proc_dointvec(table, write, buffer, lenp, ppos,
 			    do_proc_douintvec_conv, NULL);
 }
 
