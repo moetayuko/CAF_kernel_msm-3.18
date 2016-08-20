@@ -387,7 +387,9 @@ static void target_copy(struct ceph_osd_request_target *dest,
 static void target_destroy(struct ceph_osd_request_target *t)
 {
 	ceph_oid_destroy(&t->base_oid);
+	ceph_oloc_destroy(&t->base_oloc);
 	ceph_oid_destroy(&t->target_oid);
+	ceph_oloc_destroy(&t->target_oloc);
 }
 
 /*
@@ -533,6 +535,11 @@ struct ceph_osd_request *ceph_osdc_alloc_request(struct ceph_osd_client *osdc,
 }
 EXPORT_SYMBOL(ceph_osdc_alloc_request);
 
+static int ceph_oloc_encoding_size(struct ceph_object_locator *oloc)
+{
+	return 8 + 4 + 4 + 4 + (oloc->pool_ns ? oloc->pool_ns->len : 0);
+}
+
 int ceph_osdc_alloc_messages(struct ceph_osd_request *req, gfp_t gfp)
 {
 	struct ceph_osd_client *osdc = req->r_osdc;
@@ -540,11 +547,13 @@ int ceph_osdc_alloc_messages(struct ceph_osd_request *req, gfp_t gfp)
 	int msg_size;
 
 	WARN_ON(ceph_oid_empty(&req->r_base_oid));
+	WARN_ON(ceph_oloc_empty(&req->r_base_oloc));
 
 	/* create request message */
 	msg_size = 4 + 4 + 4; /* client_inc, osdmap_epoch, flags */
 	msg_size += 4 + 4 + 4 + 8; /* mtime, reassert_version */
-	msg_size += 2 + 4 + 8 + 4 + 4; /* oloc */
+	msg_size += CEPH_ENCODING_START_BLK_LEN +
+			ceph_oloc_encoding_size(&req->r_base_oloc); /* oloc */
 	msg_size += 1 + 8 + 4 + 4; /* pgid */
 	msg_size += 4 + req->r_base_oid.name_len; /* oid */
 	msg_size += 2 + req->r_num_ops * sizeof(struct ceph_osd_op);
@@ -932,7 +941,7 @@ struct ceph_osd_request *ceph_osdc_new_request(struct ceph_osd_client *osdc,
 	if (opcode == CEPH_OSD_OP_CREATE || opcode == CEPH_OSD_OP_DELETE) {
 		osd_req_op_init(req, which, opcode, 0);
 	} else {
-		u32 object_size = le32_to_cpu(layout->fl_object_size);
+		u32 object_size = layout->object_size;
 		u32 object_base = off - objoff;
 		if (!(truncate_seq == 1 && truncate_size == -1ULL)) {
 			if (truncate_size <= object_base) {
@@ -948,7 +957,8 @@ struct ceph_osd_request *ceph_osdc_new_request(struct ceph_osd_client *osdc,
 	}
 
 	req->r_flags = flags;
-	req->r_base_oloc.pool = ceph_file_layout_pg_pool(*layout);
+	req->r_base_oloc.pool = layout->pool_id;
+	req->r_base_oloc.pool_ns = ceph_try_get_string(layout->pool_ns);
 	ceph_oid_printf(&req->r_base_oid, "%llx.%08llx", vino.ino, objnum);
 
 	req->r_snapid = vino.snap;
@@ -1276,9 +1286,9 @@ static bool target_should_be_paused(struct ceph_osd_client *osdc,
 				    const struct ceph_osd_request_target *t,
 				    struct ceph_pg_pool_info *pi)
 {
-	bool pauserd = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD);
-	bool pausewr = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSEWR) ||
-		       ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL) ||
+	bool pauserd = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD);
+	bool pausewr = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSEWR) ||
+		       ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
 		       __pool_full(pi);
 
 	WARN_ON(pi->id != t->base_oloc.pool);
@@ -1303,8 +1313,7 @@ static enum calc_target_result calc_target(struct ceph_osd_client *osdc,
 	bool force_resend = false;
 	bool need_check_tiering = false;
 	bool need_resend = false;
-	bool sort_bitwise = ceph_osdmap_flag(osdc->osdmap,
-					     CEPH_OSDMAP_SORTBITWISE);
+	bool sort_bitwise = ceph_osdmap_flag(osdc, CEPH_OSDMAP_SORTBITWISE);
 	enum calc_target_result ct_res;
 	int ret;
 
@@ -1490,12 +1499,16 @@ static void encode_request(struct ceph_osd_request *req, struct ceph_msg *msg)
 	p += sizeof(req->r_replay_version);
 
 	/* oloc */
-	ceph_encode_8(&p, 4);
-	ceph_encode_8(&p, 4);
-	ceph_encode_32(&p, 8 + 4 + 4);
+	ceph_start_encoding(&p, 5, 4,
+			    ceph_oloc_encoding_size(&req->r_t.target_oloc));
 	ceph_encode_64(&p, req->r_t.target_oloc.pool);
 	ceph_encode_32(&p, -1); /* preferred */
 	ceph_encode_32(&p, 0); /* key len */
+	if (req->r_t.target_oloc.pool_ns)
+		ceph_encode_string(&p, end, req->r_t.target_oloc.pool_ns->str,
+				   req->r_t.target_oloc.pool_ns->len);
+	else
+		ceph_encode_32(&p, 0);
 
 	/* pgid */
 	ceph_encode_8(&p, 1);
@@ -1540,9 +1553,9 @@ static void encode_request(struct ceph_osd_request *req, struct ceph_msg *msg)
 	 */
 	msg->hdr.data_off = cpu_to_le16(req->r_data_offset);
 
-	dout("%s req %p oid %*pE oid_len %d front %zu data %u\n", __func__,
-	     req, req->r_t.target_oid.name_len, req->r_t.target_oid.name,
-	     req->r_t.target_oid.name_len, msg->front.iov_len, data_len);
+	dout("%s req %p oid %s oid_len %d front %zu data %u\n", __func__,
+	     req, req->r_t.target_oid.name, req->r_t.target_oid.name_len,
+	     msg->front.iov_len, data_len);
 }
 
 /*
@@ -1590,9 +1603,9 @@ static void maybe_request_map(struct ceph_osd_client *osdc)
 	verify_osdc_locked(osdc);
 	WARN_ON(!osdc->osdmap->epoch);
 
-	if (ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL) ||
-	    ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD) ||
-	    ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSEWR)) {
+	if (ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
+	    ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD) ||
+	    ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSEWR)) {
 		dout("%s osdc %p continuous\n", __func__, osdc);
 		continuous = true;
 	} else {
@@ -1629,19 +1642,19 @@ again:
 	}
 
 	if ((req->r_flags & CEPH_OSD_FLAG_WRITE) &&
-	    ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSEWR)) {
+	    ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSEWR)) {
 		dout("req %p pausewr\n", req);
 		req->r_t.paused = true;
 		maybe_request_map(osdc);
 	} else if ((req->r_flags & CEPH_OSD_FLAG_READ) &&
-		   ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD)) {
+		   ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD)) {
 		dout("req %p pauserd\n", req);
 		req->r_t.paused = true;
 		maybe_request_map(osdc);
 	} else if ((req->r_flags & CEPH_OSD_FLAG_WRITE) &&
 		   !(req->r_flags & (CEPH_OSD_FLAG_FULL_TRY |
 				     CEPH_OSD_FLAG_FULL_FORCE)) &&
-		   (ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL) ||
+		   (ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
 		    pool_full(osdc, req->r_t.base_oloc.pool))) {
 		dout("req %p full/pool_full\n", req);
 		pr_warn_ratelimited("FULL or reached pool quota\n");
@@ -2280,7 +2293,7 @@ static void send_linger_ping(struct ceph_osd_linger_request *lreq)
 	struct ceph_osd_request *req = lreq->ping_req;
 	struct ceph_osd_req_op *op = &req->r_ops[0];
 
-	if (ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD)) {
+	if (ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD)) {
 		dout("%s PAUSERD\n", __func__);
 		return;
 	}
@@ -2595,9 +2608,22 @@ static int ceph_oloc_decode(void **p, void *end,
 	}
 
 	if (struct_v >= 5) {
+		bool changed = false;
+
 		len = ceph_decode_32(p);
 		if (len > 0) {
-			pr_warn("ceph_object_locator::nspace is set\n");
+			ceph_decode_need(p, end, len, e_inval);
+			if (!oloc->pool_ns ||
+			    ceph_compare_string(oloc->pool_ns, *p, len))
+				changed = true;
+			*p += len;
+		} else {
+			if (oloc->pool_ns)
+				changed = true;
+		}
+		if (changed) {
+			/* redirect changes namespace */
+			pr_warn("ceph_object_locator::nspace is changed\n");
 			goto e_inval;
 		}
 	}
@@ -2807,7 +2833,9 @@ static void handle_reply(struct ceph_osd *osd, struct ceph_msg *msg)
 		goto out_unlock_session;
 	}
 
+	m.redirect.oloc.pool_ns = req->r_t.target_oloc.pool_ns;
 	ret = decode_MOSDOpReply(msg, &m);
+	m.redirect.oloc.pool_ns = NULL;
 	if (ret) {
 		pr_err("failed to decode MOSDOpReply for tid %llu: %d\n",
 		       req->r_tid, ret);
@@ -2836,7 +2864,11 @@ static void handle_reply(struct ceph_osd *osd, struct ceph_msg *msg)
 		unlink_request(osd, req);
 		mutex_unlock(&osd->lock);
 
-		ceph_oloc_copy(&req->r_t.target_oloc, &m.redirect.oloc);
+		/*
+		 * Not ceph_oloc_copy() - changing pool_ns is not
+		 * supported.
+		 */
+		req->r_t.target_oloc.pool = m.redirect.oloc.pool;
 		req->r_flags |= CEPH_OSD_FLAG_REDIRECTED;
 		req->r_tid = 0;
 		__submit_request(req, false);
@@ -2893,6 +2925,9 @@ static void handle_reply(struct ceph_osd *osd, struct ceph_msg *msg)
 			dout("req %p tid %llu cb\n", req, req->r_tid);
 			__complete_request(req);
 		}
+		if (m.flags & CEPH_OSD_FLAG_ONDISK)
+			complete_all(&req->r_safe_completion);
+		ceph_osdc_put_request(req);
 	} else {
 		if (req->r_unsafe_callback) {
 			dout("req %p tid %llu unsafe-cb\n", req, req->r_tid);
@@ -2901,10 +2936,7 @@ static void handle_reply(struct ceph_osd *osd, struct ceph_msg *msg)
 			WARN_ON(1);
 		}
 	}
-	if (m.flags & CEPH_OSD_FLAG_ONDISK)
-		complete_all(&req->r_safe_completion);
 
-	ceph_osdc_put_request(req);
 	return;
 
 fail_request:
@@ -3050,7 +3082,7 @@ static int handle_one_map(struct ceph_osd_client *osdc,
 	bool skipped_map = false;
 	bool was_full;
 
-	was_full = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL);
+	was_full = ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL);
 	set_pool_was_full(osdc);
 
 	if (incremental)
@@ -3088,7 +3120,7 @@ static int handle_one_map(struct ceph_osd_client *osdc,
 		osdc->osdmap = newmap;
 	}
 
-	was_full &= !ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL);
+	was_full &= !ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL);
 	scan_requests(&osdc->homeless_osd, skipped_map, was_full, true,
 		      need_resend, need_resend_linger);
 
@@ -3174,9 +3206,9 @@ void ceph_osdc_handle_map(struct ceph_osd_client *osdc, struct ceph_msg *msg)
 	if (ceph_check_fsid(osdc->client, &fsid) < 0)
 		goto bad;
 
-	was_pauserd = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD);
-	was_pausewr = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSEWR) ||
-		      ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL) ||
+	was_pauserd = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD);
+	was_pausewr = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSEWR) ||
+		      ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
 		      have_pool_full(osdc);
 
 	/* incremental maps */
@@ -3238,9 +3270,9 @@ done:
 	 * we find out when we are no longer full and stop returning
 	 * ENOSPC.
 	 */
-	pauserd = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSERD);
-	pausewr = ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_PAUSEWR) ||
-		  ceph_osdmap_flag(osdc->osdmap, CEPH_OSDMAP_FULL) ||
+	pauserd = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSERD);
+	pausewr = ceph_osdmap_flag(osdc, CEPH_OSDMAP_PAUSEWR) ||
+		  ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
 		  have_pool_full(osdc);
 	if (was_pauserd || was_pausewr || pauserd || pausewr)
 		maybe_request_map(osdc);

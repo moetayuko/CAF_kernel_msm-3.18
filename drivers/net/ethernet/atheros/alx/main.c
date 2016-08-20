@@ -86,9 +86,22 @@ static int alx_refill_rx_ring(struct alx_priv *alx, gfp_t gfp)
 	while (!cur_buf->skb && next != rxq->read_idx) {
 		struct alx_rfd *rfd = &rxq->rfd[cur];
 
-		skb = __netdev_alloc_skb(alx->dev, alx->rxbuf_size, gfp);
+		/*
+		 * When DMA RX address is set to something like
+		 * 0x....fc0, it will be very likely to cause DMA
+		 * RFD overflow issue.
+		 *
+		 * To work around it, we apply rx skb with 64 bytes
+		 * longer space, and offset the address whenever
+		 * 0x....fc0 is detected.
+		 */
+		skb = __netdev_alloc_skb(alx->dev, alx->rxbuf_size + 64, gfp);
 		if (!skb)
 			break;
+
+		if (((unsigned long)skb->data & 0xfff) == 0xfc0)
+			skb_reserve(skb, 64);
+
 		dma = dma_map_single(&alx->hw.pdev->dev,
 				     skb->data, alx->rxbuf_size,
 				     DMA_FROM_DEVICE);
@@ -1238,7 +1251,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct alx_priv *alx;
 	struct alx_hw *hw;
 	bool phy_configured;
-	int bars, err;
+	int err;
 
 	err = pci_enable_device_mem(pdev);
 	if (err)
@@ -1258,11 +1271,10 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 	}
 
-	bars = pci_select_bars(pdev, IORESOURCE_MEM);
-	err = pci_request_selected_regions(pdev, bars, alx_drv_name);
+	err = pci_request_mem_regions(pdev, alx_drv_name);
 	if (err) {
 		dev_err(&pdev->dev,
-			"pci_request_selected_regions failed(bars:%d)\n", bars);
+			"pci_request_mem_regions failed\n");
 		goto out_pci_disable;
 	}
 
@@ -1388,7 +1400,7 @@ out_unmap:
 out_free_netdev:
 	free_netdev(netdev);
 out_pci_release:
-	pci_release_selected_regions(pdev, bars);
+	pci_release_mem_regions(pdev);
 out_pci_disable:
 	pci_disable_device(pdev);
 	return err;
@@ -1407,8 +1419,7 @@ static void alx_remove(struct pci_dev *pdev)
 
 	unregister_netdev(alx->dev);
 	iounmap(hw->hw_addr);
-	pci_release_selected_regions(pdev,
-				     pci_select_bars(pdev, IORESOURCE_MEM));
+	pci_release_mem_regions(pdev);
 
 	pci_disable_pcie_error_reporting(pdev);
 	pci_disable_device(pdev);

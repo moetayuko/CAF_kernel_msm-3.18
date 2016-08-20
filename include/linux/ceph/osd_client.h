@@ -9,6 +9,7 @@
 #include <linux/ceph/types.h>
 #include <linux/ceph/osdmap.h>
 #include <linux/ceph/messenger.h>
+#include <linux/ceph/msgpool.h>
 #include <linux/ceph/auth.h>
 #include <linux/ceph/pagelist.h>
 
@@ -278,6 +279,11 @@ struct ceph_osd_client {
 
 	struct workqueue_struct	*notify_wq;
 };
+
+static inline bool ceph_osdmap_flag(struct ceph_osd_client *osdc, int flag)
+{
+	return osdc->osdmap->flags & flag;
+}
 
 extern int ceph_osdc_setup(void);
 extern void ceph_osdc_cleanup(void);
