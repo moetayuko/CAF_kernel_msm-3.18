@@ -801,9 +801,11 @@ static inline int it_to_lock_mode(struct lookup_intent *it)
 	/* CREAT needs to be tested before open (both could be set) */
 	if (it->it_op & IT_CREAT)
 		return LCK_CW;
-	else if (it->it_op & (IT_READDIR | IT_GETATTR | IT_OPEN | IT_LOOKUP |
+	else if (it->it_op & (IT_GETATTR | IT_OPEN | IT_LOOKUP |
 			      IT_LAYOUT))
 		return LCK_CR;
+	else if (it->it_op & IT_READDIR)
+		return LCK_PR;
 	else if (it->it_op &  IT_GETXATTR)
 		return LCK_PR;
 	else if (it->it_op &  IT_SETXATTR)
@@ -867,6 +869,8 @@ struct md_op_data {
 enum op_cli_flags {
 	CLI_SET_MEA	= 1 << 0,
 	CLI_RM_ENTRY	= 1 << 1,
+	CLI_HASH64	= BIT(2),
+	CLI_API32	= BIT(3),
 };
 
 struct md_enqueue_info;
@@ -1029,7 +1033,7 @@ enum {
 struct lustre_md {
 	struct mdt_body	 *body;
 	struct lov_stripe_md    *lsm;
-	struct lmv_stripe_md    *mea;
+	struct lmv_stripe_md    *lmv;
 #ifdef CONFIG_FS_POSIX_ACL
 	struct posix_acl	*posix_acl;
 #endif

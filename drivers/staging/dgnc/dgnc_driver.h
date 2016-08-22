@@ -183,10 +183,6 @@ struct dgnc_board {
 	uint		nasync;		/* Number of ports on card */
 
 	uint		irq;		/* Interrupt request number */
-	ulong		intr_count;	/* Count of interrupts */
-	ulong		intr_modem;	/* Count of interrupts */
-	ulong		intr_tx;	/* Count of interrupts */
-	ulong		intr_rx;	/* Count of interrupts */
 
 	ulong		membase;	/* Start of base memory of the card */
 	ulong		membase_end;	/* End of base memory of the card */
@@ -380,10 +376,6 @@ struct channel_t {
 
 	ulong		ch_xon_sends;	/* Count of xons transmitted */
 	ulong		ch_xoff_sends;	/* Count of xoffs transmitted */
-
-	ulong		ch_intr_modem;	/* Count of interrupts */
-	ulong		ch_intr_tx;	/* Count of interrupts */
-	ulong		ch_intr_rx;	/* Count of interrupts */
 
 	/* /proc/<board>/<channel> entries */
 	struct proc_dir_entry *proc_entry_pointer;

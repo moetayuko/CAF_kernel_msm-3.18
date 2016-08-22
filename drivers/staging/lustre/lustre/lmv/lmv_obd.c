@@ -46,6 +46,7 @@
 #include "../include/lustre_lib.h"
 #include "../include/lustre_net.h"
 #include "../include/obd_class.h"
+#include "../include/lustre_lmv.h"
 #include "../include/lprocfs_status.h"
 #include "../include/lustre_lite.h"
 #include "../include/lustre_fid.h"
@@ -2571,8 +2572,8 @@ static int lmv_free_lustre_md(struct obd_export *exp, struct lustre_md *md)
 	struct lmv_obd	  *lmv = &obd->u.lmv;
 	struct lmv_tgt_desc *tgt = lmv->tgts[0];
 
-	if (md->mea)
-		obd_free_memmd(exp, (void *)&md->mea);
+	if (md->lmv)
+		obd_free_memmd(exp, (void *)&md->lmv);
 	if (!tgt || !tgt->ltd_exp)
 		return -EINVAL;
 	return md_free_lustre_md(tgt->ltd_exp, md);
