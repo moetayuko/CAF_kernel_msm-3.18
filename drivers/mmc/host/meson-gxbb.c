@@ -626,13 +626,15 @@ static int meson_mmc_read_resp(struct mmc_host *mmc, struct mmc_command *cmd)
 static irqreturn_t meson_mmc_irq(int irq, void *dev_id)
 {
 	struct meson_host *host = dev_id;
-	struct mmc_request *mrq = host->mrq;
+	struct mmc_request *mrq;
 	struct mmc_command *cmd = host->cmd;
 	u32 irq_en, status, raw_status;
 	irqreturn_t ret = IRQ_HANDLED;
 
 	if (WARN_ON(!host))
 		return IRQ_NONE;
+
+	mrq = host->mrq;
 
 	if (WARN_ON(!mrq))
 		return IRQ_NONE;
