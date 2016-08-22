@@ -752,6 +752,28 @@ static int rndis_filter_query_device_link_status(struct rndis_device *dev)
 	return ret;
 }
 
+static int rndis_filter_query_link_speed(struct rndis_device *dev)
+{
+	u32 size = sizeof(u32);
+	u32 link_speed;
+	struct net_device_context *ndc;
+	int ret;
+
+	ret = rndis_filter_query_device(dev, RNDIS_OID_GEN_LINK_SPEED,
+					&link_speed, &size);
+
+	if (!ret) {
+		ndc = netdev_priv(dev->ndev);
+
+		/* The link speed reported from host is in 100bps unit, so
+		 * we convert it to Mbps here.
+		 */
+		ndc->speed = link_speed / 10000;
+	}
+
+	return ret;
+}
+
 int rndis_filter_set_packet_filter(struct rndis_device *dev, u32 new_filter)
 {
 	struct rndis_request *request;
@@ -875,7 +897,8 @@ cleanup:
 
 	/* Wait for all send completions */
 	wait_event(nvdev->wait_drain,
-		atomic_read(&nvdev->num_outstanding_sends) == 0);
+		   atomic_read(&nvdev->num_outstanding_sends) == 0 &&
+		   atomic_read(&nvdev->num_outstanding_recvs) == 0);
 
 	if (request)
 		put_rndis_request(dev, request);
@@ -930,6 +953,9 @@ static void netvsc_sc_open(struct vmbus_channel *new_sc)
 
 	set_per_channel_state(new_sc, nvscdev->sub_cb_buf + (chn_index - 1) *
 			      NETVSC_PACKET_SIZE);
+
+	nvscdev->mrc[chn_index].buf = vzalloc(NETVSC_RECVSLOT_MAX *
+					      sizeof(struct recv_comp_data));
 
 	ret = vmbus_open(new_sc, nvscdev->ring_size * PAGE_SIZE,
 			 nvscdev->ring_size * PAGE_SIZE, NULL, 0,
@@ -1043,6 +1069,8 @@ int rndis_filter_device_add(struct hv_device *dev,
 
 	if (net_device->nvsp_version < NVSP_PROTOCOL_VERSION_5)
 		return 0;
+
+	rndis_filter_query_link_speed(rndis_device);
 
 	/* vRSS setup */
 	memset(&rsscap, 0, rsscap_size);
