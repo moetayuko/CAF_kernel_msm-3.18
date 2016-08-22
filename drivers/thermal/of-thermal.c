@@ -276,17 +276,12 @@ static int of_thermal_set_mode(struct thermal_zone_device *tz,
 {
 	struct __thermal_zone *data = tz->devdata;
 
-	mutex_lock(&tz->lock);
-
 	if (mode == THERMAL_DEVICE_ENABLED)
 		tz->polling_delay = data->polling_delay;
 	else
 		tz->polling_delay = 0;
 
-	mutex_unlock(&tz->lock);
-
 	data->mode = mode;
-	thermal_zone_device_update(tz);
 
 	return 0;
 }
