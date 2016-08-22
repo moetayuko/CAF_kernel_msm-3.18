@@ -225,6 +225,8 @@ static const unsigned int i2c_sda_ao_pins[] = {PIN(GPIOAO_5, 0) };
 static const unsigned int i2c_slave_sck_ao_pins[] = {PIN(GPIOAO_4, 0) };
 static const unsigned int i2c_slave_sda_ao_pins[] = {PIN(GPIOAO_5, 0) };
 
+static const unsigned int remote_input_ao_pins[] = {PIN(GPIOAO_7, 0) };
+
 static struct meson_pmx_group meson_gxbb_periphs_groups[] = {
 	GPIO_GROUP(GPIOZ_0, EE_OFF),
 	GPIO_GROUP(GPIOZ_1, EE_OFF),
@@ -432,6 +434,7 @@ static struct meson_pmx_group meson_gxbb_aobus_groups[] = {
 	GROUP(i2c_sda_ao,	0,	5),
 	GROUP(i2c_slave_sck_ao, 0,	2),
 	GROUP(i2c_slave_sda_ao, 0,	1),
+	GROUP(remote_input_ao,	0,	0),
 };
 
 static const char * const gpio_periphs_groups[] = {
@@ -521,6 +524,10 @@ static const char * const i2c_slave_ao_groups[] = {
 	"i2c_slave_sdk_ao", "i2c_slave_sda_ao",
 };
 
+static const char * const remote_input_ao_groups[] = {
+	"remote_input_ao",
+};
+
 static struct meson_pmx_func meson_gxbb_periphs_functions[] = {
 	FUNCTION(gpio_periphs),
 	FUNCTION(emmc),
@@ -537,6 +544,7 @@ static struct meson_pmx_func meson_gxbb_aobus_functions[] = {
 	FUNCTION(uart_ao_b),
 	FUNCTION(i2c_ao),
 	FUNCTION(i2c_slave_ao),
+	FUNCTION(remote_input_ao),
 };
 
 static struct meson_bank meson_gxbb_periphs_banks[] = {
@@ -556,38 +564,28 @@ static struct meson_bank meson_gxbb_aobus_banks[] = {
 	BANK("AO",   PIN(GPIOAO_0, 0),  PIN(GPIOAO_13, 0), 0,  0,  0, 16,  0,  0,  0, 16,  1,  0),
 };
 
-static struct meson_domain_data meson_gxbb_periphs_domain_data = {
-	.name		= "periphs-banks",
-	.banks		= meson_gxbb_periphs_banks,
-	.num_banks	= ARRAY_SIZE(meson_gxbb_periphs_banks),
-	.pin_base	= 14,
-	.num_pins	= 120,
-};
-
-static struct meson_domain_data meson_gxbb_aobus_domain_data = {
-	.name		= "aobus-banks",
-	.banks		= meson_gxbb_aobus_banks,
-	.num_banks	= ARRAY_SIZE(meson_gxbb_aobus_banks),
-	.pin_base	= 0,
-	.num_pins	= 14,
-};
-
 struct meson_pinctrl_data meson_gxbb_periphs_pinctrl_data = {
+	.name		= "periphs-banks",
+	.pin_base	= 14,
 	.pins		= meson_gxbb_periphs_pins,
 	.groups		= meson_gxbb_periphs_groups,
 	.funcs		= meson_gxbb_periphs_functions,
-	.domain_data	= &meson_gxbb_periphs_domain_data,
+	.banks		= meson_gxbb_periphs_banks,
 	.num_pins	= ARRAY_SIZE(meson_gxbb_periphs_pins),
 	.num_groups	= ARRAY_SIZE(meson_gxbb_periphs_groups),
 	.num_funcs	= ARRAY_SIZE(meson_gxbb_periphs_functions),
+	.num_banks	= ARRAY_SIZE(meson_gxbb_periphs_banks),
 };
 
 struct meson_pinctrl_data meson_gxbb_aobus_pinctrl_data = {
+	.name		= "aobus-banks",
+	.pin_base	= 0,
 	.pins		= meson_gxbb_aobus_pins,
 	.groups		= meson_gxbb_aobus_groups,
 	.funcs		= meson_gxbb_aobus_functions,
-	.domain_data	= &meson_gxbb_aobus_domain_data,
+	.banks		= meson_gxbb_aobus_banks,
 	.num_pins	= ARRAY_SIZE(meson_gxbb_aobus_pins),
 	.num_groups	= ARRAY_SIZE(meson_gxbb_aobus_groups),
 	.num_funcs	= ARRAY_SIZE(meson_gxbb_aobus_functions),
+	.num_banks	= ARRAY_SIZE(meson_gxbb_aobus_banks),
 };
