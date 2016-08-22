@@ -106,7 +106,9 @@ struct ctx_info {
 	bool unavail;
 	bool err_recovery_active;
 	struct mutex mutex; /* Context protection */
+	struct kref kref;
 	struct cxl_context *ctx;
+	struct cxlflash_cfg *cfg;
 	struct list_head luns;	/* LUNs attached to this context */
 	const struct vm_operations_struct *cxl_mmap_vmops;
 	struct file *file;
