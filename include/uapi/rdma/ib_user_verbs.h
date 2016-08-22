@@ -93,6 +93,7 @@ enum {
 	IB_USER_VERBS_EX_CMD_QUERY_DEVICE = IB_USER_VERBS_CMD_QUERY_DEVICE,
 	IB_USER_VERBS_EX_CMD_CREATE_CQ = IB_USER_VERBS_CMD_CREATE_CQ,
 	IB_USER_VERBS_EX_CMD_CREATE_QP = IB_USER_VERBS_CMD_CREATE_QP,
+	IB_USER_VERBS_EX_CMD_MODIFY_QP = IB_USER_VERBS_CMD_MODIFY_QP,
 	IB_USER_VERBS_EX_CMD_CREATE_FLOW = IB_USER_VERBS_CMD_THRESHOLD,
 	IB_USER_VERBS_EX_CMD_DESTROY_FLOW,
 	IB_USER_VERBS_EX_CMD_CREATE_WQ,
@@ -224,6 +225,49 @@ struct ib_uverbs_odp_caps {
 	__u32 reserved;
 };
 
+struct ib_uverbs_rss_caps {
+	/* Corresponding bit will be set if qp type from
+	 * 'enum ib_qp_type' is supported, e.g.
+	 * supported_qpts |= 1 << IB_QPT_UD
+	 */
+	__u32 supported_qpts;
+	__u32 max_rwq_indirection_tables;
+	__u32 max_rwq_indirection_table_size;
+	__u32 reserved;
+};
+
+enum ibv_tm_cap_flags {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IB_NO_TAG	     = 1 << 0,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IB_EAGER_EXPECTED   = 1 << 1,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IB_EAGER_UNEXPECTED = 1 << 2,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives after the corresponding receive (for RC QPs)
+	 */
+	IB_RNDV_EXPECTED    = 1 << 3,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IB_RNDV_UNEXPECTED  = 1 << 5,
+};
+
+struct ib_uverbs_tm_caps {
+	__u32 max_unexpected_tags;
+	__u32 tag_mask_length;
+	__u32 header_size;
+	__u32 app_context_size;
+	__u32 max_match_list;
+	__u32 capability_flags;
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -232,6 +276,9 @@ struct ib_uverbs_ex_query_device_resp {
 	__u64 timestamp_mask;
 	__u64 hca_core_clock; /* in KHZ */
 	__u64 device_cap_flags_ex;
+	struct ib_uverbs_rss_caps rss_caps;
+	__u32  max_wq_type_rq;
+	struct ib_uverbs_tm_caps xrq_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -670,7 +717,18 @@ struct ib_uverbs_modify_qp {
 	__u64 driver_data[0];
 };
 
+struct ib_uverbs_ex_modify_qp {
+	struct ib_uverbs_modify_qp base;
+	__u32	rate_limit;
+	__u32	reserved;
+};
+
 struct ib_uverbs_modify_qp_resp {
+};
+
+struct ib_uverbs_ex_modify_qp_resp {
+	__u32  comp_mask;
+	__u32  response_length;
 };
 
 struct ib_uverbs_destroy_qp {
@@ -834,6 +892,10 @@ struct ib_uverbs_flow_spec_eth {
 struct ib_uverbs_flow_ipv4_filter {
 	__be32 src_ip;
 	__be32 dst_ip;
+	__u8	proto;
+	__u8	tos;
+	__u8	ttl;
+	__u8	flags;
 };
 
 struct ib_uverbs_flow_spec_ipv4 {
@@ -868,8 +930,13 @@ struct ib_uverbs_flow_spec_tcp_udp {
 };
 
 struct ib_uverbs_flow_ipv6_filter {
-	__u8 src_ip[16];
-	__u8 dst_ip[16];
+	__u8    src_ip[16];
+	__u8    dst_ip[16];
+	__be32	flow_label;
+	__u8	next_hdr;
+	__u8	traffic_class;
+	__u8	hop_limit;
+	__u8	reserved;
 };
 
 struct ib_uverbs_flow_spec_ipv6 {
@@ -934,7 +1001,7 @@ struct ib_uverbs_create_xsrq {
 	__u32 max_wr;
 	__u32 max_sge;
 	__u32 srq_limit;
-	__u32 reserved;
+	__u32 tm_list_size;
 	__u32 xrcd_handle;
 	__u32 cq_handle;
 	__u64 driver_data[0];
