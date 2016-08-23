@@ -45,10 +45,10 @@ struct serport {
  * Callback functions from the serio code.
  */
 
-static int serport_serio_write(struct serio *serio, unsigned char data)
+static int serport_serio_write_buf(struct serio *serio, const unsigned char *data, size_t len)
 {
 	struct serport *serport = serio->port_data;
-	return -(serport->tty->ops->write(serport->tty, &data, 1) != 1);
+	return serport->tty->ops->write(serport->tty, data, len);
 }
 
 static int serport_serio_open(struct serio *serio)
@@ -133,26 +133,29 @@ static void serport_ldisc_receive(struct tty_struct *tty, const unsigned char *c
 	if (!test_bit(SERPORT_ACTIVE, &serport->flags))
 		goto out;
 
-	for (i = 0; i < count; i++) {
-		if (fp) {
-			switch (fp[i]) {
-			case TTY_FRAME:
-				ch_flags = SERIO_FRAME;
-				break;
+	if (serio_buffered_mode_enabled(serport->serio)) {
+		serio_receive_buf(serport->serio, cp, count);
+	} else {
+		for (i = 0; i < count; i++) {
+			if (fp) {
+				switch (fp[i]) {
+				case TTY_FRAME:
+					ch_flags = SERIO_FRAME;
+					break;
 
-			case TTY_PARITY:
-				ch_flags = SERIO_PARITY;
-				break;
+				case TTY_PARITY:
+					ch_flags = SERIO_PARITY;
+					break;
 
-			default:
-				ch_flags = 0;
-				break;
+				default:
+					ch_flags = 0;
+					break;
+				}
 			}
+
+			serio_interrupt(serport->serio, cp[i], ch_flags);
 		}
-
-		serio_interrupt(serport->serio, cp[i], ch_flags);
 	}
-
 out:
 	spin_unlock_irqrestore(&serport->lock, flags);
 }
@@ -179,7 +182,7 @@ static ssize_t serport_ldisc_read(struct tty_struct * tty, struct file * file, u
 	snprintf(serio->phys, sizeof(serio->phys), "%s/serio0", tty_name(tty));
 	serio->id = serport->id;
 	serio->id.type = SERIO_RS232;
-	serio->write = serport_serio_write;
+	serio->write_buf = serport_serio_write_buf;
 	serio->open = serport_serio_open;
 	serio->close = serport_serio_close;
 	serio->port_data = serport;
