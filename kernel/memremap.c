@@ -210,15 +210,9 @@ static void pgmap_radix_release(struct resource *res)
 
 static unsigned long pfn_first(struct page_map *page_map)
 {
-	struct dev_pagemap *pgmap = &page_map->pgmap;
 	const struct resource *res = &page_map->res;
-	struct vmem_altmap *altmap = pgmap->altmap;
-	unsigned long pfn;
 
-	pfn = res->start >> PAGE_SHIFT;
-	if (altmap)
-		pfn += vmem_altmap_offset(altmap);
-	return pfn;
+	return res->start >> PAGE_SHIFT;
 }
 
 static unsigned long pfn_end(struct page_map *page_map)
