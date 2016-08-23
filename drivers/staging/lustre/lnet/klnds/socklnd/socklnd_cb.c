@@ -164,13 +164,13 @@ ksocknal_send_kiov(struct ksock_conn *conn, struct ksock_tx *tx)
 	do {
 		LASSERT(tx->tx_nkiov > 0);
 
-		if (nob < (int)kiov->kiov_len) {
-			kiov->kiov_offset += nob;
-			kiov->kiov_len -= nob;
+		if (nob < (int)kiov->bv_len) {
+			kiov->bv_offset += nob;
+			kiov->bv_len -= nob;
 			return rc;
 		}
 
-		nob -= (int)kiov->kiov_len;
+		nob -= (int)kiov->bv_len;
 		tx->tx_kiov = ++kiov;
 		tx->tx_nkiov--;
 	} while (nob);
@@ -326,13 +326,13 @@ ksocknal_recv_kiov(struct ksock_conn *conn)
 	do {
 		LASSERT(conn->ksnc_rx_nkiov > 0);
 
-		if (nob < (int)kiov->kiov_len) {
-			kiov->kiov_offset += nob;
-			kiov->kiov_len -= nob;
+		if (nob < (int)kiov->bv_len) {
+			kiov->bv_offset += nob;
+			kiov->bv_len -= nob;
 			return -EAGAIN;
 		}
 
-		nob -= kiov->kiov_len;
+		nob -= kiov->bv_len;
 		conn->ksnc_rx_kiov = ++kiov;
 		conn->ksnc_rx_nkiov--;
 	} while (nob);
@@ -2008,13 +2008,6 @@ ksocknal_connect(struct ksock_route *route)
 		list_splice_init(&peer->ksnp_tx_queue, &zombies);
 	}
 
-#if 0	   /* irrelevant with only eager routes */
-	if (!route->ksnr_deleted) {
-		/* make this route least-favourite for re-selection */
-		list_del(&route->ksnr_list);
-		list_add_tail(&route->ksnr_list, &peer->ksnp_routes);
-	}
-#endif
 	write_unlock_bh(&ksocknal_data.ksnd_global_lock);
 
 	ksocknal_peer_failed(peer);

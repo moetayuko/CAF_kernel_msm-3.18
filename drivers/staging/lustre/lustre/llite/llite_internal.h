@@ -42,6 +42,7 @@
 #include "../include/lustre_mdc.h"
 #include "../include/lustre_intent.h"
 #include <linux/compat.h>
+#include <linux/xattr.h>
 #include <linux/posix_acl_xattr.h>
 #include "vvp_internal.h"
 
@@ -172,6 +173,8 @@ struct ll_inode_info {
 			 * -- I am the owner of dir statahead.
 			 */
 			pid_t			   d_opendir_pid;
+			/* directory stripe information */
+			struct lmv_stripe_md		*d_lmv_md;
 		} d;
 
 #define lli_readdir_mutex       u.d.d_readdir_mutex
@@ -179,6 +182,7 @@ struct ll_inode_info {
 #define lli_sai		 u.d.d_sai
 #define lli_sa_lock	     u.d.d_sa_lock
 #define lli_opendir_pid	 u.d.d_opendir_pid
+#define lli_lmv_md		u.d.d_lmv_md
 
 		/* for non-directory */
 		struct {
@@ -649,7 +653,8 @@ extern const struct file_operations ll_dir_operations;
 extern const struct inode_operations ll_dir_inode_operations;
 struct page *ll_get_dir_page(struct inode *dir, __u64 hash,
 			     struct ll_dir_chain *chain);
-int ll_dir_read(struct inode *inode, struct dir_context *ctx);
+int ll_dir_read(struct inode *inode, __u64 *ppos, struct md_op_data *op_data,
+		struct dir_context *ctx);
 
 int ll_get_mdt_idx(struct inode *inode);
 /* llite/namei.c */
@@ -933,12 +938,9 @@ static inline __u64 ll_file_maxbytes(struct inode *inode)
 }
 
 /* llite/xattr.c */
-int ll_setxattr(struct dentry *dentry, struct inode *inode,
-		const char *name, const void *value, size_t size, int flags);
-ssize_t ll_getxattr(struct dentry *dentry, struct inode *inode,
-		    const char *name, void *buffer, size_t size);
+extern const struct xattr_handler *ll_xattr_handlers[];
+
 ssize_t ll_listxattr(struct dentry *dentry, char *buffer, size_t size);
-int ll_removexattr(struct dentry *dentry, const char *name);
 
 /**
  * Common IO arguments for various VFS I/O interfaces.
@@ -995,7 +997,8 @@ struct ll_statahead_info {
 	unsigned int	    sai_ls_all:1,   /* "ls -al", do stat-ahead for
 					     * hidden entries
 					     */
-				sai_agl_valid:1;/* AGL is valid for the dir */
+				sai_agl_valid:1,/* AGL is valid for the dir */
+				sai_in_readpage:1;/* statahead is in readdir() */
 	wait_queue_head_t	sai_waitq;      /* stat-ahead wait queue */
 	struct ptlrpc_thread    sai_thread;     /* stat-ahead thread */
 	struct ptlrpc_thread    sai_agl_thread; /* AGL thread */
