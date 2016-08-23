@@ -35,6 +35,8 @@ struct serio {
 	spinlock_t lock;
 
 	int (*write)(struct serio *, unsigned char);
+	int (*write_buf)(struct serio *, const unsigned char *, size_t);
+	void (*write_flush)(struct serio *);
 	int (*open)(struct serio *);
 	void (*close)(struct serio *);
 	int (*start)(struct serio *);
@@ -69,12 +71,16 @@ struct serio {
 
 struct serio_driver {
 	const char *description;
+	unsigned long flags;
+
+#define SERIO_MODE_BUFFERED	1
 
 	const struct serio_device_id *id_table;
 	bool manual_bind;
 
 	void (*write_wakeup)(struct serio *);
 	irqreturn_t (*interrupt)(struct serio *, unsigned char, unsigned int);
+	int (*receive_buf)(struct serio *, const unsigned char *, size_t);
 	int  (*connect)(struct serio *, struct serio_driver *drv);
 	int  (*reconnect)(struct serio *);
 	void (*disconnect)(struct serio *);
@@ -89,6 +95,12 @@ void serio_close(struct serio *serio);
 void serio_rescan(struct serio *serio);
 void serio_reconnect(struct serio *serio);
 irqreturn_t serio_interrupt(struct serio *serio, unsigned char data, unsigned int flags);
+int serio_receive_buf(struct serio *serio, const unsigned char *data, size_t len);
+
+static inline bool serio_buffered_mode_enabled(struct serio *serio)
+{
+	return test_bit(SERIO_MODE_BUFFERED, &serio->drv->flags);
+}
 
 void __serio_register_port(struct serio *serio, struct module *owner);
 
@@ -121,12 +133,35 @@ void serio_unregister_driver(struct serio_driver *drv);
 	module_driver(__serio_driver, serio_register_driver, \
 		       serio_unregister_driver)
 
+static inline int serio_write_buf(struct serio *serio, const unsigned char *data, size_t len)
+{
+	int ret;
+
+	if (serio->write_buf)
+		return serio->write_buf(serio, data, len);
+	else if (serio->write) {
+		int i;
+		for (i = 0; i < len; i++) {
+			ret = serio->write(serio, data[i]);
+			if (ret)
+				break;
+		}
+		return i;
+	}
+
+	return -1;
+}
+
 static inline int serio_write(struct serio *serio, unsigned char data)
 {
-	if (serio->write)
-		return serio->write(serio, data);
-	else
-		return -1;
+	int ret = serio_write_buf(serio, &data, 1);
+	return ret == 1 ? 0 : ret;
+}
+
+static inline void serio_write_flush(struct serio *serio)
+{
+	if (serio->write_flush)
+		serio->write_flush(serio);
 }
 
 static inline void serio_drv_write_wakeup(struct serio *serio)
