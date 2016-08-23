@@ -183,7 +183,7 @@ static ssize_t serport_ldisc_read(struct tty_struct * tty, struct file * file, u
 	serio->open = serport_serio_open;
 	serio->close = serport_serio_close;
 	serio->port_data = serport;
-	serio->dev.parent = tty->dev;
+	serio->dev.parent = tty->dev->parent;
 
 	serio_register_port(serport->serio);
 	printk(KERN_INFO "serio: Serial port %s\n", tty_name(tty));
@@ -253,10 +253,10 @@ static void serport_ldisc_write_wakeup(struct tty_struct * tty)
 	struct serport *serport = (struct serport *) tty->disc_data;
 	unsigned long flags;
 
-	spin_lock_irqsave(&serport->lock, flags);
+//	spin_lock_irqsave(&serport->lock, flags);
 	if (test_bit(SERPORT_ACTIVE, &serport->flags))
 		serio_drv_write_wakeup(serport->serio);
-	spin_unlock_irqrestore(&serport->lock, flags);
+//	spin_unlock_irqrestore(&serport->lock, flags);
 }
 
 /*
