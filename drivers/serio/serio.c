@@ -989,6 +989,11 @@ int serio_open(struct serio *serio, struct serio_driver *drv)
 		serio_set_drv(serio, NULL);
 		return -1;
 	}
+
+	/* Use buffer receive if the driver provides a callback */
+	if (drv->receive_buf)
+		set_bit(SERIO_MODE_BUFFERED, &drv->flags);
+
 	return 0;
 }
 EXPORT_SYMBOL(serio_open);
@@ -1023,6 +1028,24 @@ irqreturn_t serio_interrupt(struct serio *serio,
 	return ret;
 }
 EXPORT_SYMBOL(serio_interrupt);
+
+int serio_receive_buf(struct serio *serio, const unsigned char *data, size_t len)
+{
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&serio->lock, flags);
+
+        if (likely(serio->drv))
+                ret = serio->drv->receive_buf(serio, data, len);
+	else if (device_is_registered(&serio->dev))
+		serio_rescan(serio);
+
+	spin_unlock_irqrestore(&serio->lock, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL(serio_receive_buf);
 
 struct bus_type serio_bus = {
 	.name		= "serio",
