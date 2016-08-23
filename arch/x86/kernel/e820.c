@@ -1188,6 +1188,6 @@ void __init memblock_find_dma_reserve(void)
 			nr_free_pages += end_pfn - start_pfn;
 	}
 
-	set_dma_reserve(nr_pages - nr_free_pages);
+	set_memory_reserve(nr_pages - nr_free_pages, false);
 #endif
 }
