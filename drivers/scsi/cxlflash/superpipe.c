@@ -709,14 +709,13 @@ int cxlflash_disk_release(struct scsi_device *sdev,
  * @cfg:	Internal structure associated with the host.
  * @ctxi:	Context to release.
  *
- * This routine is safe to be called with a a non-initialized context
- * and is tolerant of being called with the context's mutex held (it
- * will be unlocked if necessary before freeing). Also note that the
- * routine conditionally checks for the existence of the context control
- * map before clearing the RHT registers and context capabilities because
- * it is possible to destroy a context while the context is in the error
- * state (previous mapping was removed [so there is no need to worry about
- * clearing] and context is waiting for a new mapping).
+ * This routine is safe to be called with a a non-initialized context.
+ * Also note that the routine conditionally checks for the existence
+ * of the context control map before clearing the RHT registers and
+ * context capabilities because it is possible to destroy a context
+ * while the context is in the error state (previous mapping was
+ * removed [so there is no need to worry about clearing] and context
+ * is waiting for a new mapping).
  */
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctxi)
@@ -732,9 +731,6 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 			writeq_be(0, &ctxi->ctrl_map->rht_cnt_id);
 			writeq_be(0, &ctxi->ctrl_map->ctx_cap);
 		}
-
-		if (mutex_is_locked(&ctxi->mutex))
-			mutex_unlock(&ctxi->mutex);
 	}
 
 	/* Free memory associated with context */
@@ -795,9 +791,6 @@ err:
  * @adap_fd:	Previously obtained adapter fd associated with CXL context.
  * @file:	Previously obtained file associated with CXL context.
  * @perms:	User-specified permissions.
- *
- * Upon return, the context is marked as initialized and the context's mutex
- * is locked.
  */
 static void init_context(struct ctx_info *ctxi, struct cxlflash_cfg *cfg,
 			 struct cxl_context *ctx, int ctxid, int adap_fd,
@@ -811,13 +804,57 @@ static void init_context(struct ctx_info *ctxi, struct cxlflash_cfg *cfg,
 	ctxi->lfd = adap_fd;
 	ctxi->pid = current->tgid; /* tgid = pid */
 	ctxi->ctx = ctx;
+	ctxi->cfg = cfg;
 	ctxi->file = file;
 	ctxi->initialized = true;
 	mutex_init(&ctxi->mutex);
+	kref_init(&ctxi->kref);
 	INIT_LIST_HEAD(&ctxi->luns);
 	INIT_LIST_HEAD(&ctxi->list); /* initialize for list_empty() */
+}
 
+/**
+ * remove_context() - context kref release handler
+ * @kref:	Kernel reference associated with context to be removed.
+ *
+ * When a context no longer has any references it can safely be removed
+ * from global access and destroyed. Note that it is assumed the thread
+ * relinquishing access to the context holds its mutex.
+ */
+static void remove_context(struct kref *kref)
+{
+	struct ctx_info *ctxi = container_of(kref, struct ctx_info, kref);
+	struct cxlflash_cfg *cfg = ctxi->cfg;
+	int lfd;
+	u64 ctxid = DECODE_CTXID(ctxi->ctxid);
+
+	/* Remove context from table/error list */
+	WARN_ON(!mutex_is_locked(&ctxi->mutex));
+	ctxi->unavail = true;
+	mutex_unlock(&ctxi->mutex);
+	mutex_lock(&cfg->ctx_tbl_list_mutex);
 	mutex_lock(&ctxi->mutex);
+
+	if (!list_empty(&ctxi->list))
+		list_del(&ctxi->list);
+	cfg->ctx_tbl[ctxid] = NULL;
+	mutex_unlock(&cfg->ctx_tbl_list_mutex);
+	mutex_unlock(&ctxi->mutex);
+
+	/* Context now completely uncoupled/unreachable */
+	lfd = ctxi->lfd;
+	destroy_context(cfg, ctxi);
+
+	/*
+	 * As a last step, clean up external resources when not
+	 * already on an external cleanup thread, i.e.: close(adap_fd).
+	 *
+	 * NOTE: this will free up the context from the CXL services,
+	 * allowing it to dole out the same context_id on a future
+	 * (or even currently in-flight) disk_attach operation.
+	 */
+	if (lfd != -1)
+		sys_close(lfd);
 }
 
 /**
@@ -845,7 +882,6 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 
 	int i;
 	int rc = 0;
-	int lfd;
 	u64 ctxid = DECODE_CTXID(detach->context_id),
 	    rctxid = detach->context_id;
 
@@ -887,40 +923,12 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 			break;
 		}
 
-	/* Tear down context following last LUN cleanup */
-	if (list_empty(&ctxi->luns)) {
-		ctxi->unavail = true;
-		mutex_unlock(&ctxi->mutex);
-		mutex_lock(&cfg->ctx_tbl_list_mutex);
-		mutex_lock(&ctxi->mutex);
-
-		/* Might not have been in error list so conditionally remove */
-		if (!list_empty(&ctxi->list))
-			list_del(&ctxi->list);
-		cfg->ctx_tbl[ctxid] = NULL;
-		mutex_unlock(&cfg->ctx_tbl_list_mutex);
-		mutex_unlock(&ctxi->mutex);
-
-		lfd = ctxi->lfd;
-		destroy_context(cfg, ctxi);
-		ctxi = NULL;
-		put_ctx = false;
-
-		/*
-		 * As a last step, clean up external resources when not
-		 * already on an external cleanup thread, i.e.: close(adap_fd).
-		 *
-		 * NOTE: this will free up the context from the CXL services,
-		 * allowing it to dole out the same context_id on a future
-		 * (or even currently in-flight) disk_attach operation.
-		 */
-		if (lfd != -1)
-			sys_close(lfd);
-	}
-
-	/* Release the sdev reference that bound this LUN to the context */
+	/*
+	 * Release the context reference and the sdev reference that
+	 * bound this LUN to the context.
+	 */
+	put_ctx = !kref_put(&ctxi->kref, remove_context);
 	scsi_device_put(sdev);
-
 out:
 	if (put_ctx)
 		put_context(ctxi);
@@ -1377,10 +1385,11 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	lun_access->lli = lli;
 	lun_access->sdev = sdev;
 
-	/* Non-NULL context indicates reuse */
+	/* Non-NULL context indicates reuse (another context reference) */
 	if (ctxi) {
 		dev_dbg(dev, "%s: Reusing context for LUN! (%016llX)\n",
 			__func__, rctxid);
+		kref_get(&ctxi->kref);
 		list_add(&lun_access->list, &ctxi->luns);
 		fd = ctxi->lfd;
 		goto out_attach;
@@ -1445,7 +1454,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * knows about us yet; we can be the only one holding our mutex.
 	 */
 	list_add(&lun_access->list, &ctxi->luns);
-	mutex_unlock(&ctxi->mutex);
 	mutex_lock(&cfg->ctx_tbl_list_mutex);
 	mutex_lock(&ctxi->mutex);
 	cfg->ctx_tbl[ctxid] = ctxi;
@@ -1494,7 +1502,7 @@ err:
 		file = NULL;
 	}
 
-	/* Cleanup our context; safe to call even with mutex locked */
+	/* Cleanup our context */
 	if (ctxi) {
 		destroy_context(cfg, ctxi);
 		ctxi = NULL;
