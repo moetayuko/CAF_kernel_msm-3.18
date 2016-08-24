@@ -261,6 +261,48 @@ struct ib_odp_caps {
 	} per_transport_caps;
 };
 
+struct ib_rss_caps {
+	/* Corresponding bit will be set if qp type from
+	 * 'enum ib_qp_type' is supported, e.g.
+	 * supported_qpts |= 1 << IB_QPT_UD
+	 */
+	u32 supported_qpts;
+	u32 max_rwq_indirection_tables;
+	u32 max_rwq_indirection_table_size;
+};
+
+enum ibv_xrq_cap_flags {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IBV_NO_TAG	     = 1 << 0,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IBV_EAGER_EXPECTED   = 1 << 1,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_EAGER_UNEXPECTED = 1 << 2,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives after the corresponding receive (for RC QPs)
+	 */
+	IBV_RNDV_EXPECTED_RC = 1 << 3,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_RNDV_UNEXPECTED  = 1 << 5,
+};
+
+struct ib_xrq_caps {
+	uint32_t max_unexpected_tags;
+	uint32_t tag_mask_length;
+	uint32_t header_size;
+	uint32_t app_context_size;
+	uint32_t max_match_list;
+	uint32_t capability_flags;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -318,6 +360,9 @@ struct ib_device_attr {
 	struct ib_odp_caps	odp_caps;
 	uint64_t		timestamp_mask;
 	uint64_t		hca_core_clock; /* in KHZ */
+	struct ib_rss_caps	rss_caps;
+	u32			max_wq_type_rq;
+	struct ib_xrq_caps	xrq_caps;
 };
 
 enum ib_mtu {
@@ -899,8 +944,15 @@ enum ib_cq_notify_flags {
 
 enum ib_srq_type {
 	IB_SRQT_BASIC,
-	IB_SRQT_XRC
+	IB_SRQT_XRC,
+	IB_SRQT_TAG_MATCHING,
 };
+
+static inline bool ib_srq_has_cq(enum ib_srq_type srq_type)
+{
+	return srq_type == IB_SRQT_XRC ||
+	       srq_type == IB_SRQT_TAG_MATCHING;
+}
 
 enum ib_srq_attr_mask {
 	IB_SRQ_MAX_WR	= 1 << 0,
@@ -924,6 +976,11 @@ struct ib_srq_init_attr {
 			struct ib_xrcd *xrcd;
 			struct ib_cq   *cq;
 		} xrc;
+
+		struct {
+			struct ib_cq   *cq;
+			u32		list_size;
+		} tag_matching;
 	} ext;
 };
 
@@ -1088,6 +1145,7 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED2			= (1<<22),
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
+	IB_QP_RATE_LIMIT		= (1<<25),
 };
 
 enum ib_qp_state {
@@ -1137,6 +1195,7 @@ struct ib_qp_attr {
 	u8			rnr_retry;
 	u8			alt_port_num;
 	u8			alt_timeout;
+	u32			rate_limit;
 };
 
 enum ib_wr_opcode {
@@ -1424,12 +1483,14 @@ struct ib_srq {
 	enum ib_srq_type	srq_type;
 	atomic_t		usecnt;
 
-	union {
-		struct {
-			struct ib_xrcd *xrcd;
-			struct ib_cq   *cq;
-			u32		srq_num;
-		} xrc;
+	struct {
+		struct ib_cq   *cq;
+		union {
+			struct {
+				struct ib_xrcd *xrcd;
+				u32		srq_num;
+			} xrc;
+		};
 	} ext;
 };
 
@@ -1604,6 +1665,8 @@ struct ib_flow_eth_filter {
 	u8	src_mac[6];
 	__be16	ether_type;
 	__be16	vlan_tag;
+	/* Must be last */
+	u8	real_sz[0];
 };
 
 struct ib_flow_spec_eth {
@@ -1616,6 +1679,8 @@ struct ib_flow_spec_eth {
 struct ib_flow_ib_filter {
 	__be16 dlid;
 	__u8   sl;
+	/* Must be last */
+	u8	real_sz[0];
 };
 
 struct ib_flow_spec_ib {
@@ -1625,9 +1690,20 @@ struct ib_flow_spec_ib {
 	struct ib_flow_ib_filter mask;
 };
 
+enum ib_ipv4_flags {
+	IB_IPV4_DONT_FRAG = 0x2,
+	IB_IPV4_MORE_FRAG = 0X4
+};
+
 struct ib_flow_ipv4_filter {
 	__be32	src_ip;
 	__be32	dst_ip;
+	u8	proto;
+	u8	tos;
+	u8	ttl;
+	u8	flags;
+	/* Must be last */
+	u8	real_sz[0];
 };
 
 struct ib_flow_spec_ipv4 {
@@ -1640,6 +1716,12 @@ struct ib_flow_spec_ipv4 {
 struct ib_flow_ipv6_filter {
 	u8	src_ip[16];
 	u8	dst_ip[16];
+	__be32	flow_label;
+	u8	next_hdr;
+	u8	traffic_class;
+	u8	hop_limit;
+	/* Must be last */
+	u8	real_sz[0];
 };
 
 struct ib_flow_spec_ipv6 {
@@ -1652,6 +1734,8 @@ struct ib_flow_spec_ipv6 {
 struct ib_flow_tcp_udp_filter {
 	__be16	dst_port;
 	__be16	src_port;
+	/* Must be last */
+	u8	real_sz[0];
 };
 
 struct ib_flow_spec_tcp_udp {

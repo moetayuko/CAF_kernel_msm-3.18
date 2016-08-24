@@ -556,7 +556,7 @@ repoll:
 		if (unlikely(!mqp)) {
 			mlx5_ib_warn(dev, "CQE@CQ %06x for unknown QPN %6x\n",
 				     cq->mcq.cqn, qpn);
-			return -EINVAL;
+			goto out;
 		}
 
 		*cur_qp = to_mibqp(mqp);
@@ -623,7 +623,7 @@ repoll:
 			read_unlock(&dev->mdev->priv.mkey_table.lock);
 			mlx5_ib_warn(dev, "CQE@CQ %06x for unknown MR %6x\n",
 				     cq->mcq.cqn, be32_to_cpu(sig_err_cqe->mkey));
-			return -EINVAL;
+			goto out;
 		}
 
 		mr = to_mibmr(mmkey);
@@ -641,7 +641,7 @@ repoll:
 		read_unlock(&dev->mdev->priv.mkey_table.lock);
 		goto repoll;
 	}
-
+out:
 	return 0;
 }
 
@@ -676,7 +676,6 @@ int mlx5_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	unsigned long flags;
 	int soft_polled = 0;
 	int npolled;
-	int err = 0;
 
 	spin_lock_irqsave(&cq->lock, flags);
 	if (mdev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR) {
@@ -688,20 +687,16 @@ int mlx5_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 		soft_polled = poll_soft_wc(cq, num_entries, wc);
 
 	for (npolled = 0; npolled < num_entries - soft_polled; npolled++) {
+		int err;
 		err = mlx5_poll_one(cq, &cur_qp, wc + soft_polled + npolled);
 		if (err)
 			break;
 	}
 
-	if (npolled)
-		mlx5_cq_set_ci(&cq->mcq);
+	mlx5_cq_set_ci(&cq->mcq);
 out:
 	spin_unlock_irqrestore(&cq->lock, flags);
-
-	if (err == 0 || err == -EAGAIN)
-		return soft_polled + npolled;
-	else
-		return err;
+	return soft_polled + npolled;
 }
 
 int mlx5_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
