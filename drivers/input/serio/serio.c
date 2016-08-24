@@ -36,6 +36,7 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/of_device.h>
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@ucw.cz>");
 MODULE_DESCRIPTION("Serio abstraction core");
@@ -88,7 +89,7 @@ static void serio_disconnect_driver(struct serio *serio)
 
 static int serio_match_port(const struct serio_device_id *ids, struct serio *serio)
 {
-	while (ids->type || ids->proto) {
+	while (ids && (ids->type || ids->proto)) {
 		if ((ids->type == SERIO_ANY || ids->type == serio->id.type) &&
 		    (ids->proto == SERIO_ANY || ids->proto == serio->id.proto) &&
 		    (ids->extra == SERIO_ANY || ids->extra == serio->id.extra) &&
@@ -542,6 +543,8 @@ static void serio_init_port(struct serio *serio)
 static void serio_add_port(struct serio *serio)
 {
 	struct serio *parent = serio->parent;
+	struct device_node *parent_node =
+		serio->dev.parent ? serio->dev.parent->of_node : NULL;
 	int error;
 
 	if (parent) {
@@ -554,6 +557,8 @@ static void serio_add_port(struct serio *serio)
 
 	if (serio->start)
 		serio->start(serio);
+
+	serio->dev.of_node = of_get_next_available_child(parent_node, NULL);
 
 	error = device_add(&serio->dev);
 	if (error)
@@ -902,6 +907,10 @@ static int serio_bus_match(struct device *dev, struct device_driver *drv)
 	struct serio *serio = to_serio_port(dev);
 	struct serio_driver *serio_drv = to_serio_driver(drv);
 
+	if (of_driver_match_device(dev, drv)) {
+		printk("matched %s\n", dev->of_node->name);
+		return 1;
+	}
 	if (serio->manual_bind || serio_drv->manual_bind)
 		return 0;
 
