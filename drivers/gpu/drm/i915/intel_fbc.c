@@ -494,7 +494,7 @@ static bool multiple_pipes_ok(struct intel_crtc *crtc,
 	if (!no_fbc_on_multiple_pipes(dev_priv))
 		return true;
 
-	if (plane_state->visible)
+	if (plane_state->base.visible)
 		fbc->visible_pipes_mask |= (1 << pipe);
 	else
 		fbc->visible_pipes_mask &= ~(1 << pipe);
@@ -725,9 +725,9 @@ static void intel_fbc_update_state_cache(struct intel_crtc *crtc,
 			ilk_pipe_pixel_rate(crtc_state);
 
 	cache->plane.rotation = plane_state->base.rotation;
-	cache->plane.src_w = drm_rect_width(&plane_state->src) >> 16;
-	cache->plane.src_h = drm_rect_height(&plane_state->src) >> 16;
-	cache->plane.visible = plane_state->visible;
+	cache->plane.src_w = drm_rect_width(&plane_state->base.src) >> 16;
+	cache->plane.src_h = drm_rect_height(&plane_state->base.src) >> 16;
+	cache->plane.visible = plane_state->base.visible;
 
 	if (!cache->plane.visible)
 		return;
@@ -741,7 +741,7 @@ static void intel_fbc_update_state_cache(struct intel_crtc *crtc,
 	cache->fb.pixel_format = fb->pixel_format;
 	cache->fb.stride = fb->pitches[0];
 	cache->fb.fence_reg = obj->fence_reg;
-	cache->fb.tiling_mode = obj->tiling_mode;
+	cache->fb.tiling_mode = i915_gem_object_get_tiling(obj);
 }
 
 static bool intel_fbc_can_activate(struct intel_crtc *crtc)
@@ -775,7 +775,7 @@ static bool intel_fbc_can_activate(struct intel_crtc *crtc)
 		return false;
 	}
 	if (INTEL_INFO(dev_priv)->gen <= 4 && !IS_G4X(dev_priv) &&
-	    cache->plane.rotation != BIT(DRM_ROTATE_0)) {
+	    cache->plane.rotation != DRM_ROTATE_0) {
 		fbc->no_fbc_reason = "rotation unsupported";
 		return false;
 	}
@@ -1050,7 +1050,7 @@ void intel_fbc_choose_crtc(struct drm_i915_private *dev_priv,
 		struct intel_plane_state *intel_plane_state =
 			to_intel_plane_state(plane_state);
 
-		if (!intel_plane_state->visible)
+		if (!intel_plane_state->base.visible)
 			continue;
 
 		for_each_crtc_in_state(state, crtc, crtc_state, j) {
@@ -1075,6 +1075,8 @@ out:
 /**
  * intel_fbc_enable: tries to enable FBC on the CRTC
  * @crtc: the CRTC
+ * @crtc_state: corresponding &drm_crtc_state for @crtc
+ * @plane_state: corresponding &drm_plane_state for the primary plane of @crtc
  *
  * This function checks if the given CRTC was chosen for FBC, then enables it if
  * possible. Notice that it doesn't activate FBC. It is valid to call
@@ -1163,11 +1165,8 @@ void intel_fbc_disable(struct intel_crtc *crtc)
 		return;
 
 	mutex_lock(&fbc->lock);
-	if (fbc->crtc == crtc) {
-		WARN_ON(!fbc->enabled);
-		WARN_ON(fbc->active);
+	if (fbc->crtc == crtc)
 		__intel_fbc_disable(dev_priv);
-	}
 	mutex_unlock(&fbc->lock);
 
 	cancel_work_sync(&fbc->work.work);
@@ -1212,7 +1211,7 @@ void intel_fbc_init_pipe_state(struct drm_i915_private *dev_priv)
 
 	for_each_intel_crtc(&dev_priv->drm, crtc)
 		if (intel_crtc_active(&crtc->base) &&
-		    to_intel_plane_state(crtc->base.primary->state)->visible)
+		    to_intel_plane_state(crtc->base.primary->state)->base.visible)
 			dev_priv->fbc.visible_pipes_mask |= (1 << crtc->pipe);
 }
 
