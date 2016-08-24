@@ -354,7 +354,10 @@ static int dsa_switch_setup_one(struct dsa_switch *ds, struct device *parent)
 	 * switch.
 	 */
 	if (dst->cpu_switch == index) {
-		dst->tag_ops = dsa_resolve_tag_protocol(drv->tag_protocol);
+		enum dsa_tag_protocol tag_protocol;
+
+		tag_protocol = drv->get_tag_protocol(ds);
+		dst->tag_ops = dsa_resolve_tag_protocol(tag_protocol);
 		if (IS_ERR(dst->tag_ops)) {
 			ret = PTR_ERR(dst->tag_ops);
 			goto out;
@@ -543,7 +546,7 @@ static void dsa_switch_destroy(struct dsa_switch *ds)
 }
 
 #ifdef CONFIG_PM_SLEEP
-static int dsa_switch_suspend(struct dsa_switch *ds)
+int dsa_switch_suspend(struct dsa_switch *ds)
 {
 	int i, ret = 0;
 
@@ -562,8 +565,9 @@ static int dsa_switch_suspend(struct dsa_switch *ds)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(dsa_switch_suspend);
 
-static int dsa_switch_resume(struct dsa_switch *ds)
+int dsa_switch_resume(struct dsa_switch *ds)
 {
 	int i, ret = 0;
 
@@ -585,6 +589,7 @@ static int dsa_switch_resume(struct dsa_switch *ds)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(dsa_switch_resume);
 #endif
 
 /* platform driver init and cleanup *****************************************/
@@ -1086,7 +1091,6 @@ static int dsa_resume(struct device *d)
 static SIMPLE_DEV_PM_OPS(dsa_pm_ops, dsa_suspend, dsa_resume);
 
 static const struct of_device_id dsa_of_match_table[] = {
-	{ .compatible = "brcm,bcm7445-switch-v4.0" },
 	{ .compatible = "marvell,dsa", },
 	{}
 };

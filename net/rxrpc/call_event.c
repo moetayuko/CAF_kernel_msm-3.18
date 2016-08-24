@@ -25,7 +25,7 @@
  * propose an ACK be sent
  */
 void __rxrpc_propose_ACK(struct rxrpc_call *call, u8 ack_reason,
-			 u32 serial, bool immediate)
+			 u16 skew, u32 serial, bool immediate)
 {
 	unsigned long expiry;
 	s8 prior = rxrpc_ack_priority[ack_reason];
@@ -44,8 +44,10 @@ void __rxrpc_propose_ACK(struct rxrpc_call *call, u8 ack_reason,
 	/* update DELAY, IDLE, REQUESTED and PING_RESPONSE ACK serial
 	 * numbers */
 	if (prior == rxrpc_ack_priority[call->ackr_reason]) {
-		if (prior <= 4)
+		if (prior <= 4) {
+			call->ackr_skew = skew;
 			call->ackr_serial = serial;
+		}
 		if (immediate)
 			goto cancel_timer;
 		return;
@@ -103,13 +105,13 @@ cancel_timer:
  * propose an ACK be sent, locking the call structure
  */
 void rxrpc_propose_ACK(struct rxrpc_call *call, u8 ack_reason,
-		       u32 serial, bool immediate)
+		       u16 skew, u32 serial, bool immediate)
 {
 	s8 prior = rxrpc_ack_priority[ack_reason];
 
 	if (prior > rxrpc_ack_priority[call->ackr_reason]) {
 		spin_lock_bh(&call->lock);
-		__rxrpc_propose_ACK(call, ack_reason, serial, immediate);
+		__rxrpc_propose_ACK(call, ack_reason, skew, serial, immediate);
 		spin_unlock_bh(&call->lock);
 	}
 }
@@ -407,6 +409,7 @@ static int rxrpc_drain_rx_oos_queue(struct rxrpc_call *call)
 
 	skb = skb_dequeue(&call->rx_oos_queue);
 	if (skb) {
+		rxrpc_see_skb(skb);
 		sp = rxrpc_skb(skb);
 
 		_debug("drain OOS packet %d [%d]",
@@ -427,6 +430,7 @@ static int rxrpc_drain_rx_oos_queue(struct rxrpc_call *call)
 
 			/* find out what the next packet is */
 			skb = skb_peek(&call->rx_oos_queue);
+			rxrpc_see_skb(skb);
 			if (skb)
 				call->rx_first_oos = rxrpc_skb(skb)->hdr.seq;
 			else
@@ -576,6 +580,7 @@ process_further:
 	if (!skb)
 		return -EAGAIN;
 
+	rxrpc_see_skb(skb);
 	_net("deferred skb %p", skb);
 
 	sp = rxrpc_skb(skb);
@@ -625,7 +630,7 @@ process_further:
 		if (ack.reason == RXRPC_ACK_PING) {
 			_proto("Rx ACK %%%u PING Request", latest);
 			rxrpc_propose_ACK(call, RXRPC_ACK_PING_RESPONSE,
-					  sp->hdr.serial, true);
+					  skb->priority, sp->hdr.serial, true);
 		}
 
 		/* discard any out-of-order or duplicate ACKs */
@@ -831,11 +836,6 @@ void rxrpc_process_call(struct work_struct *work)
 	_enter("{%d,%s,%lx} [%lu]",
 	       call->debug_id, rxrpc_call_states[call->state], call->events,
 	       (jiffies - call->creation_jif) / (HZ / 10));
-
-	if (test_and_set_bit(RXRPC_CALL_PROC_BUSY, &call->flags)) {
-		_debug("XXXXXXXXXXXXX RUNNING ON MULTIPLE CPUS XXXXXXXXXXXXX");
-		return;
-	}
 
 	if (!call->conn)
 		goto skip_msg_init;
@@ -1155,8 +1155,7 @@ skip_msg_init:
 	goto maybe_reschedule;
 
 send_ACK_with_skew:
-	ack.maxSkew = htons(atomic_read(&call->conn->hi_serial) -
-			    ntohl(ack.serial));
+	ack.maxSkew = htons(call->ackr_skew);
 send_ACK:
 	mtu = call->conn->params.peer->if_mtu;
 	mtu -= call->conn->params.peer->hdrsize;
@@ -1246,7 +1245,8 @@ send_message_2:
 		case RXRPC_CALL_SERVER_ACK_REQUEST:
 			_debug("start ACK timer");
 			rxrpc_propose_ACK(call, RXRPC_ACK_DELAY,
-					  call->ackr_serial, false);
+					  call->ackr_skew, call->ackr_serial,
+					  false);
 		default:
 			break;
 		}
@@ -1281,7 +1281,6 @@ maybe_reschedule:
 	}
 
 error:
-	clear_bit(RXRPC_CALL_PROC_BUSY, &call->flags);
 	kfree(acks);
 
 	/* because we don't want two CPUs both processing the work item for one
