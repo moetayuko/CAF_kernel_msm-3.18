@@ -41,6 +41,8 @@ struct serio {
 	void (*close)(struct serio *);
 	int (*start)(struct serio *);
 	void (*stop)(struct serio *);
+	void (*set_flow_control)(struct serio *, bool);
+	unsigned int (*set_baudrate)(struct serio *, unsigned int);
 
 	struct serio *parent;
 	/* Entry in parent->children list */
@@ -168,6 +170,20 @@ static inline void serio_drv_write_wakeup(struct serio *serio)
 {
 	if (serio->drv && serio->drv->write_wakeup)
 		serio->drv->write_wakeup(serio);
+}
+
+static inline void serio_set_flow_control(struct serio *serio, bool enable)
+{
+	if (serio->set_flow_control)
+		serio->set_flow_control(serio, enable);
+}
+
+static inline unsigned int serio_set_baudrate(struct serio *serio, unsigned int speed)
+{
+	if (serio->set_baudrate)
+		return serio->set_baudrate(serio, speed);
+
+	return 0;
 }
 
 /*
