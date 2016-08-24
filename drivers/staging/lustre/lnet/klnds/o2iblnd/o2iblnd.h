@@ -582,6 +582,8 @@ struct kib_peer {
 	unsigned short		ibp_connecting;
 	/* reconnect this peer later */
 	unsigned short		ibp_reconnecting:1;
+	/* counter of how many times we triggered a conn race */
+	unsigned char		ibp_races;
 	/* # consecutive reconnection attempts to this peer */
 	unsigned int		ibp_reconnected;
 	/* errno on closing this peer */
@@ -1034,5 +1036,4 @@ int  kiblnd_post_rx(struct kib_rx *rx, int credit);
 
 int  kiblnd_send(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg);
 int  kiblnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg, int delayed,
-		 unsigned int niov, struct kvec *iov, lnet_kiov_t *kiov,
-		 unsigned int offset, unsigned int mlen, unsigned int rlen);
+		 struct iov_iter *to, unsigned int rlen);
