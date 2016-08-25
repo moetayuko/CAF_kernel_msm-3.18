@@ -34,7 +34,6 @@
 #include <linux/tty.h>
 #include <linux/sysrq.h>
 #include <linux/delay.h>
-#include <linux/fb.h>
 #include <linux/init.h>
 #include <linux/vga_switcheroo.h>
 
@@ -42,6 +41,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_fb_helper.h>
 #include "intel_drv.h"
+#include "intel_frontbuffer.h"
 #include <drm/i915_drm.h>
 #include "i915_drv.h"
 
@@ -159,7 +159,7 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 
 	fb = __intel_framebuffer_create(dev, &mode_cmd, obj);
 	if (IS_ERR(fb)) {
-		drm_gem_object_unreference(&obj->base);
+		i915_gem_object_put(obj);
 		ret = PTR_ERR(fb);
 		goto out;
 	}
@@ -189,7 +189,7 @@ static int intelfb_create(struct drm_fb_helper *helper,
 	struct i915_vma *vma;
 	struct drm_i915_gem_object *obj;
 	bool prealloc = false;
-	void *vaddr;
+	void __iomem *vaddr;
 	int ret;
 
 	if (intel_fb &&
@@ -223,7 +223,7 @@ static int intelfb_create(struct drm_fb_helper *helper,
 	 * This also validates that any existing fb inherited from the
 	 * BIOS is suitable for own access.
 	 */
-	ret = intel_pin_and_fence_fb_obj(&ifbdev->fb->base, BIT(DRM_ROTATE_0));
+	ret = intel_pin_and_fence_fb_obj(&ifbdev->fb->base, DRM_ROTATE_0);
 	if (ret)
 		goto out_unlock;
 
@@ -289,7 +289,7 @@ static int intelfb_create(struct drm_fb_helper *helper,
 out_destroy_fbi:
 	drm_fb_helper_release_fbi(helper);
 out_unpin:
-	intel_unpin_fb_obj(&ifbdev->fb->base, BIT(DRM_ROTATE_0));
+	intel_unpin_fb_obj(&ifbdev->fb->base, DRM_ROTATE_0);
 out_unlock:
 	mutex_unlock(&dev->struct_mutex);
 	return ret;
@@ -554,7 +554,7 @@ static void intel_fbdev_destroy(struct intel_fbdev *ifbdev)
 
 	if (ifbdev->fb) {
 		mutex_lock(&ifbdev->helper.dev->struct_mutex);
-		intel_unpin_fb_obj(&ifbdev->fb->base, BIT(DRM_ROTATE_0));
+		intel_unpin_fb_obj(&ifbdev->fb->base, DRM_ROTATE_0);
 		mutex_unlock(&ifbdev->helper.dev->struct_mutex);
 
 		drm_framebuffer_remove(&ifbdev->fb->base);
@@ -768,7 +768,7 @@ void intel_fbdev_fini(struct drm_device *dev)
 	if (!ifbdev)
 		return;
 
-	flush_work(&dev_priv->fbdev_suspend_work);
+	cancel_work_sync(&dev_priv->fbdev_suspend_work);
 	if (!current_is_async())
 		intel_fbdev_sync(ifbdev);
 

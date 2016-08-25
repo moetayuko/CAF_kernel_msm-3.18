@@ -34,6 +34,7 @@
 #include <drm/drm_edid.h>
 #include <drm/drmP.h>
 #include "intel_drv.h"
+#include "intel_frontbuffer.h"
 #include <drm/i915_drm.h>
 #include "i915_drv.h"
 #include "i915_gem_dmabuf.h"
@@ -2465,9 +2466,8 @@ intel_alloc_initial_plane_obj(struct intel_crtc *crtc,
 		return false;
 	}
 
-	obj->tiling_mode = plane_config->tiling;
-	if (obj->tiling_mode == I915_TILING_X)
-		obj->stride = fb->pitches[0];
+	if (plane_config->tiling == I915_TILING_X)
+		obj->tiling_and_stride = fb->pitches[0] | I915_TILING_X;
 
 	mode_cmd.pixel_format = fb->pixel_format;
 	mode_cmd.width = fb->width;
@@ -2488,7 +2488,7 @@ intel_alloc_initial_plane_obj(struct intel_crtc *crtc,
 	return true;
 
 out_unref_obj:
-	drm_gem_object_unreference(&obj->base);
+	i915_gem_object_put(obj);
 	mutex_unlock(&dev->struct_mutex);
 	return false;
 }
@@ -2565,7 +2565,7 @@ intel_find_initial_plane_obj(struct intel_crtc *intel_crtc,
 	 * simplest solution is to just disable the primary plane now and
 	 * pretend the BIOS never had it enabled.
 	 */
-	to_intel_plane_state(plane_state)->visible = false;
+	to_intel_plane_state(plane_state)->base.visible = false;
 	crtc_state->plane_mask &= ~(1 << drm_plane_index(primary));
 	intel_pre_disable_primary_noatomic(&intel_crtc->base);
 	intel_plane->disable_plane(primary, &intel_crtc->base);
@@ -2583,24 +2583,25 @@ valid_fb:
 	plane_state->crtc_w = fb->width;
 	plane_state->crtc_h = fb->height;
 
-	intel_state->src.x1 = plane_state->src_x;
-	intel_state->src.y1 = plane_state->src_y;
-	intel_state->src.x2 = plane_state->src_x + plane_state->src_w;
-	intel_state->src.y2 = plane_state->src_y + plane_state->src_h;
-	intel_state->dst.x1 = plane_state->crtc_x;
-	intel_state->dst.y1 = plane_state->crtc_y;
-	intel_state->dst.x2 = plane_state->crtc_x + plane_state->crtc_w;
-	intel_state->dst.y2 = plane_state->crtc_y + plane_state->crtc_h;
+	intel_state->base.src.x1 = plane_state->src_x;
+	intel_state->base.src.y1 = plane_state->src_y;
+	intel_state->base.src.x2 = plane_state->src_x + plane_state->src_w;
+	intel_state->base.src.y2 = plane_state->src_y + plane_state->src_h;
+	intel_state->base.dst.x1 = plane_state->crtc_x;
+	intel_state->base.dst.y1 = plane_state->crtc_y;
+	intel_state->base.dst.x2 = plane_state->crtc_x + plane_state->crtc_w;
+	intel_state->base.dst.y2 = plane_state->crtc_y + plane_state->crtc_h;
 
 	obj = intel_fb_obj(fb);
-	if (obj->tiling_mode != I915_TILING_NONE)
+	if (i915_gem_object_is_tiled(obj))
 		dev_priv->preserve_bios_swizzle = true;
 
 	drm_framebuffer_reference(fb);
 	primary->fb = primary->state->fb = fb;
 	primary->crtc = primary->state->crtc = &intel_crtc->base;
 	intel_crtc->base.state->plane_mask |= (1 << drm_plane_index(primary));
-	obj->frontbuffer_bits |= to_intel_plane(primary)->frontbuffer_bit;
+	atomic_or(to_intel_plane(primary)->frontbuffer_bit,
+		  &obj->frontbuffer_bits);
 }
 
 static void i9xx_update_primary_plane(struct drm_plane *primary,
@@ -2618,8 +2619,8 @@ static void i9xx_update_primary_plane(struct drm_plane *primary,
 	i915_reg_t reg = DSPCNTR(plane);
 	unsigned int rotation = plane_state->base.rotation;
 	int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
-	int x = plane_state->src.x1 >> 16;
-	int y = plane_state->src.y1 >> 16;
+	int x = plane_state->base.src.x1 >> 16;
+	int y = plane_state->base.src.y1 >> 16;
 
 	dspcntr = DISPPLANE_GAMMA_ENABLE;
 
@@ -2670,8 +2671,7 @@ static void i9xx_update_primary_plane(struct drm_plane *primary,
 		BUG();
 	}
 
-	if (INTEL_INFO(dev)->gen >= 4 &&
-	    obj->tiling_mode != I915_TILING_NONE)
+	if (INTEL_INFO(dev)->gen >= 4 && i915_gem_object_is_tiled(obj))
 		dspcntr |= DISPPLANE_TILED;
 
 	if (IS_G4X(dev))
@@ -2688,7 +2688,7 @@ static void i9xx_update_primary_plane(struct drm_plane *primary,
 		intel_crtc->dspaddr_offset = linear_offset;
 	}
 
-	if (rotation == BIT(DRM_ROTATE_180)) {
+	if (rotation == DRM_ROTATE_180) {
 		dspcntr |= DISPPLANE_ROTATE_180;
 
 		x += (crtc_state->pipe_src_w - 1);
@@ -2748,8 +2748,8 @@ static void ironlake_update_primary_plane(struct drm_plane *primary,
 	i915_reg_t reg = DSPCNTR(plane);
 	unsigned int rotation = plane_state->base.rotation;
 	int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
-	int x = plane_state->src.x1 >> 16;
-	int y = plane_state->src.y1 >> 16;
+	int x = plane_state->base.src.x1 >> 16;
+	int y = plane_state->base.src.y1 >> 16;
 
 	dspcntr = DISPPLANE_GAMMA_ENABLE;
 	dspcntr |= DISPLAY_PLANE_ENABLE;
@@ -2780,7 +2780,7 @@ static void ironlake_update_primary_plane(struct drm_plane *primary,
 		BUG();
 	}
 
-	if (obj->tiling_mode != I915_TILING_NONE)
+	if (i915_gem_object_is_tiled(obj))
 		dspcntr |= DISPPLANE_TILED;
 
 	if (!IS_HASWELL(dev) && !IS_BROADWELL(dev))
@@ -2791,7 +2791,7 @@ static void ironlake_update_primary_plane(struct drm_plane *primary,
 		intel_compute_tile_offset(&x, &y, fb, 0,
 					  fb->pitches[0], rotation);
 	linear_offset -= intel_crtc->dspaddr_offset;
-	if (rotation == BIT(DRM_ROTATE_180)) {
+	if (rotation == DRM_ROTATE_180) {
 		dspcntr |= DISPPLANE_ROTATE_180;
 
 		if (!IS_HASWELL(dev) && !IS_BROADWELL(dev)) {
@@ -2952,17 +2952,17 @@ u32 skl_plane_ctl_tiling(uint64_t fb_modifier)
 u32 skl_plane_ctl_rotation(unsigned int rotation)
 {
 	switch (rotation) {
-	case BIT(DRM_ROTATE_0):
+	case DRM_ROTATE_0:
 		break;
 	/*
 	 * DRM_ROTATE_ is counter clockwise to stay compatible with Xrandr
 	 * while i915 HW rotation is clockwise, thats why this swapping.
 	 */
-	case BIT(DRM_ROTATE_90):
+	case DRM_ROTATE_90:
 		return PLANE_CTL_ROTATE_270;
-	case BIT(DRM_ROTATE_180):
+	case DRM_ROTATE_180:
 		return PLANE_CTL_ROTATE_180;
-	case BIT(DRM_ROTATE_270):
+	case DRM_ROTATE_270:
 		return PLANE_CTL_ROTATE_90;
 	default:
 		MISSING_CASE(rotation);
@@ -2987,14 +2987,14 @@ static void skylake_update_primary_plane(struct drm_plane *plane,
 	int x_offset, y_offset;
 	u32 surf_addr;
 	int scaler_id = plane_state->scaler_id;
-	int src_x = plane_state->src.x1 >> 16;
-	int src_y = plane_state->src.y1 >> 16;
-	int src_w = drm_rect_width(&plane_state->src) >> 16;
-	int src_h = drm_rect_height(&plane_state->src) >> 16;
-	int dst_x = plane_state->dst.x1;
-	int dst_y = plane_state->dst.y1;
-	int dst_w = drm_rect_width(&plane_state->dst);
-	int dst_h = drm_rect_height(&plane_state->dst);
+	int src_x = plane_state->base.src.x1 >> 16;
+	int src_y = plane_state->base.src.y1 >> 16;
+	int src_w = drm_rect_width(&plane_state->base.src) >> 16;
+	int src_h = drm_rect_height(&plane_state->base.src) >> 16;
+	int dst_x = plane_state->base.dst.x1;
+	int dst_y = plane_state->base.dst.y1;
+	int dst_w = drm_rect_width(&plane_state->base.dst);
+	int dst_h = drm_rect_height(&plane_state->base.dst);
 
 	plane_ctl = PLANE_CTL_ENABLE |
 		    PLANE_CTL_PIPE_GAMMA_ENABLE |
@@ -3009,7 +3009,7 @@ static void skylake_update_primary_plane(struct drm_plane *plane,
 					       fb->pixel_format);
 	surf_addr = intel_plane_obj_offset(to_intel_plane(plane), obj, 0);
 
-	WARN_ON(drm_rect_width(&plane_state->src) == 0);
+	WARN_ON(drm_rect_width(&plane_state->base.src) == 0);
 
 	if (intel_rotation_90_or_270(rotation)) {
 		int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
@@ -3096,7 +3096,7 @@ static void intel_update_primary_planes(struct drm_device *dev)
 		struct intel_plane_state *plane_state =
 			to_intel_plane_state(plane->base.state);
 
-		if (plane_state->visible)
+		if (plane_state->base.visible)
 			plane->update_plane(&plane->base,
 					    to_intel_crtc_state(crtc->state),
 					    plane_state);
@@ -4323,7 +4323,7 @@ int skl_update_scaler_crtc(struct intel_crtc_state *state)
 		      intel_crtc->pipe, SKL_CRTC_INDEX);
 
 	return skl_update_scaler(state, !state->base.active, SKL_CRTC_INDEX,
-		&state->scaler_state.scaler_id, BIT(DRM_ROTATE_0),
+		&state->scaler_state.scaler_id, DRM_ROTATE_0,
 		state->pipe_src_w, state->pipe_src_h,
 		adjusted_mode->crtc_hdisplay, adjusted_mode->crtc_vdisplay);
 }
@@ -4348,7 +4348,7 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	struct drm_framebuffer *fb = plane_state->base.fb;
 	int ret;
 
-	bool force_detach = !fb || !plane_state->visible;
+	bool force_detach = !fb || !plane_state->base.visible;
 
 	DRM_DEBUG_KMS("Updating scaler for [PLANE:%d:%s] scaler_user index %u.%u\n",
 		      intel_plane->base.base.id, intel_plane->base.name,
@@ -4358,10 +4358,10 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 				drm_plane_index(&intel_plane->base),
 				&plane_state->scaler_id,
 				plane_state->base.rotation,
-				drm_rect_width(&plane_state->src) >> 16,
-				drm_rect_height(&plane_state->src) >> 16,
-				drm_rect_width(&plane_state->dst),
-				drm_rect_height(&plane_state->dst));
+				drm_rect_width(&plane_state->base.src) >> 16,
+				drm_rect_height(&plane_state->base.src) >> 16,
+				drm_rect_width(&plane_state->base.dst),
+				drm_rect_height(&plane_state->base.dst));
 
 	if (ret || plane_state->scaler_id < 0)
 		return ret;
@@ -4639,12 +4639,11 @@ static void intel_post_plane_update(struct intel_crtc_state *old_crtc_state)
 	struct drm_atomic_state *old_state = old_crtc_state->base.state;
 	struct intel_crtc_state *pipe_config =
 		to_intel_crtc_state(crtc->base.state);
-	struct drm_device *dev = crtc->base.dev;
 	struct drm_plane *primary = crtc->base.primary;
 	struct drm_plane_state *old_pri_state =
 		drm_atomic_get_existing_plane_state(old_state, primary);
 
-	intel_frontbuffer_flip(dev, pipe_config->fb_bits);
+	intel_frontbuffer_flip(to_i915(crtc->base.dev), pipe_config->fb_bits);
 
 	crtc->wm.cxsr_allowed = true;
 
@@ -4659,9 +4658,9 @@ static void intel_post_plane_update(struct intel_crtc_state *old_crtc_state)
 
 		intel_fbc_post_update(crtc);
 
-		if (primary_state->visible &&
+		if (primary_state->base.visible &&
 		    (needs_modeset(&pipe_config->base) ||
-		     !old_primary_state->visible))
+		     !old_primary_state->base.visible))
 			intel_post_enable_primary(&crtc->base);
 	}
 }
@@ -4687,8 +4686,8 @@ static void intel_pre_plane_update(struct intel_crtc_state *old_crtc_state)
 
 		intel_fbc_pre_update(crtc, pipe_config, primary_state);
 
-		if (old_primary_state->visible &&
-		    (modeset || !primary_state->visible))
+		if (old_primary_state->base.visible &&
+		    (modeset || !primary_state->base.visible))
 			intel_pre_disable_primary(&crtc->base);
 	}
 
@@ -4767,7 +4766,7 @@ static void intel_crtc_disable_planes(struct drm_crtc *crtc, unsigned plane_mask
 	 * to compute the mask of flip planes precisely. For the time being
 	 * consider this a flip to a NULL plane.
 	 */
-	intel_frontbuffer_flip(dev, INTEL_FRONTBUFFER_ALL_MASK(pipe));
+	intel_frontbuffer_flip(to_i915(dev), INTEL_FRONTBUFFER_ALL_MASK(pipe));
 }
 
 static void ironlake_crtc_enable(struct drm_crtc *crtc)
@@ -6365,13 +6364,13 @@ static void intel_crtc_disable_noatomic(struct drm_crtc *crtc)
 	if (!intel_crtc->active)
 		return;
 
-	if (to_intel_plane_state(crtc->primary->state)->visible) {
+	if (to_intel_plane_state(crtc->primary->state)->base.visible) {
 		WARN_ON(intel_crtc->flip_work);
 
 		intel_pre_disable_primary_noatomic(crtc);
 
 		intel_crtc_disable_planes(crtc, 1 << drm_plane_index(crtc->primary));
-		to_intel_plane_state(crtc->primary->state)->visible = false;
+		to_intel_plane_state(crtc->primary->state)->base.visible = false;
 	}
 
 	dev_priv->display.crtc_disable(crtc);
@@ -10245,7 +10244,7 @@ static void i845_update_cursor(struct drm_crtc *crtc, u32 base,
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	uint32_t cntl = 0, size = 0;
 
-	if (plane_state && plane_state->visible) {
+	if (plane_state && plane_state->base.visible) {
 		unsigned int width = plane_state->base.crtc_w;
 		unsigned int height = plane_state->base.crtc_h;
 		unsigned int stride = roundup_pow_of_two(width) * 4;
@@ -10309,7 +10308,7 @@ static void i9xx_update_cursor(struct drm_crtc *crtc, u32 base,
 	int pipe = intel_crtc->pipe;
 	uint32_t cntl = 0;
 
-	if (plane_state && plane_state->visible) {
+	if (plane_state && plane_state->base.visible) {
 		cntl = MCURSOR_GAMMA_ENABLE;
 		switch (plane_state->base.crtc_w) {
 			case 64:
@@ -10330,7 +10329,7 @@ static void i9xx_update_cursor(struct drm_crtc *crtc, u32 base,
 		if (HAS_DDI(dev))
 			cntl |= CURSOR_PIPE_CSC_ENABLE;
 
-		if (plane_state->base.rotation == BIT(DRM_ROTATE_180))
+		if (plane_state->base.rotation == DRM_ROTATE_180)
 			cntl |= CURSOR_ROTATE_180;
 	}
 
@@ -10376,7 +10375,7 @@ static void intel_crtc_update_cursor(struct drm_crtc *crtc,
 
 		/* ILK+ do this automagically */
 		if (HAS_GMCH_DISPLAY(dev) &&
-		    plane_state->base.rotation == BIT(DRM_ROTATE_180)) {
+		    plane_state->base.rotation == DRM_ROTATE_180) {
 			base += (plane_state->base.crtc_h *
 				 plane_state->base.crtc_w - 1) * 4;
 		}
@@ -10509,7 +10508,7 @@ intel_framebuffer_create_for_mode(struct drm_device *dev,
 
 	fb = intel_framebuffer_create(dev, &mode_cmd, obj);
 	if (IS_ERR(fb))
-		drm_gem_object_unreference_unlocked(&obj->base);
+		i915_gem_object_put_unlocked(obj);
 
 	return fb;
 }
@@ -11020,13 +11019,13 @@ static void intel_unpin_work_fn(struct work_struct *__work)
 
 	mutex_lock(&dev->struct_mutex);
 	intel_unpin_fb_obj(work->old_fb, primary->state->rotation);
-	drm_gem_object_unreference(&work->pending_flip_obj->base);
-
-	if (work->flip_queued_req)
-		i915_gem_request_assign(&work->flip_queued_req, NULL);
+	i915_gem_object_put(work->pending_flip_obj);
 	mutex_unlock(&dev->struct_mutex);
 
-	intel_frontbuffer_flip_complete(dev, to_intel_plane(primary)->frontbuffer_bit);
+	i915_gem_request_put(work->flip_queued_req);
+
+	intel_frontbuffer_flip_complete(to_i915(dev),
+					to_intel_plane(primary)->frontbuffer_bit);
 	intel_fbc_post_update(crtc);
 	drm_framebuffer_unreference(work->old_fb);
 
@@ -11191,7 +11190,7 @@ static int intel_gen2_queue_flip(struct drm_device *dev,
 				 struct drm_i915_gem_request *req,
 				 uint32_t flags)
 {
-	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	u32 flip_mask;
 	int ret;
@@ -11207,13 +11206,13 @@ static int intel_gen2_queue_flip(struct drm_device *dev,
 		flip_mask = MI_WAIT_FOR_PLANE_B_FLIP;
 	else
 		flip_mask = MI_WAIT_FOR_PLANE_A_FLIP;
-	intel_ring_emit(engine, MI_WAIT_FOR_EVENT | flip_mask);
-	intel_ring_emit(engine, MI_NOOP);
-	intel_ring_emit(engine, MI_DISPLAY_FLIP |
+	intel_ring_emit(ring, MI_WAIT_FOR_EVENT | flip_mask);
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_emit(ring, MI_DISPLAY_FLIP |
 			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	intel_ring_emit(engine, fb->pitches[0]);
-	intel_ring_emit(engine, intel_crtc->flip_work->gtt_offset);
-	intel_ring_emit(engine, 0); /* aux display base address, unused */
+	intel_ring_emit(ring, fb->pitches[0]);
+	intel_ring_emit(ring, intel_crtc->flip_work->gtt_offset);
+	intel_ring_emit(ring, 0); /* aux display base address, unused */
 
 	return 0;
 }
@@ -11225,7 +11224,7 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 				 struct drm_i915_gem_request *req,
 				 uint32_t flags)
 {
-	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	u32 flip_mask;
 	int ret;
@@ -11238,13 +11237,13 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 		flip_mask = MI_WAIT_FOR_PLANE_B_FLIP;
 	else
 		flip_mask = MI_WAIT_FOR_PLANE_A_FLIP;
-	intel_ring_emit(engine, MI_WAIT_FOR_EVENT | flip_mask);
-	intel_ring_emit(engine, MI_NOOP);
-	intel_ring_emit(engine, MI_DISPLAY_FLIP_I915 |
+	intel_ring_emit(ring, MI_WAIT_FOR_EVENT | flip_mask);
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_emit(ring, MI_DISPLAY_FLIP_I915 |
 			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	intel_ring_emit(engine, fb->pitches[0]);
-	intel_ring_emit(engine, intel_crtc->flip_work->gtt_offset);
-	intel_ring_emit(engine, MI_NOOP);
+	intel_ring_emit(ring, fb->pitches[0]);
+	intel_ring_emit(ring, intel_crtc->flip_work->gtt_offset);
+	intel_ring_emit(ring, MI_NOOP);
 
 	return 0;
 }
@@ -11256,7 +11255,7 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 				 struct drm_i915_gem_request *req,
 				 uint32_t flags)
 {
-	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	uint32_t pf, pipesrc;
@@ -11270,11 +11269,11 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 	 * Display Registers (which do not change across a page-flip)
 	 * so we need only reprogram the base address.
 	 */
-	intel_ring_emit(engine, MI_DISPLAY_FLIP |
+	intel_ring_emit(ring, MI_DISPLAY_FLIP |
 			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	intel_ring_emit(engine, fb->pitches[0]);
-	intel_ring_emit(engine, intel_crtc->flip_work->gtt_offset |
-			obj->tiling_mode);
+	intel_ring_emit(ring, fb->pitches[0]);
+	intel_ring_emit(ring, intel_crtc->flip_work->gtt_offset |
+			i915_gem_object_get_tiling(obj));
 
 	/* XXX Enabling the panel-fitter across page-flip is so far
 	 * untested on non-native modes, so ignore it for now.
@@ -11282,7 +11281,7 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 	 */
 	pf = 0;
 	pipesrc = I915_READ(PIPESRC(intel_crtc->pipe)) & 0x0fff0fff;
-	intel_ring_emit(engine, pf | pipesrc);
+	intel_ring_emit(ring, pf | pipesrc);
 
 	return 0;
 }
@@ -11294,7 +11293,7 @@ static int intel_gen6_queue_flip(struct drm_device *dev,
 				 struct drm_i915_gem_request *req,
 				 uint32_t flags)
 {
-	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	uint32_t pf, pipesrc;
@@ -11304,10 +11303,10 @@ static int intel_gen6_queue_flip(struct drm_device *dev,
 	if (ret)
 		return ret;
 
-	intel_ring_emit(engine, MI_DISPLAY_FLIP |
+	intel_ring_emit(ring, MI_DISPLAY_FLIP |
 			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	intel_ring_emit(engine, fb->pitches[0] | obj->tiling_mode);
-	intel_ring_emit(engine, intel_crtc->flip_work->gtt_offset);
+	intel_ring_emit(ring, fb->pitches[0] | i915_gem_object_get_tiling(obj));
+	intel_ring_emit(ring, intel_crtc->flip_work->gtt_offset);
 
 	/* Contrary to the suggestions in the documentation,
 	 * "Enable Panel Fitter" does not seem to be required when page
@@ -11317,7 +11316,7 @@ static int intel_gen6_queue_flip(struct drm_device *dev,
 	 */
 	pf = 0;
 	pipesrc = I915_READ(PIPESRC(intel_crtc->pipe)) & 0x0fff0fff;
-	intel_ring_emit(engine, pf | pipesrc);
+	intel_ring_emit(ring, pf | pipesrc);
 
 	return 0;
 }
@@ -11329,7 +11328,7 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 				 struct drm_i915_gem_request *req,
 				 uint32_t flags)
 {
-	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	uint32_t plane_bit = 0;
 	int len, ret;
@@ -11350,7 +11349,7 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 	}
 
 	len = 4;
-	if (engine->id == RCS) {
+	if (req->engine->id == RCS) {
 		len += 6;
 		/*
 		 * On Gen 8, SRM is now taking an extra dword to accommodate
@@ -11388,30 +11387,30 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 	 * for the RCS also doesn't appear to drop events. Setting the DERRMR
 	 * to zero does lead to lockups within MI_DISPLAY_FLIP.
 	 */
-	if (engine->id == RCS) {
-		intel_ring_emit(engine, MI_LOAD_REGISTER_IMM(1));
-		intel_ring_emit_reg(engine, DERRMR);
-		intel_ring_emit(engine, ~(DERRMR_PIPEA_PRI_FLIP_DONE |
+	if (req->engine->id == RCS) {
+		intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(1));
+		intel_ring_emit_reg(ring, DERRMR);
+		intel_ring_emit(ring, ~(DERRMR_PIPEA_PRI_FLIP_DONE |
 					  DERRMR_PIPEB_PRI_FLIP_DONE |
 					  DERRMR_PIPEC_PRI_FLIP_DONE));
 		if (IS_GEN8(dev))
-			intel_ring_emit(engine, MI_STORE_REGISTER_MEM_GEN8 |
+			intel_ring_emit(ring, MI_STORE_REGISTER_MEM_GEN8 |
 					      MI_SRM_LRM_GLOBAL_GTT);
 		else
-			intel_ring_emit(engine, MI_STORE_REGISTER_MEM |
+			intel_ring_emit(ring, MI_STORE_REGISTER_MEM |
 					      MI_SRM_LRM_GLOBAL_GTT);
-		intel_ring_emit_reg(engine, DERRMR);
-		intel_ring_emit(engine, engine->scratch.gtt_offset + 256);
+		intel_ring_emit_reg(ring, DERRMR);
+		intel_ring_emit(ring, req->engine->scratch.gtt_offset + 256);
 		if (IS_GEN8(dev)) {
-			intel_ring_emit(engine, 0);
-			intel_ring_emit(engine, MI_NOOP);
+			intel_ring_emit(ring, 0);
+			intel_ring_emit(ring, MI_NOOP);
 		}
 	}
 
-	intel_ring_emit(engine, MI_DISPLAY_FLIP_I915 | plane_bit);
-	intel_ring_emit(engine, (fb->pitches[0] | obj->tiling_mode));
-	intel_ring_emit(engine, intel_crtc->flip_work->gtt_offset);
-	intel_ring_emit(engine, (MI_NOOP));
+	intel_ring_emit(ring, MI_DISPLAY_FLIP_I915 | plane_bit);
+	intel_ring_emit(ring, fb->pitches[0] | i915_gem_object_get_tiling(obj));
+	intel_ring_emit(ring, intel_crtc->flip_work->gtt_offset);
+	intel_ring_emit(ring, (MI_NOOP));
 
 	return 0;
 }
@@ -11446,7 +11445,8 @@ static bool use_mmio_flip(struct intel_engine_cs *engine,
 	if (resv && !reservation_object_test_signaled_rcu(resv, false))
 		return true;
 
-	return engine != i915_gem_request_get_engine(obj->last_write_req);
+	return engine != i915_gem_active_get_engine(&obj->last_write,
+						    &obj->base.dev->struct_mutex);
 }
 
 static void skl_do_mmio_flip(struct intel_crtc *intel_crtc,
@@ -11515,7 +11515,7 @@ static void ilk_do_mmio_flip(struct intel_crtc *intel_crtc,
 
 	dspcntr = I915_READ(reg);
 
-	if (obj->tiling_mode != I915_TILING_NONE)
+	if (i915_gem_object_is_tiled(obj))
 		dspcntr |= DISPPLANE_TILED;
 	else
 		dspcntr &= ~DISPPLANE_TILED;
@@ -11538,9 +11538,9 @@ static void intel_mmio_flip_work_func(struct work_struct *w)
 	struct reservation_object *resv;
 
 	if (work->flip_queued_req)
-		WARN_ON(__i915_wait_request(work->flip_queued_req,
-					    false, NULL,
-					    &dev_priv->rps.mmioflips));
+		WARN_ON(i915_wait_request(work->flip_queued_req,
+					  false, NULL,
+					  NO_WAITBOOST));
 
 	/* For framebuffer backed by dmabuf, wait for fence */
 	resv = i915_gem_object_get_dmabuf_resv(obj);
@@ -11651,7 +11651,7 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 	struct intel_flip_work *work;
 	struct intel_engine_cs *engine;
 	bool mmio_flip;
-	struct drm_i915_gem_request *request = NULL;
+	struct drm_i915_gem_request *request;
 	int ret;
 
 	/*
@@ -11717,7 +11717,6 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 
 	/* Reference the objects for the scheduled work. */
 	drm_framebuffer_reference(work->old_fb);
-	drm_gem_object_reference(&obj->base);
 
 	crtc->primary->fb = fb;
 	update_state_fb(crtc->primary);
@@ -11725,7 +11724,7 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 	intel_fbc_pre_update(intel_crtc, intel_crtc->config,
 			     to_intel_plane_state(primary->state));
 
-	work->pending_flip_obj = obj;
+	work->pending_flip_obj = i915_gem_object_get(obj);
 
 	ret = i915_mutex_lock_interruptible(dev);
 	if (ret)
@@ -11744,13 +11743,15 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 
 	if (IS_VALLEYVIEW(dev) || IS_CHERRYVIEW(dev)) {
 		engine = &dev_priv->engine[BCS];
-		if (obj->tiling_mode != intel_fb_obj(work->old_fb)->tiling_mode)
+		if (i915_gem_object_get_tiling(obj) !=
+		    i915_gem_object_get_tiling(intel_fb_obj(work->old_fb)))
 			/* vlv: DISPLAY_FLIP fails to change tiling */
 			engine = NULL;
 	} else if (IS_IVYBRIDGE(dev) || IS_HASWELL(dev)) {
 		engine = &dev_priv->engine[BCS];
 	} else if (INTEL_INFO(dev)->gen >= 7) {
-		engine = i915_gem_request_get_engine(obj->last_write_req);
+		engine = i915_gem_active_get_engine(&obj->last_write,
+						    &obj->base.dev->struct_mutex);
 		if (engine == NULL || engine->id != RCS)
 			engine = &dev_priv->engine[BCS];
 	} else {
@@ -11758,22 +11759,6 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 	}
 
 	mmio_flip = use_mmio_flip(engine, obj);
-
-	/* When using CS flips, we want to emit semaphores between rings.
-	 * However, when using mmio flips we will create a task to do the
-	 * synchronisation, so all we want here is to pin the framebuffer
-	 * into the display plane and skip any waits.
-	 */
-	if (!mmio_flip) {
-		ret = i915_gem_object_sync(obj, engine, &request);
-		if (!ret && !request) {
-			request = i915_gem_request_alloc(engine, NULL);
-			ret = PTR_ERR_OR_ZERO(request);
-		}
-
-		if (ret)
-			goto cleanup_pending;
-	}
 
 	ret = intel_pin_and_fence_fb_obj(fb, primary->state->rotation);
 	if (ret)
@@ -11787,19 +11772,28 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 	if (mmio_flip) {
 		INIT_WORK(&work->mmio_work, intel_mmio_flip_work_func);
 
-		i915_gem_request_assign(&work->flip_queued_req,
-					obj->last_write_req);
-
+		work->flip_queued_req = i915_gem_active_get(&obj->last_write,
+							    &obj->base.dev->struct_mutex);
 		schedule_work(&work->mmio_work);
 	} else {
-		i915_gem_request_assign(&work->flip_queued_req, request);
+		request = i915_gem_request_alloc(engine, engine->last_context);
+		if (IS_ERR(request)) {
+			ret = PTR_ERR(request);
+			goto cleanup_unpin;
+		}
+
+		ret = i915_gem_object_sync(obj, request);
+		if (ret)
+			goto cleanup_request;
+
 		ret = dev_priv->display.queue_flip(dev, crtc, fb, obj, request,
 						   page_flip_flags);
 		if (ret)
-			goto cleanup_unpin;
+			goto cleanup_request;
 
 		intel_mark_page_flip_active(intel_crtc, work);
 
+		work->flip_queued_req = i915_gem_request_get(request);
 		i915_add_request_no_flush(request);
 	}
 
@@ -11807,25 +11801,25 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 			  to_intel_plane(primary)->frontbuffer_bit);
 	mutex_unlock(&dev->struct_mutex);
 
-	intel_frontbuffer_flip_prepare(dev,
+	intel_frontbuffer_flip_prepare(to_i915(dev),
 				       to_intel_plane(primary)->frontbuffer_bit);
 
 	trace_i915_flip_request(intel_crtc->plane, obj);
 
 	return 0;
 
+cleanup_request:
+	i915_add_request_no_flush(request);
 cleanup_unpin:
 	intel_unpin_fb_obj(fb, crtc->primary->state->rotation);
 cleanup_pending:
-	if (!IS_ERR_OR_NULL(request))
-		i915_add_request_no_flush(request);
 	atomic_dec(&intel_crtc->unpin_work_count);
 	mutex_unlock(&dev->struct_mutex);
 cleanup:
 	crtc->primary->fb = old_fb;
 	update_state_fb(crtc->primary);
 
-	drm_gem_object_unreference_unlocked(&obj->base);
+	i915_gem_object_put_unlocked(obj);
 	drm_framebuffer_unreference(work->old_fb);
 
 	spin_lock_irq(&dev->event_lock);
@@ -11893,7 +11887,7 @@ static bool intel_wm_need_update(struct drm_plane *plane,
 	struct intel_plane_state *cur = to_intel_plane_state(plane->state);
 
 	/* Update watermarks on tiling or size changes. */
-	if (new->visible != cur->visible)
+	if (new->base.visible != cur->base.visible)
 		return true;
 
 	if (!cur->base.fb || !new->base.fb)
@@ -11901,10 +11895,10 @@ static bool intel_wm_need_update(struct drm_plane *plane,
 
 	if (cur->base.fb->modifier[0] != new->base.fb->modifier[0] ||
 	    cur->base.rotation != new->base.rotation ||
-	    drm_rect_width(&new->src) != drm_rect_width(&cur->src) ||
-	    drm_rect_height(&new->src) != drm_rect_height(&cur->src) ||
-	    drm_rect_width(&new->dst) != drm_rect_width(&cur->dst) ||
-	    drm_rect_height(&new->dst) != drm_rect_height(&cur->dst))
+	    drm_rect_width(&new->base.src) != drm_rect_width(&cur->base.src) ||
+	    drm_rect_height(&new->base.src) != drm_rect_height(&cur->base.src) ||
+	    drm_rect_width(&new->base.dst) != drm_rect_width(&cur->base.dst) ||
+	    drm_rect_height(&new->base.dst) != drm_rect_height(&cur->base.dst))
 		return true;
 
 	return false;
@@ -11912,10 +11906,10 @@ static bool intel_wm_need_update(struct drm_plane *plane,
 
 static bool needs_scaling(struct intel_plane_state *state)
 {
-	int src_w = drm_rect_width(&state->src) >> 16;
-	int src_h = drm_rect_height(&state->src) >> 16;
-	int dst_w = drm_rect_width(&state->dst);
-	int dst_h = drm_rect_height(&state->dst);
+	int src_w = drm_rect_width(&state->base.src) >> 16;
+	int src_h = drm_rect_height(&state->base.src) >> 16;
+	int dst_w = drm_rect_width(&state->base.dst);
+	int dst_h = drm_rect_height(&state->base.dst);
 
 	return (src_w != dst_w || src_h != dst_h);
 }
@@ -11946,8 +11940,8 @@ int intel_plane_atomic_calc_changes(struct drm_crtc_state *crtc_state,
 			return ret;
 	}
 
-	was_visible = old_plane_state->visible;
-	visible = to_intel_plane_state(plane_state)->visible;
+	was_visible = old_plane_state->base.visible;
+	visible = to_intel_plane_state(plane_state)->base.visible;
 
 	if (!was_crtc_enabled && WARN_ON(was_visible))
 		was_visible = false;
@@ -11963,7 +11957,7 @@ int intel_plane_atomic_calc_changes(struct drm_crtc_state *crtc_state,
 	 * only combine the results from all planes in the current place?
 	 */
 	if (!is_crtc_enabled)
-		to_intel_plane_state(plane_state)->visible = visible = false;
+		to_intel_plane_state(plane_state)->base.visible = visible = false;
 
 	if (!was_visible && !visible)
 		return 0;
@@ -12339,6 +12333,7 @@ static void intel_dump_pipe_config(struct intel_crtc *crtc,
 
 	DRM_DEBUG_KMS("planes on this crtc\n");
 	list_for_each_entry(plane, &dev->mode_config.plane_list, head) {
+		char *format_name;
 		intel_plane = to_intel_plane(plane);
 		if (intel_plane->pipe != crtc->pipe)
 			continue;
@@ -12351,19 +12346,23 @@ static void intel_dump_pipe_config(struct intel_crtc *crtc,
 			continue;
 		}
 
+		format_name = drm_get_format_name(fb->pixel_format);
+
 		DRM_DEBUG_KMS("[PLANE:%d:%s] enabled",
 			      plane->base.id, plane->name);
 		DRM_DEBUG_KMS("\tFB:%d, fb = %ux%u format = %s",
-			      fb->base.id, fb->width, fb->height,
-			      drm_get_format_name(fb->pixel_format));
+			      fb->base.id, fb->width, fb->height, format_name);
 		DRM_DEBUG_KMS("\tscaler:%d src %dx%d+%d+%d dst %dx%d+%d+%d\n",
 			      state->scaler_id,
-			      state->src.x1 >> 16, state->src.y1 >> 16,
-			      drm_rect_width(&state->src) >> 16,
-			      drm_rect_height(&state->src) >> 16,
-			      state->dst.x1, state->dst.y1,
-			      drm_rect_width(&state->dst),
-			      drm_rect_height(&state->dst));
+			      state->base.src.x1 >> 16,
+			      state->base.src.y1 >> 16,
+			      drm_rect_width(&state->base.src) >> 16,
+			      drm_rect_height(&state->base.src) >> 16,
+			      state->base.dst.x1, state->base.dst.y1,
+			      drm_rect_width(&state->base.dst),
+			      drm_rect_height(&state->base.dst));
+
+		kfree(format_name);
 	}
 }
 
@@ -12372,6 +12371,7 @@ static bool check_digital_port_conflicts(struct drm_atomic_state *state)
 	struct drm_device *dev = state->dev;
 	struct drm_connector *connector;
 	unsigned int used_ports = 0;
+	unsigned int used_mst_ports = 0;
 
 	/*
 	 * Walk the connector list instead of the encoder
@@ -12408,10 +12408,19 @@ static bool check_digital_port_conflicts(struct drm_atomic_state *state)
 				return false;
 
 			used_ports |= port_mask;
+			break;
+		case INTEL_OUTPUT_DP_MST:
+			used_mst_ports |=
+				1 << enc_to_mst(&encoder->base)->primary->port;
+			break;
 		default:
 			break;
 		}
 	}
+
+	/* can't mix MST and SST/HDMI on the same port */
+	if (used_ports & used_mst_ports)
+		return false;
 
 	return true;
 }
@@ -13580,8 +13589,8 @@ static int intel_atomic_prepare_commit(struct drm_device *dev,
 			if (!intel_plane_state->wait_req)
 				continue;
 
-			ret = __i915_wait_request(intel_plane_state->wait_req,
-						  true, NULL, NULL);
+			ret = i915_wait_request(intel_plane_state->wait_req,
+						true, NULL, NULL);
 			if (ret) {
 				/* Any hang should be swallowed by the wait */
 				WARN_ON(ret == -EIO);
@@ -13693,8 +13702,8 @@ static void intel_atomic_commit_tail(struct drm_atomic_state *state)
 		if (!intel_plane_state->wait_req)
 			continue;
 
-		ret = __i915_wait_request(intel_plane_state->wait_req,
-					  true, NULL, NULL);
+		ret = i915_wait_request(intel_plane_state->wait_req,
+					true, NULL, NULL);
 		/* EIO should be eaten, and we can't get interrupted in the
 		 * worker, and blocking commits have waited already. */
 		WARN_ON(ret);
@@ -13882,19 +13891,12 @@ static void intel_atomic_track_fbs(struct drm_atomic_state *state)
 {
 	struct drm_plane_state *old_plane_state;
 	struct drm_plane *plane;
-	struct drm_i915_gem_object *obj, *old_obj;
-	struct intel_plane *intel_plane;
 	int i;
 
-	mutex_lock(&state->dev->struct_mutex);
-	for_each_plane_in_state(state, plane, old_plane_state, i) {
-		obj = intel_fb_obj(plane->state->fb);
-		old_obj = intel_fb_obj(old_plane_state->fb);
-		intel_plane = to_intel_plane(plane);
-
-		i915_gem_track_fb(old_obj, obj, intel_plane->frontbuffer_bit);
-	}
-	mutex_unlock(&state->dev->struct_mutex);
+	for_each_plane_in_state(state, plane, old_plane_state, i)
+		i915_gem_track_fb(intel_fb_obj(old_plane_state->fb),
+				  intel_fb_obj(plane->state->fb),
+				  to_intel_plane(plane)->frontbuffer_bit);
 }
 
 /**
@@ -14060,7 +14062,7 @@ static const struct drm_crtc_funcs intel_crtc_funcs = {
  */
 int
 intel_prepare_plane_fb(struct drm_plane *plane,
-		       const struct drm_plane_state *new_state)
+		       struct drm_plane_state *new_state)
 {
 	struct drm_device *dev = plane->dev;
 	struct drm_framebuffer *fb = new_state->fb;
@@ -14123,11 +14125,9 @@ intel_prepare_plane_fb(struct drm_plane *plane,
 	}
 
 	if (ret == 0) {
-		struct intel_plane_state *plane_state =
-			to_intel_plane_state(new_state);
-
-		i915_gem_request_assign(&plane_state->wait_req,
-					obj->last_write_req);
+		to_intel_plane_state(new_state)->wait_req =
+			i915_gem_active_get(&obj->last_write,
+					    &obj->base.dev->struct_mutex);
 	}
 
 	return ret;
@@ -14144,10 +14144,11 @@ intel_prepare_plane_fb(struct drm_plane *plane,
  */
 void
 intel_cleanup_plane_fb(struct drm_plane *plane,
-		       const struct drm_plane_state *old_state)
+		       struct drm_plane_state *old_state)
 {
 	struct drm_device *dev = plane->dev;
 	struct intel_plane_state *old_intel_state;
+	struct intel_plane_state *intel_state = to_intel_plane_state(plane->state);
 	struct drm_i915_gem_object *old_obj = intel_fb_obj(old_state->fb);
 	struct drm_i915_gem_object *obj = intel_fb_obj(plane->state->fb);
 
@@ -14160,6 +14161,7 @@ intel_cleanup_plane_fb(struct drm_plane *plane,
 	    !INTEL_INFO(dev)->cursor_needs_physical))
 		intel_unpin_fb_obj(old_state->fb, old_state->rotation);
 
+	i915_gem_request_assign(&intel_state->wait_req, NULL);
 	i915_gem_request_assign(&old_intel_state->wait_req, NULL);
 }
 
@@ -14195,7 +14197,6 @@ intel_check_primary_plane(struct drm_plane *plane,
 			  struct intel_plane_state *state)
 {
 	struct drm_crtc *crtc = state->base.crtc;
-	struct drm_framebuffer *fb = state->base.fb;
 	int min_scale = DRM_PLANE_HELPER_NO_SCALING;
 	int max_scale = DRM_PLANE_HELPER_NO_SCALING;
 	bool can_position = false;
@@ -14209,12 +14210,10 @@ intel_check_primary_plane(struct drm_plane *plane,
 		can_position = true;
 	}
 
-	return drm_plane_helper_check_update(plane, crtc, fb, &state->src,
-					     &state->dst, &state->clip,
-					     state->base.rotation,
-					     min_scale, max_scale,
-					     can_position, true,
-					     &state->visible);
+	return drm_plane_helper_check_state(&state->base,
+					    &state->clip,
+					    min_scale, max_scale,
+					    can_position, true);
 }
 
 static void intel_begin_crtc_commit(struct drm_crtc *crtc,
@@ -14374,11 +14373,11 @@ fail:
 void intel_create_rotation_property(struct drm_device *dev, struct intel_plane *plane)
 {
 	if (!dev->mode_config.rotation_property) {
-		unsigned long flags = BIT(DRM_ROTATE_0) |
-			BIT(DRM_ROTATE_180);
+		unsigned long flags = DRM_ROTATE_0 |
+			DRM_ROTATE_180;
 
 		if (INTEL_INFO(dev)->gen >= 9)
-			flags |= BIT(DRM_ROTATE_90) | BIT(DRM_ROTATE_270);
+			flags |= DRM_ROTATE_90 | DRM_ROTATE_270;
 
 		dev->mode_config.rotation_property =
 			drm_mode_create_rotation_property(dev, flags);
@@ -14394,19 +14393,17 @@ intel_check_cursor_plane(struct drm_plane *plane,
 			 struct intel_crtc_state *crtc_state,
 			 struct intel_plane_state *state)
 {
-	struct drm_crtc *crtc = crtc_state->base.crtc;
 	struct drm_framebuffer *fb = state->base.fb;
 	struct drm_i915_gem_object *obj = intel_fb_obj(fb);
 	enum pipe pipe = to_intel_plane(plane)->pipe;
 	unsigned stride;
 	int ret;
 
-	ret = drm_plane_helper_check_update(plane, crtc, fb, &state->src,
-					    &state->dst, &state->clip,
-					    state->base.rotation,
-					    DRM_PLANE_HELPER_NO_SCALING,
-					    DRM_PLANE_HELPER_NO_SCALING,
-					    true, true, &state->visible);
+	ret = drm_plane_helper_check_state(&state->base,
+					   &state->clip,
+					   DRM_PLANE_HELPER_NO_SCALING,
+					   DRM_PLANE_HELPER_NO_SCALING,
+					   true, true);
 	if (ret)
 		return ret;
 
@@ -14443,7 +14440,7 @@ intel_check_cursor_plane(struct drm_plane *plane,
 	 * Refuse the put the cursor into that compromised position.
 	 */
 	if (IS_CHERRYVIEW(plane->dev) && pipe == PIPE_C &&
-	    state->visible && state->base.crtc_x < 0) {
+	    state->base.visible && state->base.crtc_x < 0) {
 		DRM_DEBUG_KMS("CHV cursor C not allowed to straddle the left screen edge\n");
 		return -EINVAL;
 	}
@@ -14521,8 +14518,8 @@ static struct drm_plane *intel_cursor_plane_create(struct drm_device *dev,
 		if (!dev->mode_config.rotation_property)
 			dev->mode_config.rotation_property =
 				drm_mode_create_rotation_property(dev,
-							BIT(DRM_ROTATE_0) |
-							BIT(DRM_ROTATE_180));
+							DRM_ROTATE_0 |
+							DRM_ROTATE_180);
 		if (dev->mode_config.rotation_property)
 			drm_object_attach_property(&cursor->base.base,
 				dev->mode_config.rotation_property,
@@ -14921,7 +14918,7 @@ static void intel_user_framebuffer_destroy(struct drm_framebuffer *fb)
 	drm_framebuffer_cleanup(fb);
 	mutex_lock(&dev->struct_mutex);
 	WARN_ON(!intel_fb->obj->framebuffer_references--);
-	drm_gem_object_unreference(&intel_fb->obj->base);
+	i915_gem_object_put(intel_fb->obj);
 	mutex_unlock(&dev->struct_mutex);
 	kfree(intel_fb);
 }
@@ -15004,21 +15001,22 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	unsigned int aligned_height;
 	int ret;
 	u32 pitch_limit, stride_alignment;
+	char *format_name;
 
 	WARN_ON(!mutex_is_locked(&dev->struct_mutex));
 
 	if (mode_cmd->flags & DRM_MODE_FB_MODIFIERS) {
 		/* Enforce that fb modifier and tiling mode match, but only for
 		 * X-tiled. This is needed for FBC. */
-		if (!!(obj->tiling_mode == I915_TILING_X) !=
+		if (!!(i915_gem_object_get_tiling(obj) == I915_TILING_X) !=
 		    !!(mode_cmd->modifier[0] == I915_FORMAT_MOD_X_TILED)) {
 			DRM_DEBUG("tiling_mode doesn't match fb modifier\n");
 			return -EINVAL;
 		}
 	} else {
-		if (obj->tiling_mode == I915_TILING_X)
+		if (i915_gem_object_get_tiling(obj) == I915_TILING_X)
 			mode_cmd->modifier[0] = I915_FORMAT_MOD_X_TILED;
-		else if (obj->tiling_mode == I915_TILING_Y) {
+		else if (i915_gem_object_get_tiling(obj) == I915_TILING_Y) {
 			DRM_DEBUG("No Y tiling for legacy addfb\n");
 			return -EINVAL;
 		}
@@ -15062,9 +15060,10 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	}
 
 	if (mode_cmd->modifier[0] == I915_FORMAT_MOD_X_TILED &&
-	    mode_cmd->pitches[0] != obj->stride) {
+	    mode_cmd->pitches[0] != i915_gem_object_get_stride(obj)) {
 		DRM_DEBUG("pitch (%d) must match tiling stride (%d)\n",
-			  mode_cmd->pitches[0], obj->stride);
+			  mode_cmd->pitches[0],
+			  i915_gem_object_get_stride(obj));
 		return -EINVAL;
 	}
 
@@ -15077,16 +15076,18 @@ static int intel_framebuffer_init(struct drm_device *dev,
 		break;
 	case DRM_FORMAT_XRGB1555:
 		if (INTEL_INFO(dev)->gen > 3) {
-			DRM_DEBUG("unsupported pixel format: %s\n",
-				  drm_get_format_name(mode_cmd->pixel_format));
+			format_name = drm_get_format_name(mode_cmd->pixel_format);
+			DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+			kfree(format_name);
 			return -EINVAL;
 		}
 		break;
 	case DRM_FORMAT_ABGR8888:
 		if (!IS_VALLEYVIEW(dev) && !IS_CHERRYVIEW(dev) &&
 		    INTEL_INFO(dev)->gen < 9) {
-			DRM_DEBUG("unsupported pixel format: %s\n",
-				  drm_get_format_name(mode_cmd->pixel_format));
+			format_name = drm_get_format_name(mode_cmd->pixel_format);
+			DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+			kfree(format_name);
 			return -EINVAL;
 		}
 		break;
@@ -15094,15 +15095,17 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	case DRM_FORMAT_XRGB2101010:
 	case DRM_FORMAT_XBGR2101010:
 		if (INTEL_INFO(dev)->gen < 4) {
-			DRM_DEBUG("unsupported pixel format: %s\n",
-				  drm_get_format_name(mode_cmd->pixel_format));
+			format_name = drm_get_format_name(mode_cmd->pixel_format);
+			DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+			kfree(format_name);
 			return -EINVAL;
 		}
 		break;
 	case DRM_FORMAT_ABGR2101010:
 		if (!IS_VALLEYVIEW(dev) && !IS_CHERRYVIEW(dev)) {
-			DRM_DEBUG("unsupported pixel format: %s\n",
-				  drm_get_format_name(mode_cmd->pixel_format));
+			format_name = drm_get_format_name(mode_cmd->pixel_format);
+			DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+			kfree(format_name);
 			return -EINVAL;
 		}
 		break;
@@ -15111,14 +15114,16 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	case DRM_FORMAT_YVYU:
 	case DRM_FORMAT_VYUY:
 		if (INTEL_INFO(dev)->gen < 5) {
-			DRM_DEBUG("unsupported pixel format: %s\n",
-				  drm_get_format_name(mode_cmd->pixel_format));
+			format_name = drm_get_format_name(mode_cmd->pixel_format);
+			DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+			kfree(format_name);
 			return -EINVAL;
 		}
 		break;
 	default:
-		DRM_DEBUG("unsupported pixel format: %s\n",
-			  drm_get_format_name(mode_cmd->pixel_format));
+		format_name = drm_get_format_name(mode_cmd->pixel_format);
+		DRM_DEBUG("unsupported pixel format: %s\n", format_name);
+		kfree(format_name);
 		return -EINVAL;
 	}
 
@@ -15158,13 +15163,13 @@ intel_user_framebuffer_create(struct drm_device *dev,
 	struct drm_i915_gem_object *obj;
 	struct drm_mode_fb_cmd2 mode_cmd = *user_mode_cmd;
 
-	obj = to_intel_bo(drm_gem_object_lookup(filp, mode_cmd.handles[0]));
-	if (&obj->base == NULL)
+	obj = i915_gem_object_lookup(filp, mode_cmd.handles[0]);
+	if (!obj)
 		return ERR_PTR(-ENOENT);
 
 	fb = intel_framebuffer_create(dev, &mode_cmd, obj);
 	if (IS_ERR(fb))
-		drm_gem_object_unreference_unlocked(&obj->base);
+		i915_gem_object_put_unlocked(obj);
 
 	return fb;
 }
@@ -15572,7 +15577,6 @@ void intel_modeset_init_hw(struct drm_device *dev)
 	dev_priv->atomic_cdclk_freq = dev_priv->cdclk_freq;
 
 	intel_init_clock_gating(dev);
-	intel_enable_gt_powersave(dev_priv);
 }
 
 /*
@@ -15893,7 +15897,7 @@ static void intel_sanitize_crtc(struct intel_crtc *crtc)
 		 * Temporarily change the plane mapping and disable everything
 		 * ...  */
 		plane = crtc->plane;
-		to_intel_plane_state(crtc->base.primary->state)->visible = true;
+		to_intel_plane_state(crtc->base.primary->state)->base.visible = true;
 		crtc->plane = !plane;
 		intel_crtc_disable_noatomic(&crtc->base);
 		crtc->plane = plane;
@@ -16020,10 +16024,10 @@ static void readout_plane_state(struct intel_crtc *crtc)
 	struct intel_plane_state *plane_state =
 		to_intel_plane_state(primary->state);
 
-	plane_state->visible = crtc->active &&
+	plane_state->base.visible = crtc->active &&
 		primary_get_hw_state(to_intel_plane(primary));
 
-	if (plane_state->visible)
+	if (plane_state->base.visible)
 		crtc->base.state->plane_mask |= 1 << drm_plane_index(primary);
 }
 
