@@ -6,3 +6,9 @@ config MLX5_INFINIBAND
 	  Mellanox Connect-IB PCI Express host channel adapters (HCAs).
 	  This is required to use InfiniBand protocols such as
 	  IP-over-IB or SRP with these devices.
+
+config MLX5_INFINIBAND_VERBOSE
+	bool "Enable ConnectX-4/Connect-IB verbosity"
+	depends on MLX5_INFINIBAND
+	---help---
+	  This is a configuration option to enable verbose output to easy debug.
