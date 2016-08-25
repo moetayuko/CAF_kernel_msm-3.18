@@ -218,11 +218,11 @@ int rxrpc_do_sendmsg(struct rxrpc_sock *rx, struct msghdr *msg, size_t len)
 		ret = 0;
 	} else if (cmd != RXRPC_CMD_SEND_DATA) {
 		ret = -EINVAL;
-	} else if (!call->in_clientflag &&
+	} else if (rxrpc_is_client_call(call) &&
 		   call->state != RXRPC_CALL_CLIENT_SEND_REQUEST) {
 		/* request phase complete for this client call */
 		ret = -EPROTO;
-	} else if (call->in_clientflag &&
+	} else if (rxrpc_is_service_call(call) &&
 		   call->state != RXRPC_CALL_SERVER_ACK_REQUEST &&
 		   call->state != RXRPC_CALL_SERVER_SEND_REPLY) {
 		/* Reply phase not begun or not complete for service call. */
@@ -390,7 +390,7 @@ static int rxrpc_wait_for_tx_window(struct rxrpc_sock *rx,
 			  call->acks_winsz),
 	       *timeo);
 
-	add_wait_queue(&call->tx_waitq, &myself);
+	add_wait_queue(&call->waitq, &myself);
 
 	for (;;) {
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -408,7 +408,7 @@ static int rxrpc_wait_for_tx_window(struct rxrpc_sock *rx,
 		lock_sock(&rx->sk);
 	}
 
-	remove_wait_queue(&call->tx_waitq, &myself);
+	remove_wait_queue(&call->waitq, &myself);
 	set_current_state(TASK_RUNNING);
 	_leave(" = %d", ret);
 	return ret;
@@ -482,6 +482,8 @@ static void rxrpc_queue_packet(struct rxrpc_call *call, struct sk_buff *skb,
 	if (try_to_del_timer_sync(&call->ack_timer) >= 0) {
 		/* the packet may be freed by rxrpc_process_call() before this
 		 * returns */
+		if (rxrpc_is_client_call(call))
+			rxrpc_expose_client_call(call);
 		ret = rxrpc_send_data_packet(call->conn, skb);
 		_net("sent skb %p", skb);
 	} else {
@@ -548,6 +550,7 @@ static int rxrpc_send_data(struct rxrpc_sock *rx,
 
 	skb = call->tx_pending;
 	call->tx_pending = NULL;
+	rxrpc_see_skb(skb);
 
 	copied = 0;
 	do {

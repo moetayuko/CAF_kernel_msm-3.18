@@ -1373,8 +1373,13 @@ static void b53_br_set_stp_state(struct dsa_switch *ds, int port,
 	b53_write8(dev, B53_CTRL_PAGE, B53_PORT_CTRL(port), reg);
 }
 
+static enum dsa_tag_protocol b53_get_tag_protocol(struct dsa_switch *ds)
+{
+	return DSA_TAG_PROTO_NONE;
+}
+
 static struct dsa_switch_driver b53_switch_ops = {
-	.tag_protocol		= DSA_TAG_PROTO_NONE,
+	.get_tag_protocol	= b53_get_tag_protocol,
 	.setup			= b53_setup,
 	.set_addr		= b53_set_addr,
 	.get_strings		= b53_get_strings,
@@ -1681,7 +1686,8 @@ static int b53_switch_init(struct b53_device *dev)
 	return 0;
 }
 
-struct b53_device *b53_switch_alloc(struct device *base, struct b53_io_ops *ops,
+struct b53_device *b53_switch_alloc(struct device *base,
+				    const struct b53_io_ops *ops,
 				    void *priv)
 {
 	struct dsa_switch *ds;

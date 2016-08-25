@@ -239,14 +239,15 @@ struct switchdev_obj_port_vlan;
 struct dsa_switch_driver {
 	struct list_head	list;
 
-	enum dsa_tag_protocol	tag_protocol;
-
 	/*
 	 * Probing and setup.
 	 */
 	const char	*(*probe)(struct device *dsa_dev,
 				  struct device *host_dev, int sw_addr,
 				  void **priv);
+
+	enum dsa_tag_protocol (*get_tag_protocol)(struct dsa_switch *ds);
+
 	int	(*setup)(struct dsa_switch *ds);
 	int	(*set_addr)(struct dsa_switch *ds, u8 *addr);
 	u32	(*get_phy_flags)(struct dsa_switch *ds, int port);
@@ -386,4 +387,18 @@ static inline bool dsa_uses_tagged_protocol(struct dsa_switch_tree *dst)
 
 void dsa_unregister_switch(struct dsa_switch *ds);
 int dsa_register_switch(struct dsa_switch *ds, struct device_node *np);
+#ifdef CONFIG_PM_SLEEP
+int dsa_switch_suspend(struct dsa_switch *ds);
+int dsa_switch_resume(struct dsa_switch *ds);
+#else
+static inline int dsa_switch_suspend(struct dsa_switch *ds)
+{
+	return 0;
+}
+static inline int dsa_switch_resume(struct dsa_switch *ds)
+{
+	return 0;
+}
+#endif /* CONFIG_PM_SLEEP */
+
 #endif
