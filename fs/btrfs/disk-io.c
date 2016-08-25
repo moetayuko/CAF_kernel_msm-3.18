@@ -559,8 +559,29 @@ static noinline int check_leaf(struct btrfs_root *root,
 	u32 nritems = btrfs_header_nritems(leaf);
 	int slot;
 
-	if (nritems == 0)
+	if (nritems == 0) {
+		struct btrfs_root *check_root;
+
+		key.objectid = btrfs_header_owner(leaf);
+		key.type = BTRFS_ROOT_ITEM_KEY;
+		key.offset = (u64)-1;
+
+		check_root = btrfs_get_fs_root(root->fs_info, &key, false);
+		/*
+		 * The only reason we also check NULL here is that during
+		 * open_ctree() some roots has not yet been set up.
+		 */
+		if (!IS_ERR_OR_NULL(check_root)) {
+			/* if leaf is the root, then it's fine */
+			if (leaf->start !=
+			    btrfs_root_bytenr(&check_root->root_item)) {
+				CORRUPT("non-root leaf's nritems is 0",
+					leaf, root, 0);
+				return -EIO;
+			}
+		}
 		return 0;
+	}
 
 	/* Check the 0 item */
 	if (btrfs_item_offset_nr(leaf, 0) + btrfs_item_size_nr(leaf, 0) !=
@@ -609,6 +630,19 @@ static noinline int check_leaf(struct btrfs_root *root,
 		}
 	}
 
+	return 0;
+}
+
+static int check_node(struct btrfs_root *root, struct extent_buffer *node)
+{
+	unsigned long nr = btrfs_header_nritems(node);
+
+	if (nr == 0 || nr > BTRFS_NODEPTRS_PER_BLOCK(root)) {
+		btrfs_crit(root->fs_info,
+			   "corrupt node: block %llu root %llu nritems %lu",
+			   node->start, root->objectid, nr);
+		return -EIO;
+	}
 	return 0;
 }
 
@@ -681,6 +715,9 @@ static int btree_readpage_end_io_hook(struct btrfs_io_bio *io_bio,
 		set_bit(EXTENT_BUFFER_CORRUPT, &eb->bflags);
 		ret = -EIO;
 	}
+
+	if (found_level > 0 && check_node(root, eb))
+		ret = -EIO;
 
 	if (!ret)
 		set_extent_buffer_uptodate(eb);
@@ -1618,8 +1655,8 @@ fail:
 	return ret;
 }
 
-static struct btrfs_root *btrfs_lookup_fs_root(struct btrfs_fs_info *fs_info,
-					       u64 root_id)
+struct btrfs_root *btrfs_lookup_fs_root(struct btrfs_fs_info *fs_info,
+					u64 root_id)
 {
 	struct btrfs_root *root;
 
@@ -1831,12 +1868,11 @@ static int cleaner_kthread(void *arg)
 		btrfs_run_defrag_inodes(root->fs_info);
 
 		/*
-		 * Acquires fs_info->delete_unused_bgs_mutex to avoid racing
-		 * with relocation (btrfs_relocate_chunk) and relocation
-		 * acquires fs_info->cleaner_mutex (btrfs_relocate_block_group)
-		 * after acquiring fs_info->delete_unused_bgs_mutex. So we
-		 * can't hold, nor need to, fs_info->cleaner_mutex when deleting
-		 * unused block groups.
+		 * Acquires fs_info->bg_delete_sem to avoid racing with
+		 * relocation (btrfs_relocate_chunk) and relocation acquires
+		 * fs_info->cleaner_mutex (btrfs_relocate_block_group) after
+		 * acquiring fs_info->bg_delete_sem. So we can't hold, nor need
+		 * to, fs_info->cleaner_mutex when deleting unused block groups.
 		 */
 		btrfs_delete_unused_bgs(root->fs_info);
 sleep:
@@ -2298,6 +2334,7 @@ static void btrfs_init_qgroup(struct btrfs_fs_info *fs_info)
 	fs_info->quota_enabled = 0;
 	fs_info->pending_quota_state = 0;
 	fs_info->qgroup_ulist = NULL;
+	fs_info->qgroup_rescan_running = false;
 	mutex_init(&fs_info->qgroup_rescan_lock);
 }
 
@@ -2596,7 +2633,6 @@ int open_ctree(struct super_block *sb,
 	spin_lock_init(&fs_info->unused_bgs_lock);
 	rwlock_init(&fs_info->tree_mod_log_lock);
 	mutex_init(&fs_info->unused_bg_unpin_mutex);
-	mutex_init(&fs_info->delete_unused_bgs_mutex);
 	mutex_init(&fs_info->reloc_mutex);
 	mutex_init(&fs_info->delalloc_root_mutex);
 	mutex_init(&fs_info->cleaner_delayed_iput_mutex);
@@ -2624,6 +2660,7 @@ int open_ctree(struct super_block *sb,
 	atomic_set(&fs_info->qgroup_op_seq, 0);
 	atomic_set(&fs_info->reada_works_cnt, 0);
 	atomic64_set(&fs_info->tree_mod_seq, 0);
+	fs_info->fs_frozen = 0;
 	fs_info->sb = sb;
 	fs_info->max_inline = BTRFS_DEFAULT_MAX_INLINE;
 	fs_info->metadata_ratio = 0;
@@ -2684,6 +2721,7 @@ int open_ctree(struct super_block *sb,
 	init_rwsem(&fs_info->commit_root_sem);
 	init_rwsem(&fs_info->cleanup_work_sem);
 	init_rwsem(&fs_info->subvol_sem);
+	init_rwsem(&fs_info->bg_delete_sem);
 	sema_init(&fs_info->uuid_tree_rescan_sem, 1);
 
 	btrfs_init_dev_replace_locks(fs_info);
@@ -3739,8 +3777,15 @@ void btrfs_drop_and_free_fs_root(struct btrfs_fs_info *fs_info,
 	if (btrfs_root_refs(&root->root_item) == 0)
 		synchronize_srcu(&fs_info->subvol_srcu);
 
-	if (test_bit(BTRFS_FS_STATE_ERROR, &fs_info->fs_state))
+	if (test_bit(BTRFS_FS_STATE_ERROR, &fs_info->fs_state)) {
 		btrfs_free_log(NULL, root);
+		if (root->reloc_root) {
+			free_extent_buffer(root->reloc_root->node);
+			free_extent_buffer(root->reloc_root->commit_root);
+			btrfs_put_fs_root(root->reloc_root);
+			root->reloc_root = NULL;
+		}
+	}
 
 	if (root->free_ino_pinned)
 		__btrfs_remove_free_space_cache(root->free_ino_pinned);
@@ -3851,7 +3896,7 @@ void close_ctree(struct btrfs_root *root)
 	smp_mb();
 
 	/* wait for the qgroup rescan worker to stop */
-	btrfs_qgroup_wait_for_completion(fs_info);
+	btrfs_qgroup_wait_for_completion(fs_info, false);
 
 	/* wait for the uuid_scan task to finish */
 	down(&fs_info->uuid_tree_rescan_sem);

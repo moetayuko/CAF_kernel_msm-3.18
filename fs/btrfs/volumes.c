@@ -834,10 +834,6 @@ static void __free_device(struct work_struct *work)
 	struct btrfs_device *device;
 
 	device = container_of(work, struct btrfs_device, rcu_work);
-
-	if (device->bdev)
-		blkdev_put(device->bdev, device->mode);
-
 	rcu_string_free(device->name);
 	kfree(device);
 }
@@ -850,6 +846,17 @@ static void free_device(struct rcu_head *head)
 
 	INIT_WORK(&device->rcu_work, __free_device);
 	schedule_work(&device->rcu_work);
+}
+
+static void btrfs_close_bdev(struct btrfs_device *device)
+{
+	if (device->bdev && device->writeable) {
+		sync_blockdev(device->bdev);
+		invalidate_bdev(device->bdev);
+	}
+
+	if (device->bdev)
+		blkdev_put(device->bdev, device->mode);
 }
 
 static void btrfs_close_one_device(struct btrfs_device *device)
@@ -870,10 +877,7 @@ static void btrfs_close_one_device(struct btrfs_device *device)
 	if (device->missing)
 		fs_devices->missing_devices--;
 
-	if (device->bdev && device->writeable) {
-		sync_blockdev(device->bdev);
-		invalidate_bdev(device->bdev);
-	}
+	btrfs_close_bdev(device);
 
 	new_device = btrfs_alloc_device(NULL, &device->devid,
 					device->uuid);
@@ -1932,6 +1936,8 @@ int btrfs_rm_device(struct btrfs_root *root, char *device_path, u64 devid)
 		btrfs_sysfs_rm_device_link(root->fs_info->fs_devices, device);
 	}
 
+	btrfs_close_bdev(device);
+
 	call_rcu(&device->rcu, free_device);
 
 	num_devices = btrfs_super_num_devices(root->fs_info->super_copy) - 1;
@@ -2025,6 +2031,9 @@ void btrfs_rm_dev_replace_free_srcdev(struct btrfs_fs_info *fs_info,
 		/* zero out the old super if it is writable */
 		btrfs_scratch_superblocks(srcdev->bdev, srcdev->name->str);
 	}
+
+	btrfs_close_bdev(srcdev);
+
 	call_rcu(&srcdev->rcu, free_device);
 
 	/*
@@ -2080,6 +2089,8 @@ void btrfs_destroy_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 	 * the device_list_mutex lock.
 	 */
 	btrfs_scratch_superblocks(tgtdev->bdev, tgtdev->name->str);
+
+	btrfs_close_bdev(tgtdev);
 	call_rcu(&tgtdev->rcu, free_device);
 }
 
@@ -2915,7 +2926,7 @@ static int btrfs_relocate_chunk(struct btrfs_root *root, u64 chunk_offset)
 	 * we release the path used to search the chunk/dev tree and before
 	 * the current task acquires this mutex and calls us.
 	 */
-	ASSERT(mutex_is_locked(&root->fs_info->delete_unused_bgs_mutex));
+	ASSERT(rwsem_is_locked(&root->fs_info->bg_delete_sem));
 
 	ret = btrfs_can_relocate(extent_root, chunk_offset);
 	if (ret)
@@ -2968,10 +2979,10 @@ again:
 	key.type = BTRFS_CHUNK_ITEM_KEY;
 
 	while (1) {
-		mutex_lock(&root->fs_info->delete_unused_bgs_mutex);
+		down_read(&root->fs_info->bg_delete_sem);
 		ret = btrfs_search_slot(NULL, chunk_root, &key, path, 0, 0);
 		if (ret < 0) {
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 			goto error;
 		}
 		BUG_ON(ret == 0); /* Corruption */
@@ -2979,7 +2990,7 @@ again:
 		ret = btrfs_previous_item(chunk_root, path, key.objectid,
 					  key.type);
 		if (ret)
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 		if (ret < 0)
 			goto error;
 		if (ret > 0)
@@ -3001,7 +3012,7 @@ again:
 			else
 				BUG_ON(ret);
 		}
-		mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+		up_read(&root->fs_info->bg_delete_sem);
 
 		if (found_key.offset == 0)
 			break;
@@ -3557,10 +3568,10 @@ again:
 			goto error;
 		}
 
-		mutex_lock(&fs_info->delete_unused_bgs_mutex);
+		down_read(&fs_info->bg_delete_sem);
 		ret = btrfs_search_slot(NULL, chunk_root, &key, path, 0, 0);
 		if (ret < 0) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			goto error;
 		}
 
@@ -3574,7 +3585,7 @@ again:
 		ret = btrfs_previous_item(chunk_root, path, 0,
 					  BTRFS_CHUNK_ITEM_KEY);
 		if (ret) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			ret = 0;
 			break;
 		}
@@ -3584,7 +3595,7 @@ again:
 		btrfs_item_key_to_cpu(leaf, &found_key, slot);
 
 		if (found_key.objectid != key.objectid) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			break;
 		}
 
@@ -3602,12 +3613,12 @@ again:
 
 		btrfs_release_path(path);
 		if (!ret) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			goto loop;
 		}
 
 		if (counting) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			spin_lock(&fs_info->balance_lock);
 			bctl->stat.expected++;
 			spin_unlock(&fs_info->balance_lock);
@@ -3632,7 +3643,7 @@ again:
 					count_meta < bctl->meta.limit_min)
 				|| ((chunk_type & BTRFS_BLOCK_GROUP_SYSTEM) &&
 					count_sys < bctl->sys.limit_min)) {
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+			up_read(&fs_info->bg_delete_sem);
 			goto loop;
 		}
 
@@ -3645,7 +3656,7 @@ again:
 		    !chunk_reserved && !bytes_used) {
 			trans = btrfs_start_transaction(chunk_root, 0);
 			if (IS_ERR(trans)) {
-				mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+				up_read(&fs_info->bg_delete_sem);
 				ret = PTR_ERR(trans);
 				goto error;
 			}
@@ -3654,7 +3665,7 @@ again:
 						      BTRFS_BLOCK_GROUP_DATA);
 			btrfs_end_transaction(trans, chunk_root);
 			if (ret < 0) {
-				mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+				up_read(&fs_info->bg_delete_sem);
 				goto error;
 			}
 			chunk_reserved = 1;
@@ -3662,7 +3673,7 @@ again:
 
 		ret = btrfs_relocate_chunk(chunk_root,
 					   found_key.offset);
-		mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+		up_read(&fs_info->bg_delete_sem);
 		if (ret && ret != -ENOSPC)
 			goto error;
 		if (ret == -ENOSPC) {
@@ -4389,16 +4400,16 @@ again:
 	key.type = BTRFS_DEV_EXTENT_KEY;
 
 	do {
-		mutex_lock(&root->fs_info->delete_unused_bgs_mutex);
+		down_read(&root->fs_info->bg_delete_sem);
 		ret = btrfs_search_slot(NULL, root, &key, path, 0, 0);
 		if (ret < 0) {
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 			goto done;
 		}
 
 		ret = btrfs_previous_item(root, path, 0, key.type);
 		if (ret)
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 		if (ret < 0)
 			goto done;
 		if (ret) {
@@ -4412,7 +4423,7 @@ again:
 		btrfs_item_key_to_cpu(l, &key, path->slots[0]);
 
 		if (key.objectid != device->devid) {
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 			btrfs_release_path(path);
 			break;
 		}
@@ -4421,7 +4432,7 @@ again:
 		length = btrfs_dev_extent_length(l, dev_extent);
 
 		if (key.offset + length <= new_size) {
-			mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+			up_read(&root->fs_info->bg_delete_sem);
 			btrfs_release_path(path);
 			break;
 		}
@@ -4430,7 +4441,7 @@ again:
 		btrfs_release_path(path);
 
 		ret = btrfs_relocate_chunk(root, chunk_offset);
-		mutex_unlock(&root->fs_info->delete_unused_bgs_mutex);
+		up_read(&root->fs_info->bg_delete_sem);
 		if (ret && ret != -ENOSPC)
 			goto done;
 		if (ret == -ENOSPC)
