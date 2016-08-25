@@ -267,6 +267,11 @@ void f2fs_submit_page_mbio(struct f2fs_io_info *fio)
 
 	down_write(&io->io_rwsem);
 
+	/* WRITE can be merged into previous WRITE_SYNC */
+	if (io->bio && io->last_block_in_bio == fio->new_blkaddr - 1 &&
+			io->fio.op == fio->op && io->fio.op_flags == WRITE_SYNC)
+		fio->op_flags = WRITE_SYNC;
+
 	if (io->bio && (io->last_block_in_bio != fio->new_blkaddr - 1 ||
 	    (io->fio.op != fio->op || io->fio.op_flags != fio->op_flags)))
 		__submit_merged_bio(io);
