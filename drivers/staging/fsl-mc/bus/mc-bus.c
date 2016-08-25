@@ -236,11 +236,11 @@ static void fsl_mc_get_root_dprc(struct device *dev,
 {
 	if (WARN_ON(!dev)) {
 		*root_dprc_dev = NULL;
-	} else if (WARN_ON(dev->bus != &fsl_mc_bus_type)) {
+	} else if (WARN_ON(!dev_is_fsl_mc(dev))) {
 		*root_dprc_dev = NULL;
 	} else {
 		*root_dprc_dev = dev;
-		while ((*root_dprc_dev)->parent->bus == &fsl_mc_bus_type)
+		while (dev_is_fsl_mc((*root_dprc_dev)->parent))
 			*root_dprc_dev = (*root_dprc_dev)->parent;
 	}
 }
@@ -434,7 +434,7 @@ int fsl_mc_device_add(struct dprc_obj_desc *obj_desc,
 	struct fsl_mc_bus *mc_bus = NULL;
 	struct fsl_mc_device *parent_mc_dev;
 
-	if (parent_dev->bus == &fsl_mc_bus_type)
+	if (dev_is_fsl_mc(parent_dev))
 		parent_mc_dev = to_fsl_mc_device(parent_dev);
 	else
 		parent_mc_dev = NULL;
@@ -887,25 +887,4 @@ error_cleanup_cache:
 	kmem_cache_destroy(mc_dev_cache);
 	return error;
 }
-
 postcore_initcall(fsl_mc_bus_driver_init);
-
-static void __exit fsl_mc_bus_driver_exit(void)
-{
-	if (WARN_ON(!mc_dev_cache))
-		return;
-
-	its_fsl_mc_msi_cleanup();
-	fsl_mc_allocator_driver_exit();
-	dprc_driver_exit();
-	platform_driver_unregister(&fsl_mc_bus_driver);
-	bus_unregister(&fsl_mc_bus_type);
-	kmem_cache_destroy(mc_dev_cache);
-	pr_info("MC bus unregistered\n");
-}
-
-module_exit(fsl_mc_bus_driver_exit);
-
-MODULE_AUTHOR("Freescale Semiconductor Inc.");
-MODULE_DESCRIPTION("Freescale Management Complex (MC) bus driver");
-MODULE_LICENSE("GPL");
