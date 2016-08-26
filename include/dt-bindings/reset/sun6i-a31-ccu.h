@@ -1,7 +1,5 @@
 /*
- * Copyright 2015 Chen-Yu Tsai
- *
- * Chen-Yu Tsai <wens@csie.org>
+ * Copyright (C) 2016 Chen-Yu Tsai <wens@csie.org>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -42,63 +40,67 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/*
- * AXP202/209 Integrated Power Management Chip
- * http://www.x-powers.com/product/AXP20X.php
- * http://dl.linux-sunxi.org/AXP/AXP209%20Datasheet%20v1.0_cn.pdf
- */
+#ifndef _DT_BINDINGS_RST_SUN6I_A31_H_
+#define _DT_BINDINGS_RST_SUN6I_A31_H_
 
-&axp209 {
-	compatible = "x-powers,axp209";
-	interrupt-controller;
-	#interrupt-cells = <1>;
+#define RST_USB_PHY0		0
+#define RST_USB_PHY1		1
+#define RST_USB_PHY2		2
 
-	axp_gpio: gpio {
-		compatible = "x-powers,axp209-gpio";
-		gpio-controller;
-		#gpio-cells = <2>;
-	};
+#define RST_AHB1_MIPI_DSI	3
+#define RST_AHB1_SS		4
+#define RST_AHB1_DMA		5
+#define RST_AHB1_MMC0		6
+#define RST_AHB1_MMC1		7
+#define RST_AHB1_MMC2		8
+#define RST_AHB1_MMC3		9
+#define RST_AHB1_NAND1		10
+#define RST_AHB1_NAND0		11
+#define RST_AHB1_SDRAM		12
+#define RST_AHB1_EMAC		13
+#define RST_AHB1_TS		14
+#define RST_AHB1_HSTIMER	15
+#define RST_AHB1_SPI0		16
+#define RST_AHB1_SPI1		17
+#define RST_AHB1_SPI2		18
+#define RST_AHB1_SPI3		19
+#define RST_AHB1_OTG		20
+#define RST_AHB1_EHCI0		21
+#define RST_AHB1_EHCI1		22
+#define RST_AHB1_OHCI0		23
+#define RST_AHB1_OHCI1		24
+#define RST_AHB1_OHCI2		25
+#define RST_AHB1_VE		26
+#define RST_AHB1_LCD0		27
+#define RST_AHB1_LCD1		28
+#define RST_AHB1_CSI		29
+#define RST_AHB1_HDMI		30
+#define RST_AHB1_BE0		31
+#define RST_AHB1_BE1		32
+#define RST_AHB1_FE0		33
+#define RST_AHB1_FE1		34
+#define RST_AHB1_MP		35
+#define RST_AHB1_GPU		36
+#define RST_AHB1_DEU0		37
+#define RST_AHB1_DEU1		38
+#define RST_AHB1_DRC0		39
+#define RST_AHB1_DRC1		40
+#define RST_AHB1_LVDS		41
 
-	regulators {
-		/* Default work frequency for buck regulators */
-		x-powers,dcdc-freq = <1500>;
+#define RST_APB1_CODEC		42
+#define RST_APB1_SPDIF		43
+#define RST_APB1_DIGITAL_MIC	44
+#define RST_APB1_DAUDIO0	45
+#define RST_APB1_DAUDIO1	46
+#define RST_APB2_I2C0		47
+#define RST_APB2_I2C1		48
+#define RST_APB2_I2C2		49
+#define RST_APB2_I2C3		50
+#define RST_APB2_UART0		51
+#define RST_APB2_UART1		52
+#define RST_APB2_UART2		53
+#define RST_APB2_UART3		54
+#define RST_APB2_UART4		55
+#define RST_APB2_UART5		56
 
-		reg_dcdc2: dcdc2 {
-			regulator-name = "dcdc2";
-		};
-
-		reg_dcdc3: dcdc3 {
-			regulator-name = "dcdc3";
-		};
-
-		reg_ldo1: ldo1 {
-			/* LDO1 is a fixed output regulator */
-			regulator-always-on;
-			regulator-min-microvolt = <1300000>;
-			regulator-max-microvolt = <1300000>;
-			regulator-name = "ldo1";
-		};
-
-		reg_ldo2: ldo2 {
-			regulator-name = "ldo2";
-		};
-
-		reg_ldo3: ldo3 {
-			regulator-name = "ldo3";
-		};
-
-		reg_ldo4: ldo4 {
-			regulator-name = "ldo4";
-		};
-
-		reg_ldo5: ldo5 {
-			regulator-name = "ldo5";
-			status = "disabled";
-		};
-	};
-
-	usb_power_supply: usb_power_supply {
-		compatible = "x-powers,axp202-usb-power-supply";
-		status = "disabled";
-	};
-};
+#endif /* _DT_BINDINGS_RST_SUN6I_A31_H_ */
