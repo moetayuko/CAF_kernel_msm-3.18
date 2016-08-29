@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright 2016 Hans de Goede <hdegoede@redhat.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -43,8 +43,9 @@
 /dts-v1/;
 #include "sun5i-a13.dtsi"
 #include "sun5i-reference-design-tablet.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
 
 / {
-	model = "INet-98V Rev 02";
-	compatible = "primux,inet98v-rev2", "allwinner,sun5i-a13";
+	model = "Empire Electronix M712 tablet";
+	compatible = "empire-electronix,m712", "allwinner,sun5i-a13";
 };
