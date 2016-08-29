@@ -108,6 +108,7 @@
  *
  *  7.25
  *  - add FUSE_PARALLEL_DIROPS
+ *  - add FUSE_POSIX_ACL
  */
 
 #ifndef _LINUX_FUSE_H
@@ -238,6 +239,7 @@ struct fuse_file_lock {
  * FUSE_WRITEBACK_CACHE: use writeback cache for buffered writes
  * FUSE_NO_OPEN_SUPPORT: kernel supports zero-message opens
  * FUSE_PARALLEL_DIROPS: allow parallel lookups and readdir
+ * FUSE_POSIX_ACL: filesystem supports posix acls
  */
 #define FUSE_ASYNC_READ		(1 << 0)
 #define FUSE_POSIX_LOCKS	(1 << 1)
@@ -258,6 +260,7 @@ struct fuse_file_lock {
 #define FUSE_WRITEBACK_CACHE	(1 << 16)
 #define FUSE_NO_OPEN_SUPPORT	(1 << 17)
 #define FUSE_PARALLEL_DIROPS    (1 << 18)
+#define FUSE_POSIX_ACL		(1 << 19)
 
 /**
  * CUSE INIT request/reply flags

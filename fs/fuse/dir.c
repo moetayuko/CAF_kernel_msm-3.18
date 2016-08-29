@@ -14,6 +14,7 @@
 #include <linux/namei.h>
 #include <linux/slab.h>
 #include <linux/xattr.h>
+#include <linux/posix_acl.h>
 
 static bool fuse_use_readdirplus(struct inode *dir, struct dir_context *ctx)
 {
@@ -236,6 +237,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 		if (ret || (outarg.attr.mode ^ inode->i_mode) & S_IFMT)
 			goto invalid;
 
+		forget_all_cached_acls(inode);
 		fuse_change_attributes(inode, &outarg.attr,
 				       entry_attr_timeout(&outarg),
 				       attr_version);
@@ -925,6 +927,7 @@ int fuse_update_attributes(struct inode *inode, struct kstat *stat,
 
 	if (time_before64(fi->i_time, get_jiffies_64())) {
 		r = true;
+		forget_all_cached_acls(inode);
 		err = fuse_do_getattr(inode, stat, file);
 	} else {
 		r = false;
@@ -1072,6 +1075,7 @@ static int fuse_perm_getattr(struct inode *inode, int mask)
 	if (mask & MAY_NOT_BLOCK)
 		return -ECHILD;
 
+	forget_all_cached_acls(inode);
 	return fuse_do_getattr(inode, NULL, NULL);
 }
 
@@ -1241,6 +1245,7 @@ retry:
 		fi->nlookup++;
 		spin_unlock(&fc->lock);
 
+		forget_all_cached_acls(inode);
 		fuse_change_attributes(inode, &o->attr,
 				       entry_attr_timeout(o),
 				       attr_version);
@@ -1710,14 +1715,24 @@ error:
 static int fuse_setattr(struct dentry *entry, struct iattr *attr)
 {
 	struct inode *inode = d_inode(entry);
+	struct fuse_conn *fc = get_fuse_conn(inode);
+	int ret;
 
 	if (!fuse_allow_current_process(get_fuse_conn(inode)))
 		return -EACCES;
 
 	if (attr->ia_valid & ATTR_FILE)
-		return fuse_do_setattr(inode, attr, attr->ia_file);
+		ret = fuse_do_setattr(inode, attr, attr->ia_file);
 	else
-		return fuse_do_setattr(inode, attr, NULL);
+		ret = fuse_do_setattr(inode, attr, NULL);
+
+	/*
+	 * If filesystem supports acls it may have updated acl xattrs in
+	 * the filesystem, so forget cached acls for the inode.
+	 */
+	if (!ret && fc->posix_acl)
+		forget_all_cached_acls(inode);
+	return ret;
 }
 
 static int fuse_getattr(struct vfsmount *mnt, struct dentry *entry,
@@ -1750,6 +1765,8 @@ static const struct inode_operations fuse_dir_inode_operations = {
 	.getxattr	= generic_getxattr,
 	.listxattr	= fuse_listxattr,
 	.removexattr	= generic_removexattr,
+	.get_acl	= fuse_get_acl,
+	.set_acl	= fuse_set_acl,
 };
 
 static const struct file_operations fuse_dir_operations = {
@@ -1771,6 +1788,8 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.getxattr	= generic_getxattr,
 	.listxattr	= fuse_listxattr,
 	.removexattr	= generic_removexattr,
+	.get_acl	= fuse_get_acl,
+	.set_acl	= fuse_set_acl,
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {
