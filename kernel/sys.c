@@ -316,6 +316,7 @@ out_unlock:
 
 	return retval;
 }
+EXPORT_SYMBOL_GPL(sys_getpriority);
 
 /*
  * Unprivileged users may change the real gid to the effective gid
