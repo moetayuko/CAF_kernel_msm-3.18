@@ -1563,11 +1563,11 @@ static int qcedev_check_cipher_params(struct qcedev_cipher_op_req *req,
 		if (total < req->data_len) {
 			if (!access_ok(VERIFY_READ,
 				(void __user *)req->vbuf.src[i].vaddr,
-					req->vbuf.src[i].len)) {
-					pr_err("%s:SRC RD_VERIFY err %d=0x%lx\n",
-						__func__, i, (uintptr_t)
-							req->vbuf.src[i].vaddr);
-					goto error;
+				req->vbuf.src[i].len)) {
+				pr_err("%s:SRC RD_VERIFY err %d=0x%lx\n",
+					__func__, i, (uintptr_t)
+					req->vbuf.src[i].vaddr);
+				goto error;
 			}
 			total += req->vbuf.src[i].len;
 		}
@@ -1579,11 +1579,11 @@ static int qcedev_check_cipher_params(struct qcedev_cipher_op_req *req,
 			(total < req->data_len)) {
 			if (!access_ok(VERIFY_WRITE,
 				(void __user *)req->vbuf.dst[i].vaddr,
-					req->vbuf.dst[i].len)) {
-					pr_err("%s:DST WR_VERIFY err %d=0x%lx\n",
-						__func__, i, (uintptr_t)
-							req->vbuf.dst[i].vaddr);
-					goto error;
+				req->vbuf.dst[i].len)) {
+				pr_err("%s:DST WR_VERIFY err %d=0x%lx\n",
+					__func__, i, (uintptr_t)
+					req->vbuf.dst[i].vaddr);
+				goto error;
 			}
 			total += req->vbuf.dst[i].len;
 		}
