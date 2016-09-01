@@ -301,19 +301,14 @@ int set_orig_insn(struct arch_uprobe *auprobe, struct mm_struct *mm,
 void __weak arch_uprobe_copy_ixol(struct page *page, unsigned long vaddr,
 				  void *src, unsigned long len)
 {
-	void *kaddr;
+	void *kaddr, kstart;
 
 	/* Initialize the slot */
 	kaddr = kmap_atomic(page);
-	memcpy(kaddr + (vaddr & ~PAGE_MASK), src, len);
+	kstart = kaddr + (vaddr & ~PAGE_MASK);
+	memcpy(kstart, src, len);
+	flush_icache_range(kstart, kstart + len);
 	kunmap_atomic(kaddr);
-
-	/*
-	 * The MIPS version of flush_icache_range will operate safely on
-	 * user space addresses and more importantly, it doesn't require a
-	 * VMA argument.
-	 */
-	flush_icache_range(vaddr, vaddr + len);
 }
 
 /**
