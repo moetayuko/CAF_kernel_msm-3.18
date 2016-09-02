@@ -2940,7 +2940,7 @@ int btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 	if (trans->aborted)
 		return 0;
 
-	if (root->fs_info->creating_free_space_tree)
+	if (test_bit(BTRFS_FS_CREATING_FREE_SPACE_TREE, &root->fs_info->flags))
 		return 0;
 
 	if (root == root->fs_info->extent_root)
@@ -5192,7 +5192,7 @@ static int __reserve_metadata_bytes(struct btrfs_root *root,
 		 * which means we won't have fs_info->fs_root set, so don't do
 		 * the async reclaim as we will panic.
 		 */
-		if (!root->fs_info->log_root_recovering &&
+		if (!test_bit(BTRFS_FS_LOG_RECOVERING, &root->fs_info->flags) &&
 		    need_do_async_reclaim(space_info, root, used) &&
 		    !work_busy(&root->fs_info->async_reclaim_work)) {
 			trace_btrfs_trigger_flush(root->fs_info,
@@ -5796,7 +5796,7 @@ int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
 	int ret;
 	struct btrfs_block_rsv *global_rsv = &root->fs_info->global_block_rsv;
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		/* One for parent inode, two for dir entries */
 		num_bytes = 3 * root->nodesize;
 		ret = btrfs_qgroup_reserve_meta(root, num_bytes);
@@ -5974,7 +5974,7 @@ int btrfs_delalloc_reserve_metadata(struct inode *inode, u64 num_bytes)
 	csum_bytes = BTRFS_I(inode)->csum_bytes;
 	spin_unlock(&BTRFS_I(inode)->lock);
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		ret = btrfs_qgroup_reserve_meta(root,
 				nr_extents * root->nodesize);
 		if (ret)
@@ -8540,7 +8540,7 @@ static int account_leaf_items(struct btrfs_trans_handle *trans,
 	u64 bytenr, num_bytes;
 
 	/* We can be called directly from walk_up_proc() */
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	for (i = 0; i < nr; i++) {
@@ -8649,7 +8649,7 @@ static int account_shared_subtree(struct btrfs_trans_handle *trans,
 	BUG_ON(root_level < 0 || root_level > BTRFS_MAX_LEVEL);
 	BUG_ON(root_eb == NULL);
 
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	if (!extent_buffer_uptodate(root_eb)) {
@@ -10799,7 +10799,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 	struct btrfs_trans_handle *trans;
 	int ret = 0;
 
-	if (!fs_info->open)
+	if (!test_bit(BTRFS_FS_OPEN, &fs_info->flags))
 		return;
 
 	spin_lock(&fs_info->unused_bgs_lock);
