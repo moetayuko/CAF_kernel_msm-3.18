@@ -112,6 +112,12 @@ struct ima_kexec_hdr {
 	u64 count;
 };
 
+/*
+ * The default binary_runtime_measurements list format is defined as the
+ * platform native format.  The canonical format is defined as little-endian.
+ */
+extern bool ima_canonical_fmt;
+
 /* Internal IMA function definitions */
 int ima_init(void);
 int ima_fs_init(void);
