@@ -357,16 +357,18 @@ static int check_vma(struct dax_dev *dax_dev, struct vm_area_struct *vma,
 static phys_addr_t pgoff_to_phys(struct dax_dev *dax_dev, pgoff_t pgoff,
 		unsigned long size)
 {
+	phys_addr_t phys, offset;
 	struct resource *res;
-	phys_addr_t phys;
 	int i;
 
+	offset = pgoff * PAGE_SIZE;
 	for (i = 0; i < dax_dev->num_resources; i++) {
 		res = &dax_dev->res[i];
-		phys = pgoff * PAGE_SIZE + res->start;
-		if (phys >= res->start && phys <= res->end)
+		if (offset < resource_size(res)) {
+			phys = offset + res->start;
 			break;
-		pgoff -= PHYS_PFN(resource_size(res));
+		}
+		offset -= resource_size(res);
 	}
 
 	if (i < dax_dev->num_resources) {
