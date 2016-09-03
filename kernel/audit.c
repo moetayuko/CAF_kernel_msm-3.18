@@ -932,7 +932,7 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		if (!audit_enabled && msg_type != AUDIT_USER_AVC)
 			return 0;
 
-		err = audit_filter_user(msg_type);
+		err = audit_filter(msg_type, AUDIT_FILTER_USER);
 		if (err == 1) { /* match or error */
 			err = 0;
 			if (msg_type == AUDIT_USER_TTY) {
@@ -1379,7 +1379,7 @@ struct audit_buffer *audit_log_start(struct audit_context *ctx, gfp_t gfp_mask,
 	if (audit_initialized != AUDIT_INITIALIZED)
 		return NULL;
 
-	if (unlikely(audit_filter_type(type)))
+	if (unlikely(!audit_filter(type, AUDIT_FILTER_TYPE)))
 		return NULL;
 
 	if (gfp_mask & __GFP_DIRECT_RECLAIM) {
@@ -1881,6 +1881,23 @@ void audit_log_d_path_exe(struct audit_buffer *ab,
 	return;
 out_null:
 	audit_log_format(ab, " exe=(null)");
+}
+
+struct tty_struct *audit_get_tty(struct task_struct *tsk)
+{
+	struct tty_struct *tty = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&tsk->sighand->siglock, flags);
+	if (tsk->signal)
+		tty = tty_kref_get(tsk->signal->tty);
+	spin_unlock_irqrestore(&tsk->sighand->siglock, flags);
+	return tty;
+}
+
+void audit_put_tty(struct tty_struct *tty)
+{
+	tty_kref_put(tty);
 }
 
 void audit_log_task_info(struct audit_buffer *ab, struct task_struct *tsk)

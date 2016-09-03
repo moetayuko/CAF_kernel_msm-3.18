@@ -1941,6 +1941,7 @@ static struct iommu_ops arm_smmu_ops = {
 	.attach_dev		= arm_smmu_attach_dev,
 	.map			= arm_smmu_map,
 	.unmap			= arm_smmu_unmap,
+	.map_sg			= default_iommu_map_sg,
 	.iova_to_phys		= arm_smmu_iova_to_phys,
 	.add_device		= arm_smmu_add_device,
 	.remove_device		= arm_smmu_remove_device,
@@ -2685,6 +2686,8 @@ static int __init arm_smmu_init(void)
 	ret = platform_driver_register(&arm_smmu_driver);
 	if (ret)
 		return ret;
+
+	pci_request_acs();
 
 	return bus_set_iommu(&pci_bus_type, &arm_smmu_ops);
 }

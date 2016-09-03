@@ -232,6 +232,9 @@ static void __drm_helper_disable_unused_functions(struct drm_device *dev)
  */
 void drm_helper_disable_unused_functions(struct drm_device *dev)
 {
+	if (drm_core_check_feature(dev, DRIVER_ATOMIC))
+		DRM_ERROR("Called for atomic driver, this is not what you want.\n");
+
 	drm_modeset_lock_all(dev);
 	__drm_helper_disable_unused_functions(dev);
 	drm_modeset_unlock_all(dev);
@@ -528,11 +531,11 @@ drm_crtc_helper_disable(struct drm_crtc *crtc)
 int drm_crtc_helper_set_config(struct drm_mode_set *set)
 {
 	struct drm_device *dev;
-	struct drm_crtc *new_crtc;
-	struct drm_encoder *save_encoders, *new_encoder, *encoder;
+	struct drm_crtc **save_encoder_crtcs, *new_crtc;
+	struct drm_encoder **save_connector_encoders, *new_encoder, *encoder;
 	bool mode_changed = false; /* if true do a full mode set */
 	bool fb_changed = false; /* if true and !mode_changed just do a flip */
-	struct drm_connector *save_connectors, *connector;
+	struct drm_connector *connector;
 	int count = 0, ro, fail = 0;
 	const struct drm_crtc_helper_funcs *crtc_funcs;
 	struct drm_mode_set save_set;
@@ -574,15 +577,15 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set)
 	 * Allocate space for the backup of all (non-pointer) encoder and
 	 * connector data.
 	 */
-	save_encoders = kzalloc(dev->mode_config.num_encoder *
-				sizeof(struct drm_encoder), GFP_KERNEL);
-	if (!save_encoders)
+	save_encoder_crtcs = kzalloc(dev->mode_config.num_encoder *
+				sizeof(struct drm_crtc *), GFP_KERNEL);
+	if (!save_encoder_crtcs)
 		return -ENOMEM;
 
-	save_connectors = kzalloc(dev->mode_config.num_connector *
-				sizeof(struct drm_connector), GFP_KERNEL);
-	if (!save_connectors) {
-		kfree(save_encoders);
+	save_connector_encoders = kzalloc(dev->mode_config.num_connector *
+				sizeof(struct drm_encoder *), GFP_KERNEL);
+	if (!save_connector_encoders) {
+		kfree(save_encoder_crtcs);
 		return -ENOMEM;
 	}
 
@@ -593,12 +596,12 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set)
 	 */
 	count = 0;
 	drm_for_each_encoder(encoder, dev) {
-		save_encoders[count++] = *encoder;
+		save_encoder_crtcs[count++] = encoder->crtc;
 	}
 
 	count = 0;
 	drm_for_each_connector(connector, dev) {
-		save_connectors[count++] = *connector;
+		save_connector_encoders[count++] = connector->encoder;
 	}
 
 	save_set.crtc = set->crtc;
@@ -631,8 +634,12 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set)
 		mode_changed = true;
 	}
 
-	/* take a reference on all connectors in set */
+	/* take a reference on all unbound connectors in set, reuse the
+	 * already taken reference for bound connectors
+	 */
 	for (ro = 0; ro < set->num_connectors; ro++) {
+		if (set->connectors[ro]->encoder)
+			continue;
 		drm_connector_reference(set->connectors[ro]);
 	}
 
@@ -754,30 +761,28 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set)
 		}
 	}
 
-	/* after fail drop reference on all connectors in save set */
-	count = 0;
-	drm_for_each_connector(connector, dev) {
-		drm_connector_unreference(&save_connectors[count++]);
-	}
-
-	kfree(save_connectors);
-	kfree(save_encoders);
+	kfree(save_connector_encoders);
+	kfree(save_encoder_crtcs);
 	return 0;
 
 fail:
 	/* Restore all previous data. */
 	count = 0;
 	drm_for_each_encoder(encoder, dev) {
-		*encoder = save_encoders[count++];
+		encoder->crtc = save_encoder_crtcs[count++];
 	}
 
 	count = 0;
 	drm_for_each_connector(connector, dev) {
-		*connector = save_connectors[count++];
+		connector->encoder = save_connector_encoders[count++];
 	}
 
-	/* after fail drop reference on all connectors in set */
+	/* after fail drop reference on all unbound connectors in set, let
+	 * bound connectors keep their reference
+	 */
 	for (ro = 0; ro < set->num_connectors; ro++) {
+		if (set->connectors[ro]->encoder)
+			continue;
 		drm_connector_unreference(set->connectors[ro]);
 	}
 
@@ -787,8 +792,8 @@ fail:
 				      save_set.y, save_set.fb))
 		DRM_ERROR("failed to restore config after modeset failure\n");
 
-	kfree(save_connectors);
-	kfree(save_encoders);
+	kfree(save_connector_encoders);
+	kfree(save_encoder_crtcs);
 	return ret;
 }
 EXPORT_SYMBOL(drm_crtc_helper_set_config);
@@ -1121,36 +1126,3 @@ int drm_helper_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
 	return drm_plane_helper_commit(plane, plane_state, old_fb);
 }
 EXPORT_SYMBOL(drm_helper_crtc_mode_set_base);
-
-/**
- * drm_helper_crtc_enable_color_mgmt - enable color management properties
- * @crtc: DRM CRTC
- * @degamma_lut_size: the size of the degamma lut (before CSC)
- * @gamma_lut_size: the size of the gamma lut (after CSC)
- *
- * This function lets the driver enable the color correction properties on a
- * CRTC. This includes 3 degamma, csc and gamma properties that userspace can
- * set and 2 size properties to inform the userspace of the lut sizes.
- */
-void drm_helper_crtc_enable_color_mgmt(struct drm_crtc *crtc,
-				       int degamma_lut_size,
-				       int gamma_lut_size)
-{
-	struct drm_device *dev = crtc->dev;
-	struct drm_mode_config *config = &dev->mode_config;
-
-	drm_object_attach_property(&crtc->base,
-				   config->degamma_lut_property, 0);
-	drm_object_attach_property(&crtc->base,
-				   config->ctm_property, 0);
-	drm_object_attach_property(&crtc->base,
-				   config->gamma_lut_property, 0);
-
-	drm_object_attach_property(&crtc->base,
-				   config->degamma_lut_size_property,
-				   degamma_lut_size);
-	drm_object_attach_property(&crtc->base,
-				   config->gamma_lut_size_property,
-				   gamma_lut_size);
-}
-EXPORT_SYMBOL(drm_helper_crtc_enable_color_mgmt);

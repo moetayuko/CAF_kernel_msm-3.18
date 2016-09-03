@@ -215,6 +215,7 @@ raidsonic	RaidSonic Technology GmbH
 ralink	Mediatek/Ralink Technology Corp.
 ramtron	Ramtron International
 raspberrypi	Raspberry Pi Foundation
+raydium	Raydium Semiconductor Corp.
 realtek Realtek Semiconductor Corp.
 renesas	Renesas Electronics Corporation
 richtek	Richtek Technology Corporation
@@ -237,6 +238,7 @@ simtek
 sii	Seiko Instruments, Inc.
 silergy	Silergy Corp.
 sirf	SiRF Technology, Inc.
+sis	Silicon Integrated Systems Corp.
 sitronix	Sitronix Technology Corporation
 skyworks	Skyworks Solutions, Inc.
 smsc	Standard Microsystems Corporation
@@ -248,6 +250,7 @@ sony	Sony Corporation
 spansion	Spansion Inc.
 sprd	Spreadtrum Communications Inc.
 st	STMicroelectronics
+starry	Starry Electronic Technology (ShenZhen) Co., LTD
 startek	Startek
 ste	ST-Ericsson
 stericsson	ST-Ericsson
@@ -255,8 +258,9 @@ syna	Synaptics Inc.
 synology	Synology, Inc.
 SUNW	Sun Microsystems, Inc
 tbs	TBS Technologies
-tcl	Toby Churchill Ltd.
 tcg	Trusted Computing Group
+tcl	Toby Churchill Ltd.
+technexion	TechNexion
 technologic	Technologic Systems
 thine	THine Electronics, Inc.
 ti	Texas Instruments
@@ -271,6 +275,7 @@ tronsmart	Tronsmart
 truly	Truly Semiconductors Limited
 tyan	Tyan Computer Corporation
 upisemi	uPI Semiconductor Corp.
+uniwest	United Western Technologies Corp (UniWest)
 urt	United Radiant Technology Corporation
 usi	Universal Scientific Industrial Co., Ltd.
 v3	V3 Semiconductor

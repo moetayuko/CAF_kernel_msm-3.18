@@ -40,10 +40,10 @@ static struct thread_info *pt_regs_to_thread_info(struct pt_regs *regs)
 
 #ifdef CONFIG_CONTEXT_TRACKING
 /* Called on entry from user mode with IRQs off. */
-__visible void enter_from_user_mode(void)
+__visible inline void enter_from_user_mode(void)
 {
 	CT_WARN_ON(ct_state() != CONTEXT_USER);
-	user_exit();
+	user_exit_irqoff();
 }
 #else
 static inline void enter_from_user_mode(void) {}
@@ -204,11 +204,15 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 	 * handling, because syscall restart has a fixup for compat
 	 * syscalls.  The fixup is exercised by the ptrace_syscall_32
 	 * selftest.
+	 *
+	 * We also need to clear TS_REGS_POKED_I386: the 32-bit tracer
+	 * special case only applies after poking regs and before the
+	 * very next return to user mode.
 	 */
-	ti->status &= ~TS_COMPAT;
+	ti->status &= ~(TS_COMPAT|TS_I386_REGS_POKED);
 #endif
 
-	user_enter();
+	user_enter_irqoff();
 }
 
 #define SYSCALL_EXIT_WORK_FLAGS				\

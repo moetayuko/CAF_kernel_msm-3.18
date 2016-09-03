@@ -1356,7 +1356,7 @@ union security_list_options {
 					struct super_block *newsb);
 	int (*sb_parse_opts_str)(char *options, struct security_mnt_opts *opts);
 	int (*dentry_init_security)(struct dentry *dentry, int mode,
-					struct qstr *name, void **ctx,
+					const struct qstr *name, void **ctx,
 					u32 *ctxlen);
 
 
@@ -1455,7 +1455,6 @@ union security_list_options {
 	int (*kernel_act_as)(struct cred *new, u32 secid);
 	int (*kernel_create_files_as)(struct cred *new, struct inode *inode);
 	int (*kernel_module_request)(char *kmod_name);
-	int (*kernel_module_from_file)(struct file *file);
 	int (*kernel_read_file)(struct file *file, enum kernel_read_file_id id);
 	int (*kernel_post_read_file)(struct file *file, char *buf, loff_t size,
 				     enum kernel_read_file_id id);

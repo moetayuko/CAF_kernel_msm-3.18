@@ -129,6 +129,13 @@ __mlx5_mask(typ, fld))
 		tmp;							  \
 		})
 
+enum mlx5_inline_modes {
+	MLX5_INLINE_MODE_NONE,
+	MLX5_INLINE_MODE_L2,
+	MLX5_INLINE_MODE_IP,
+	MLX5_INLINE_MODE_TCP_UDP,
+};
+
 enum {
 	MLX5_MAX_COMMANDS		= 32,
 	MLX5_CMD_DATA_BLOCK_SIZE	= 512,
@@ -1240,8 +1247,6 @@ struct mlx5_destroy_psv_out {
 	u8                      rsvd[8];
 };
 
-#define MLX5_CMD_OP_MAX 0x920
-
 enum {
 	VPORT_STATE_DOWN		= 0x0,
 	VPORT_STATE_UP			= 0x1,
@@ -1332,6 +1337,7 @@ enum mlx5_cap_type {
 	MLX5_CAP_ESWITCH,
 	MLX5_CAP_RESERVED,
 	MLX5_CAP_VECTOR_CALC,
+	MLX5_CAP_QOS,
 	/* NUM OF CAP Types */
 	MLX5_CAP_NUM
 };
@@ -1368,6 +1374,12 @@ enum mlx5_cap_type {
 
 #define MLX5_CAP_FLOWTABLE_MAX(mdev, cap) \
 	MLX5_GET(flow_table_nic_cap, mdev->hca_caps_max[MLX5_CAP_FLOW_TABLE], cap)
+
+#define MLX5_CAP_FLOWTABLE_NIC_RX(mdev, cap) \
+	MLX5_CAP_FLOWTABLE(mdev, flow_table_properties_nic_receive.cap)
+
+#define MLX5_CAP_FLOWTABLE_NIC_RX_MAX(mdev, cap) \
+	MLX5_CAP_FLOWTABLE_MAX(mdev, flow_table_properties_nic_receive.cap)
 
 #define MLX5_CAP_ESW_FLOWTABLE(mdev, cap) \
 	MLX5_GET(flow_table_eswitch_cap, \
@@ -1409,6 +1421,9 @@ enum mlx5_cap_type {
 #define MLX5_CAP_VECTOR_CALC(mdev, cap) \
 	MLX5_GET(vector_calc_cap, \
 		 mdev->hca_caps_cur[MLX5_CAP_VECTOR_CALC], cap)
+
+#define MLX5_CAP_QOS(mdev, cap)\
+	MLX5_GET(qos_cap, mdev->hca_caps_cur[MLX5_CAP_QOS], cap)
 
 enum {
 	MLX5_CMD_STAT_OK			= 0x0,

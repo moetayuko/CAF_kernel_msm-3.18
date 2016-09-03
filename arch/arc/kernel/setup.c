@@ -14,7 +14,7 @@
 #include <linux/module.h>
 #include <linux/cpu.h>
 #include <linux/of_fdt.h>
-#include <linux/of_platform.h>
+#include <linux/of.h>
 #include <linux/cache.h>
 #include <asm/sections.h>
 #include <asm/arcregs.h>
@@ -392,7 +392,7 @@ void __init setup_arch(char **cmdline_p)
 		/*
 		 * If we are here, it is established that @uboot_arg didn't
 		 * point to DT blob. Instead if u-boot says it is cmdline,
-		 * Appent to embedded DT cmdline.
+		 * append to embedded DT cmdline.
 		 * setup_machine_fdt() would have populated @boot_command_line
 		 */
 		if (uboot_tag == 1) {
@@ -435,12 +435,6 @@ void __init setup_arch(char **cmdline_p)
 
 static int __init customize_machine(void)
 {
-	/*
-	 * Traverses flattened DeviceTree - registering platform devices
-	 * (if any) complete with their resources
-	 */
-	of_platform_default_populate(NULL, NULL, NULL);
-
 	if (machine_desc->init_machine)
 		machine_desc->init_machine();
 

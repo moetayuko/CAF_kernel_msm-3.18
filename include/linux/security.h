@@ -240,7 +240,7 @@ int security_sb_clone_mnt_opts(const struct super_block *oldsb,
 				struct super_block *newsb);
 int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts);
 int security_dentry_init_security(struct dentry *dentry, int mode,
-					struct qstr *name, void **ctx,
+					const struct qstr *name, void **ctx,
 					u32 *ctxlen);
 
 int security_inode_alloc(struct inode *inode);
@@ -307,7 +307,6 @@ void security_transfer_creds(struct cred *new, const struct cred *old);
 int security_kernel_act_as(struct cred *new, u32 secid);
 int security_kernel_create_files_as(struct cred *new, struct inode *inode);
 int security_kernel_module_request(char *kmod_name);
-int security_kernel_module_from_file(struct file *file);
 int security_kernel_read_file(struct file *file, enum kernel_read_file_id id);
 int security_kernel_post_read_file(struct file *file, char *buf, loff_t size,
 				   enum kernel_read_file_id id);
@@ -591,7 +590,7 @@ static inline void security_inode_free(struct inode *inode)
 
 static inline int security_dentry_init_security(struct dentry *dentry,
 						 int mode,
-						 struct qstr *name,
+						 const struct qstr *name,
 						 void **ctx,
 						 u32 *ctxlen)
 {

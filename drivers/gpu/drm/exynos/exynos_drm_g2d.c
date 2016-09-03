@@ -17,7 +17,6 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/dma-mapping.h>
-#include <linux/dma-attrs.h>
 #include <linux/of.h>
 
 #include <drm/drmP.h>
@@ -48,13 +47,13 @@
 
 /* registers for base address */
 #define G2D_SRC_BASE_ADDR		0x0304
-#define G2D_SRC_STRIDE_REG		0x0308
+#define G2D_SRC_STRIDE			0x0308
 #define G2D_SRC_COLOR_MODE		0x030C
 #define G2D_SRC_LEFT_TOP		0x0310
 #define G2D_SRC_RIGHT_BOTTOM		0x0314
 #define G2D_SRC_PLANE2_BASE_ADDR	0x0318
 #define G2D_DST_BASE_ADDR		0x0404
-#define G2D_DST_STRIDE_REG		0x0408
+#define G2D_DST_STRIDE			0x0408
 #define G2D_DST_COLOR_MODE		0x040C
 #define G2D_DST_LEFT_TOP		0x0410
 #define G2D_DST_RIGHT_BOTTOM		0x0414
@@ -235,7 +234,7 @@ struct g2d_data {
 	struct mutex			cmdlist_mutex;
 	dma_addr_t			cmdlist_pool;
 	void				*cmdlist_pool_virt;
-	struct dma_attrs		cmdlist_dma_attrs;
+	unsigned long			cmdlist_dma_attrs;
 
 	/* runqueue*/
 	struct g2d_runqueue_node	*runqueue_node;
@@ -256,13 +255,12 @@ static int g2d_init_cmdlist(struct g2d_data *g2d)
 	int ret;
 	struct g2d_buf_info *buf_info;
 
-	init_dma_attrs(&g2d->cmdlist_dma_attrs);
-	dma_set_attr(DMA_ATTR_WRITE_COMBINE, &g2d->cmdlist_dma_attrs);
+	g2d->cmdlist_dma_attrs = DMA_ATTR_WRITE_COMBINE;
 
 	g2d->cmdlist_pool_virt = dma_alloc_attrs(to_dma_dev(subdrv->drm_dev),
 						G2D_CMDLIST_POOL_SIZE,
 						&g2d->cmdlist_pool, GFP_KERNEL,
-						&g2d->cmdlist_dma_attrs);
+						g2d->cmdlist_dma_attrs);
 	if (!g2d->cmdlist_pool_virt) {
 		dev_err(dev, "failed to allocate dma memory\n");
 		return -ENOMEM;
@@ -295,7 +293,7 @@ static int g2d_init_cmdlist(struct g2d_data *g2d)
 err:
 	dma_free_attrs(to_dma_dev(subdrv->drm_dev), G2D_CMDLIST_POOL_SIZE,
 			g2d->cmdlist_pool_virt,
-			g2d->cmdlist_pool, &g2d->cmdlist_dma_attrs);
+			g2d->cmdlist_pool, g2d->cmdlist_dma_attrs);
 	return ret;
 }
 
@@ -309,7 +307,7 @@ static void g2d_fini_cmdlist(struct g2d_data *g2d)
 		dma_free_attrs(to_dma_dev(subdrv->drm_dev),
 				G2D_CMDLIST_POOL_SIZE,
 				g2d->cmdlist_pool_virt,
-				g2d->cmdlist_pool, &g2d->cmdlist_dma_attrs);
+				g2d->cmdlist_pool, g2d->cmdlist_dma_attrs);
 	}
 }
 
@@ -563,7 +561,7 @@ static enum g2d_reg_type g2d_get_reg_type(int reg_offset)
 
 	switch (reg_offset) {
 	case G2D_SRC_BASE_ADDR:
-	case G2D_SRC_STRIDE_REG:
+	case G2D_SRC_STRIDE:
 	case G2D_SRC_COLOR_MODE:
 	case G2D_SRC_LEFT_TOP:
 	case G2D_SRC_RIGHT_BOTTOM:
@@ -573,7 +571,7 @@ static enum g2d_reg_type g2d_get_reg_type(int reg_offset)
 		reg_type = REG_TYPE_SRC_PLANE2;
 		break;
 	case G2D_DST_BASE_ADDR:
-	case G2D_DST_STRIDE_REG:
+	case G2D_DST_STRIDE:
 	case G2D_DST_COLOR_MODE:
 	case G2D_DST_LEFT_TOP:
 	case G2D_DST_RIGHT_BOTTOM:
@@ -968,8 +966,8 @@ static int g2d_check_reg_offset(struct device *dev,
 			} else
 				buf_info->types[reg_type] = BUF_TYPE_GEM;
 			break;
-		case G2D_SRC_STRIDE_REG:
-		case G2D_DST_STRIDE_REG:
+		case G2D_SRC_STRIDE:
+		case G2D_DST_STRIDE:
 			if (for_addr)
 				goto err;
 
