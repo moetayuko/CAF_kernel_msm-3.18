@@ -26,6 +26,9 @@
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/alarmtimer.h>
+
 /**
  * struct alarm_base - Alarm timer bases
  * @lock:		Lock for syncrhonized access to the base
@@ -194,6 +197,7 @@ static enum hrtimer_restart alarmtimer_fired(struct hrtimer *timer)
 	}
 	spin_unlock_irqrestore(&base->lock, flags);
 
+	trace_alarmtimer_fired(alarm, NULL);
 	return ret;
 
 }
@@ -218,11 +222,11 @@ EXPORT_SYMBOL_GPL(alarm_expires_remaining);
  */
 static int alarmtimer_suspend(struct device *dev)
 {
-	struct rtc_time tm;
+	struct rtc_time tm, tm_set;
 	ktime_t min, now;
 	unsigned long flags;
 	struct rtc_device *rtc;
-	int i;
+	int i, type = 0;
 	int ret;
 
 	spin_lock_irqsave(&freezer_delta_lock, flags);
@@ -247,8 +251,10 @@ static int alarmtimer_suspend(struct device *dev)
 		if (!next)
 			continue;
 		delta = ktime_sub(next->expires, base->gettime());
-		if (!min.tv64 || (delta.tv64 < min.tv64))
+		if (!min.tv64 || (delta.tv64 < min.tv64)) {
 			min = delta;
+			type = i;
+		}
 	}
 	if (min.tv64 == 0)
 		return 0;
@@ -263,6 +269,11 @@ static int alarmtimer_suspend(struct device *dev)
 	rtc_read_time(rtc, &tm);
 	now = rtc_tm_to_ktime(tm);
 	now = ktime_add(now, min);
+
+	if (trace_alarmtimer_suspend_enabled()) {
+		tm_set = rtc_ktime_to_tm(now);
+		trace_alarmtimer_suspend(&tm_set, type);
+	}
 
 	/* Set alarm, if in the past reject suspend briefly to handle */
 	ret = rtc_timer_start(rtc, &rtctimer, now, ktime_set(0, 0));
@@ -342,6 +353,8 @@ void alarm_start(struct alarm *alarm, ktime_t start)
 	alarmtimer_enqueue(base, alarm);
 	hrtimer_start(&alarm->timer, alarm->node.expires, HRTIMER_MODE_ABS);
 	spin_unlock_irqrestore(&base->lock, flags);
+
+	trace_alarmtimer_start(alarm, current->comm);
 }
 EXPORT_SYMBOL_GPL(alarm_start);
 
@@ -369,6 +382,8 @@ void alarm_restart(struct alarm *alarm)
 	hrtimer_restart(&alarm->timer);
 	alarmtimer_enqueue(base, alarm);
 	spin_unlock_irqrestore(&base->lock, flags);
+
+	trace_alarmtimer_restart(alarm, current->comm);
 }
 EXPORT_SYMBOL_GPL(alarm_restart);
 
@@ -390,6 +405,8 @@ int alarm_try_to_cancel(struct alarm *alarm)
 	if (ret >= 0)
 		alarmtimer_dequeue(base, alarm);
 	spin_unlock_irqrestore(&base->lock, flags);
+
+	trace_alarmtimer_cancel(alarm, current->comm);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(alarm_try_to_cancel);
