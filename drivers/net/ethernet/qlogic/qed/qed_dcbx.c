@@ -1982,6 +1982,7 @@ static int qed_dcbnl_get_ieee_pfc(struct qed_dev *cdev,
 
 	if (!dcbx_info->operational.ieee) {
 		DP_INFO(hwfn, "DCBX is not enabled/operational in IEEE mode\n");
+		kfree(dcbx_info);
 		return -EINVAL;
 	}
 
