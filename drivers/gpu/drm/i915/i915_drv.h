@@ -70,7 +70,7 @@
 
 #define DRIVER_NAME		"i915"
 #define DRIVER_DESC		"Intel Graphics"
-#define DRIVER_DATE		"20160822"
+#define DRIVER_DATE		"20160902"
 
 #undef WARN_ON
 /* Many gcc seem to no see through this and fall over :( */
@@ -510,8 +510,12 @@ struct drm_i915_display_funcs {
 					 struct intel_initial_plane_config *);
 	int (*crtc_compute_clock)(struct intel_crtc *crtc,
 				  struct intel_crtc_state *crtc_state);
-	void (*crtc_enable)(struct drm_crtc *crtc);
-	void (*crtc_disable)(struct drm_crtc *crtc);
+	void (*crtc_enable)(struct intel_crtc_state *pipe_config,
+			    struct drm_atomic_state *old_state);
+	void (*crtc_disable)(struct intel_crtc_state *old_crtc_state,
+			     struct drm_atomic_state *old_state);
+	void (*update_crtcs)(struct drm_atomic_state *state,
+			     unsigned int *crtc_vblank_mask);
 	void (*audio_codec_enable)(struct drm_connector *connector,
 				   struct intel_encoder *encoder,
 				   const struct drm_display_mode *adjusted_mode);
@@ -667,6 +671,24 @@ struct intel_csr {
 #define DEFINE_FLAG(name) u8 name:1
 #define SEP_SEMICOLON ;
 
+struct sseu_dev_info {
+	u8 slice_mask;
+	u8 subslice_mask;
+	u8 eu_total;
+	u8 eu_per_subslice;
+	u8 min_eu_in_pool;
+	/* For each slice, which subslice(s) has(have) 7 EUs (bitfield)? */
+	u8 subslice_7eu[3];
+	u8 has_slice_pg:1;
+	u8 has_subslice_pg:1;
+	u8 has_eu_pg:1;
+};
+
+static inline unsigned int sseu_subslice_total(const struct sseu_dev_info *sseu)
+{
+	return hweight8(sseu->slice_mask) * hweight8(sseu->subslice_mask);
+}
+
 struct intel_device_info {
 	u32 display_mmio_offset;
 	u16 device_id;
@@ -684,17 +706,7 @@ struct intel_device_info {
 	int cursor_offsets[I915_MAX_PIPES];
 
 	/* Slice/subslice/EU info */
-	u8 slice_total;
-	u8 subslice_total;
-	u8 subslice_per_slice;
-	u8 eu_total;
-	u8 eu_per_subslice;
-	u8 min_eu_in_pool;
-	/* For each slice, which subslice(s) has(have) 7 EUs (bitfield)? */
-	u8 subslice_7eu[3];
-	u8 has_slice_pg:1;
-	u8 has_subslice_pg:1;
-	u8 has_eu_pg:1;
+	struct sseu_dev_info sseu;
 
 	struct color_luts {
 		u16 degamma_lut_size;
@@ -1334,7 +1346,7 @@ struct i915_gem_mm {
 	bool interruptible;
 
 	/* the indicator for dispatch video commands on two BSD rings */
-	unsigned int bsd_engine_dispatch_index;
+	atomic_t bsd_engine_dispatch_index;
 
 	/** Bit 6 swizzling required for X tiling */
 	uint32_t bit_6_swizzle_x;
@@ -2064,9 +2076,9 @@ static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
 	return container_of(dev, struct drm_i915_private, drm);
 }
 
-static inline struct drm_i915_private *dev_to_i915(struct device *dev)
+static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 {
-	return to_i915(dev_get_drvdata(dev));
+	return to_i915(dev_get_drvdata(kdev));
 }
 
 static inline struct drm_i915_private *guc_to_i915(struct intel_guc *guc)
@@ -2089,13 +2101,16 @@ static inline struct drm_i915_private *guc_to_i915(struct intel_guc *guc)
 		for_each_if (((id__) = (engine__)->id, \
 			      intel_engine_initialized(engine__)))
 
+#define __mask_next_bit(mask) ({					\
+	int __idx = ffs(mask) - 1;					\
+	mask &= ~BIT(__idx);						\
+	__idx;								\
+})
+
 /* Iterator over subset of engines selected by mask */
-#define for_each_engine_masked(engine__, dev_priv__, mask__) \
-	for ((engine__) = &(dev_priv__)->engine[0]; \
-	     (engine__) < &(dev_priv__)->engine[I915_NUM_ENGINES]; \
-	     (engine__)++) \
-		for_each_if (((mask__) & intel_engine_flag(engine__)) && \
-			     intel_engine_initialized(engine__))
+#define for_each_engine_masked(engine__, dev_priv__, mask__, tmp__) \
+	for (tmp__ = mask__ & INTEL_INFO(dev_priv__)->ring_mask;	\
+	     tmp__ ? (engine__ = &(dev_priv__)->engine[__mask_next_bit(tmp__)]), 1 : 0; )
 
 enum hdmi_force_audio {
 	HDMI_AUDIO_OFF_DVI = -2,	/* no aux data for HDMI-DVI converter */
@@ -2556,7 +2571,7 @@ struct drm_i915_cmd_table {
 		BUILD_BUG(); \
 	__p; \
 })
-#define INTEL_INFO(p) 	(&__I915__(p)->info)
+#define INTEL_INFO(p)	(&__I915__(p)->info)
 #define INTEL_GEN(p)	(INTEL_INFO(p)->gen)
 #define INTEL_DEVID(p)	(INTEL_INFO(p)->device_id)
 
@@ -2850,7 +2865,7 @@ extern int i915_suspend_switcheroo(struct drm_device *dev, pm_message_t state);
 extern int i915_resume_switcheroo(struct drm_device *dev);
 
 int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
-			       	int enable_ppgtt);
+				int enable_ppgtt);
 
 bool intel_sanitize_semaphores(struct drm_i915_private *dev_priv, int value);
 
@@ -3214,6 +3229,7 @@ int i915_gem_dumb_create(struct drm_file *file_priv,
 			 struct drm_mode_create_dumb *args);
 int i915_gem_mmap_gtt(struct drm_file *file_priv, struct drm_device *dev,
 		      uint32_t handle, uint64_t *offset);
+int i915_gem_mmap_gtt_version(void);
 
 void i915_gem_track_fb(struct drm_i915_gem_object *old,
 		       struct drm_i915_gem_object *new,
@@ -3514,13 +3530,13 @@ static inline bool i915_gem_object_needs_bit17_swizzle(struct drm_i915_gem_objec
 int i915_debugfs_register(struct drm_i915_private *dev_priv);
 void i915_debugfs_unregister(struct drm_i915_private *dev_priv);
 int i915_debugfs_connector_add(struct drm_connector *connector);
-void intel_display_crc_init(struct drm_device *dev);
+void intel_display_crc_init(struct drm_i915_private *dev_priv);
 #else
 static inline int i915_debugfs_register(struct drm_i915_private *dev_priv) {return 0;}
 static inline void i915_debugfs_unregister(struct drm_i915_private *dev_priv) {}
 static inline int i915_debugfs_connector_add(struct drm_connector *connector)
 { return 0; }
-static inline void intel_display_crc_init(struct drm_device *dev) {}
+static inline void intel_display_crc_init(struct drm_i915_private *dev_priv) {}
 #endif
 
 /* i915_gpu_error.c */
@@ -3564,8 +3580,8 @@ extern int i915_save_state(struct drm_device *dev);
 extern int i915_restore_state(struct drm_device *dev);
 
 /* i915_sysfs.c */
-void i915_setup_sysfs(struct drm_device *dev_priv);
-void i915_teardown_sysfs(struct drm_device *dev_priv);
+void i915_setup_sysfs(struct drm_i915_private *dev_priv);
+void i915_teardown_sysfs(struct drm_i915_private *dev_priv);
 
 /* intel_i2c.c */
 extern int intel_setup_gmbus(struct drm_device *dev);
@@ -3787,7 +3803,7 @@ __raw_write(64, q)
 #undef __raw_write
 
 /* These are untraced mmio-accessors that are only valid to be used inside
- * criticial sections inside IRQ handlers where forcewake is explicitly
+ * critical sections inside IRQ handlers where forcewake is explicitly
  * controlled.
  * Think twice, and think again, before using these.
  * Note: Should only be used between intel_uncore_forcewake_irqlock() and

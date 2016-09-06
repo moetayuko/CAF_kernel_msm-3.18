@@ -1611,7 +1611,9 @@ void intel_ddi_clk_select(struct intel_encoder *encoder,
 	}
 }
 
-static void intel_ddi_pre_enable(struct intel_encoder *intel_encoder)
+static void intel_ddi_pre_enable(struct intel_encoder *intel_encoder,
+				 struct intel_crtc_state *pipe_config,
+				 struct drm_connector_state *conn_state)
 {
 	struct drm_encoder *encoder = &intel_encoder->base;
 	struct drm_i915_private *dev_priv = to_i915(encoder->dev);
@@ -1663,7 +1665,9 @@ static void intel_ddi_pre_enable(struct intel_encoder *intel_encoder)
 	}
 }
 
-static void intel_ddi_post_disable(struct intel_encoder *intel_encoder)
+static void intel_ddi_post_disable(struct intel_encoder *intel_encoder,
+				   struct intel_crtc_state *old_crtc_state,
+				   struct drm_connector_state *old_conn_state)
 {
 	struct drm_encoder *encoder = &intel_encoder->base;
 	struct drm_device *dev = encoder->dev;
@@ -1672,6 +1676,8 @@ static void intel_ddi_post_disable(struct intel_encoder *intel_encoder)
 	int type = intel_encoder->type;
 	uint32_t val;
 	bool wait = false;
+
+	/* old_crtc_state and old_conn_state are NULL when called from DP_MST */
 
 	val = I915_READ(DDI_BUF_CTL(port));
 	if (val & DDI_BUF_CTL_ENABLE) {
@@ -1708,7 +1714,42 @@ static void intel_ddi_post_disable(struct intel_encoder *intel_encoder)
 	}
 }
 
-static void intel_enable_ddi(struct intel_encoder *intel_encoder)
+void intel_ddi_fdi_post_disable(struct intel_encoder *intel_encoder,
+				struct intel_crtc_state *old_crtc_state,
+				struct drm_connector_state *old_conn_state)
+{
+	struct drm_i915_private *dev_priv = to_i915(intel_encoder->base.dev);
+	uint32_t val;
+
+	/*
+	 * Bspec lists this as both step 13 (before DDI_BUF_CTL disable)
+	 * and step 18 (after clearing PORT_CLK_SEL). Based on a BUN,
+	 * step 13 is the correct place for it. Step 18 is where it was
+	 * originally before the BUN.
+	 */
+	val = I915_READ(FDI_RX_CTL(PIPE_A));
+	val &= ~FDI_RX_ENABLE;
+	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
+
+	intel_ddi_post_disable(intel_encoder, old_crtc_state, old_conn_state);
+
+	val = I915_READ(FDI_RX_MISC(PIPE_A));
+	val &= ~(FDI_RX_PWRDN_LANE1_MASK | FDI_RX_PWRDN_LANE0_MASK);
+	val |= FDI_RX_PWRDN_LANE1_VAL(2) | FDI_RX_PWRDN_LANE0_VAL(2);
+	I915_WRITE(FDI_RX_MISC(PIPE_A), val);
+
+	val = I915_READ(FDI_RX_CTL(PIPE_A));
+	val &= ~FDI_PCDCLK;
+	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
+
+	val = I915_READ(FDI_RX_CTL(PIPE_A));
+	val &= ~FDI_RX_PLL_ENABLE;
+	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
+}
+
+static void intel_enable_ddi(struct intel_encoder *intel_encoder,
+			     struct intel_crtc_state *pipe_config,
+			     struct drm_connector_state *conn_state)
 {
 	struct drm_encoder *encoder = &intel_encoder->base;
 	struct drm_crtc *crtc = encoder->crtc;
@@ -1737,7 +1778,7 @@ static void intel_enable_ddi(struct intel_encoder *intel_encoder)
 
 		intel_edp_backlight_on(intel_dp);
 		intel_psr_enable(intel_dp);
-		intel_edp_drrs_enable(intel_dp);
+		intel_edp_drrs_enable(intel_dp, pipe_config);
 	}
 
 	if (intel_crtc->config->has_audio) {
@@ -1746,7 +1787,9 @@ static void intel_enable_ddi(struct intel_encoder *intel_encoder)
 	}
 }
 
-static void intel_disable_ddi(struct intel_encoder *intel_encoder)
+static void intel_disable_ddi(struct intel_encoder *intel_encoder,
+			      struct intel_crtc_state *old_crtc_state,
+			      struct drm_connector_state *old_conn_state)
 {
 	struct drm_encoder *encoder = &intel_encoder->base;
 	struct drm_crtc *crtc = encoder->crtc;
@@ -1763,7 +1806,7 @@ static void intel_disable_ddi(struct intel_encoder *intel_encoder)
 	if (type == INTEL_OUTPUT_EDP) {
 		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
 
-		intel_edp_drrs_disable(intel_dp);
+		intel_edp_drrs_disable(intel_dp, old_crtc_state);
 		intel_psr_disable(intel_dp);
 		intel_edp_backlight_off(intel_dp);
 	}
@@ -2052,7 +2095,9 @@ bxt_ddi_phy_calc_lane_lat_optim_mask(struct intel_encoder *encoder,
 	}
 }
 
-static void bxt_ddi_pre_pll_enable(struct intel_encoder *encoder)
+static void bxt_ddi_pre_pll_enable(struct intel_encoder *encoder,
+				   struct intel_crtc_state *pipe_config,
+				   struct drm_connector_state *conn_state)
 {
 	struct intel_digital_port *dport = enc_to_dig_port(&encoder->base);
 	struct drm_i915_private *dev_priv = to_i915(dport->base.base.dev);
@@ -2139,38 +2184,6 @@ void intel_ddi_prepare_link_retrain(struct intel_dp *intel_dp)
 	POSTING_READ(DDI_BUF_CTL(port));
 
 	udelay(600);
-}
-
-void intel_ddi_fdi_disable(struct drm_crtc *crtc)
-{
-	struct drm_i915_private *dev_priv = to_i915(crtc->dev);
-	struct intel_encoder *intel_encoder = intel_ddi_get_crtc_encoder(crtc);
-	uint32_t val;
-
-	/*
-	 * Bspec lists this as both step 13 (before DDI_BUF_CTL disable)
-	 * and step 18 (after clearing PORT_CLK_SEL). Based on a BUN,
-	 * step 13 is the correct place for it. Step 18 is where it was
-	 * originally before the BUN.
-	 */
-	val = I915_READ(FDI_RX_CTL(PIPE_A));
-	val &= ~FDI_RX_ENABLE;
-	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
-
-	intel_ddi_post_disable(intel_encoder);
-
-	val = I915_READ(FDI_RX_MISC(PIPE_A));
-	val &= ~(FDI_RX_PWRDN_LANE1_MASK | FDI_RX_PWRDN_LANE0_MASK);
-	val |= FDI_RX_PWRDN_LANE1_VAL(2) | FDI_RX_PWRDN_LANE0_VAL(2);
-	I915_WRITE(FDI_RX_MISC(PIPE_A), val);
-
-	val = I915_READ(FDI_RX_CTL(PIPE_A));
-	val &= ~FDI_PCDCLK;
-	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
-
-	val = I915_READ(FDI_RX_CTL(PIPE_A));
-	val &= ~FDI_RX_PLL_ENABLE;
-	I915_WRITE(FDI_RX_CTL(PIPE_A), val);
 }
 
 void intel_ddi_get_config(struct intel_encoder *encoder,
@@ -2272,7 +2285,8 @@ void intel_ddi_get_config(struct intel_encoder *encoder,
 }
 
 static bool intel_ddi_compute_config(struct intel_encoder *encoder,
-				     struct intel_crtc_state *pipe_config)
+				     struct intel_crtc_state *pipe_config,
+				     struct drm_connector_state *conn_state)
 {
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 	int type = encoder->type;
@@ -2285,9 +2299,9 @@ static bool intel_ddi_compute_config(struct intel_encoder *encoder,
 		pipe_config->cpu_transcoder = TRANSCODER_EDP;
 
 	if (type == INTEL_OUTPUT_HDMI)
-		ret = intel_hdmi_compute_config(encoder, pipe_config);
+		ret = intel_hdmi_compute_config(encoder, pipe_config, conn_state);
 	else
-		ret = intel_dp_compute_config(encoder, pipe_config);
+		ret = intel_dp_compute_config(encoder, pipe_config, conn_state);
 
 	if (IS_BROXTON(dev_priv) && ret)
 		pipe_config->lane_lat_optim_mask =
