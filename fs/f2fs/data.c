@@ -1642,10 +1642,8 @@ repeat:
 	if (f2fs_encrypted_inode(inode) && S_ISREG(inode->i_mode))
 		f2fs_wait_on_encrypted_page_writeback(sbi, blkaddr);
 
-	if (len == PAGE_SIZE)
-		goto out_update;
-	if (PageUptodate(page))
-		goto out_clear;
+	if (len == PAGE_SIZE || PageUptodate(page))
+		return 0;
 
 	if (blkaddr == NEW_ADDR) {
 		zero_user_segment(page, 0, PAGE_SIZE);
@@ -1676,11 +1674,8 @@ repeat:
 			goto fail;
 		}
 	}
-out_update:
 	if (!PageUptodate(page))
 		SetPageUptodate(page);
-out_clear:
-	clear_cold_data(page);
 	return 0;
 
 fail:
@@ -1698,11 +1693,28 @@ static int f2fs_write_end(struct file *file,
 
 	trace_f2fs_write_end(inode, pos, len, copied);
 
+	if (!copied)
+		goto unlock_out;
+
+	/*
+	 * This should be come from len == PAGE_SIZE, so we need to fill out
+	 * zeros in the unwritten remaining space.
+	 * The flow was copied from fuse_write_end().
+	 */
+	if (!PageUptodate(page)) {
+		size_t endoff = (pos + copied) & ~PAGE_MASK;
+
+		if (endoff)
+			zero_user_segment(page, endoff, PAGE_SIZE);
+		SetPageUptodate(page);
+	}
+
 	set_page_dirty(page);
+	clear_cold_data(page);
 
 	if (pos + copied > i_size_read(inode))
 		f2fs_i_size_write(inode, pos + copied);
-
+unlock_out:
 	f2fs_put_page(page, 1);
 	f2fs_update_time(F2FS_I_SB(inode), REQ_TIME);
 	return copied;
