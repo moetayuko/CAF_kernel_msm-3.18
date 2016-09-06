@@ -942,7 +942,6 @@ void common_cpu_up(unsigned int cpu, struct task_struct *idle)
 	per_cpu(cpu_current_top_of_stack, cpu) =
 		(unsigned long)task_stack_page(idle) + THREAD_SIZE;
 #else
-	clear_tsk_thread_flag(idle, TIF_FORK);
 	initial_gs = per_cpu_offset(cpu);
 #endif
 }
@@ -969,7 +968,7 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 
 	early_gdt_descr.address = (unsigned long)get_cpu_gdt_table(cpu);
 	initial_code = (unsigned long)start_secondary;
-	stack_start  = idle->thread.sp;
+	initial_stack  = idle->thread.sp;
 
 	/*
 	 * Enable the espfix hack for this CPU
@@ -1115,17 +1114,8 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 	common_cpu_up(cpu, tidle);
 
-	/*
-	 * We have to walk the irq descriptors to setup the vector
-	 * space for the cpu which comes online.  Prevent irq
-	 * alloc/free across the bringup.
-	 */
-	irq_lock_sparse();
-
 	err = do_boot_cpu(apicid, cpu, tidle);
-
 	if (err) {
-		irq_unlock_sparse();
 		pr_err("do_boot_cpu failed(%d) to wakeup CPU#%u\n", err, cpu);
 		return -EIO;
 	}
@@ -1142,8 +1132,6 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 		cpu_relax();
 		touch_nmi_watchdog();
 	}
-
-	irq_unlock_sparse();
 
 	return 0;
 }
@@ -1323,14 +1311,13 @@ void __init native_smp_prepare_cpus(unsigned int max_cpus)
 		break;
 	}
 
-	default_setup_apic_routing();
-
 	if (read_apic_id() != boot_cpu_physical_apicid) {
 		panic("Boot APIC ID in local APIC unexpected (%d vs %d)",
 		     read_apic_id(), boot_cpu_physical_apicid);
 		/* Or can we switch back to PIC here? */
 	}
 
+	default_setup_apic_routing();
 	cpu0_logical_apicid = apic_bsp_setup(false);
 
 	pr_info("CPU%d: ", 0);
