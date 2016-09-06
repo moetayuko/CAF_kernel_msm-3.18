@@ -409,7 +409,6 @@ enum rproc_crash_type {
  * @max_notifyid: largest allocated notify id.
  * @table_ptr: pointer to the resource table in effect
  * @cached_table: copy of the resource table
- * @table_csum: checksum of the resource table
  * @has_iommu: flag to indicate if remote processor is behind an MMU
  */
 struct rproc {
@@ -435,14 +434,14 @@ struct rproc {
 	struct idr notifyids;
 	int index;
 	struct work_struct crash_handler;
-	unsigned crash_cnt;
+	unsigned int crash_cnt;
 	struct completion crash_comp;
 	bool recovery_disabled;
 	int max_notifyid;
 	struct resource_table *table_ptr;
 	struct resource_table *cached_table;
-	u32 table_csum;
 	bool has_iommu;
+	bool auto_boot;
 };
 
 /* we currently support only two vrings per rvdev */
@@ -489,8 +488,8 @@ struct rproc_vdev {
 
 struct rproc *rproc_get_by_phandle(phandle phandle);
 struct rproc *rproc_alloc(struct device *dev, const char *name,
-				const struct rproc_ops *ops,
-				const char *firmware, int len);
+			  const struct rproc_ops *ops,
+			  const char *firmware, int len);
 void rproc_put(struct rproc *rproc);
 int rproc_add(struct rproc *rproc);
 int rproc_del(struct rproc *rproc);
