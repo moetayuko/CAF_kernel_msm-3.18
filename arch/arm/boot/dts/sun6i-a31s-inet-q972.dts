@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright 2016 Hans de Goede <hdegoede@redhat.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -41,10 +41,60 @@
  */
 
 /dts-v1/;
-#include "sun5i-a13.dtsi"
-#include "sun5i-reference-design-tablet.dtsi"
+#include "sun6i-a31s.dtsi"
+#include "sun6i-reference-design-tablet.dtsi"
 
 / {
-	model = "INet-98V Rev 02";
-	compatible = "primux,inet98v-rev2", "allwinner,sun5i-a13";
+	model = "iNet Q972 tablet";
+	compatible = "inet-tek,inet-q972", "allwinner,sun6i-a31s";
+};
+
+&ehci1 {
+	status = "okay";
+};
+
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_a>;
+	status = "okay";
+
+	ft5406ee8: touchscreen@38 {
+		compatible = "edt,edt-ft5406";
+		reg = <0x38>;
+		interrupt-parent = <&pio>;
+		interrupts = <0 3 IRQ_TYPE_LEVEL_HIGH>; /* PA3 */
+		touchscreen-size-x = <768>;
+		touchscreen-size-y = <1024>;
+		touchscreen-swapped-x-y;
+	};
+};
+
+&lradc {
+	vref-supply = <&reg_aldo3>;
+	status = "okay";
+
+	button@200 {
+		label = "Volume Down";
+		linux,code = <KEY_VOLUMEDOWN>;
+		channel = <0>;
+		voltage = <200000>;
+	};
+
+	button@900 {
+		label = "Volume Up";
+		linux,code = <KEY_VOLUMEUP>;
+		channel = <0>;
+		voltage = <900000>;
+	};
+
+	button@1200 {
+		label = "Back";
+		linux,code = <KEY_BACK>;
+		channel = <0>;
+		voltage = <1200000>;
+	};
+};
+
+&ohci1 {
+	status = "okay";
 };

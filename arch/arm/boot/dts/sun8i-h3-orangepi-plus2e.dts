@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright (C) 2016 Hans de Goede <hdegoede@redhat.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -40,11 +40,14 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/dts-v1/;
-#include "sun5i-a13.dtsi"
-#include "sun5i-reference-design-tablet.dtsi"
+/*
+ * The Orange Pi Plus 2E is an extended version of the Orange Pi PC Plus,
+ * with 2G RAM and an external gbit ethernet phy.
+ */
+
+#include "sun8i-h3-orangepi-pc-plus.dts"
 
 / {
-	model = "INet-98V Rev 02";
-	compatible = "primux,inet98v-rev2", "allwinner,sun5i-a13";
+	model = "Xunlong Orange Pi Plus 2E";
+	compatible = "xunlong,orangepi-plus2e", "allwinner,sun8i-h3";
 };
