@@ -674,6 +674,11 @@ enum hv_signal_policy {
 	HV_SIGNAL_POLICY_EXPLICIT,
 };
 
+enum hv_numa_policy {
+	HV_BALANCED = 0,
+	HV_LOCALIZED,
+};
+
 enum vmbus_device_type {
 	HV_IDE = 0,
 	HV_SCSI,
@@ -850,6 +855,43 @@ struct vmbus_channel {
 	 * ring lock to preserve the current behavior.
 	 */
 	bool acquire_ring_lock;
+	/*
+	 * For performance critical channels (storage, networking
+	 * etc,), Hyper-V has a mechanism to enhance the throughput
+	 * at the expense of latency:
+	 * When the host is to be signaled, we just set a bit in a shared page
+	 * and this bit will be inspected by the hypervisor within a certain
+	 * window and if the bit is set, the host will be signaled. The window
+	 * of time is the monitor latency - currently around 100 usecs. This
+	 * mechanism improves throughput by:
+	 *
+	 * A) Making the host more efficient - each time it wakes up,
+	 *    potentially it will process morev number of packets. The
+	 *    monitor latency allows a batch to build up.
+	 * B) By deferring the hypercall to signal, we will also minimize
+	 *    the interrupts.
+	 *
+	 * Clearly, these optimizations improve throughput at the expense of
+	 * latency. Furthermore, since the channel is shared for both
+	 * control and data messages, control messages currently suffer
+	 * unnecessary latency adversley impacting performance and boot
+	 * time. To fix this issue, permit tagging the channel as being
+	 * in "low latency" mode. In this mode, we will bypass the monitor
+	 * mechanism.
+	 */
+	bool low_latency;
+
+	/*
+	 * NUMA distribution policy:
+	 * We support teo policies:
+	 * 1) Balanced: Here all performance critical channels are
+	 *    distributed evenly amongst all the NUMA nodes.
+	 *    This policy will be the default policy.
+	 * 2) Localized: All channels of a given instance of a
+	 *    performance critical service will be assigned CPUs
+	 *    within a selected NUMA node.
+	 */
+	enum hv_numa_policy affinity_policy;
 
 };
 
@@ -868,6 +910,12 @@ static inline void set_channel_signal_state(struct vmbus_channel *c,
 					    enum hv_signal_policy policy)
 {
 	c->signal_policy = policy;
+}
+
+static inline void set_channel_affinity_state(struct vmbus_channel *c,
+					      enum hv_numa_policy policy)
+{
+	c->affinity_policy = policy;
 }
 
 static inline void set_channel_read_state(struct vmbus_channel *c, bool state)
@@ -889,6 +937,16 @@ static inline void set_channel_pending_send_size(struct vmbus_channel *c,
 						 u32 size)
 {
 	c->outbound.ring_buffer->pending_send_sz = size;
+}
+
+static inline void set_low_latency_mode(struct vmbus_channel *c)
+{
+	c->low_latency = true;
+}
+
+static inline void clear_low_latency_mode(struct vmbus_channel *c)
+{
+	c->low_latency = false;
 }
 
 void vmbus_onmessage(void *context);
@@ -1363,6 +1421,9 @@ struct hyperv_service_callback {
 extern bool vmbus_prep_negotiate_resp(struct icmsg_hdr *,
 					struct icmsg_negotiate *, u8 *, int,
 					int);
+
+void hv_event_tasklet_disable(struct vmbus_channel *channel);
+void hv_event_tasklet_enable(struct vmbus_channel *channel);
 
 void hv_process_channel_removal(struct vmbus_channel *channel, u32 relid);
 
