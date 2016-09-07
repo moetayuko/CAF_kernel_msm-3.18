@@ -22,7 +22,8 @@
 	aliases {
 	};
 
-	memory {
+	memory@40000000 {
+		device_type = "memory";
 		reg = <0x40000000 0x80000000>;
 	};
 
@@ -116,7 +117,7 @@
 };
 
 &hdmi {
-	hpd-gpio = <&gpx3 7 GPIO_ACTIVE_HIGH>;
+	hpd-gpios = <&gpx3 7 GPIO_ACTIVE_HIGH>;
 };
 
 &i2c_0 {
