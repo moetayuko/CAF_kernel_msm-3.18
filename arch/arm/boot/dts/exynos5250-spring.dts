@@ -20,7 +20,8 @@
 	model = "Google Spring";
 	compatible = "google,spring", "samsung,exynos5250", "samsung,exynos5";
 
-	memory {
+	memory@40000000 {
+		device_type = "memory";
 		reg = <0x40000000 0x80000000>;
 	};
 
@@ -91,7 +92,7 @@
 };
 
 &hdmi {
-	hpd-gpio = <&gpx3 7 GPIO_ACTIVE_HIGH>;
+	hpd-gpios = <&gpx3 7 GPIO_ACTIVE_HIGH>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&hdmi_hpd_irq>;
 	phy = <&hdmiphy>;
