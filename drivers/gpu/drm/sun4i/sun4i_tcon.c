@@ -59,11 +59,13 @@ void sun4i_tcon_channel_disable(struct sun4i_tcon *tcon, int channel)
 		regmap_update_bits(tcon->regs, SUN4I_TCON0_CTL_REG,
 				   SUN4I_TCON0_CTL_TCON_ENABLE, 0);
 		clk_disable_unprepare(tcon->dclk);
-	} else if (channel == 1) {
-		regmap_update_bits(tcon->regs, SUN4I_TCON1_CTL_REG,
-				   SUN4I_TCON1_CTL_TCON_ENABLE, 0);
-		clk_disable_unprepare(tcon->sclk1);
+		return;
 	}
+
+	WARN_ON(!tcon->has_channel_1);
+	regmap_update_bits(tcon->regs, SUN4I_TCON1_CTL_REG,
+			   SUN4I_TCON1_CTL_TCON_ENABLE, 0);
+	clk_disable_unprepare(tcon->sclk1);
 }
 EXPORT_SYMBOL(sun4i_tcon_channel_disable);
 
@@ -75,12 +77,14 @@ void sun4i_tcon_channel_enable(struct sun4i_tcon *tcon, int channel)
 				   SUN4I_TCON0_CTL_TCON_ENABLE,
 				   SUN4I_TCON0_CTL_TCON_ENABLE);
 		clk_prepare_enable(tcon->dclk);
-	} else if (channel == 1) {
-		regmap_update_bits(tcon->regs, SUN4I_TCON1_CTL_REG,
-				   SUN4I_TCON1_CTL_TCON_ENABLE,
-				   SUN4I_TCON1_CTL_TCON_ENABLE);
-		clk_prepare_enable(tcon->sclk1);
+		return;
 	}
+
+	WARN_ON(!tcon->has_channel_1);
+	regmap_update_bits(tcon->regs, SUN4I_TCON1_CTL_REG,
+			   SUN4I_TCON1_CTL_TCON_ENABLE,
+			   SUN4I_TCON1_CTL_TCON_ENABLE);
+	clk_prepare_enable(tcon->sclk1);
 }
 EXPORT_SYMBOL(sun4i_tcon_channel_enable);
 
@@ -197,6 +201,8 @@ void sun4i_tcon1_mode_set(struct sun4i_tcon *tcon,
 	unsigned int bp, hsync, vsync;
 	u8 clk_delay;
 	u32 val;
+
+	WARN_ON(!tcon->has_channel_1);
 
 	/* Adjust clock delay */
 	clk_delay = sun4i_tcon_get_clk_delay(mode, 1);
@@ -321,10 +327,12 @@ static int sun4i_tcon_init_clocks(struct device *dev,
 		return PTR_ERR(tcon->sclk0);
 	}
 
-	tcon->sclk1 = devm_clk_get(dev, "tcon-ch1");
-	if (IS_ERR(tcon->sclk1)) {
-		dev_err(dev, "Couldn't get the TCON channel 1 clock\n");
-		return PTR_ERR(tcon->sclk1);
+	if (tcon->has_channel_1) {
+		tcon->sclk1 = devm_clk_get(dev, "tcon-ch1");
+		if (IS_ERR(tcon->sclk1)) {
+			dev_err(dev, "Couldn't get the TCON channel 1 clock\n");
+			return PTR_ERR(tcon->sclk1);
+		}
 	}
 
 	return sun4i_dclk_create(dev, tcon);
@@ -480,8 +488,13 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 	tcon->drm = drm;
 	tcon->dev = dev;
 
-	if (of_device_is_compatible(dev->of_node, "allwinner,sun5i-a13-tcon"))
+	if (of_device_is_compatible(dev->of_node, "allwinner,sun5i-a13-tcon")) {
 		tcon->has_mux = true;
+		tcon->has_channel_1 = true;
+	} else {
+		tcon->has_mux = false;
+		tcon->has_channel_1 = false;
+	}
 
 	tcon->lcd_rst = devm_reset_control_get(dev, "lcd");
 	if (IS_ERR(tcon->lcd_rst)) {
@@ -577,6 +590,7 @@ static int sun4i_tcon_remove(struct platform_device *pdev)
 
 static const struct of_device_id sun4i_tcon_of_table[] = {
 	{ .compatible = "allwinner,sun5i-a13-tcon" },
+	{ .compatible = "allwinner,sun8i-a33-tcon" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sun4i_tcon_of_table);
