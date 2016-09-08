@@ -103,9 +103,6 @@ in_irq_stack(unsigned long *stack, unsigned long *irq_stack,
 	return (stack >= irq_stack && stack < irq_stack_end);
 }
 
-static const unsigned long irq_stack_size =
-	(IRQ_STACK_SIZE - 64) / sizeof(unsigned long);
-
 enum stack_type {
 	STACK_IS_UNKNOWN,
 	STACK_IS_NORMAL,
@@ -133,7 +130,7 @@ analyze_stack(int cpu, struct task_struct *task, unsigned long *stack,
 		return STACK_IS_NORMAL;
 
 	*stack_end = irq_stack;
-	irq_stack = irq_stack - irq_stack_size;
+	irq_stack -= (IRQ_STACK_SIZE / sizeof(long));
 
 	if (in_irq_stack(stack, irq_stack, *stack_end))
 		return STACK_IS_IRQ;
@@ -154,25 +151,14 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 {
 	const unsigned cpu = get_cpu();
 	unsigned long *irq_stack = (unsigned long *)per_cpu(irq_stack_ptr, cpu);
-	unsigned long dummy;
 	unsigned used = 0;
 	int graph = 0;
 	int done = 0;
 
-	if (!task)
-		task = current;
+	task = task ? : current;
+	stack = stack ? : get_stack_pointer(task, regs);
+	bp = bp ? : (unsigned long)get_frame_pointer(task, regs);
 
-	if (!stack) {
-		if (regs)
-			stack = (unsigned long *)regs->sp;
-		else if (task != current)
-			stack = (unsigned long *)task->thread.sp;
-		else
-			stack = &dummy;
-	}
-
-	if (!bp)
-		bp = stack_frame(task, regs);
 	/*
 	 * Print function call entries in all stacks, starting at the
 	 * current stack address. If the stacks consist of nested
@@ -202,7 +188,7 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 
 			bp = ops->walk_stack(task, stack, bp, ops,
 					     data, stack_end, &graph);
-			ops->stack(data, "<EOE>");
+			ops->stack(data, "EOE");
 			/*
 			 * We link to the next stack via the
 			 * second-to-last pointer (index -2 to end) in the
@@ -256,21 +242,10 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 	preempt_disable();
 	cpu = smp_processor_id();
 
-	irq_stack_end	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu));
-	irq_stack	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu) - IRQ_STACK_SIZE);
+	irq_stack_end = (unsigned long *)(per_cpu(irq_stack_ptr, cpu));
+	irq_stack     = irq_stack_end - (IRQ_STACK_SIZE / sizeof(long));
 
-	/*
-	 * Debugging aid: "show_stack(NULL, NULL);" prints the
-	 * back trace for this cpu:
-	 */
-	if (sp == NULL) {
-		if (regs)
-			sp = (unsigned long *)regs->sp;
-		else if (task)
-			sp = (unsigned long *)task->thread.sp;
-		else
-			sp = (unsigned long *)&sp;
-	}
+	sp = sp ? : get_stack_pointer(task, regs);
 
 	stack = sp;
 	for (i = 0; i < kstack_depth_to_print; i++) {
@@ -308,9 +283,7 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 void show_regs(struct pt_regs *regs)
 {
 	int i;
-	unsigned long sp;
 
-	sp = regs->sp;
 	show_regs_print_info(KERN_DEFAULT);
 	__show_regs(regs, 1);
 
@@ -325,8 +298,7 @@ void show_regs(struct pt_regs *regs)
 		u8 *ip;
 
 		printk(KERN_DEFAULT "Stack:\n");
-		show_stack_log_lvl(NULL, regs, (unsigned long *)sp,
-				   0, KERN_DEFAULT);
+		show_stack_log_lvl(NULL, regs, NULL, 0, KERN_DEFAULT);
 
 		printk(KERN_DEFAULT "Code: ");
 
