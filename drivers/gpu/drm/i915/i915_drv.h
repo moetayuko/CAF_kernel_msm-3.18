@@ -70,7 +70,7 @@
 
 #define DRIVER_NAME		"i915"
 #define DRIVER_DESC		"Intel Graphics"
-#define DRIVER_DATE		"20160822"
+#define DRIVER_DATE		"20160902"
 
 #undef WARN_ON
 /* Many gcc seem to no see through this and fall over :( */
@@ -510,8 +510,12 @@ struct drm_i915_display_funcs {
 					 struct intel_initial_plane_config *);
 	int (*crtc_compute_clock)(struct intel_crtc *crtc,
 				  struct intel_crtc_state *crtc_state);
-	void (*crtc_enable)(struct drm_crtc *crtc);
-	void (*crtc_disable)(struct drm_crtc *crtc);
+	void (*crtc_enable)(struct intel_crtc_state *pipe_config,
+			    struct drm_atomic_state *old_state);
+	void (*crtc_disable)(struct intel_crtc_state *old_crtc_state,
+			     struct drm_atomic_state *old_state);
+	void (*update_crtcs)(struct drm_atomic_state *state,
+			     unsigned int *crtc_vblank_mask);
 	void (*audio_codec_enable)(struct drm_connector *connector,
 				   struct intel_encoder *encoder,
 				   const struct drm_display_mode *adjusted_mode);
@@ -575,8 +579,6 @@ struct intel_uncore_funcs {
 				uint16_t val, bool trace);
 	void (*mmio_writel)(struct drm_i915_private *dev_priv, i915_reg_t r,
 				uint32_t val, bool trace);
-	void (*mmio_writeq)(struct drm_i915_private *dev_priv, i915_reg_t r,
-				uint64_t val, bool trace);
 };
 
 struct intel_uncore {
@@ -637,7 +639,7 @@ struct intel_csr {
 	func(is_i915g) sep \
 	func(is_i945gm) sep \
 	func(is_g33) sep \
-	func(need_gfx_hws) sep \
+	func(hws_needs_physical) sep \
 	func(is_g4x) sep \
 	func(is_pineview) sep \
 	func(is_broadwater) sep \
@@ -652,6 +654,19 @@ struct intel_csr {
 	func(is_kabylake) sep \
 	func(is_preliminary) sep \
 	func(has_fbc) sep \
+	func(has_psr) sep \
+	func(has_runtime_pm) sep \
+	func(has_csr) sep \
+	func(has_resource_streamer) sep \
+	func(has_rc6) sep \
+	func(has_rc6p) sep \
+	func(has_dp_mst) sep \
+	func(has_gmbus_irq) sep \
+	func(has_hw_contexts) sep \
+	func(has_logical_ring_contexts) sep \
+	func(has_l3_dpf) sep \
+	func(has_gmch_display) sep \
+	func(has_guc) sep \
 	func(has_pipe_cxsr) sep \
 	func(has_hotplug) sep \
 	func(cursor_needs_physical) sep \
@@ -666,6 +681,24 @@ struct intel_csr {
 
 #define DEFINE_FLAG(name) u8 name:1
 #define SEP_SEMICOLON ;
+
+struct sseu_dev_info {
+	u8 slice_mask;
+	u8 subslice_mask;
+	u8 eu_total;
+	u8 eu_per_subslice;
+	u8 min_eu_in_pool;
+	/* For each slice, which subslice(s) has(have) 7 EUs (bitfield)? */
+	u8 subslice_7eu[3];
+	u8 has_slice_pg:1;
+	u8 has_subslice_pg:1;
+	u8 has_eu_pg:1;
+};
+
+static inline unsigned int sseu_subslice_total(const struct sseu_dev_info *sseu)
+{
+	return hweight8(sseu->slice_mask) * hweight8(sseu->subslice_mask);
+}
 
 struct intel_device_info {
 	u32 display_mmio_offset;
@@ -684,17 +717,7 @@ struct intel_device_info {
 	int cursor_offsets[I915_MAX_PIPES];
 
 	/* Slice/subslice/EU info */
-	u8 slice_total;
-	u8 subslice_total;
-	u8 subslice_per_slice;
-	u8 eu_total;
-	u8 eu_per_subslice;
-	u8 min_eu_in_pool;
-	/* For each slice, which subslice(s) has(have) 7 EUs (bitfield)? */
-	u8 subslice_7eu[3];
-	u8 has_slice_pg:1;
-	u8 has_subslice_pg:1;
-	u8 has_eu_pg:1;
+	struct sseu_dev_info sseu;
 
 	struct color_luts {
 		u16 degamma_lut_size;
@@ -1334,7 +1357,7 @@ struct i915_gem_mm {
 	bool interruptible;
 
 	/* the indicator for dispatch video commands on two BSD rings */
-	unsigned int bsd_engine_dispatch_index;
+	atomic_t bsd_engine_dispatch_index;
 
 	/** Bit 6 swizzling required for X tiling */
 	uint32_t bit_6_swizzle_x;
@@ -2064,9 +2087,9 @@ static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
 	return container_of(dev, struct drm_i915_private, drm);
 }
 
-static inline struct drm_i915_private *dev_to_i915(struct device *dev)
+static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 {
-	return to_i915(dev_get_drvdata(dev));
+	return to_i915(dev_get_drvdata(kdev));
 }
 
 static inline struct drm_i915_private *guc_to_i915(struct intel_guc *guc)
@@ -2089,13 +2112,16 @@ static inline struct drm_i915_private *guc_to_i915(struct intel_guc *guc)
 		for_each_if (((id__) = (engine__)->id, \
 			      intel_engine_initialized(engine__)))
 
+#define __mask_next_bit(mask) ({					\
+	int __idx = ffs(mask) - 1;					\
+	mask &= ~BIT(__idx);						\
+	__idx;								\
+})
+
 /* Iterator over subset of engines selected by mask */
-#define for_each_engine_masked(engine__, dev_priv__, mask__) \
-	for ((engine__) = &(dev_priv__)->engine[0]; \
-	     (engine__) < &(dev_priv__)->engine[I915_NUM_ENGINES]; \
-	     (engine__)++) \
-		for_each_if (((mask__) & intel_engine_flag(engine__)) && \
-			     intel_engine_initialized(engine__))
+#define for_each_engine_masked(engine__, dev_priv__, mask__, tmp__) \
+	for (tmp__ = mask__ & INTEL_INFO(dev_priv__)->ring_mask;	\
+	     tmp__ ? (engine__ = &(dev_priv__)->engine[__mask_next_bit(tmp__)]), 1 : 0; )
 
 enum hdmi_force_audio {
 	HDMI_AUDIO_OFF_DVI = -2,	/* no aux data for HDMI-DVI converter */
@@ -2556,7 +2582,7 @@ struct drm_i915_cmd_table {
 		BUILD_BUG(); \
 	__p; \
 })
-#define INTEL_INFO(p) 	(&__I915__(p)->info)
+#define INTEL_INFO(p)	(&__I915__(p)->info)
 #define INTEL_GEN(p)	(INTEL_INFO(p)->gen)
 #define INTEL_DEVID(p)	(INTEL_INFO(p)->device_id)
 
@@ -2723,10 +2749,10 @@ struct drm_i915_cmd_table {
 #define HAS_EDRAM(dev)		(!!(__I915__(dev)->edram_cap & EDRAM_ENABLED))
 #define HAS_WT(dev)		((IS_HASWELL(dev) || IS_BROADWELL(dev)) && \
 				 HAS_EDRAM(dev))
-#define I915_NEED_GFX_HWS(dev)	(INTEL_INFO(dev)->need_gfx_hws)
+#define HWS_NEEDS_PHYSICAL(dev)	(INTEL_INFO(dev)->hws_needs_physical)
 
-#define HAS_HW_CONTEXTS(dev)	(INTEL_INFO(dev)->gen >= 6)
-#define HAS_LOGICAL_RING_CONTEXTS(dev)	(INTEL_INFO(dev)->gen >= 8)
+#define HAS_HW_CONTEXTS(dev)	(INTEL_INFO(dev)->has_hw_contexts)
+#define HAS_LOGICAL_RING_CONTEXTS(dev)	(INTEL_INFO(dev)->has_logical_ring_contexts)
 #define USES_PPGTT(dev)		(i915.enable_ppgtt)
 #define USES_FULL_PPGTT(dev)	(i915.enable_ppgtt >= 2)
 #define USES_FULL_48BIT_PPGTT(dev)	(i915.enable_ppgtt == 3)
@@ -2750,7 +2776,7 @@ struct drm_i915_cmd_table {
  * interrupt source and so prevents the other device from working properly.
  */
 #define HAS_AUX_IRQ(dev) (INTEL_INFO(dev)->gen >= 5)
-#define HAS_GMBUS_IRQ(dev) (INTEL_INFO(dev)->gen >= 5)
+#define HAS_GMBUS_IRQ(dev) (INTEL_INFO(dev)->has_gmbus_irq)
 
 /* With the 945 and later, Y tiling got adjusted so that it was 32 128-byte
  * rows, which changed the alignment requirements and fence programming.
@@ -2766,38 +2792,27 @@ struct drm_i915_cmd_table {
 
 #define HAS_IPS(dev)		(IS_HSW_ULT(dev) || IS_BROADWELL(dev))
 
-#define HAS_DP_MST(dev)		(IS_HASWELL(dev) || IS_BROADWELL(dev) || \
-				 INTEL_INFO(dev)->gen >= 9)
+#define HAS_DP_MST(dev)	(INTEL_INFO(dev)->has_dp_mst)
 
 #define HAS_DDI(dev)		(INTEL_INFO(dev)->has_ddi)
 #define HAS_FPGA_DBG_UNCLAIMED(dev)	(INTEL_INFO(dev)->has_fpga_dbg)
-#define HAS_PSR(dev)		(IS_HASWELL(dev) || IS_BROADWELL(dev) || \
-				 IS_VALLEYVIEW(dev) || IS_CHERRYVIEW(dev) || \
-				 IS_SKYLAKE(dev) || IS_KABYLAKE(dev))
-#define HAS_RUNTIME_PM(dev)	(IS_GEN6(dev) || IS_HASWELL(dev) || \
-				 IS_BROADWELL(dev) || IS_VALLEYVIEW(dev) || \
-				 IS_CHERRYVIEW(dev) || IS_SKYLAKE(dev) || \
-				 IS_KABYLAKE(dev) || IS_BROXTON(dev))
-#define HAS_RC6(dev)		(INTEL_INFO(dev)->gen >= 6)
-#define HAS_RC6p(dev)		(IS_GEN6(dev) || IS_IVYBRIDGE(dev))
+#define HAS_PSR(dev)		(INTEL_INFO(dev)->has_psr)
+#define HAS_RUNTIME_PM(dev)	(INTEL_INFO(dev)->has_runtime_pm)
+#define HAS_RC6(dev)		(INTEL_INFO(dev)->has_rc6)
+#define HAS_RC6p(dev)		(INTEL_INFO(dev)->has_rc6p)
 
-#define HAS_CSR(dev)	(IS_GEN9(dev))
+#define HAS_CSR(dev)	(INTEL_INFO(dev)->has_csr)
 
 /*
  * For now, anything with a GuC requires uCode loading, and then supports
  * command submission once loaded. But these are logically independent
  * properties, so we have separate macros to test them.
  */
-#define HAS_GUC(dev)		(IS_GEN9(dev))
+#define HAS_GUC(dev)		(INTEL_INFO(dev)->has_guc)
 #define HAS_GUC_UCODE(dev)	(HAS_GUC(dev))
 #define HAS_GUC_SCHED(dev)	(HAS_GUC(dev))
 
-#define HAS_RESOURCE_STREAMER(dev) (IS_HASWELL(dev) || \
-				    INTEL_INFO(dev)->gen >= 8)
-
-#define HAS_CORE_RING_FREQ(dev)	(INTEL_INFO(dev)->gen >= 6 && \
-				 !IS_VALLEYVIEW(dev) && !IS_CHERRYVIEW(dev) && \
-				 !IS_BROXTON(dev))
+#define HAS_RESOURCE_STREAMER(dev) (INTEL_INFO(dev)->has_resource_streamer)
 
 #define HAS_POOLED_EU(dev)	(INTEL_INFO(dev)->has_pooled_eu)
 
@@ -2825,11 +2840,10 @@ struct drm_i915_cmd_table {
 #define HAS_PCH_NOP(dev) (INTEL_PCH_TYPE(dev) == PCH_NOP)
 #define HAS_PCH_SPLIT(dev) (INTEL_PCH_TYPE(dev) != PCH_NONE)
 
-#define HAS_GMCH_DISPLAY(dev) (INTEL_INFO(dev)->gen < 5 || \
-			       IS_VALLEYVIEW(dev) || IS_CHERRYVIEW(dev))
+#define HAS_GMCH_DISPLAY(dev) (INTEL_INFO(dev)->has_gmch_display)
 
 /* DPF == dynamic parity feature */
-#define HAS_L3_DPF(dev) (IS_IVYBRIDGE(dev) || IS_HASWELL(dev))
+#define HAS_L3_DPF(dev) (INTEL_INFO(dev)->has_l3_dpf)
 #define NUM_L3_SLICES(dev) (IS_HSW_GT3(dev) ? 2 : HAS_L3_DPF(dev))
 
 #define GT_FREQUENCY_MULTIPLIER 50
@@ -2850,7 +2864,7 @@ extern int i915_suspend_switcheroo(struct drm_device *dev, pm_message_t state);
 extern int i915_resume_switcheroo(struct drm_device *dev);
 
 int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
-			       	int enable_ppgtt);
+				int enable_ppgtt);
 
 bool intel_sanitize_semaphores(struct drm_i915_private *dev_priv, int value);
 
@@ -3214,6 +3228,7 @@ int i915_gem_dumb_create(struct drm_file *file_priv,
 			 struct drm_mode_create_dumb *args);
 int i915_gem_mmap_gtt(struct drm_file *file_priv, struct drm_device *dev,
 		      uint32_t handle, uint64_t *offset);
+int i915_gem_mmap_gtt_version(void);
 
 void i915_gem_track_fb(struct drm_i915_gem_object *old,
 		       struct drm_i915_gem_object *new,
@@ -3514,13 +3529,13 @@ static inline bool i915_gem_object_needs_bit17_swizzle(struct drm_i915_gem_objec
 int i915_debugfs_register(struct drm_i915_private *dev_priv);
 void i915_debugfs_unregister(struct drm_i915_private *dev_priv);
 int i915_debugfs_connector_add(struct drm_connector *connector);
-void intel_display_crc_init(struct drm_device *dev);
+void intel_display_crc_init(struct drm_i915_private *dev_priv);
 #else
 static inline int i915_debugfs_register(struct drm_i915_private *dev_priv) {return 0;}
 static inline void i915_debugfs_unregister(struct drm_i915_private *dev_priv) {}
 static inline int i915_debugfs_connector_add(struct drm_connector *connector)
 { return 0; }
-static inline void intel_display_crc_init(struct drm_device *dev) {}
+static inline void intel_display_crc_init(struct drm_i915_private *dev_priv) {}
 #endif
 
 /* i915_gpu_error.c */
@@ -3564,8 +3579,8 @@ extern int i915_save_state(struct drm_device *dev);
 extern int i915_restore_state(struct drm_device *dev);
 
 /* i915_sysfs.c */
-void i915_setup_sysfs(struct drm_device *dev_priv);
-void i915_teardown_sysfs(struct drm_device *dev_priv);
+void i915_setup_sysfs(struct drm_i915_private *dev_priv);
+void i915_teardown_sysfs(struct drm_i915_private *dev_priv);
 
 /* intel_i2c.c */
 extern int intel_setup_gmbus(struct drm_device *dev);
@@ -3742,9 +3757,16 @@ int intel_freq_opcode(struct drm_i915_private *dev_priv, int val);
  * will be implemented using 2 32-bit writes in an arbitrary order with
  * an arbitrary delay between them. This can cause the hardware to
  * act upon the intermediate value, possibly leading to corruption and
- * machine death. You have been warned.
+ * machine death. For this reason we do not support I915_WRITE64, or
+ * dev_priv->uncore.funcs.mmio_writeq.
+ *
+ * When reading a 64-bit value as two 32-bit values, the delay may cause
+ * the two reads to mismatch, e.g. a timestamp overflowing. Also note that
+ * occasionally a 64-bit register does not actualy support a full readq
+ * and must be read using two 32-bit reads.
+ *
+ * You have been warned.
  */
-#define I915_WRITE64(reg, val)	dev_priv->uncore.funcs.mmio_writeq(dev_priv, (reg), (val), true)
 #define I915_READ64(reg)	dev_priv->uncore.funcs.mmio_readq(dev_priv, (reg), true)
 
 #define I915_READ64_2x32(lower_reg, upper_reg) ({			\
@@ -3787,7 +3809,7 @@ __raw_write(64, q)
 #undef __raw_write
 
 /* These are untraced mmio-accessors that are only valid to be used inside
- * criticial sections inside IRQ handlers where forcewake is explicitly
+ * critical sections inside IRQ handlers where forcewake is explicitly
  * controlled.
  * Think twice, and think again, before using these.
  * Note: Should only be used between intel_uncore_forcewake_irqlock() and
