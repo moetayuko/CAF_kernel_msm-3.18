@@ -1,5 +1,6 @@
 /*
  * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright 2016 Icenowy Zheng <icenowy@aosc.xyz>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -41,10 +42,47 @@
  */
 
 /dts-v1/;
-#include "sun5i-a13.dtsi"
-#include "sun5i-reference-design-tablet.dtsi"
+#include "sun8i-a33.dtsi"
+#include "sun8i-reference-design-tablet.dtsi"
 
 / {
-	model = "INet-98V Rev 02";
-	compatible = "primux,inet98v-rev2", "allwinner,sun5i-a13";
+	model = "INet-D978 Rev 02";
+	compatible = "primux,inet-d978-rev2", "allwinner,sun8i-a33";
+
+	leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&led_pin_d978>;
+
+		home {
+			label = "d978:blue:home";
+			gpios = <&r_pio 0 5 GPIO_ACTIVE_HIGH>; /* PL5 */
+		};
+	};
+};
+
+&mmc1_pins_a {
+	allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
+};
+
+&mmc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc1_pins_a>;
+	vmmc-supply = <&reg_dldo1>;
+	bus-width = <4>;
+	non-removable;
+	status = "okay";
+
+	rtl8723bs: sdio_wifi@1 {
+		reg = <1>;
+	};
+};
+
+&r_pio {
+	led_pin_d978: led_pin_d978@0 {
+		allwinner,pins = "PL5";
+		allwinner,function = "gpio_out";
+		allwinner,drive = <SUN4I_PINCTRL_20_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
+	};
 };
