@@ -210,6 +210,22 @@
 		        };
 		};
 
+		spi_8 {
+			/* MOSI, MISO, CS, CLK */
+			qcom,pins = <&gp 49>, <&gp 50>, <&gp 51>, <&gp 52>;
+			qcom,num-grp-pins = <4>;
+			qcom,pin-func = <2>;
+			label = "spi_8";
+			spi_8_active: spi_8_active {
+				drive-strength = <6>;
+			  bias-disable;
+			};
+			spi_8_sleep: spi_8_sleep {
+				drive-strength = <6>;
+			  bias-disable;
+			};
+		};
+
 		pmx_i2c_1 {
 			qcom,pins = <&gp 2>, <&gp 3>; /* SDA, SCL */
 			qcom,num-grp-pins = <2>;

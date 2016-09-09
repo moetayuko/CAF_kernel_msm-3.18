@@ -86,3 +86,5 @@ ifeq ($(CONFIG_BOSCH_BMA2X2_ENABLE_INT2),y)
 endif
 
 obj-$(CONFIG_SENSORS_MC3430)	+= mc3xxx.o
+
+obj-y	+=  ots_pat9125/

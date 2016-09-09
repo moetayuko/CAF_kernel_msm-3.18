@@ -57,6 +57,40 @@
 	};
 };
 
+
+
+
+&i2c_5 {
+	status = "ok";
+	pixart_pat9125@75 {
+		compatible = "pixart,pat9125";
+		reg = <0x75>;
+		interrupt-parent = <&msm_gpio>; // Interrupt parent is APQ8094
+		interrupts = <39 0x2008>;
+		pixart_pat9125,irq-gpio = <&msm_gpio 39 0x2008>; // APQGPIO39 IRQ -- 0x2008 Low level
+	};
+};
+
+
+&spi_8 {
+		status = "ok";
+		pixart_ots@0 { //Slave driver and CS ID
+			compatible = "pixart,ots"; //Manufacturer, and Model
+			reg = <0>; //Same as CS ID
+			interrupt-parent = <&msm_gpio>; // Interrupt parent is APQ8094
+			interrupts = <66 0x2008>;
+			spi-max-frequency = <1000000>; //Max Frequency for Device
+			pixart_ots,irq-gpio = <&msm_gpio 66 0x2008>; // APQGPIO66 IRQ - 0x2008 Low level
+			/*
+			* Following elements are optional. For more detail respect to
+			* SPI please see /kernel/Documentation/devicetree/bindings/spi/spi-bus.txt
+			*/
+			spi-cpol; //CPOL bit set for SPI polarity
+			spi-cpha; //CPHA bit set for SPI Phase
+			//spi-cs-high; //CS Active High
+		};
+};
+
 &tspp {
 	status = "disabled";
 };
@@ -64,6 +98,17 @@
 &tlmm_pinmux{
 	spi_0 {
 		status = "disabled";
+	};
+
+	spi_8{
+		status = "ok";
+	};
+
+	pmx_ots_irq{
+			qcom,pins = <&gp 66>;
+			qcom,pin-func = <0>;
+			qcom,num-grp-pins = <1>;
+		label = "pmx_ots_irq";
 	};
 
 	pmx_i2c_1 {

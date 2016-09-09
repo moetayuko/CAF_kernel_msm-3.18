@@ -36,6 +36,7 @@
 		i2c2 = &i2c_2;
 		i2c5 = &i2c_5;
 		spi0 = &spi_0;
+		spi8 = &spi_8;
 		qup2 = &i2c_2;
 	};
 
@@ -1318,6 +1319,29 @@
 			 <&clock_gcc clk_gcc_blsp1_qup1_spi_apps_clk>;
 	};
 
+	spi_8: spi_ots: spi@f9965000 { /* BLSP2 QUP2  (BLSP9)*/
+		compatible = "qcom,spi-qup-v2";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg-names = "spi_physical";
+		reg = <0xf9965000 0x1000>;
+		interrupt-names = "spi_irq";
+		interrupts = <0 103 0>;
+		spi-max-frequency = <19200000>;
+
+		qcom,master-id = <84>;
+		qcom,use-pinctrl;
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&spi_8_active>;
+		pinctrl-1 = <&spi_8_sleep>;
+
+		clock-names = "iface_clk", "core_clk";
+
+		clocks = <&clock_gcc clk_gcc_blsp2_ahb_clk>,
+			 <&clock_gcc clk_gcc_blsp2_qup3_spi_apps_clk>;
+
+	};
+
 	qcom,msm-ssc-sensors {
 		compatible = "qcom,msm-ssc-sensors";
 	};
@@ -2411,7 +2435,7 @@
 		      <0xf9944000 0x19000>;
 		interrupt-names = "qup_irq", "bam_irq";
 		interrupts = <0 105 0>, <0 239 0>;
-		qcom,clk-freq-out = <100000>;
+		qcom,clk-freq-out = <400000>;
 		qcom,clk-freq-in  = <19200000>;
 		clock-names = "iface_clk", "core_clk";
 		clocks = <&clock_gcc clk_gcc_blsp2_ahb_clk>,
