@@ -245,7 +245,7 @@ void __init setup_arch(char **cmdline_p)
 	 * We should really do our own FPU check at startup.
 	 * [what do we do with buggy 68LC040s? if we have problems
 	 *  with them, we should add a test to check_bugs() below] */
-#ifndef CONFIG_M68KFPU_EMU_ONLY
+#if defined(CONFIG_FPU) && !defined(CONFIG_M68KFPU_EMU_ONLY)
 	/* clear the fpu if we have one */
 	if (m68k_fputype & (FPU_68881|FPU_68882|FPU_68040|FPU_68060|FPU_COLDFIRE)) {
 		volatile int zero = 0;
@@ -341,6 +341,7 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #ifdef CONFIG_COLDFIRE
 	case MACH_M54XX:
+	case MACH_M5441X:
 		config_BSP(NULL, 0);
 		break;
 #endif
@@ -548,7 +549,7 @@ module_init(proc_hardware_init);
 
 void check_bugs(void)
 {
-#ifndef CONFIG_M68KFPU_EMU
+#if defined(CONFIG_FPU) && !defined(CONFIG_M68KFPU_EMU)
 	if (m68k_fputype == 0) {
 		pr_emerg("*** YOU DO NOT HAVE A FLOATING POINT UNIT, "
 			"WHICH IS REQUIRED BY LINUX/M68K ***\n");
