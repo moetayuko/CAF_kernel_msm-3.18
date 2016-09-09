@@ -442,7 +442,7 @@ static int btrfs_check_super_csum(char *raw_disk_sb)
  */
 static int btree_read_extent_buffer_pages(struct btrfs_root *root,
 					  struct extent_buffer *eb,
-					  u64 start, u64 parent_transid)
+					  u64 parent_transid)
 {
 	struct extent_io_tree *io_tree;
 	int failed = 0;
@@ -454,8 +454,7 @@ static int btree_read_extent_buffer_pages(struct btrfs_root *root,
 	clear_bit(EXTENT_BUFFER_CORRUPT, &eb->bflags);
 	io_tree = &BTRFS_I(root->fs_info->btree_inode)->io_tree;
 	while (1) {
-		ret = read_extent_buffer_pages(io_tree, eb, start,
-					       WAIT_COMPLETE,
+		ret = read_extent_buffer_pages(io_tree, eb, WAIT_COMPLETE,
 					       btree_get_extent, mirror_num);
 		if (!ret) {
 			if (!verify_parent_transid(io_tree, eb,
@@ -1132,7 +1131,7 @@ void readahead_tree_block(struct btrfs_root *root, u64 bytenr)
 	if (IS_ERR(buf))
 		return;
 	read_extent_buffer_pages(&BTRFS_I(btree_inode)->io_tree,
-				 buf, 0, WAIT_NONE, btree_get_extent, 0);
+				 buf, WAIT_NONE, btree_get_extent, 0);
 	free_extent_buffer(buf);
 }
 
@@ -1150,7 +1149,7 @@ int reada_tree_block_flagged(struct btrfs_root *root, u64 bytenr,
 
 	set_bit(EXTENT_BUFFER_READAHEAD, &buf->bflags);
 
-	ret = read_extent_buffer_pages(io_tree, buf, 0, WAIT_PAGE_LOCK,
+	ret = read_extent_buffer_pages(io_tree, buf, WAIT_PAGE_LOCK,
 				       btree_get_extent, mirror_num);
 	if (ret) {
 		free_extent_buffer(buf);
@@ -1206,7 +1205,7 @@ struct extent_buffer *read_tree_block(struct btrfs_root *root, u64 bytenr,
 	if (IS_ERR(buf))
 		return buf;
 
-	ret = btree_read_extent_buffer_pages(root, buf, 0, parent_transid);
+	ret = btree_read_extent_buffer_pages(root, buf, parent_transid);
 	if (ret) {
 		free_extent_buffer(buf);
 		return ERR_PTR(ret);
@@ -1839,7 +1838,7 @@ static int cleaner_kthread(void *arg)
 		 * Do not do anything if we might cause open_ctree() to block
 		 * before we have finished mounting the filesystem.
 		 */
-		if (!root->fs_info->open)
+		if (!test_bit(BTRFS_FS_OPEN, &root->fs_info->flags))
 			goto sleep;
 
 		if (!mutex_trylock(&root->fs_info->cleaner_mutex))
@@ -2332,8 +2331,6 @@ static void btrfs_init_qgroup(struct btrfs_fs_info *fs_info)
 	fs_info->qgroup_op_tree = RB_ROOT;
 	INIT_LIST_HEAD(&fs_info->dirty_qgroups);
 	fs_info->qgroup_seq = 1;
-	fs_info->quota_enabled = 0;
-	fs_info->pending_quota_state = 0;
 	fs_info->qgroup_ulist = NULL;
 	fs_info->qgroup_rescan_running = false;
 	mutex_init(&fs_info->qgroup_rescan_lock);
@@ -2518,8 +2515,7 @@ static int btrfs_read_roots(struct btrfs_fs_info *fs_info,
 	root = btrfs_read_tree_root(tree_root, &location);
 	if (!IS_ERR(root)) {
 		set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
-		fs_info->quota_enabled = 1;
-		fs_info->pending_quota_state = 1;
+		set_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags);
 		fs_info->quota_root = root;
 	}
 
@@ -2710,8 +2706,7 @@ int open_ctree(struct super_block *sb,
 	extent_io_tree_init(&fs_info->freed_extents[1],
 			     fs_info->btree_inode->i_mapping);
 	fs_info->pinned_extents = &fs_info->freed_extents[0];
-	fs_info->do_barriers = 1;
-
+	set_bit(BTRFS_FS_BARRIER, &fs_info->flags);
 
 	mutex_init(&fs_info->ordered_operations_mutex);
 	mutex_init(&fs_info->tree_log_mutex);
@@ -3199,10 +3194,9 @@ retry_root_backup:
 			return ret;
 		}
 	} else {
-		fs_info->update_uuid_tree_gen = 1;
+		set_bit(BTRFS_FS_UPDATE_UUID_TREE_GEN, &fs_info->flags);
 	}
-
-	fs_info->open = 1;
+	set_bit(BTRFS_FS_OPEN, &fs_info->flags);
 
 	/*
 	 * backuproot only affect mount behavior, and if open_ctree succeeded,
@@ -3893,8 +3887,7 @@ void close_ctree(struct btrfs_root *root)
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	int ret;
 
-	fs_info->closing = 1;
-	smp_mb();
+	set_bit(BTRFS_FS_CLOSING_START, &fs_info->flags);
 
 	/* wait for the qgroup rescan worker to stop */
 	btrfs_qgroup_wait_for_completion(fs_info, false);
@@ -3939,8 +3932,7 @@ void close_ctree(struct btrfs_root *root)
 	kthread_stop(fs_info->transaction_kthread);
 	kthread_stop(fs_info->cleaner_kthread);
 
-	fs_info->closing = 2;
-	smp_mb();
+	set_bit(BTRFS_FS_CLOSING_DONE, &fs_info->flags);
 
 	btrfs_free_qgroup_config(fs_info);
 
@@ -3965,7 +3957,7 @@ void close_ctree(struct btrfs_root *root)
 	invalidate_inode_pages2(fs_info->btree_inode->i_mapping);
 	btrfs_stop_all_workers(fs_info);
 
-	fs_info->open = 0;
+	clear_bit(BTRFS_FS_OPEN, &fs_info->flags);
 	free_root_pointers(fs_info, 1);
 
 	iput(fs_info->btree_inode);
@@ -4088,7 +4080,7 @@ void btrfs_btree_balance_dirty_nodelay(struct btrfs_root *root)
 int btrfs_read_buffer(struct extent_buffer *buf, u64 parent_transid)
 {
 	struct btrfs_root *root = BTRFS_I(buf->pages[0]->mapping->host)->root;
-	return btree_read_extent_buffer_pages(root, buf, 0, parent_transid);
+	return btree_read_extent_buffer_pages(root, buf, parent_transid);
 }
 
 static int btrfs_check_super_valid(struct btrfs_fs_info *fs_info,
@@ -4475,9 +4467,80 @@ again:
 	return 0;
 }
 
+static void btrfs_cleanup_bg_io(struct btrfs_block_group_cache *cache)
+{
+	struct inode *inode;
+
+	inode = cache->io_ctl.inode;
+	if (inode) {
+		invalidate_inode_pages2(inode->i_mapping);
+		BTRFS_I(inode)->generation = 0;
+		cache->io_ctl.inode = NULL;
+		iput(inode);
+	}
+	btrfs_put_block_group(cache);
+}
+
+void btrfs_cleanup_dirty_bgs(struct btrfs_transaction *cur_trans,
+			     struct btrfs_root *root)
+{
+	struct btrfs_block_group_cache *cache;
+
+	spin_lock(&cur_trans->dirty_bgs_lock);
+	while (!list_empty(&cur_trans->dirty_bgs)) {
+		cache = list_first_entry(&cur_trans->dirty_bgs,
+					 struct btrfs_block_group_cache,
+					 dirty_list);
+		if (!cache) {
+			btrfs_err(root->fs_info,
+				  "orphan block group dirty_bgs list");
+			spin_unlock(&cur_trans->dirty_bgs_lock);
+			return;
+		}
+
+		if (!list_empty(&cache->io_list)) {
+			spin_unlock(&cur_trans->dirty_bgs_lock);
+			list_del_init(&cache->io_list);
+			btrfs_cleanup_bg_io(cache);
+			spin_lock(&cur_trans->dirty_bgs_lock);
+		}
+
+		list_del_init(&cache->dirty_list);
+		spin_lock(&cache->lock);
+		cache->disk_cache_state = BTRFS_DC_ERROR;
+		spin_unlock(&cache->lock);
+
+		spin_unlock(&cur_trans->dirty_bgs_lock);
+		btrfs_put_block_group(cache);
+		spin_lock(&cur_trans->dirty_bgs_lock);
+	}
+	spin_unlock(&cur_trans->dirty_bgs_lock);
+
+	while (!list_empty(&cur_trans->io_bgs)) {
+		cache = list_first_entry(&cur_trans->io_bgs,
+					 struct btrfs_block_group_cache,
+					 io_list);
+		if (!cache) {
+			btrfs_err(root->fs_info,
+				  "orphan block group on io_bgs list");
+			return;
+		}
+
+		list_del_init(&cache->io_list);
+		spin_lock(&cache->lock);
+		cache->disk_cache_state = BTRFS_DC_ERROR;
+		spin_unlock(&cache->lock);
+		btrfs_cleanup_bg_io(cache);
+	}
+}
+
 void btrfs_cleanup_one_transaction(struct btrfs_transaction *cur_trans,
 				   struct btrfs_root *root)
 {
+	btrfs_cleanup_dirty_bgs(cur_trans, root);
+	ASSERT(list_empty(&cur_trans->dirty_bgs));
+	ASSERT(list_empty(&cur_trans->io_bgs));
+
 	btrfs_destroy_delayed_refs(cur_trans, root);
 
 	cur_trans->state = TRANS_STATE_COMMIT_START;

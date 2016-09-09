@@ -2940,7 +2940,7 @@ int btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 	if (trans->aborted)
 		return 0;
 
-	if (root->fs_info->creating_free_space_tree)
+	if (test_bit(BTRFS_FS_CREATING_FREE_SPACE_TREE, &root->fs_info->flags))
 		return 0;
 
 	if (root == root->fs_info->extent_root)
@@ -3694,6 +3694,8 @@ again:
 			goto again;
 		}
 		spin_unlock(&cur_trans->dirty_bgs_lock);
+	} else if (ret < 0) {
+		btrfs_cleanup_dirty_bgs(cur_trans, root);
 	}
 
 	btrfs_free_path(path);
@@ -4966,12 +4968,12 @@ static void wake_all_tickets(struct list_head *head)
  */
 static void btrfs_async_reclaim_metadata_space(struct work_struct *work)
 {
-	struct reserve_ticket *last_ticket = NULL;
 	struct btrfs_fs_info *fs_info;
 	struct btrfs_space_info *space_info;
 	u64 to_reclaim;
 	int flush_state;
 	int commit_cycles = 0;
+	u64 last_tickets_id;
 
 	fs_info = container_of(work, struct btrfs_fs_info, async_reclaim_work);
 	space_info = __find_space_info(fs_info, BTRFS_BLOCK_GROUP_METADATA);
@@ -4984,8 +4986,7 @@ static void btrfs_async_reclaim_metadata_space(struct work_struct *work)
 		spin_unlock(&space_info->lock);
 		return;
 	}
-	last_ticket = list_first_entry(&space_info->tickets,
-				       struct reserve_ticket, list);
+	last_tickets_id = space_info->tickets_id;
 	spin_unlock(&space_info->lock);
 
 	flush_state = FLUSH_DELAYED_ITEMS_NR;
@@ -5005,10 +5006,10 @@ static void btrfs_async_reclaim_metadata_space(struct work_struct *work)
 							      space_info);
 		ticket = list_first_entry(&space_info->tickets,
 					  struct reserve_ticket, list);
-		if (last_ticket == ticket) {
+		if (last_tickets_id == space_info->tickets_id) {
 			flush_state++;
 		} else {
-			last_ticket = ticket;
+			last_tickets_id = space_info->tickets_id;
 			flush_state = FLUSH_DELAYED_ITEMS_NR;
 			if (commit_cycles)
 				commit_cycles--;
@@ -5190,7 +5191,7 @@ static int __reserve_metadata_bytes(struct btrfs_root *root,
 		 * which means we won't have fs_info->fs_root set, so don't do
 		 * the async reclaim as we will panic.
 		 */
-		if (!root->fs_info->log_root_recovering &&
+		if (!test_bit(BTRFS_FS_LOG_RECOVERING, &root->fs_info->flags) &&
 		    need_do_async_reclaim(space_info, root, used) &&
 		    !work_busy(&root->fs_info->async_reclaim_work)) {
 			trace_btrfs_trigger_flush(root->fs_info,
@@ -5384,6 +5385,7 @@ again:
 			list_del_init(&ticket->list);
 			num_bytes -= ticket->bytes;
 			ticket->bytes = 0;
+			space_info->tickets_id++;
 			wake_up(&ticket->wait);
 		} else {
 			ticket->bytes -= num_bytes;
@@ -5426,6 +5428,7 @@ again:
 			num_bytes -= ticket->bytes;
 			space_info->bytes_may_use += ticket->bytes;
 			ticket->bytes = 0;
+			space_info->tickets_id++;
 			wake_up(&ticket->wait);
 		} else {
 			trace_btrfs_space_reservation(fs_info, "space_info",
@@ -5794,7 +5797,7 @@ int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
 	int ret;
 	struct btrfs_block_rsv *global_rsv = &root->fs_info->global_block_rsv;
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		/* One for parent inode, two for dir entries */
 		num_bytes = 3 * root->nodesize;
 		ret = btrfs_qgroup_reserve_meta(root, num_bytes);
@@ -5972,7 +5975,7 @@ int btrfs_delalloc_reserve_metadata(struct inode *inode, u64 num_bytes)
 	csum_bytes = BTRFS_I(inode)->csum_bytes;
 	spin_unlock(&BTRFS_I(inode)->lock);
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		ret = btrfs_qgroup_reserve_meta(root,
 				nr_extents * root->nodesize);
 		if (ret)
@@ -8216,6 +8219,7 @@ int btrfs_alloc_logged_file_extent(struct btrfs_trans_handle *trans,
 {
 	int ret;
 	struct btrfs_block_group_cache *block_group;
+	struct btrfs_space_info *space_info;
 
 	/*
 	 * Mixed block groups will exclude before processing the log so we only
@@ -8231,9 +8235,14 @@ int btrfs_alloc_logged_file_extent(struct btrfs_trans_handle *trans,
 	if (!block_group)
 		return -EINVAL;
 
-	ret = btrfs_add_reserved_bytes(block_group, ins->offset,
-				       ins->offset, 0);
-	BUG_ON(ret); /* logic error */
+	space_info = block_group->space_info;
+	spin_lock(&space_info->lock);
+	spin_lock(&block_group->lock);
+	space_info->bytes_reserved += ins->offset;
+	block_group->reserved += ins->offset;
+	spin_unlock(&block_group->lock);
+	spin_unlock(&space_info->lock);
+
 	ret = alloc_reserved_file_extent(trans, root, 0, root_objectid,
 					 0, owner, offset, ins, 1);
 	btrfs_put_block_group(block_group);
@@ -8458,7 +8467,6 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 	u64 refs;
 	u64 flags;
 	u32 nritems;
-	u32 blocksize;
 	struct btrfs_key key;
 	struct extent_buffer *eb;
 	int ret;
@@ -8476,7 +8484,6 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 
 	eb = path->nodes[wc->level];
 	nritems = btrfs_header_nritems(eb);
-	blocksize = root->nodesize;
 
 	for (slot = path->slots[wc->level]; slot < nritems; slot++) {
 		if (nread >= wc->reada_count)
@@ -8540,7 +8547,7 @@ static int account_leaf_items(struct btrfs_trans_handle *trans,
 	u64 bytenr, num_bytes;
 
 	/* We can be called directly from walk_up_proc() */
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	for (i = 0; i < nr; i++) {
@@ -8649,7 +8656,7 @@ static int account_shared_subtree(struct btrfs_trans_handle *trans,
 	BUG_ON(root_level < 0 || root_level > BTRFS_MAX_LEVEL);
 	BUG_ON(root_eb == NULL);
 
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	if (!extent_buffer_uptodate(root_eb)) {
@@ -10123,6 +10130,11 @@ int btrfs_read_block_groups(struct btrfs_root *root)
 	struct extent_buffer *leaf;
 	int need_clear = 0;
 	u64 cache_gen;
+	u64 feature;
+	int mixed;
+
+	feature = btrfs_super_incompat_flags(info->super_copy);
+	mixed = !!(feature & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS);
 
 	root = info->extent_root;
 	key.objectid = 0;
@@ -10176,6 +10188,15 @@ int btrfs_read_block_groups(struct btrfs_root *root)
 				   btrfs_item_ptr_offset(leaf, path->slots[0]),
 				   sizeof(cache->item));
 		cache->flags = btrfs_block_group_flags(&cache->item);
+		if (!mixed &&
+		    ((cache->flags & BTRFS_BLOCK_GROUP_METADATA) &&
+		    (cache->flags & BTRFS_BLOCK_GROUP_DATA))) {
+			btrfs_err(info,
+"bg %llu is a mixed block group but filesystem hasn't enabled mixed block groups",
+				  cache->key.objectid);
+			ret = -EINVAL;
+			goto error;
+		}
 
 		key.objectid = found_key.objectid + found_key.offset;
 		btrfs_release_path(path);
@@ -10785,7 +10806,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 	struct btrfs_trans_handle *trans;
 	int ret = 0;
 
-	if (!fs_info->open)
+	if (!test_bit(BTRFS_FS_OPEN, &fs_info->flags))
 		return;
 
 	spin_lock(&fs_info->unused_bgs_lock);
@@ -10813,7 +10834,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 		spin_lock(&block_group->lock);
 		if (block_group->reserved ||
 		    btrfs_block_group_used(&block_group->item) ||
-		    block_group->ro ||
+		    (block_group->ro && !block_group->removed) ||
 		    list_is_singular(&block_group->list)) {
 			/*
 			 * We want to bail if we made new allocations or have
