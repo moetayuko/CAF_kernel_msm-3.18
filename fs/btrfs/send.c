@@ -4205,7 +4205,8 @@ out:
  * generation number, which means that it was deleted and recreated.
  */
 static int process_all_refs(struct send_ctx *sctx,
-			    enum btrfs_compare_tree_result cmd)
+			    enum btrfs_compare_tree_result cmd,
+			    int *pending_move)
 {
 	int ret;
 	struct btrfs_root *root;
@@ -4215,7 +4216,6 @@ static int process_all_refs(struct send_ctx *sctx,
 	struct extent_buffer *eb;
 	int slot;
 	iterate_inode_ref_t cb;
-	int pending_move = 0;
 
 	path = alloc_path_for_send();
 	if (!path)
@@ -4268,12 +4268,7 @@ static int process_all_refs(struct send_ctx *sctx,
 	}
 	btrfs_release_path(path);
 
-	/*
-	 * We don't actually care about pending_move as we are simply
-	 * re-creating this inode and will be rename'ing it into place once we
-	 * rename the parent directory.
-	 */
-	ret = process_recorded_refs(sctx, &pending_move);
+	ret = process_recorded_refs(sctx, pending_move);
 out:
 	btrfs_free_path(path);
 	return ret;
@@ -5665,6 +5660,8 @@ static int changed_inode(struct send_ctx *sctx,
 		 * deleted and the new one as new.
 		 */
 		if (sctx->cur_inode_new_gen) {
+			int pending_move = 0;
+
 			/*
 			 * First, process the inode as if it was deleted.
 			 */
@@ -5676,9 +5673,17 @@ static int changed_inode(struct send_ctx *sctx,
 			sctx->cur_inode_mode = btrfs_inode_mode(
 					sctx->right_path->nodes[0], right_ii);
 			ret = process_all_refs(sctx,
-					BTRFS_COMPARE_TREE_DELETED);
+					BTRFS_COMPARE_TREE_DELETED, &pending_move);
 			if (ret < 0)
 				goto out;
+
+			/*
+			 * We are deleting the old inode, which shouldn't have
+			 * pending moves affecting it for the delete phase, as
+			 * the pending stuff doesn't matter until we are talking
+			 * about adding the new inode.
+			 */
+			ASSERT(pending_move == 0);
 
 			/*
 			 * Now process the inode as if it was new.
@@ -5695,10 +5700,21 @@ static int changed_inode(struct send_ctx *sctx,
 			ret = send_create_inode_if_needed(sctx);
 			if (ret < 0)
 				goto out;
-
-			ret = process_all_refs(sctx, BTRFS_COMPARE_TREE_NEW);
+			ret = process_all_refs(sctx, BTRFS_COMPARE_TREE_NEW, &pending_move);
 			if (ret < 0)
 				goto out;
+
+			/*
+			 * This can happen if we have deleted the old inode from
+			 * it's parent directory, moved that parent directory
+			 * somewhere else, and re-created the inode in that same
+			 * parent directory.  If this occurs we need to treat
+			 * this like any other new inode that needs pending
+			 * renames processed before we process this inode.
+			 */
+			if (pending_move)
+				goto out;
+
 			/*
 			 * Advance send_progress now as we did not get into
 			 * process_recorded_refs_if_needed in the new_gen case.
