@@ -3203,7 +3203,7 @@ static int relocate_file_extent_cluster(struct inode *inode,
 			nr++;
 		}
 
-		btrfs_set_extent_delalloc(inode, page_start, page_end, NULL);
+		btrfs_set_extent_delalloc(inode, page_start, page_end, NULL, 0);
 		set_page_dirty(page);
 
 		unlock_extent(&BTRFS_I(inode)->io_tree,
@@ -3952,7 +3952,7 @@ static int qgroup_fix_relocated_data_extents(struct btrfs_trans_handle *trans,
 	struct btrfs_key key;
 	int ret = 0;
 
-	if (!fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags))
 		return 0;
 
 	/*
