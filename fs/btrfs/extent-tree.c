@@ -2647,7 +2647,10 @@ static noinline int __btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 
 		btrfs_free_delayed_extent_op(extent_op);
 		if (ret) {
+			spin_lock(&delayed_refs->lock);
 			locked_ref->processing = 0;
+			delayed_refs->num_heads_ready++;
+			spin_unlock(&delayed_refs->lock);
 			btrfs_delayed_ref_unlock(locked_ref);
 			btrfs_put_delayed_ref(ref);
 			btrfs_debug(fs_info, "run_one_delayed_ref returned %d", ret);
@@ -2940,7 +2943,7 @@ int btrfs_run_delayed_refs(struct btrfs_trans_handle *trans,
 	if (trans->aborted)
 		return 0;
 
-	if (root->fs_info->creating_free_space_tree)
+	if (test_bit(BTRFS_FS_CREATING_FREE_SPACE_TREE, &root->fs_info->flags))
 		return 0;
 
 	if (root == root->fs_info->extent_root)
@@ -3694,6 +3697,8 @@ again:
 			goto again;
 		}
 		spin_unlock(&cur_trans->dirty_bgs_lock);
+	} else if (ret < 0) {
+		btrfs_cleanup_dirty_bgs(cur_trans, root);
 	}
 
 	btrfs_free_path(path);
@@ -4128,18 +4133,35 @@ int btrfs_alloc_data_chunk_ondemand(struct inode *inode, u64 bytes)
 	int ret = 0;
 	int need_commit = 2;
 	int have_pinned_space;
+	int have_bg_delete_sem = 0;
+	bool free_space_inode = btrfs_is_free_space_inode(inode);
 
 	/* make sure bytes are sectorsize aligned */
 	bytes = ALIGN(bytes, root->sectorsize);
 
-	if (btrfs_is_free_space_inode(inode)) {
+	if (free_space_inode) {
 		need_commit = 0;
 		ASSERT(current->journal_info);
 	}
 
+	/*
+	 * Here we shouldn't call down_read(bg_delete_sem) for free space inode,
+	 * there is lock order between bg_delete_sem and "wait current trans
+	 * finished". Meanwhile because we only do the data space reservation
+	 * for free space cache in the transaction context,
+	 * btrfs_delete_unused_bgs() will either have finished its job, or start
+	 * a new transaction waiting current transaction to complete, there will
+	 * be no unused block groups to be deleted, so it's safe to not call
+	 * down_read(bg_delete_sem).
+	 */
 	data_sinfo = fs_info->data_sinfo;
-	if (!data_sinfo)
+	if (!data_sinfo) {
+		if (!free_space_inode) {
+			down_read(&root->fs_info->bg_delete_sem);
+			have_bg_delete_sem = 1;
+		}
 		goto alloc;
+	}
 
 again:
 	/* make sure we have enough space to handle the data first */
@@ -4150,6 +4172,17 @@ again:
 
 	if (used + bytes > data_sinfo->total_bytes) {
 		struct btrfs_trans_handle *trans;
+
+		/*
+		 * We may need to allocate new chunk, so we should block
+		 * btrfs_delete_unused_bgs()
+		 */
+		if (!have_bg_delete_sem && !free_space_inode) {
+			spin_unlock(&data_sinfo->lock);
+			down_read(&root->fs_info->bg_delete_sem);
+			have_bg_delete_sem = 1;
+			goto again;
+		}
 
 		/*
 		 * if we don't have enough free bytes in this space then we need
@@ -4173,8 +4206,10 @@ alloc:
 			 * the fs.
 			 */
 			trans = btrfs_join_transaction(root);
-			if (IS_ERR(trans))
-				return PTR_ERR(trans);
+			if (IS_ERR(trans)) {
+				ret = PTR_ERR(trans);
+				goto out;
+			}
 
 			ret = do_chunk_alloc(trans, root->fs_info->extent_root,
 					     alloc_target,
@@ -4182,7 +4217,7 @@ alloc:
 			btrfs_end_transaction(trans, root);
 			if (ret < 0) {
 				if (ret != -ENOSPC)
-					return ret;
+					goto out;
 				else {
 					have_pinned_space = 1;
 					goto commit_trans;
@@ -4217,15 +4252,17 @@ commit_trans:
 			}
 
 			trans = btrfs_join_transaction(root);
-			if (IS_ERR(trans))
-				return PTR_ERR(trans);
+			if (IS_ERR(trans)) {
+				ret = PTR_ERR(trans);
+				goto out;
+			}
 			if (have_pinned_space >= 0 ||
 			    test_bit(BTRFS_TRANS_HAVE_FREE_BGS,
 				     &trans->transaction->flags) ||
 			    need_commit > 0) {
 				ret = btrfs_commit_transaction(trans, root);
 				if (ret)
-					return ret;
+					goto out;
 				/*
 				 * The cleaner kthread might still be doing iput
 				 * operations. Wait for it to finish so that
@@ -4242,12 +4279,17 @@ commit_trans:
 		trace_btrfs_space_reservation(root->fs_info,
 					      "space_info:enospc",
 					      data_sinfo->flags, bytes, 1);
-		return -ENOSPC;
+		ret = -ENOSPC;
+		goto out;
 	}
 	data_sinfo->bytes_may_use += bytes;
 	trace_btrfs_space_reservation(root->fs_info, "space_info",
 				      data_sinfo->flags, bytes, 1);
 	spin_unlock(&data_sinfo->lock);
+
+out:
+	if (have_bg_delete_sem && !free_space_inode)
+		up_read(&root->fs_info->bg_delete_sem);
 
 	return ret;
 }
@@ -4278,6 +4320,9 @@ int btrfs_check_data_free_space(struct inode *inode, u64 start, u64 len)
 	 * range, but don't impact performance on quota disable case.
 	 */
 	ret = btrfs_qgroup_reserve_data(inode, start, len);
+	if (ret < 0)
+		/* Qgroup reserve failed, need to cleanup reserved data space */
+		btrfs_free_reserved_data_space(inode, start, len);
 	return ret;
 }
 
@@ -5190,7 +5235,7 @@ static int __reserve_metadata_bytes(struct btrfs_root *root,
 		 * which means we won't have fs_info->fs_root set, so don't do
 		 * the async reclaim as we will panic.
 		 */
-		if (!root->fs_info->log_root_recovering &&
+		if (!test_bit(BTRFS_FS_LOG_RECOVERING, &root->fs_info->flags) &&
 		    need_do_async_reclaim(space_info, root, used) &&
 		    !work_busy(&root->fs_info->async_reclaim_work)) {
 			trace_btrfs_trigger_flush(root->fs_info,
@@ -5794,7 +5839,7 @@ int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
 	int ret;
 	struct btrfs_block_rsv *global_rsv = &root->fs_info->global_block_rsv;
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		/* One for parent inode, two for dir entries */
 		num_bytes = 3 * root->nodesize;
 		ret = btrfs_qgroup_reserve_meta(root, num_bytes);
@@ -5972,7 +6017,7 @@ int btrfs_delalloc_reserve_metadata(struct inode *inode, u64 num_bytes)
 	csum_bytes = BTRFS_I(inode)->csum_bytes;
 	spin_unlock(&BTRFS_I(inode)->lock);
 
-	if (root->fs_info->quota_enabled) {
+	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags)) {
 		ret = btrfs_qgroup_reserve_meta(root,
 				nr_extents * root->nodesize);
 		if (ret)
@@ -8458,7 +8503,6 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 	u64 refs;
 	u64 flags;
 	u32 nritems;
-	u32 blocksize;
 	struct btrfs_key key;
 	struct extent_buffer *eb;
 	int ret;
@@ -8476,7 +8520,6 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 
 	eb = path->nodes[wc->level];
 	nritems = btrfs_header_nritems(eb);
-	blocksize = root->nodesize;
 
 	for (slot = path->slots[wc->level]; slot < nritems; slot++) {
 		if (nread >= wc->reada_count)
@@ -8540,7 +8583,7 @@ static int account_leaf_items(struct btrfs_trans_handle *trans,
 	u64 bytenr, num_bytes;
 
 	/* We can be called directly from walk_up_proc() */
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	for (i = 0; i < nr; i++) {
@@ -8649,7 +8692,7 @@ static int account_shared_subtree(struct btrfs_trans_handle *trans,
 	BUG_ON(root_level < 0 || root_level > BTRFS_MAX_LEVEL);
 	BUG_ON(root_eb == NULL);
 
-	if (!root->fs_info->quota_enabled)
+	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &root->fs_info->flags))
 		return 0;
 
 	if (!extent_buffer_uptodate(root_eb)) {
@@ -10123,6 +10166,11 @@ int btrfs_read_block_groups(struct btrfs_root *root)
 	struct extent_buffer *leaf;
 	int need_clear = 0;
 	u64 cache_gen;
+	u64 feature;
+	int mixed;
+
+	feature = btrfs_super_incompat_flags(info->super_copy);
+	mixed = !!(feature & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS);
 
 	root = info->extent_root;
 	key.objectid = 0;
@@ -10176,6 +10224,15 @@ int btrfs_read_block_groups(struct btrfs_root *root)
 				   btrfs_item_ptr_offset(leaf, path->slots[0]),
 				   sizeof(cache->item));
 		cache->flags = btrfs_block_group_flags(&cache->item);
+		if (!mixed &&
+		    ((cache->flags & BTRFS_BLOCK_GROUP_METADATA) &&
+		    (cache->flags & BTRFS_BLOCK_GROUP_DATA))) {
+			btrfs_err(info,
+"bg %llu is a mixed block group but filesystem hasn't enabled mixed block groups",
+				  cache->key.objectid);
+			ret = -EINVAL;
+			goto error;
+		}
 
 		key.objectid = found_key.objectid + found_key.offset;
 		btrfs_release_path(path);
@@ -10785,7 +10842,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 	struct btrfs_trans_handle *trans;
 	int ret = 0;
 
-	if (!fs_info->open)
+	if (!test_bit(BTRFS_FS_OPEN, &fs_info->flags))
 		return;
 
 	spin_lock(&fs_info->unused_bgs_lock);
@@ -10806,14 +10863,14 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 		}
 		spin_unlock(&fs_info->unused_bgs_lock);
 
-		mutex_lock(&fs_info->delete_unused_bgs_mutex);
+		down_write(&root->fs_info->bg_delete_sem);
 
 		/* Don't want to race with allocators so take the groups_sem */
 		down_write(&space_info->groups_sem);
 		spin_lock(&block_group->lock);
 		if (block_group->reserved ||
 		    btrfs_block_group_used(&block_group->item) ||
-		    block_group->ro ||
+		    (block_group->ro && !block_group->removed) ||
 		    list_is_singular(&block_group->list)) {
 			/*
 			 * We want to bail if we made new allocations or have
@@ -10934,7 +10991,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 end_trans:
 		btrfs_end_transaction(trans, root);
 next:
-		mutex_unlock(&fs_info->delete_unused_bgs_mutex);
+		up_write(&root->fs_info->bg_delete_sem);
 		btrfs_put_block_group(block_group);
 		spin_lock(&fs_info->unused_bgs_lock);
 	}
