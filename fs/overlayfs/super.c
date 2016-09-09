@@ -835,11 +835,11 @@ retry:
 			goto out_dput;
 
 		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_DEFAULT);
-		if (err && err != -ENODATA)
+		if (err && err != -ENODATA && err != -EOPNOTSUPP)
 			goto out_dput;
 
 		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_ACCESS);
-		if (err && err != -ENODATA)
+		if (err && err != -ENODATA && err != -EOPNOTSUPP)
 			goto out_dput;
 
 		/* Clear any inherited mode bits */
@@ -1320,7 +1320,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_xattr = ovl_xattr_handlers;
 	sb->s_root = root_dentry;
 	sb->s_fs_info = ufs;
-	sb->s_flags |= MS_POSIXACL;
+	sb->s_flags |= MS_POSIXACL | MS_NOREMOTELOCK;
 
 	return 0;
 
