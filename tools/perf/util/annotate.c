@@ -17,6 +17,7 @@
 #include "debug.h"
 #include "annotate.h"
 #include "evsel.h"
+#include "block-range.h"
 #include <regex.h>
 #include <pthread.h>
 #include <linux/bitops.h>
@@ -491,13 +492,6 @@ static struct ins *ins__find(const char *name)
 	return bsearch(name, instructions, nmemb, sizeof(struct ins), ins__key_cmp);
 }
 
-int symbol__annotate_init(struct map *map __maybe_unused, struct symbol *sym)
-{
-	struct annotation *notes = symbol__annotation(sym);
-	pthread_mutex_init(&notes->lock, NULL);
-	return 0;
-}
-
 int symbol__alloc_hist(struct symbol *sym)
 {
 	struct annotation *notes = symbol__annotation(sym);
@@ -866,6 +860,89 @@ double disasm__calc_percent(struct annotation *notes, int evidx, s64 offset,
 	return percent;
 }
 
+static const char *annotate__address_color(struct block_range *br)
+{
+	double cov = block_range__coverage(br);
+
+	if (cov >= 0) {
+		/* mark red for >75% coverage */
+		if (cov > 0.75)
+			return PERF_COLOR_RED;
+
+		/* mark dull for <1% coverage */
+		if (cov < 0.01)
+			return PERF_COLOR_NORMAL;
+	}
+
+	return PERF_COLOR_MAGENTA;
+}
+
+static const char *annotate__asm_color(struct block_range *br)
+{
+	double cov = block_range__coverage(br);
+
+	if (cov >= 0) {
+		/* mark dull for <1% coverage */
+		if (cov < 0.01)
+			return PERF_COLOR_NORMAL;
+	}
+
+	return PERF_COLOR_BLUE;
+}
+
+static void annotate__branch_printf(struct block_range *br, u64 addr)
+{
+	bool emit_comment = true;
+
+	if (!br)
+		return;
+
+#if 1
+	if (br->is_target && br->start == addr) {
+		struct block_range *branch = br;
+		double p;
+
+		/*
+		 * Find matching branch to our target.
+		 */
+		while (!branch->is_branch)
+			branch = block_range__next(branch);
+
+		p = 100 *(double)br->entry / branch->coverage;
+
+		if (p > 0.1) {
+			if (emit_comment) {
+				emit_comment = false;
+				printf("\t#");
+			}
+
+			/*
+			 * The percentage of coverage joined at this target in relation
+			 * to the next branch.
+			 */
+			printf(" +%.2f%%", p);
+		}
+	}
+#endif
+	if (br->is_branch && br->end == addr) {
+		double p = 100*(double)br->taken / br->coverage;
+
+		if (p > 0.1) {
+			if (emit_comment) {
+				emit_comment = false;
+				printf("\t#");
+			}
+
+			/*
+			 * The percentage of coverage leaving at this branch, and
+			 * its prediction ratio.
+			 */
+			printf(" -%.2f%% (p:%.2f%%)", p, 100*(double)br->pred  / br->taken);
+		}
+	}
+}
+
+
 static int disasm_line__print(struct disasm_line *dl, struct symbol *sym, u64 start,
 		      struct perf_evsel *evsel, u64 len, int min_pcnt, int printed,
 		      int max_lines, struct disasm_line *queue)
@@ -885,6 +962,7 @@ static int disasm_line__print(struct disasm_line *dl, struct symbol *sym, u64 st
 		s64 offset = dl->offset;
 		const u64 addr = start + offset;
 		struct disasm_line *next;
+		struct block_range *br;
 
 		next = disasm__get_next_ip_line(&notes->src->source, dl);
 
@@ -954,8 +1032,12 @@ static int disasm_line__print(struct disasm_line *dl, struct symbol *sym, u64 st
 		}
 
 		printf(" :	");
-		color_fprintf(stdout, PERF_COLOR_MAGENTA, "  %" PRIx64 ":", addr);
-		color_fprintf(stdout, PERF_COLOR_BLUE, "%s\n", dl->line);
+
+		br = block_range__find(addr);
+		color_fprintf(stdout, annotate__address_color(br), "  %" PRIx64 ":", addr);
+		color_fprintf(stdout, annotate__asm_color(br), "%s", dl->line);
+		annotate__branch_printf(br, addr);
+		printf("\n");
 
 		if (ppercents != &percent)
 			free(ppercents);
@@ -1084,7 +1166,7 @@ static int symbol__parse_objdump_line(struct symbol *sym, struct map *map,
 			.addr = dl->ops.target.addr,
 		};
 
-		if (!map_groups__find_ams(&target, NULL) &&
+		if (!map_groups__find_ams(&target) &&
 		    target.sym->start == target.al_addr)
 			dl->ops.target.name = strdup(target.sym->name);
 	}
@@ -1162,14 +1244,46 @@ int symbol__strerror_disassemble(struct symbol *sym __maybe_unused, struct map *
 	return 0;
 }
 
+static int dso__disassemble_filename(struct dso *dso, char *filename, size_t filename_size)
+{
+	char linkname[PATH_MAX];
+	char *build_id_filename;
+
+	if (dso->symtab_type == DSO_BINARY_TYPE__KALLSYMS &&
+	    !dso__is_kcore(dso))
+		return SYMBOL_ANNOTATE_ERRNO__NO_VMLINUX;
+
+	build_id_filename = dso__build_id_filename(dso, NULL, 0);
+	if (build_id_filename) {
+		__symbol__join_symfs(filename, filename_size, build_id_filename);
+		free(build_id_filename);
+	} else {
+		if (dso->has_build_id)
+			return ENOMEM;
+		goto fallback;
+	}
+
+	if (dso__is_kcore(dso) ||
+	    readlink(filename, linkname, sizeof(linkname)) < 0 ||
+	    strstr(linkname, DSO__NAME_KALLSYMS) ||
+	    access(filename, R_OK)) {
+fallback:
+		/*
+		 * If we don't have build-ids or the build-id file isn't in the
+		 * cache, or is just a kallsyms file, well, lets hope that this
+		 * DSO is the same as when 'perf record' ran.
+		 */
+		__symbol__join_symfs(filename, filename_size, dso->long_name);
+	}
+
+	return 0;
+}
+
 int symbol__disassemble(struct symbol *sym, struct map *map, size_t privsize)
 {
 	struct dso *dso = map->dso;
-	char *filename = dso__build_id_filename(dso, NULL, 0);
-	bool free_filename = true;
 	char command[PATH_MAX * 2];
 	FILE *file;
-	int err = 0;
 	char symfs_filename[PATH_MAX];
 	struct kcore_extract kce;
 	bool delete_extract = false;
@@ -1177,38 +1291,13 @@ int symbol__disassemble(struct symbol *sym, struct map *map, size_t privsize)
 	int lineno = 0;
 	int nline;
 	pid_t pid;
+	int err = dso__disassemble_filename(dso, symfs_filename, sizeof(symfs_filename));
 
-	if (filename)
-		symbol__join_symfs(symfs_filename, filename);
-
-	if (filename == NULL) {
-		if (dso->has_build_id)
-			return ENOMEM;
-		goto fallback;
-	} else if (dso__is_kcore(dso) ||
-		   readlink(symfs_filename, command, sizeof(command)) < 0 ||
-		   strstr(command, DSO__NAME_KALLSYMS) ||
-		   access(symfs_filename, R_OK)) {
-		free(filename);
-fallback:
-		/*
-		 * If we don't have build-ids or the build-id file isn't in the
-		 * cache, or is just a kallsyms file, well, lets hope that this
-		 * DSO is the same as when 'perf record' ran.
-		 */
-		filename = (char *)dso->long_name;
-		symbol__join_symfs(symfs_filename, filename);
-		free_filename = false;
-	}
-
-	if (dso->symtab_type == DSO_BINARY_TYPE__KALLSYMS &&
-	    !dso__is_kcore(dso)) {
-		err = SYMBOL_ANNOTATE_ERRNO__NO_VMLINUX;
-		goto out_free_filename;
-	}
+	if (err)
+		return err;
 
 	pr_debug("%s: filename=%s, sym=%s, start=%#" PRIx64 ", end=%#" PRIx64 "\n", __func__,
-		 filename, sym->name, map->unmap_ip(map, sym->start),
+		 symfs_filename, sym->name, map->unmap_ip(map, sym->start),
 		 map->unmap_ip(map, sym->end));
 
 	pr_debug("annotating [%p] %30s : [%p] %30s\n",
@@ -1223,11 +1312,6 @@ fallback:
 			delete_extract = true;
 			strlcpy(symfs_filename, kce.extract_filename,
 				sizeof(symfs_filename));
-			if (free_filename) {
-				free(filename);
-				free_filename = false;
-			}
-			filename = symfs_filename;
 		}
 	} else if (dso__needs_decompress(dso)) {
 		char tmp[PATH_MAX];
@@ -1236,14 +1320,14 @@ fallback:
 		bool ret;
 
 		if (kmod_path__parse_ext(&m, symfs_filename))
-			goto out_free_filename;
+			goto out;
 
 		snprintf(tmp, PATH_MAX, "/tmp/perf-kmod-XXXXXX");
 
 		fd = mkstemp(tmp);
 		if (fd < 0) {
 			free(m.ext);
-			goto out_free_filename;
+			goto out;
 		}
 
 		ret = decompress_to_file(m.ext, symfs_filename, fd);
@@ -1255,7 +1339,7 @@ fallback:
 		close(fd);
 
 		if (!ret)
-			goto out_free_filename;
+			goto out;
 
 		strcpy(symfs_filename, tmp);
 	}
@@ -1271,7 +1355,7 @@ fallback:
 		 map__rip_2objdump(map, sym->end),
 		 symbol_conf.annotate_asm_raw ? "" : "--no-show-raw",
 		 symbol_conf.annotate_src ? "-S" : "",
-		 symfs_filename, filename);
+		 symfs_filename, symfs_filename);
 
 	pr_debug("Executing: %s\n", command);
 
@@ -1333,11 +1417,10 @@ out_remove_tmp:
 
 	if (dso__needs_decompress(dso))
 		unlink(symfs_filename);
-out_free_filename:
+
 	if (delete_extract)
 		kcore_extract__delete(&kce);
-	if (free_filename)
-		free(filename);
+out:
 	return err;
 
 out_close_stdout:
