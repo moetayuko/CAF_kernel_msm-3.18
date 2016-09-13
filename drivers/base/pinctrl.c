@@ -91,9 +91,14 @@ cleanup_alloc:
 	devm_kfree(dev, dev->pins);
 	dev->pins = NULL;
 
-	/* Only return deferrals */
-	if (ret != -EPROBE_DEFER)
-		ret = 0;
+	/* Return deferrals */
+	if (ret == -EPROBE_DEFER)
+		return ret;
+	if (ret == -EINVAL) {
+		dev_err(dev, "could not initialize pin control state\n");
+		return ret;
+	}
+	/* We ignore errors like -ENOENT meaning no pinctrl state */
 
-	return ret;
+	return 0;
 }
