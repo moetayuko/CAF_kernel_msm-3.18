@@ -115,7 +115,6 @@ void ks_wlan_hw_sleep_doze_request(struct ks_wlan_private *priv)
 
  out:
 	priv->sleep_mode = atomic_read(&priv->sleepstatus.status);
-	return;
 }
 
 void ks_wlan_hw_sleep_wakeup_request(struct ks_wlan_private *priv)
@@ -146,7 +145,6 @@ void ks_wlan_hw_sleep_wakeup_request(struct ks_wlan_private *priv)
 
  out:
 	priv->sleep_mode = atomic_read(&priv->sleepstatus.status);
-	return;
 }
 
 void ks_wlan_hw_wakeup_request(struct ks_wlan_private *priv)
@@ -297,11 +295,10 @@ static int enqueue_txdev(struct ks_wlan_private *priv, unsigned char *p,
 static int write_to_device(struct ks_wlan_private *priv, unsigned char *buffer,
 			   unsigned long size)
 {
-	int rc, retval;
+	int retval;
 	unsigned char rw_data;
 	struct hostif_hdr *hdr;
 	hdr = (struct hostif_hdr *)buffer;
-	rc = 0;
 
 	DPRINTK(4, "size=%d\n", hdr->size);
 	if (hdr->event < HIF_DATA_REQ || HIF_REQ_MAX < hdr->event) {
@@ -358,7 +355,6 @@ static void tx_device_task(void *dev)
 					   &priv->ks_wlan_hw.rw_wq, 0);
 		}
 	}
-	return;
 }
 
 int ks_wlan_hw_tx(struct ks_wlan_private *priv, void *p, unsigned long size,
@@ -406,8 +402,6 @@ static void rx_event_task(unsigned long dev)
 			tasklet_schedule(&priv->ks_wlan_hw.rx_bh_task);
 		}
 	}
-
-	return;
 }
 
 static void ks_wlan_hw_rx(void *dev, uint16_t size)
@@ -558,8 +552,6 @@ static void ks7010_rw_function(struct work_struct *work)
 
  err_out:
 	sdio_release_host(priv->ks_wlan_hw.sdio_card->func);
-
-	return;
 }
 
 static void ks_sdio_interrupt(struct sdio_func *func)
@@ -667,7 +659,6 @@ static void ks_sdio_interrupt(struct sdio_func *func)
  intr_out:
 	queue_delayed_work(priv->ks_wlan_hw.ks7010sdio_wq,
 			   &priv->ks_wlan_hw.rw_wq, 0);
-	return;
 }
 
 static int trx_device_init(struct ks_wlan_private *priv)
@@ -702,8 +693,6 @@ static void trx_device_exit(struct ks_wlan_private *priv)
 	}
 
 	tasklet_kill(&priv->ks_wlan_hw.rx_bh_task);
-
-	return;
 }
 
 static int ks7010_sdio_update_index(struct ks_wlan_private *priv, u32 index)
@@ -711,7 +700,6 @@ static int ks7010_sdio_update_index(struct ks_wlan_private *priv, u32 index)
 	int rc = 0;
 	int retval;
 	unsigned char *data_buf;
-	data_buf = NULL;
 
 	data_buf = kmalloc(sizeof(u32), GFP_KERNEL);
 	if (!data_buf) {
@@ -732,8 +720,7 @@ static int ks7010_sdio_update_index(struct ks_wlan_private *priv, u32 index)
 		goto error_out;
 	}
  error_out:
-	if (data_buf)
-		kfree(data_buf);
+	kfree(data_buf);
 	return rc;
 }
 
@@ -744,7 +731,7 @@ static int ks7010_sdio_data_compare(struct ks_wlan_private *priv, u32 address,
 	int rc = 0;
 	int retval;
 	unsigned char *read_buf;
-	read_buf = NULL;
+
 	read_buf = kmalloc(ROM_BUFF_SIZE, GFP_KERNEL);
 	if (!read_buf) {
 		rc = 1;
@@ -763,8 +750,7 @@ static int ks7010_sdio_data_compare(struct ks_wlan_private *priv, u32 address,
 		goto error_out;
 	}
  error_out:
-	if (read_buf)
-		kfree(read_buf);
+	kfree(read_buf);
 	return rc;
 }
 
@@ -778,14 +764,10 @@ static int ks7010_upload_firmware(struct ks_wlan_private *priv,
 	int length;
 	const struct firmware *fw_entry = NULL;
 
-	rom_buf = NULL;
-
 	/* buffer allocate */
 	rom_buf = kmalloc(ROM_BUFF_SIZE, GFP_KERNEL);
-	if (!rom_buf) {
-		rc = 3;
-		goto error_out0;
-	}
+	if (!rom_buf)
+		return 3;
 
 	sdio_claim_host(card->func);
 
@@ -799,7 +781,7 @@ static int ks7010_upload_firmware(struct ks_wlan_private *priv,
 
 	retval = request_firmware(&fw_entry, ROM_FILE, &priv->ks_wlan_hw.sdio_card->func->dev);
 	if (retval)
-		return retval;
+		goto error_out0;
 
 	length = fw_entry->size;
 
@@ -879,8 +861,7 @@ static int ks7010_upload_firmware(struct ks_wlan_private *priv,
 	release_firmware(fw_entry);
  error_out0:
 	sdio_release_host(card->func);
-	if (rom_buf)
-		kfree(rom_buf);
+	kfree(rom_buf);
 	return rc;
 }
 
@@ -1141,7 +1122,6 @@ static void ks7010_sdio_remove(struct sdio_func *func)
 	int ret;
 	struct ks_sdio_card *card;
 	struct ks_wlan_private *priv;
-	struct net_device *netdev;
 	DPRINTK(1, "ks7010_sdio_remove()\n");
 
 	card = sdio_get_drvdata(func);
@@ -1151,8 +1131,9 @@ static void ks7010_sdio_remove(struct sdio_func *func)
 
 	DPRINTK(1, "priv = card->priv\n");
 	priv = card->priv;
-	netdev = priv->net_dev;
 	if (priv) {
+		struct net_device *netdev = priv->net_dev;
+
 		ks_wlan_net_stop(netdev);
 		DPRINTK(1, "ks_wlan_net_stop\n");
 
@@ -1199,9 +1180,7 @@ static void ks7010_sdio_remove(struct sdio_func *func)
 		unregister_netdev(netdev);
 
 		trx_device_exit(priv);
-		if (priv->ks_wlan_hw.read_buf) {
-			kfree(priv->ks_wlan_hw.read_buf);
-		}
+		kfree(priv->ks_wlan_hw.read_buf);
 		free_netdev(priv->net_dev);
 		card->priv = NULL;
 	}
@@ -1219,7 +1198,6 @@ static void ks7010_sdio_remove(struct sdio_func *func)
 	DPRINTK(1, "kfree()\n");
 
 	DPRINTK(5, " Bye !!\n");
-	return;
 }
 
 static struct sdio_driver ks7010_sdio_driver = {
