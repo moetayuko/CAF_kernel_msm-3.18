@@ -1,0 +1,93 @@
+fixes
+	patch
+		ARM: dts: Remove use of skeleton.dtsi from bcm283x.dtsi
+		ARM64: dts: bcm: Use a symlink to R-Pi dtsi files from arch=arm
+	<no branch> (c2f321126e31cd69365e65ecd4a7c774e4fc71d2)
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-fixes-for-v4.8
+	<no branch> (78567f135d9bbbaf4538f63656d3e4d957c35fe9)
+		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-dt-fixes-for-v4.8-rcs
+
+next/fixes-non-critical
+
+next/cleanup
+	realview/broomstick
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator tags/realview-broomstick-sweep
+	patch
+		ARM: clps711x: remove extraneous files
+	omap/legacy
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.8/legacy-signed
+	omap/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.9/soc-signed
+
+next/soc
+	davinci/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.9/soc
+	samsung/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-soc-4.9
+
+next/arm64
+
+next/defconfig
+	patch
+		ARM: defconfig: update the Integrator defconfig
+		ARM: multi_v7_defconfig: Build Atmel maXTouch driver as a module
+	davinci/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.9/defconfig
+	samsung/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.9
+	omap/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.9/defconfig-signed
+
+next/drivers
+	omap/gpmc
+		https://github.com/rogerq/linux tags/gpmc-omap-for-v4.9
+	drivers/reset
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.9
+	omap/gpmc-fix
+		Merge commit 'http://github.com/rogerq/linux gpmc-omap-v4.8-rc1' into next/drivers
+
+next/dt
+	renesas/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-dt-for-v4.9
+	patch
+		ARM: dts: artpec: use clock binding header
+		ARM: dts: artpec: use optimized pl310 settings
+		ARM: dts: artpec: set irq affinity on pmu interrupts
+	lpc18xx/dts
+		https://github.com/manabian/linux-lpc tags/lpc18xx_dts_for_4.9
+	samsung/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-dt-4.9
+	uniphier/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/masahiroy/linux-uniphier tags/uniphier-dt-v4.9
+	keystone/dts
+		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone tags/keystone_dts_for_4.9
+	omap/dt-pt1
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.9/dt-pt1-signed
+	sti/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-dt-for-v4.9-1
+	patch
+		ARM: dts: explicitly mark skeleton.dtsi as deprecated
+	qcom/dts
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-dts-for-4.9
+	mvebu/dt
+		git://git.infradead.org/linux-mvebu tags/mvebu-dt-4.9-1
+	lpc18xx/dts-2
+		https://github.com/manabian/linux-lpc tags/lpc18xx_dts_for_4.9_part2
+	renesas/dt2
+		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-dt2-for-v4.9
+	sunxi/dt
+		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-dt-for-4.9
+	rockchip/dts32
+		git://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip tags/v4.9-rockchip-dts32-1
+	tegra/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-4.9-arm-dt
+	realview/dts
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator tags/realview-dts-split
+	imx/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-dt-4.9
+	nomadik/clcd
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik tags/clcd-nomadik
+
+next/dt64
+
+
