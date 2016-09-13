@@ -1,4 +1,5 @@
-/* Copyright (c) 2010-2014 The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,22 +11,11 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/init.h>
+/dts-v1/;
 
-#include <asm/mach/arch.h>
+#include "apq8096-db820c.dtsi"
 
-static const char * const qcom_dt_match[] __initconst = {
-	"qcom,apq8064",
-	"qcom,apq8074-dragonboard",
-	"qcom,apq8084",
-	"qcom,ipq8062",
-	"qcom,ipq8064",
-	"qcom,msm8660-surf",
-	"qcom,msm8960-cdp",
-	"qcom,mdm9615",
-	NULL
+/ {
+	model = "Qualcomm Technologies, Inc. DB820c";
+	compatible = "arrow,apq8096-db820c", "qcom,apq8096-sbc";
 };
-
-DT_MACHINE_START(QCOM_DT, "Qualcomm (Flattened Device Tree)")
-	.dt_compat = qcom_dt_match,
-MACHINE_END
