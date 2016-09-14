@@ -147,7 +147,8 @@ EXPORT_SYMBOL_GPL(led_trigger_set);
 void led_trigger_remove(struct led_classdev *led_cdev)
 {
 	down_write(&led_cdev->trigger_lock);
-	led_trigger_set(led_cdev, NULL);
+	if (led_cdev->trigger)
+		led_trigger_set(led_cdev, NULL);
 	up_write(&led_cdev->trigger_lock);
 }
 EXPORT_SYMBOL_GPL(led_trigger_remove);
