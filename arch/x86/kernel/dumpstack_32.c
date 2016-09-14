@@ -24,16 +24,16 @@ static void *is_irq_stack(void *p, void *irq)
 }
 
 
-static void *is_hardirq_stack(unsigned long *stack, int cpu)
+static void *is_hardirq_stack(unsigned long *stack)
 {
-	void *irq = per_cpu(hardirq_stack, cpu);
+	void *irq = this_cpu_read(hardirq_stack);
 
 	return is_irq_stack(stack, irq);
 }
 
-static void *is_softirq_stack(unsigned long *stack, int cpu)
+static void *is_softirq_stack(unsigned long *stack)
 {
-	void *irq = per_cpu(softirq_stack, cpu);
+	void *irq = this_cpu_read(softirq_stack);
 
 	return is_irq_stack(stack, irq);
 }
@@ -42,30 +42,19 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 		unsigned long *stack, unsigned long bp,
 		const struct stacktrace_ops *ops, void *data)
 {
-	const unsigned cpu = get_cpu();
 	int graph = 0;
 	u32 *prev_esp;
 
-	if (!task)
-		task = current;
-
-	if (!stack) {
-		unsigned long dummy;
-
-		stack = &dummy;
-		if (task != current)
-			stack = (unsigned long *)task->thread.sp;
-	}
-
-	if (!bp)
-		bp = stack_frame(task, regs);
+	task = task ? : current;
+	stack = stack ? : get_stack_pointer(task, regs);
+	bp = bp ? : (unsigned long)get_frame_pointer(task, regs);
 
 	for (;;) {
 		void *end_stack;
 
-		end_stack = is_hardirq_stack(stack, cpu);
+		end_stack = is_hardirq_stack(stack);
 		if (!end_stack)
-			end_stack = is_softirq_stack(stack, cpu);
+			end_stack = is_softirq_stack(stack);
 
 		bp = ops->walk_stack(task, stack, bp, ops, data,
 				     end_stack, &graph);
@@ -84,7 +73,6 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 			break;
 		touch_nmi_watchdog();
 	}
-	put_cpu();
 }
 EXPORT_SYMBOL(dump_trace);
 
@@ -95,14 +83,7 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 	unsigned long *stack;
 	int i;
 
-	if (sp == NULL) {
-		if (regs)
-			sp = (unsigned long *)regs->sp;
-		else if (task)
-			sp = (unsigned long *)task->thread.sp;
-		else
-			sp = (unsigned long *)&sp;
-	}
+	sp = sp ? : get_stack_pointer(task, regs);
 
 	stack = sp;
 	for (i = 0; i < kstack_depth_to_print; i++) {
@@ -139,7 +120,7 @@ void show_regs(struct pt_regs *regs)
 		u8 *ip;
 
 		pr_emerg("Stack:\n");
-		show_stack_log_lvl(NULL, regs, &regs->sp, 0, KERN_EMERG);
+		show_stack_log_lvl(NULL, regs, NULL, 0, KERN_EMERG);
 
 		pr_emerg("Code:");
 

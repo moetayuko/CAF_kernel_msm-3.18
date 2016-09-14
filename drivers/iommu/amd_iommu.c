@@ -957,15 +957,16 @@ again:
 
 	if (left <= 2) {
 		struct iommu_cmd sync_cmd;
-		volatile u64 sem = 0;
 		int ret;
 
-		build_completion_wait(&sync_cmd, (u64)&sem);
+		iommu->cmd_sem = 0;
+
+		build_completion_wait(&sync_cmd, (u64)&iommu->cmd_sem);
 		copy_cmd_to_buffer(iommu, &sync_cmd, tail);
 
 		spin_unlock_irqrestore(&iommu->lock, flags);
 
-		if ((ret = wait_on_sem(&sem)) != 0)
+		if ((ret = wait_on_sem(&iommu->cmd_sem)) != 0)
 			return ret;
 
 		goto again;
@@ -993,19 +994,20 @@ static int iommu_queue_command(struct amd_iommu *iommu, struct iommu_cmd *cmd)
 static int iommu_completion_wait(struct amd_iommu *iommu)
 {
 	struct iommu_cmd cmd;
-	volatile u64 sem = 0;
 	int ret;
 
 	if (!iommu->need_sync)
 		return 0;
 
-	build_completion_wait(&cmd, (u64)&sem);
+	iommu->cmd_sem = 0;
+
+	build_completion_wait(&cmd, (u64)&iommu->cmd_sem);
 
 	ret = iommu_queue_command_sync(iommu, &cmd, false);
 	if (ret)
 		return ret;
 
-	return wait_on_sem(&sem);
+	return wait_on_sem(&iommu->cmd_sem);
 }
 
 static int iommu_flush_dte(struct amd_iommu *iommu, u16 devid)
