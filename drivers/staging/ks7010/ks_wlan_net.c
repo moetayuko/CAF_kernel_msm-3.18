@@ -3366,7 +3366,7 @@ int ks_wlan_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	DPRINTK(3, "in_interrupt()=%ld\n", in_interrupt());
 
-	if (skb == NULL) {
+	if (!skb) {
 		printk(KERN_ERR "ks_wlan:  skb == NULL!!!\n");
 		return 0;
 	}
@@ -3396,13 +3396,13 @@ void send_packet_complete(void *arg1, void *arg2)
 
 	DPRINTK(3, "\n");
 
-	priv->nstats.tx_bytes += packet->len;
 	priv->nstats.tx_packets++;
 
 	if (netif_queue_stopped(priv->net_dev))
 		netif_wake_queue(priv->net_dev);
 
 	if (packet) {
+		priv->nstats.tx_bytes += packet->len;
 		dev_kfree_skb(packet);
 		packet = NULL;
 	}
