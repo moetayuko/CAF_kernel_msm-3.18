@@ -1029,7 +1029,7 @@ static struct cpu_defaults core_params = {
 	},
 };
 
-static struct cpu_defaults silvermont_params = {
+static const struct cpu_defaults silvermont_params = {
 	.pid_policy = {
 		.sample_rate_ms = 10,
 		.deadband = 0,
@@ -1050,7 +1050,7 @@ static struct cpu_defaults silvermont_params = {
 	},
 };
 
-static struct cpu_defaults airmont_params = {
+static const struct cpu_defaults airmont_params = {
 	.pid_policy = {
 		.sample_rate_ms = 10,
 		.deadband = 0,
@@ -1071,7 +1071,7 @@ static struct cpu_defaults airmont_params = {
 	},
 };
 
-static struct cpu_defaults knl_params = {
+static const struct cpu_defaults knl_params = {
 	.pid_policy = {
 		.sample_rate_ms = 10,
 		.deadband = 0,
@@ -1091,7 +1091,7 @@ static struct cpu_defaults knl_params = {
 	},
 };
 
-static struct cpu_defaults bxt_params = {
+static const struct cpu_defaults bxt_params = {
 	.pid_policy = {
 		.sample_rate_ms = 10,
 		.deadband = 0,
@@ -1329,7 +1329,7 @@ static inline void intel_pstate_adjust_busy_pstate(struct cpudata *cpu)
 }
 
 static void intel_pstate_update_util(struct update_util_data *data, u64 time,
-				     unsigned long util, unsigned long max)
+				     unsigned int flags)
 {
 	struct cpudata *cpu = container_of(data, struct cpudata, update_util);
 	u64 delta_ns = time - cpu->sample.time;
