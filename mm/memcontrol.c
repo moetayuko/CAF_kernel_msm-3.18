@@ -5655,9 +5655,6 @@ void mem_cgroup_sk_alloc(struct sock *sk)
 {
 	struct mem_cgroup *memcg;
 
-	if (!mem_cgroup_sockets_enabled)
-		return;
-
 	/*
 	 * Socket cloning can throw us here with sk_memcg already
 	 * filled. It won't however, necessarily happen from

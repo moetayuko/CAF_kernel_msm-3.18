@@ -1385,7 +1385,8 @@ static void sk_prot_free(struct proto *prot, struct sock *sk)
 	slab = prot->slab;
 
 	cgroup_sk_free(&sk->sk_cgrp_data);
-	mem_cgroup_sk_free(sk);
+	if (mem_cgroup_sockets_enabled)
+		mem_cgroup_sk_free(sk);
 	security_sk_free(sk);
 	if (slab != NULL)
 		kmem_cache_free(slab, sk);
@@ -1422,7 +1423,8 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 		sock_net_set(sk, net);
 		atomic_set(&sk->sk_wmem_alloc, 1);
 
-		mem_cgroup_sk_alloc(sk);
+		if (mem_cgroup_sockets_enabled)
+			mem_cgroup_sk_alloc(sk);
 		cgroup_sk_alloc(&sk->sk_cgrp_data);
 		sock_update_classid(&sk->sk_cgrp_data);
 		sock_update_netprioidx(&sk->sk_cgrp_data);
@@ -1569,7 +1571,8 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		newsk->sk_incoming_cpu = raw_smp_processor_id();
 		atomic64_set(&newsk->sk_cookie, 0);
 
-		mem_cgroup_sk_alloc(newsk);
+		if (mem_cgroup_sockets_enabled)
+			mem_cgroup_sk_alloc(newsk);
 		cgroup_sk_alloc(&newsk->sk_cgrp_data);
 
 		/*
