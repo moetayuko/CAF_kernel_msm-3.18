@@ -192,7 +192,7 @@ static int xlr_set_settings(struct net_device *ndev, struct ethtool_cmd *ecmd)
 	return phy_ethtool_sset(phydev, ecmd);
 }
 
-static struct ethtool_ops xlr_ethtool_ops = {
+static const struct ethtool_ops xlr_ethtool_ops = {
 	.get_settings = xlr_get_settings,
 	.set_settings = xlr_set_settings,
 };
@@ -413,7 +413,7 @@ static struct rtnl_link_stats64 *xlr_get_stats64(struct net_device *ndev,
 	return stats;
 }
 
-static struct net_device_ops xlr_netdev_ops = {
+static const struct net_device_ops xlr_netdev_ops = {
 	.ndo_open = xlr_net_open,
 	.ndo_stop = xlr_net_stop,
 	.ndo_start_xmit = xlr_net_start_xmit,
