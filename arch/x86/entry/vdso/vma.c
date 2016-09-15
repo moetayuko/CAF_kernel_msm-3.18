@@ -176,29 +176,27 @@ static int vvar_fault(const struct vm_special_mapping *sm,
 	return VM_FAULT_SIGBUS;
 }
 
-static int map_vdso(const struct vdso_image *image, bool calculate_addr)
+static const struct vm_special_mapping vdso_mapping = {
+	.name = "[vdso]",
+	.fault = vdso_fault,
+	.mremap = vdso_mremap,
+};
+static const struct vm_special_mapping vvar_mapping = {
+	.name = "[vvar]",
+	.fault = vvar_fault,
+};
+
+/*
+ * Add vdso and vvar mappings to current process.
+ * @image          - blob to map
+ * @addr           - request a specific address (zero to map at free addr)
+ */
+static int map_vdso(const struct vdso_image *image, unsigned long addr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
-	unsigned long addr, text_start;
+	unsigned long text_start;
 	int ret = 0;
-
-	static const struct vm_special_mapping vdso_mapping = {
-		.name = "[vdso]",
-		.fault = vdso_fault,
-		.mremap = vdso_mremap,
-	};
-	static const struct vm_special_mapping vvar_mapping = {
-		.name = "[vvar]",
-		.fault = vvar_fault,
-	};
-
-	if (calculate_addr) {
-		addr = vdso_addr(current->mm->start_stack,
-				 image->size - image->sym_vvar_start);
-	} else {
-		addr = 0;
-	}
 
 	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
@@ -238,15 +236,49 @@ static int map_vdso(const struct vdso_image *image, bool calculate_addr)
 
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
-		goto up_fail;
+		do_munmap(mm, text_start, image->size);
 	}
 
 up_fail:
-	if (ret)
+	if (ret) {
 		current->mm->context.vdso = NULL;
+		current->mm->context.vdso_image = NULL;
+	}
 
 	up_write(&mm->mmap_sem);
 	return ret;
+}
+
+static int map_vdso_randomized(const struct vdso_image *image)
+{
+	unsigned long addr = vdso_addr(current->mm->start_stack,
+				 image->size - image->sym_vvar_start);
+	return map_vdso(image, addr);
+}
+
+int map_vdso_once(const struct vdso_image *image, unsigned long addr)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+
+	down_write(&mm->mmap_sem);
+	/*
+	 * Check if we have already mapped vdso blob - fail to prevent
+	 * abusing from userspace install_speciall_mapping, which may
+	 * not do accounting and rlimit right.
+	 * We could search vma near context.vdso, but it's a slowpath,
+	 * so let's explicitely check all VMAs to be completely sure.
+	 */
+	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		if (vma_is_special_mapping(vma, &vdso_mapping) ||
+				vma_is_special_mapping(vma, &vvar_mapping)) {
+			up_write(&mm->mmap_sem);
+			return -EEXIST;
+		}
+	}
+	up_write(&mm->mmap_sem);
+
+	return map_vdso(image, addr);
 }
 
 #if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
@@ -255,7 +287,7 @@ static int load_vdso32(void)
 	if (vdso32_enabled != 1)  /* Other values all mean "disabled" */
 		return 0;
 
-	return map_vdso(&vdso_image_32, false);
+	return map_vdso(&vdso_image_32, 0);
 }
 #endif
 
@@ -265,7 +297,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	if (!vdso64_enabled)
 		return 0;
 
-	return map_vdso(&vdso_image_64, true);
+	return map_vdso_randomized(&vdso_image_64);
 }
 
 #ifdef CONFIG_COMPAT
@@ -276,8 +308,7 @@ int compat_arch_setup_additional_pages(struct linux_binprm *bprm,
 	if (test_thread_flag(TIF_X32)) {
 		if (!vdso64_enabled)
 			return 0;
-
-		return map_vdso(&vdso_image_x32, true);
+		return map_vdso_randomized(&vdso_image_x32);
 	}
 #endif
 #ifdef CONFIG_IA32_EMULATION
