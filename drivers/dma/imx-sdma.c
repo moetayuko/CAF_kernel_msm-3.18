@@ -670,11 +670,6 @@ static void sdma_event_disable(struct sdma_channel *sdmac, unsigned int event)
 	writel_relaxed(val, sdma->regs + chnenbl);
 }
 
-static void sdma_handle_channel_loop(struct sdma_channel *sdmac)
-{
-	dmaengine_desc_get_callback_invoke(&sdmac->desc, NULL);
-}
-
 static void sdma_update_channel_loop(struct sdma_channel *sdmac)
 {
 	struct sdma_buffer_descriptor *bd;
