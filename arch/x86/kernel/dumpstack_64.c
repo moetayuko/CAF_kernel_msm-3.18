@@ -31,8 +31,8 @@ static char x86_stack_ids[][8] = {
 #endif
 };
 
-static unsigned long *in_exception_stack(unsigned cpu, unsigned long stack,
-					 unsigned *usedp, char **idp)
+static unsigned long *in_exception_stack(unsigned long stack, unsigned *usedp,
+					 char **idp)
 {
 	unsigned k;
 
@@ -41,7 +41,7 @@ static unsigned long *in_exception_stack(unsigned cpu, unsigned long stack,
 	 * 'stack' is in one of them:
 	 */
 	for (k = 0; k < N_EXCEPTION_STACKS; k++) {
-		unsigned long end = per_cpu(orig_ist, cpu).ist[k];
+		unsigned long end = raw_cpu_ptr(&orig_ist)->ist[k];
 		/*
 		 * Is 'stack' above this exception frame's end?
 		 * If yes then skip to the next frame.
@@ -103,9 +103,6 @@ in_irq_stack(unsigned long *stack, unsigned long *irq_stack,
 	return (stack >= irq_stack && stack < irq_stack_end);
 }
 
-static const unsigned long irq_stack_size =
-	(IRQ_STACK_SIZE - 64) / sizeof(unsigned long);
-
 enum stack_type {
 	STACK_IS_UNKNOWN,
 	STACK_IS_NORMAL,
@@ -114,7 +111,7 @@ enum stack_type {
 };
 
 static enum stack_type
-analyze_stack(int cpu, struct task_struct *task, unsigned long *stack,
+analyze_stack(struct task_struct *task, unsigned long *stack,
 	      unsigned long **stack_end, unsigned long *irq_stack,
 	      unsigned *used, char **id)
 {
@@ -124,8 +121,7 @@ analyze_stack(int cpu, struct task_struct *task, unsigned long *stack,
 	if ((unsigned long)task_stack_page(task) == addr)
 		return STACK_IS_NORMAL;
 
-	*stack_end = in_exception_stack(cpu, (unsigned long)stack,
-					used, id);
+	*stack_end = in_exception_stack((unsigned long)stack, used, id);
 	if (*stack_end)
 		return STACK_IS_EXCEPTION;
 
@@ -133,7 +129,7 @@ analyze_stack(int cpu, struct task_struct *task, unsigned long *stack,
 		return STACK_IS_NORMAL;
 
 	*stack_end = irq_stack;
-	irq_stack = irq_stack - irq_stack_size;
+	irq_stack -= (IRQ_STACK_SIZE / sizeof(long));
 
 	if (in_irq_stack(stack, irq_stack, *stack_end))
 		return STACK_IS_IRQ;
@@ -152,27 +148,15 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 		unsigned long *stack, unsigned long bp,
 		const struct stacktrace_ops *ops, void *data)
 {
-	const unsigned cpu = get_cpu();
-	unsigned long *irq_stack = (unsigned long *)per_cpu(irq_stack_ptr, cpu);
-	unsigned long dummy;
+	unsigned long *irq_stack = (unsigned long *)this_cpu_read(irq_stack_ptr);
 	unsigned used = 0;
 	int graph = 0;
 	int done = 0;
 
-	if (!task)
-		task = current;
+	task = task ? : current;
+	stack = stack ? : get_stack_pointer(task, regs);
+	bp = bp ? : (unsigned long)get_frame_pointer(task, regs);
 
-	if (!stack) {
-		if (regs)
-			stack = (unsigned long *)regs->sp;
-		else if (task != current)
-			stack = (unsigned long *)task->thread.sp;
-		else
-			stack = &dummy;
-	}
-
-	if (!bp)
-		bp = stack_frame(task, regs);
 	/*
 	 * Print function call entries in all stacks, starting at the
 	 * current stack address. If the stacks consist of nested
@@ -183,8 +167,8 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 		enum stack_type stype;
 		char *id;
 
-		stype = analyze_stack(cpu, task, stack, &stack_end,
-				      irq_stack, &used, &id);
+		stype = analyze_stack(task, stack, &stack_end, irq_stack, &used,
+				      &id);
 
 		/* Default finish unless specified to continue */
 		done = 1;
@@ -202,7 +186,7 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 
 			bp = ops->walk_stack(task, stack, bp, ops,
 					     data, stack_end, &graph);
-			ops->stack(data, "<EOE>");
+			ops->stack(data, "EOE");
 			/*
 			 * We link to the next stack via the
 			 * second-to-last pointer (index -2 to end) in the
@@ -239,7 +223,6 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 	 * This handles the process stack:
 	 */
 	bp = ops->walk_stack(task, stack, bp, ops, data, NULL, &graph);
-	put_cpu();
 }
 EXPORT_SYMBOL(dump_trace);
 
@@ -250,27 +233,12 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 	unsigned long *irq_stack_end;
 	unsigned long *irq_stack;
 	unsigned long *stack;
-	int cpu;
 	int i;
 
-	preempt_disable();
-	cpu = smp_processor_id();
+	irq_stack_end = (unsigned long *)this_cpu_read(irq_stack_ptr);
+	irq_stack     = irq_stack_end - (IRQ_STACK_SIZE / sizeof(long));
 
-	irq_stack_end	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu));
-	irq_stack	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu) - IRQ_STACK_SIZE);
-
-	/*
-	 * Debugging aid: "show_stack(NULL, NULL);" prints the
-	 * back trace for this cpu:
-	 */
-	if (sp == NULL) {
-		if (regs)
-			sp = (unsigned long *)regs->sp;
-		else if (task)
-			sp = (unsigned long *)task->thread.sp;
-		else
-			sp = (unsigned long *)&sp;
-	}
+	sp = sp ? : get_stack_pointer(task, regs);
 
 	stack = sp;
 	for (i = 0; i < kstack_depth_to_print; i++) {
@@ -299,7 +267,6 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 		stack++;
 		touch_nmi_watchdog();
 	}
-	preempt_enable();
 
 	pr_cont("\n");
 	show_trace_log_lvl(task, regs, sp, bp, log_lvl);
@@ -308,9 +275,7 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 void show_regs(struct pt_regs *regs)
 {
 	int i;
-	unsigned long sp;
 
-	sp = regs->sp;
 	show_regs_print_info(KERN_DEFAULT);
 	__show_regs(regs, 1);
 
@@ -325,8 +290,7 @@ void show_regs(struct pt_regs *regs)
 		u8 *ip;
 
 		printk(KERN_DEFAULT "Stack:\n");
-		show_stack_log_lvl(NULL, regs, (unsigned long *)sp,
-				   0, KERN_DEFAULT);
+		show_stack_log_lvl(NULL, regs, NULL, 0, KERN_DEFAULT);
 
 		printk(KERN_DEFAULT "Code: ");
 
