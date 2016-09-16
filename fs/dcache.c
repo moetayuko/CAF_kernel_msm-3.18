@@ -1279,10 +1279,10 @@ rename_retry:
  * list is non-empty and continue searching.
  */
 
-static enum d_walk_ret check_mount(void *data, struct dentry *dentry)
+static enum d_walk_ret check_local_mount(void *data, struct dentry *dentry)
 {
 	int *ret = data;
-	if (d_mountpoint(dentry)) {
+	if (is_local_mountpoint(dentry)) {
 		*ret = 1;
 		return D_WALK_QUIT;
 	}
@@ -1290,21 +1290,22 @@ static enum d_walk_ret check_mount(void *data, struct dentry *dentry)
 }
 
 /**
- * have_submounts - check for mounts over a dentry
+ * have_local_submounts - check for mounts over a dentry
+ * 			  in the current namespace
  * @parent: dentry to check.
  *
  * Return true if the parent or its subdirectories contain
  * a mount point
  */
-int have_submounts(struct dentry *parent)
+int have_local_submounts(struct dentry *parent)
 {
 	int ret = 0;
 
-	d_walk(parent, &ret, check_mount, NULL);
+	d_walk(parent, &ret, check_local_mount, NULL);
 
 	return ret;
 }
-EXPORT_SYMBOL(have_submounts);
+EXPORT_SYMBOL(have_local_submounts);
 
 /*
  * Called by mount code to set a mountpoint and check if the mountpoint is
