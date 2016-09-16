@@ -533,11 +533,8 @@ static unsigned int x2apic_get_apic_id(unsigned long x)
 
 static unsigned long set_apic_id(unsigned int id)
 {
-	unsigned long x;
-
-	/* maskout x2apic_extra_bits ? */
-	x = id;
-	return x;
+	/* CHECKME: Do we need to mask out the xapic extra bits? */
+	return id;
 }
 
 static unsigned int uv_read_apic_id(void)
@@ -560,7 +557,7 @@ static int uv_probe(void)
 	return apic == &apic_x2apic_uv_x;
 }
 
-static struct apic __refdata apic_x2apic_uv_x = {
+static struct apic apic_x2apic_uv_x __ro_after_init = {
 
 	.name				= "UV large system",
 	.probe				= uv_probe,
