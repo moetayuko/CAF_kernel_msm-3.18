@@ -19,10 +19,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/cpumask.h>
 #include <linux/irq.h>
+#include <linux/irq_work.h>
 #include <linux/kdebug.h>
 #include <linux/kgdb.h>
 #include <linux/kprobes.h>
+#include <linux/percpu.h>
+#include <asm/ptrace.h>
 #include <asm/traps.h>
 
 struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
@@ -105,6 +109,9 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "fpsr", 4, -1 },
 	{ "fpcr", 4, -1 },
 };
+
+static DEFINE_PER_CPU(unsigned int, kgdb_pstate);
+static DEFINE_PER_CPU(struct irq_work, kgdb_irq_work);
 
 char *dbg_get_reg(int regno, void *mem, struct pt_regs *regs)
 {
@@ -189,18 +196,14 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		 * over and over again.
 		 */
 		kgdb_arch_update_addr(linux_regs, remcom_in_buffer);
-		atomic_set(&kgdb_cpu_doing_single_step, -1);
-		kgdb_single_step =  0;
-
-		/*
-		 * Received continue command, disable single step
-		 */
-		if (kernel_active_single_step())
-			kernel_disable_single_step();
 
 		err = 0;
 		break;
 	case 's':
+		/* mask interrupts while single stepping */
+		__this_cpu_write(kgdb_pstate, linux_regs->pstate);
+		linux_regs->pstate |= PSR_I_BIT;
+
 		/*
 		 * Update step address value with address passed
 		 * with step packet.
@@ -211,8 +214,6 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		 */
 		kgdb_arch_update_addr(linux_regs, remcom_in_buffer);
 		atomic_set(&kgdb_cpu_doing_single_step, raw_smp_processor_id());
-		kgdb_single_step =  1;
-
 		/*
 		 * Enable single step handling
 		 */
@@ -244,6 +245,18 @@ NOKPROBE_SYMBOL(kgdb_compiled_brk_fn);
 
 static int kgdb_step_brk_fn(struct pt_regs *regs, unsigned int esr)
 {
+	unsigned int pstate;
+
+	kernel_disable_single_step();
+	atomic_set(&kgdb_cpu_doing_single_step, -1);
+
+	/* restore interrupt mask status */
+	pstate = __this_cpu_read(kgdb_pstate);
+	if (pstate & PSR_I_BIT)
+		regs->pstate |= PSR_I_BIT;
+	else
+		regs->pstate &= ~PSR_I_BIT;
+
 	kgdb_handle_exception(1, SIGTRAP, 0, regs);
 	return 0;
 }
@@ -265,16 +278,27 @@ static struct step_hook kgdb_step_hook = {
 	.fn		= kgdb_step_brk_fn
 };
 
-static void kgdb_call_nmi_hook(void *ignored)
+static void kgdb_roundup_hook(struct irq_work *work)
 {
 	kgdb_nmicallback(raw_smp_processor_id(), get_irq_regs());
 }
 
 void kgdb_roundup_cpus(unsigned long flags)
 {
-	local_irq_enable();
-	smp_call_function(kgdb_call_nmi_hook, NULL, 0);
-	local_irq_disable();
+	int cpu;
+	struct cpumask mask;
+	struct irq_work *work;
+
+	mask = *cpu_online_mask;
+	cpumask_clear_cpu(smp_processor_id(), &mask);
+	cpu = cpumask_first(&mask);
+	if (cpu >= nr_cpu_ids)
+		return;
+
+	for_each_cpu(cpu, &mask) {
+		work = per_cpu_ptr(&kgdb_irq_work, cpu);
+		irq_work_queue_on(work, cpu);
+	}
 }
 
 static int __kgdb_notify(struct die_args *args, unsigned long cmd)
@@ -315,6 +339,8 @@ static struct notifier_block kgdb_notifier = {
 int kgdb_arch_init(void)
 {
 	int ret = register_die_notifier(&kgdb_notifier);
+	int cpu;
+	struct irq_work *work;
 
 	if (ret != 0)
 		return ret;
@@ -322,6 +348,12 @@ int kgdb_arch_init(void)
 	register_break_hook(&kgdb_brkpt_hook);
 	register_break_hook(&kgdb_compiled_brkpt_hook);
 	register_step_hook(&kgdb_step_hook);
+
+	for_each_possible_cpu(cpu) {
+		work = per_cpu_ptr(&kgdb_irq_work, cpu);
+		init_irq_work(work, kgdb_roundup_hook);
+	}
+
 	return 0;
 }
 
