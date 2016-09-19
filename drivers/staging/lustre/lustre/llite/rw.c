@@ -648,10 +648,11 @@ static void ras_update_stride_detector(struct ll_readahead_state *ras,
 {
 	unsigned long stride_gap = index - ras->ras_last_readpage - 1;
 
-	if (!stride_io_mode(ras) && (stride_gap != 0 ||
-	    ras->ras_consecutive_stride_requests == 0)) {
+	if ((stride_gap != 0 || ras->ras_consecutive_stride_requests == 0) &&
+	    !stride_io_mode(ras)) {
 		ras->ras_stride_pages = ras->ras_consecutive_pages;
-		ras->ras_stride_length = stride_gap+ras->ras_consecutive_pages;
+		ras->ras_stride_length = ras->ras_consecutive_pages +
+					 stride_gap;
 	}
 	LASSERT(ras->ras_request_index == 0);
 	LASSERT(ras->ras_consecutive_stride_requests == 0);
@@ -663,10 +664,9 @@ static void ras_update_stride_detector(struct ll_readahead_state *ras,
 	}
 
 	ras->ras_stride_pages = ras->ras_consecutive_pages;
-	ras->ras_stride_length = stride_gap+ras->ras_consecutive_pages;
+	ras->ras_stride_length = stride_gap + ras->ras_consecutive_pages;
 
 	RAS_CDEBUG(ras);
-	return;
 }
 
 /* Stride Read-ahead window will be increased inc_len according to
@@ -882,7 +882,6 @@ out_unlock:
 	RAS_CDEBUG(ras);
 	ras->ras_request_index++;
 	spin_unlock(&ras->ras_lock);
-	return;
 }
 
 int ll_writepage(struct page *vmpage, struct writeback_control *wbc)
@@ -1015,11 +1014,15 @@ int ll_writepages(struct address_space *mapping, struct writeback_control *wbc)
 		 * is called later on.
 		 */
 		ignore_layout = 1;
+
+	if (!ll_i2info(inode)->lli_clob)
+		return 0;
+
 	result = cl_sync_file_range(inode, start, end, mode, ignore_layout);
 	if (result > 0) {
 		wbc->nr_to_write -= result;
 		result = 0;
-	 }
+	}
 
 	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0)) {
 		if (end == OBD_OBJECT_EOF)

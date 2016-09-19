@@ -134,9 +134,9 @@ act2000_isa_config_irq(act2000_card *card, short irq)
 {
 	int old_irq;
 
-	if (card->flags & ACT2000_FLAGS_IVALID) {
+	if (card->flags & ACT2000_FLAGS_IVALID)
 		free_irq(card->irq, card);
-	}
+
 	card->flags &= ~ACT2000_FLAGS_IVALID;
 	outb(ISA_COR_IRQOFF, ISA_PORT_COR);
 	if (!irq)
@@ -176,7 +176,7 @@ act2000_isa_config_port(act2000_card *card, unsigned short portbase)
 }
 
 /*
- * Release ressources, used by an adaptor.
+ * Release resources, used by an adaptor.
  */
 void
 act2000_isa_release(act2000_card *card)

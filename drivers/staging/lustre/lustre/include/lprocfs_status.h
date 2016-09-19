@@ -363,6 +363,9 @@ static inline void s2dhms(struct dhms *ts, time64_t secs64)
 #define JOBSTATS_PROCNAME_UID		"procname_uid"
 #define JOBSTATS_NODELOCAL		"nodelocal"
 
+/* obd_config.c */
+void lustre_register_client_process_config(int (*cpc)(struct lustre_cfg *lcfg));
+
 int lprocfs_write_frac_helper(const char __user *buffer,
 			      unsigned long count, int *val, int mult);
 int lprocfs_read_frac_helper(char *buffer, unsigned long count,
@@ -680,6 +683,12 @@ static struct lustre_attr lustre_attr_##name = __ATTR(name, mode, show, store)
 #define LUSTRE_RW_ATTR(name) LUSTRE_ATTR(name, 0644, name##_show, name##_store)
 
 extern const struct sysfs_ops lustre_sysfs_ops;
+
+struct root_squash_info;
+int lprocfs_wr_root_squash(const char *buffer, unsigned long count,
+			   struct root_squash_info *squash, char *name);
+int lprocfs_wr_nosquash_nids(const char *buffer, unsigned long count,
+			     struct root_squash_info *squash, char *name);
 
 /* all quota proc functions */
 int lprocfs_quota_rd_bunit(char *page, char **start,
