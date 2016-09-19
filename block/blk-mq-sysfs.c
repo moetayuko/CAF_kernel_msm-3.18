@@ -176,7 +176,17 @@ static ssize_t blk_mq_sysfs_rq_list_show(struct blk_mq_ctx *ctx, char *page)
 
 static ssize_t blk_mq_hw_sysfs_poll_show(struct blk_mq_hw_ctx *hctx, char *page)
 {
-	return sprintf(page, "invoked=%lu, success=%lu\n", hctx->poll_invoked, hctx->poll_success);
+	return sprintf(page, "considered=%lu, invoked=%lu, success=%lu\n",
+		       hctx->poll_considered, hctx->poll_invoked,
+		       hctx->poll_success);
+}
+
+static ssize_t blk_mq_hw_sysfs_poll_store(struct blk_mq_hw_ctx *hctx,
+					  const char *page, size_t size)
+{
+	hctx->poll_considered = hctx->poll_invoked = hctx->poll_success = 0;
+
+	return size;
 }
 
 static ssize_t blk_mq_hw_sysfs_queued_show(struct blk_mq_hw_ctx *hctx,
@@ -198,12 +208,14 @@ static ssize_t blk_mq_hw_sysfs_dispatched_show(struct blk_mq_hw_ctx *hctx,
 
 	page += sprintf(page, "%8u\t%lu\n", 0U, hctx->dispatched[0]);
 
-	for (i = 1; i < BLK_MQ_MAX_DISPATCH_ORDER; i++) {
-		unsigned long d = 1U << (i - 1);
+	for (i = 1; i < BLK_MQ_MAX_DISPATCH_ORDER - 1; i++) {
+		unsigned int d = 1U << (i - 1);
 
-		page += sprintf(page, "%8lu\t%lu\n", d, hctx->dispatched[i]);
+		page += sprintf(page, "%8u\t%lu\n", d, hctx->dispatched[i]);
 	}
 
+	page += sprintf(page, "%8u+\t%lu\n", 1U << (i - 1),
+						hctx->dispatched[i]);
 	return page - start_page;
 }
 
@@ -301,8 +313,9 @@ static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_cpus = {
 	.show = blk_mq_hw_sysfs_cpus_show,
 };
 static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_poll = {
-	.attr = {.name = "io_poll", .mode = S_IRUGO },
+	.attr = {.name = "io_poll", .mode = S_IWUSR | S_IRUGO },
 	.show = blk_mq_hw_sysfs_poll_show,
+	.store = blk_mq_hw_sysfs_poll_store,
 };
 
 static struct attribute *default_hw_ctx_attrs[] = {
