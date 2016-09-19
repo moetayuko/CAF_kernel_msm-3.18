@@ -57,6 +57,7 @@ int ovl_copy_xattr(struct dentry *old, struct dentry *new)
 	ssize_t list_size, size, value_size = 0;
 	char *buf, *name, *value = NULL;
 	int uninitialized_var(error);
+	size_t slen;
 
 	if (!old->d_inode->i_op->getxattr ||
 	    !new->d_inode->i_op->getxattr)
@@ -79,7 +80,16 @@ int ovl_copy_xattr(struct dentry *old, struct dentry *new)
 		goto out;
 	}
 
-	for (name = buf; name < (buf + list_size); name += strlen(name) + 1) {
+	for (name = buf; list_size; name += slen) {
+		slen = strnlen(name, list_size) + 1;
+
+		/* underlying fs providing us with an broken xattr list? */
+		if (WARN_ON(slen > list_size)) {
+			error = -EIO;
+			break;
+		}
+		list_size -= slen;
+
 		if (ovl_is_private_xattr(name))
 			continue;
 retry:
@@ -338,7 +348,6 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	struct path parentpath;
 	struct dentry *upperdir;
 	struct dentry *upperdentry;
-	const struct cred *old_cred;
 	char *link = NULL;
 
 	if (WARN_ON(!workdir))
@@ -358,8 +367,6 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 		if (IS_ERR(link))
 			return PTR_ERR(link);
 	}
-
-	old_cred = ovl_override_creds(dentry->d_sb);
 
 	err = -EIO;
 	if (lock_rename(workdir, upperdir) != NULL) {
@@ -381,7 +388,6 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	}
 out_unlock:
 	unlock_rename(workdir, upperdir);
-	revert_creds(old_cred);
 
 	if (link)
 		free_page((unsigned long) link);
@@ -392,8 +398,10 @@ out_unlock:
 int ovl_copy_up(struct dentry *dentry)
 {
 	int err;
+	const struct cred *old_cred;
 
 	err = 0;
+	old_cred = ovl_override_creds(dentry->d_sb);
 	while (!err) {
 		struct dentry *next;
 		struct dentry *parent;
@@ -426,5 +434,6 @@ int ovl_copy_up(struct dentry *dentry)
 		dput(next);
 	}
 
+	revert_creds(old_cred);
 	return err;
 }
