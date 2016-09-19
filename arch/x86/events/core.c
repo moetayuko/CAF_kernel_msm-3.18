@@ -2271,7 +2271,7 @@ void arch_perf_update_userpage(struct perf_event *event,
  * callchain support
  */
 
-static int backtrace_stack(void *data, char *name)
+static int backtrace_stack(void *data, const char *name)
 {
 	return 0;
 }
@@ -2297,7 +2297,8 @@ perf_callchain_kernel(struct perf_callchain_entry_ctx *entry, struct pt_regs *re
 		return;
 	}
 
-	perf_callchain_store(entry, regs->ip);
+	if (perf_callchain_store(entry, regs->ip))
+		return;
 
 	dump_trace(NULL, regs, NULL, 0, &backtrace_ops, entry);
 }
