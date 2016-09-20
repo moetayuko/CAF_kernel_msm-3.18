@@ -17,7 +17,7 @@
 #include "kexec-sha256.h"
 
 struct kexec_sha_region sha_regions[SHA256_REGIONS] = {};
-u8 sha256_digest[SHA256_DIGEST_SIZE] = { 0 };
+u8 *sha256_digest = NULL;
 
 int verify_sha256_digest(void)
 {
@@ -40,7 +40,7 @@ int verify_sha256_digest(void)
 		printf("\n");
 
 		printf("sha256_digest: ");
-		for (i = 0; i < sizeof(sha256_digest); i++)
+		for (i = 0; i < SHA256_DIGEST_SIZE; i++)
 			printf("%hhx ", sha256_digest[i]);
 
 		printf("\n");

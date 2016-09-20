@@ -5,6 +5,14 @@
 config KEXEC_CORE
 	bool
 
+#
+# Architectures that need to modify the purgatory segment after the
+# checksum is calculated need to select this option so that it won't
+# be part of the kexec image checksum.
+#
+config ARCH_MODIFIES_KEXEC_PURGATORY
+	bool
+
 config OPROFILE
 	tristate "OProfile system profiling"
 	depends on PROFILING
