@@ -489,6 +489,77 @@ int arch_kimage_file_post_load_cleanup(struct kimage *image)
 	return image->fops->cleanup(image->image_loader_data);
 }
 
+bool kexec_can_hand_over_buffer(void)
+{
+	return true;
+}
+
+int arch_kexec_add_handover_buffer(struct kimage *image,
+				   unsigned long load_addr, unsigned long size)
+{
+	image->arch.handover_buffer_addr = load_addr;
+	image->arch.handover_buffer_size = size;
+
+	return 0;
+}
+
+int kexec_get_handover_buffer(void **addr, unsigned long *size)
+{
+	int ret;
+	u64 start_addr, end_addr;
+
+	ret = of_property_read_u64(of_chosen,
+				   "linux,kexec-handover-buffer-start",
+				   &start_addr);
+	if (ret == -EINVAL)
+		return -ENOENT;
+	else if (ret)
+		return -EINVAL;
+
+	ret = of_property_read_u64(of_chosen, "linux,kexec-handover-buffer-end",
+				   &end_addr);
+	if (ret == -EINVAL)
+		return -ENOENT;
+	else if (ret)
+		return -EINVAL;
+
+	*addr =  __va(start_addr);
+	/* -end is the first address after the buffer. */
+	*size = end_addr - start_addr;
+
+	return 0;
+}
+
+int kexec_free_handover_buffer(void)
+{
+	int ret;
+	void *addr;
+	unsigned long size;
+	struct property *prop;
+
+	ret = kexec_get_handover_buffer(&addr, &size);
+	if (ret)
+		return ret;
+
+	ret = memblock_free(__pa(addr), size);
+	if (ret)
+		return ret;
+
+	prop = of_find_property(of_chosen, "linux,kexec-handover-buffer-start",
+				NULL);
+	ret = of_remove_property(of_chosen, prop);
+	if (ret)
+		return ret;
+
+	prop = of_find_property(of_chosen, "linux,kexec-handover-buffer-end",
+				NULL);
+	ret = of_remove_property(of_chosen, prop);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 /**
  * arch_kexec_walk_mem() - call func(data) for each unreserved memory block
  * @kbuf:	Context info for the search. Also passed to @func.
@@ -686,26 +757,16 @@ int setup_purgatory(struct kimage *image, const void *slave_code,
 	return 0;
 }
 
-/*
- * setup_new_fdt() - modify /chosen and memory reservation for the next kernel
- * @fdt:
- * @initrd_load_addr:	Address where the next initrd will be loaded.
- * @initrd_len:		Size of the next initrd, or 0 if there will be none.
- * @cmdline:		Command line for the next kernel, or NULL if there will
- *			be none.
+/**
+ * delete_fdt_mem_rsv() - delete memory reservation with given address and size
  *
  * Return: 0 on success, or negative errno on error.
  */
-int setup_new_fdt(void *fdt, unsigned long initrd_load_addr,
-		  unsigned long initrd_len, const char *cmdline)
+static int delete_fdt_mem_rsv(void *fdt, uint64_t start, uint64_t size)
 {
-	uint64_t oldfdt_addr;
-	int i, ret, chosen_node;
-	const void *prop;
+	int i, ret, num_rsvs = fdt_num_mem_rsv(fdt);
 
-	/* Remove memory reservation for the current device tree. */
-	oldfdt_addr = __pa(initial_boot_params);
-	for (i = 0; i < fdt_num_mem_rsv(fdt); i++) {
+	for (i = 0; i < num_rsvs; i++) {
 		uint64_t rsv_start, rsv_size;
 
 		ret = fdt_get_mem_rsv(fdt, i, &rsv_start, &rsv_size);
@@ -714,18 +775,151 @@ int setup_new_fdt(void *fdt, unsigned long initrd_load_addr,
 			return -EINVAL;
 		}
 
-		if (rsv_start == oldfdt_addr &&
-		    rsv_size == fdt_totalsize(initial_boot_params)) {
+		if (rsv_start == start && rsv_size == size) {
 			ret = fdt_del_mem_rsv(fdt, i);
 			if (ret) {
-				pr_err("Error deleting fdt reservation.\n");
+				pr_err("Error deleting device tree reservation.\n");
 				return -EINVAL;
 			}
 
-			pr_debug("Removed old device tree reservation.\n");
-			break;
+			return 0;
 		}
 	}
+
+	return -ENOENT;
+}
+
+/**
+ * setup_handover_buffer() - add handover buffer information to the fdt
+ * @image:		kexec image being loaded.
+ * @fdt:		Flattened device tree for the next kernel.
+ * @chosen_node:	Offset to the chosen node.
+ *
+ * Return: 0 on success, or negative errno on error.
+ */
+static int setup_handover_buffer(const struct kimage *image, void *fdt,
+				 int chosen_node)
+{
+	int ret;
+	const void *prop;
+
+	/* Did we receive a buffer from the previous kernel? */
+	prop = fdt_getprop(fdt, chosen_node,
+			   "linux,kexec-handover-buffer-start", NULL);
+	if (prop) {
+		u64 orig_start, orig_end;
+		unsigned long size;
+		void *addr;
+
+		orig_start = fdt64_to_cpu(*((const fdt64_t *) prop));
+
+		prop = fdt_getprop(fdt, chosen_node,
+				   "linux,kexec-handover-buffer-end", NULL);
+		if (!prop) {
+			pr_err("Malformed device tree.\n");
+			return -EINVAL;
+		}
+		orig_end = fdt64_to_cpu(*((const fdt64_t *) prop));
+
+		/* Did we free the hand-over buffer from the previous kernel? */
+		ret = kexec_get_handover_buffer(&addr, &size);
+		if (ret == -ENOENT)
+			addr = NULL;
+		else if (ret)
+			return ret;
+
+		/*
+		 * If we received a buffer from the previous kernel but deleted
+		 * it from the live DT, or if we have a new buffer for the next
+		 * kernel then we should remove the memory reservation from
+		 * the FDT.
+		 */
+		if (addr == NULL || image->arch.handover_buffer_addr != 0) {
+			ret = delete_fdt_mem_rsv(fdt, orig_start,
+						 orig_end - orig_start);
+			if (ret == 0)
+				pr_debug("Removed old hand-over buffer reservation.\n");
+			else if (ret != -ENOENT)
+				return ret;
+		}
+
+		/*
+		 * If we received a buffer from the previous kernel but deleted
+		 * it from the live DT and we have no buffer for the next kernel
+		 * then we should remove the hand-over buffer properties from
+		 * the FDT.
+		 */
+		if (addr == NULL && image->arch.handover_buffer_addr == 0) {
+			ret = fdt_delprop(fdt, chosen_node,
+					  "linux,kexec-handover-buffer-start");
+			if (ret) {
+				pr_err("Error setting up the new device tree.\n");
+				return -EINVAL;
+			}
+
+			ret = fdt_delprop(fdt, chosen_node,
+					  "linux,kexec-handover-buffer-end");
+			if (ret) {
+				pr_err("Error setting up the new device tree.\n");
+				return -EINVAL;
+			}
+		}
+	}
+
+	if (image->arch.handover_buffer_addr == 0)
+		return 0;
+
+	ret = fdt_setprop_u64(fdt, chosen_node,
+			      "linux,kexec-handover-buffer-start",
+			      image->arch.handover_buffer_addr);
+	if (ret < 0)
+		return -EINVAL;
+
+	/* -end is the first address after the buffer. */
+	ret = fdt_setprop_u64(fdt, chosen_node,
+			      "linux,kexec-handover-buffer-end",
+			      image->arch.handover_buffer_addr +
+			      image->arch.handover_buffer_size);
+	if (ret < 0)
+		return -EINVAL;
+
+	ret = fdt_add_mem_rsv(fdt, image->arch.handover_buffer_addr,
+			      image->arch.handover_buffer_size);
+	if (ret)
+		return -EINVAL;
+
+	pr_debug("kexec handover buffer at 0x%llx, size = 0x%lx\n",
+		 image->arch.handover_buffer_addr,
+		 image->arch.handover_buffer_size);
+
+	return 0;
+}
+
+/**
+ * setup_new_fdt() - modify /chosen and memory reservations for the next kernel
+ * @image:		kexec image being loaded.
+ * @fdt:		Flattened device tree for the next kernel.
+ * @initrd_load_addr:	Address where the next initrd will be loaded.
+ * @initrd_len:		Size of the next initrd, or 0 if there will be none.
+ * @cmdline:		Command line for the next kernel, or NULL if there will
+ *			be none.
+ *
+ * Return: 0 on success, or negative errno on error.
+ */
+int setup_new_fdt(const struct kimage *image, void *fdt,
+		  unsigned long initrd_load_addr, unsigned long initrd_len,
+		  const char *cmdline)
+{
+	int ret, chosen_node;
+	const void *prop;
+
+	/* Remove memory reservation for the current device tree. */
+	ret = delete_fdt_mem_rsv(fdt, __pa(initial_boot_params),
+				 fdt_totalsize(initial_boot_params));
+	if (ret == 0)
+		pr_debug("Removed old device tree reservation.\n");
+	else if (ret != -ENOENT)
+		return ret;
 
 	chosen_node = fdt_path_offset(fdt, "/chosen");
 	if (chosen_node == -FDT_ERR_NOTFOUND) {
@@ -743,7 +937,7 @@ int setup_new_fdt(void *fdt, unsigned long initrd_load_addr,
 	/* Did we boot using an initrd? */
 	prop = fdt_getprop(fdt, chosen_node, "linux,initrd-start", NULL);
 	if (prop) {
-		uint64_t tmp_start, tmp_end, tmp_size, tmp_sizepg;
+		uint64_t tmp_start, tmp_end, tmp_size;
 
 		tmp_start = fdt64_to_cpu(*((const fdt64_t *) prop));
 
@@ -759,30 +953,14 @@ int setup_new_fdt(void *fdt, unsigned long initrd_load_addr,
 		 * reserve a multiple of PAGE_SIZE, so check for both.
 		 */
 		tmp_size = tmp_end - tmp_start;
-		tmp_sizepg = round_up(tmp_size, PAGE_SIZE);
-
-		/* Remove memory reservation for the current initrd. */
-		for (i = 0; i < fdt_num_mem_rsv(fdt); i++) {
-			uint64_t rsv_start, rsv_size;
-
-			ret = fdt_get_mem_rsv(fdt, i, &rsv_start, &rsv_size);
-			if (ret) {
-				pr_err("Malformed device tree.\n");
-				return -EINVAL;
-			}
-
-			if (rsv_start == tmp_start &&
-			    (rsv_size == tmp_size || rsv_size == tmp_sizepg)) {
-				ret = fdt_del_mem_rsv(fdt, i);
-				if (ret) {
-					pr_err("Error deleting fdt reservation.\n");
-					return -EINVAL;
-				}
-				pr_debug("Removed old initrd reservation.\n");
-
-				break;
-			}
-		}
+		ret = delete_fdt_mem_rsv(fdt, tmp_start, tmp_size);
+		if (ret == -ENOENT)
+			ret = delete_fdt_mem_rsv(fdt, tmp_start,
+						 round_up(tmp_size, PAGE_SIZE));
+		if (ret == 0)
+			pr_debug("Removed old initrd reservation.\n");
+		else if (ret != -ENOENT)
+			return ret;
 
 		/* If there's no new initrd, delete the old initrd's info. */
 		if (initrd_len == 0) {
@@ -838,6 +1016,12 @@ int setup_new_fdt(void *fdt, unsigned long initrd_load_addr,
 			pr_err("Error deleting bootargs.\n");
 			return -EINVAL;
 		}
+	}
+
+	ret = setup_handover_buffer(image, fdt, chosen_node);
+	if (ret) {
+		pr_err("Error setting up the new device tree.\n");
+		return ret;
 	}
 
 	ret = fdt_setprop(fdt, chosen_node, "linux,booted-from-kexec", NULL, 0);
