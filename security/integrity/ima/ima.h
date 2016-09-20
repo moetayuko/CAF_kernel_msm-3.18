@@ -102,6 +102,15 @@ struct ima_queue_entry {
 };
 extern struct list_head ima_measurements;	/* list of all measurements */
 
+/* Some details preceding the binary serialized measurement list */
+struct ima_kexec_hdr {
+	u16 version;
+	u16 _reserved0;
+	u32 _reserved1;
+	u64 buffer_size;
+	u64 count;
+};
+
 /* Internal IMA function definitions */
 int ima_init(void);
 int ima_fs_init(void);
@@ -122,7 +131,16 @@ int ima_init_crypto(void);
 void ima_putc(struct seq_file *m, void *data, int datalen);
 void ima_print_digest(struct seq_file *m, u8 *digest, u32 size);
 struct ima_template_desc *ima_template_desc_current(void);
+int ima_restore_measurement_entry(struct ima_template_entry *entry);
+int ima_restore_measurement_list(loff_t bufsize, void *buf);
 int ima_init_template(void);
+
+#ifdef CONFIG_KEXEC_FILE
+void ima_load_kexec_buffer(void);
+#else
+static inline void ima_load_kexec_buffer(void)
+{}
+#endif
 
 /*
  * used to protect h_table and sha_table
