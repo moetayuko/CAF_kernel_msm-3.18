@@ -5591,8 +5591,8 @@ int btrfs_recover_log_trees(struct btrfs_root *log_root_tree)
 
 	ret = walk_log_tree(trans, log_root_tree, &wc);
 	if (ret) {
-		btrfs_handle_fs_error(fs_info, ret, "Failed to pin buffers while "
-			    "recovering log root tree.");
+		btrfs_handle_fs_error(fs_info, ret,
+			"Failed to pin buffers while recovering log root tree.");
 		goto error;
 	}
 
@@ -5638,8 +5638,8 @@ again:
 			free_extent_buffer(log->node);
 			free_extent_buffer(log->commit_root);
 			kfree(log);
-			btrfs_handle_fs_error(fs_info, ret, "Couldn't read target root "
-				    "for tree log recovery.");
+			btrfs_handle_fs_error(fs_info, ret,
+				"Couldn't read target root for tree log recovery.");
 			goto error;
 		}
 
