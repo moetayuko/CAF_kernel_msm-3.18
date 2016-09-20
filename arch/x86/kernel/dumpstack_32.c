@@ -121,44 +121,8 @@ unknown:
 	return -EINVAL;
 }
 
-void dump_trace(struct task_struct *task, struct pt_regs *regs,
-		unsigned long *stack, unsigned long bp,
-		const struct stacktrace_ops *ops, void *data)
-{
-	unsigned long visit_mask = 0;
-	int graph = 0;
-
-	task = task ? : current;
-	stack = stack ? : get_stack_pointer(task, regs);
-	bp = bp ? : (unsigned long)get_frame_pointer(task, regs);
-
-	for (;;) {
-		const char *begin_str, *end_str;
-		struct stack_info info;
-
-		if (get_stack_info(stack, task, &info, &visit_mask))
-			break;
-
-		stack_type_str(info.type, &begin_str, &end_str);
-
-		if (begin_str && ops->stack(data, begin_str) < 0)
-			break;
-
-		bp = ops->walk_stack(task, stack, bp, ops, data, &info, &graph);
-
-		if (end_str && ops->stack(data, end_str) < 0)
-			break;
-
-		stack = info.next_sp;
-
-		touch_nmi_watchdog();
-	}
-}
-EXPORT_SYMBOL(dump_trace);
-
-void
-show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
-		   unsigned long *sp, unsigned long bp, char *log_lvl)
+void show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
+			unsigned long *sp, char *log_lvl)
 {
 	unsigned long *stack;
 	int i;
@@ -181,7 +145,7 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 		touch_nmi_watchdog();
 	}
 	pr_cont("\n");
-	show_trace_log_lvl(task, regs, sp, bp, log_lvl);
+	show_trace_log_lvl(task, regs, sp, log_lvl);
 
 	put_task_stack(task);
 }
@@ -205,7 +169,7 @@ void show_regs(struct pt_regs *regs)
 		u8 *ip;
 
 		pr_emerg("Stack:\n");
-		show_stack_log_lvl(current, regs, NULL, 0, KERN_EMERG);
+		show_stack_log_lvl(current, regs, NULL, KERN_EMERG);
 
 		pr_emerg("Code:");
 

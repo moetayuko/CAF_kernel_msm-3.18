@@ -45,42 +45,6 @@ static inline bool on_stack(struct stack_info *info, void *addr, size_t len)
 
 extern int kstack_depth_to_print;
 
-struct thread_info;
-struct stacktrace_ops;
-
-typedef unsigned long (*walk_stack_t)(struct task_struct *task,
-				      unsigned long *stack,
-				      unsigned long bp,
-				      const struct stacktrace_ops *ops,
-				      void *data,
-				      struct stack_info *info,
-				      int *graph);
-
-extern unsigned long
-print_context_stack(struct task_struct *task,
-		    unsigned long *stack, unsigned long bp,
-		    const struct stacktrace_ops *ops, void *data,
-		    struct stack_info *info, int *graph);
-
-extern unsigned long
-print_context_stack_bp(struct task_struct *task,
-		       unsigned long *stack, unsigned long bp,
-		       const struct stacktrace_ops *ops, void *data,
-		       struct stack_info *info, int *graph);
-
-/* Generic stack tracer with callbacks */
-
-struct stacktrace_ops {
-	int (*address)(void *data, unsigned long address, int reliable);
-	/* On negative return stop dumping */
-	int (*stack)(void *data, const char *name);
-	walk_stack_t	walk_stack;
-};
-
-void dump_trace(struct task_struct *tsk, struct pt_regs *regs,
-		unsigned long *stack, unsigned long bp,
-		const struct stacktrace_ops *ops, void *data);
-
 #ifdef CONFIG_X86_32
 #define STACKSLOTS_PER_LINE 8
 #else
@@ -119,13 +83,11 @@ get_stack_pointer(struct task_struct *task, struct pt_regs *regs)
 	return (unsigned long *)task->thread.sp;
 }
 
-extern void
-show_trace_log_lvl(struct task_struct *task, struct pt_regs *regs,
-		   unsigned long *stack, unsigned long bp, char *log_lvl);
+void show_trace_log_lvl(struct task_struct *task, struct pt_regs *regs,
+			unsigned long *stack, char *log_lvl);
 
-extern void
-show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
-		   unsigned long *sp, unsigned long bp, char *log_lvl);
+void show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
+			unsigned long *sp, char *log_lvl);
 
 extern unsigned int code_bytes;
 
