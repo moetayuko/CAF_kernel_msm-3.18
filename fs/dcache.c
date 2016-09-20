@@ -1307,6 +1307,40 @@ int have_submounts(struct dentry *parent)
 EXPORT_SYMBOL(have_submounts);
 
 /*
+ * Search for at least 1 mount point in the dentry's subdirs.
+ * We descend to the next level whenever the d_subdirs
+ * list is non-empty and continue searching.
+ */
+
+static enum d_walk_ret check_local_mount(void *data, struct dentry *dentry)
+{
+	int *ret = data;
+	if (is_local_mountpoint(dentry)) {
+		*ret = 1;
+		return D_WALK_QUIT;
+	}
+	return D_WALK_CONTINUE;
+}
+
+/**
+ * have_local_submounts - check for mounts over a dentry
+ * 			  in the current namespace
+ * @parent: dentry to check.
+ *
+ * Return true if the parent or its subdirectories contain
+ * a mount point
+ */
+int have_local_submounts(struct dentry *parent)
+{
+	int ret = 0;
+
+	d_walk(parent, &ret, check_local_mount, NULL);
+
+	return ret;
+}
+EXPORT_SYMBOL(have_local_submounts);
+
+/*
  * Called by mount code to set a mountpoint and check if the mountpoint is
  * reachable (e.g. NFS can unhash a directory dentry and then the complete
  * subtree can become unreachable).
