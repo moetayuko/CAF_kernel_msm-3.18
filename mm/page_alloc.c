@@ -3521,6 +3521,12 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	if (page)
 		goto got_pg;
 
+	if (ac->nodemask && nodes_empty(*ac->nodemask)) {
+		pr_warn("nodemask is empty\n");
+		gfp_mask &= ~__GFP_NOWARN;
+		goto nopage;
+	}
+
 	/*
 	 * For costly allocations, try direct compaction first, as it's likely
 	 * that we have enough base pages and don't need to reclaim. Don't try
