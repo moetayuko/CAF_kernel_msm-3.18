@@ -498,7 +498,7 @@ static void tasklet_action(struct softirq_action *a)
 		list = list->next;
 
 		if (tasklet_trylock(t)) {
-			if (!atomic_read(&t->count)) {
+			if (atomic_read(&t->count) == 1) {
 				if (!test_and_clear_bit(TASKLET_STATE_SCHED,
 							&t->state))
 					BUG();
@@ -534,7 +534,7 @@ static void tasklet_hi_action(struct softirq_action *a)
 		list = list->next;
 
 		if (tasklet_trylock(t)) {
-			if (!atomic_read(&t->count)) {
+			if (atomic_read(&t->count) == 1) {
 				if (!test_and_clear_bit(TASKLET_STATE_SCHED,
 							&t->state))
 					BUG();
@@ -559,7 +559,7 @@ void tasklet_init(struct tasklet_struct *t,
 {
 	t->next = NULL;
 	t->state = 0;
-	atomic_set(&t->count, 0);
+	atomic_set(&t->count, 1);
 	t->func = func;
 	t->data = data;
 }
@@ -576,6 +576,7 @@ void tasklet_kill(struct tasklet_struct *t)
 		} while (test_bit(TASKLET_STATE_SCHED, &t->state));
 	}
 	tasklet_unlock_wait(t);
+	atomic_dec(&t->count);
 	clear_bit(TASKLET_STATE_SCHED, &t->state);
 }
 EXPORT_SYMBOL(tasklet_kill);

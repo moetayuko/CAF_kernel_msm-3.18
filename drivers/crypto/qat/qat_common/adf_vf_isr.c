@@ -191,7 +191,6 @@ static int adf_setup_pf2vf_bh(struct adf_accel_dev *accel_dev)
 
 static void adf_cleanup_pf2vf_bh(struct adf_accel_dev *accel_dev)
 {
-	tasklet_disable(&accel_dev->vf.pf2vf_bh_tasklet);
 	tasklet_kill(&accel_dev->vf.pf2vf_bh_tasklet);
 	mutex_destroy(&accel_dev->vf.vf2pf_lock);
 }
@@ -268,7 +267,6 @@ static void adf_cleanup_bh(struct adf_accel_dev *accel_dev)
 {
 	struct adf_etr_data *priv_data = accel_dev->transport;
 
-	tasklet_disable(&priv_data->banks[0].resp_handler);
 	tasklet_kill(&priv_data->banks[0].resp_handler);
 }
 

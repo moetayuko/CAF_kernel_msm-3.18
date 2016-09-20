@@ -524,7 +524,6 @@ void gigaset_if_free(struct cardstate *cs)
 	if (!drv->have_tty)
 		return;
 
-	tasklet_disable(&cs->if_wake_tasklet);
 	tasklet_kill(&cs->if_wake_tasklet);
 	cs->tty_dev = NULL;
 	tty_unregister_device(drv->tty, cs->minor_index);
