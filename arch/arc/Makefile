@@ -66,6 +66,9 @@ endif
 
 endif
 
+cfi := $(call as-instr,.cfi_startproc\n.cfi_endproc,-DARC_DW2_UNWIND_AS_CFI)
+cflags-$(CONFIG_ARC_DW2_UNWIND)		+= -fasynchronous-unwind-tables $(cfi)
+
 # By default gcc 4.8 generates dwarf4 which kernel unwinder can't grok
 ifeq ($(atleast_gcc48),y)
 cflags-$(CONFIG_ARC_DW2_UNWIND)		+= -gdwarf-2
