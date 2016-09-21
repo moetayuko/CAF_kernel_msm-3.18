@@ -296,7 +296,6 @@ static void adf_cleanup_bh(struct adf_accel_dev *accel_dev)
 	int i;
 
 	for (i = 0; i < hw_data->num_banks; i++) {
-		tasklet_disable(&priv_data->banks[i].resp_handler);
 		tasklet_kill(&priv_data->banks[i].resp_handler);
 	}
 }
