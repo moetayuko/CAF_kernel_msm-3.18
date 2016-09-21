@@ -29,8 +29,6 @@
 #include "iochannel.h"
 
 #define VISORNIC_INFINITE_RSP_WAIT 0
-#define VISORNICSOPENMAX 32
-#define MAXDEVICES     16384
 
 /* MAX_BUF = 64 lines x 32 MAXVNIC x 80 characters
  *         = 163840 bytes
@@ -1586,7 +1584,7 @@ drain_resp_queue(struct uiscmdrsp *cmdrsp, struct visornic_devdata *devdata)
  *
  *	Drain the respones queue of any responses from the IO partition.
  *	Process the responses as we get them.
- *	Returns when response queue is empty or when the threadd stops.
+ *	Returns when response queue is empty or when the thread stops.
  */
 static void
 service_resp_queue(struct uiscmdrsp *cmdrsp, struct visornic_devdata *devdata,
