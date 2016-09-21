@@ -32,8 +32,8 @@
  * SOFTWARE.
  */
 
-#ifndef __CXGB4_OFLD_H
-#define __CXGB4_OFLD_H
+#ifndef __CXGB4_ULD_H
+#define __CXGB4_ULD_H
 
 #include <linux/cache.h>
 #include <linux/spinlock.h>
@@ -41,6 +41,8 @@
 #include <linux/inetdevice.h>
 #include <linux/atomic.h>
 #include "cxgb4.h"
+
+#define MAX_ULD_QSETS 16
 
 /* CPL message priority levels */
 enum {
@@ -189,9 +191,11 @@ static inline void set_wr_txq(struct sk_buff *skb, int prio, int queue)
 }
 
 enum cxgb4_uld {
+	CXGB4_ULD_INIT,
 	CXGB4_ULD_RDMA,
 	CXGB4_ULD_ISCSI,
 	CXGB4_ULD_ISCSIT,
+	CXGB4_ULD_CRYPTO,
 	CXGB4_ULD_MAX
 };
 
@@ -284,6 +288,11 @@ struct cxgb4_lld_info {
 
 struct cxgb4_uld_info {
 	const char *name;
+	void *handle;
+	unsigned int nrxq;
+	unsigned int rxq_size;
+	bool ciq;
+	bool lro;
 	void *(*add)(const struct cxgb4_lld_info *p);
 	int (*rx_handler)(void *handle, const __be64 *rsp,
 			  const struct pkt_gl *gl);
@@ -330,4 +339,4 @@ int cxgb4_bar2_sge_qregs(struct net_device *dev,
 			 u64 *pbar2_qoffset,
 			 unsigned int *pbar2_qid);
 
-#endif  /* !__CXGB4_OFLD_H */
+#endif  /* !__CXGB4_ULD_H */

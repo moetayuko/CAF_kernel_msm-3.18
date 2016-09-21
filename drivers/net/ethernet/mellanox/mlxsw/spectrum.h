@@ -341,7 +341,8 @@ struct mlxsw_sp_port {
 	} vport;
 	struct {
 		u8 tx_pause:1,
-		   rx_pause:1;
+		   rx_pause:1,
+		   autoneg:1;
 	} link;
 	struct {
 		struct ieee_ets *ets;
@@ -360,6 +361,11 @@ struct mlxsw_sp_port {
 	struct list_head vports_list;
 	/* TC handles */
 	struct list_head mall_tc_list;
+	struct {
+		#define MLXSW_HW_STATS_UPDATE_TIME HZ
+		struct rtnl_link_stats64 *cache;
+		struct delayed_work update_dw;
+	} hw_stats;
 };
 
 struct mlxsw_sp_port *mlxsw_sp_port_lower_dev_hold(struct net_device *dev);
@@ -558,6 +564,9 @@ int __mlxsw_sp_port_headroom_set(struct mlxsw_sp_port *mlxsw_sp_port, int mtu,
 int mlxsw_sp_port_ets_maxrate_set(struct mlxsw_sp_port *mlxsw_sp_port,
 				  enum mlxsw_reg_qeec_hr hr, u8 index,
 				  u8 next_index, u32 maxrate);
+int __mlxsw_sp_port_vid_learning_set(struct mlxsw_sp_port *mlxsw_sp_port,
+				     u16 vid_begin, u16 vid_end,
+				     bool learn_enable);
 
 #ifdef CONFIG_MLXSW_SPECTRUM_DCB
 
