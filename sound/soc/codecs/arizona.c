@@ -2188,13 +2188,13 @@ static void arizona_apply_fll(struct arizona *arizona, unsigned int base,
 				 ARIZONA_FLL1_CTRL_UPD | cfg->n);
 }
 
-static int arizona_is_enabled_fll(struct arizona_fll *fll)
+static int arizona_is_enabled_fll(struct arizona_fll *fll, int base)
 {
 	struct arizona *arizona = fll->arizona;
 	unsigned int reg;
 	int ret;
 
-	ret = regmap_read(arizona->regmap, fll->base + 1, &reg);
+	ret = regmap_read(arizona->regmap, base + 1, &reg);
 	if (ret != 0) {
 		arizona_fll_err(fll, "Failed to read current state: %d\n",
 				ret);
@@ -2208,13 +2208,16 @@ static int arizona_enable_fll(struct arizona_fll *fll)
 {
 	struct arizona *arizona = fll->arizona;
 	bool use_sync = false;
-	int already_enabled = arizona_is_enabled_fll(fll);
+	int already_enabled = arizona_is_enabled_fll(fll, fll->base);
+	int sync_enabled = arizona_is_enabled_fll(fll, fll->base + 0x10);
 	struct arizona_fll_cfg cfg;
 	int i;
 	unsigned int val;
 
 	if (already_enabled < 0)
 		return already_enabled;
+	if (sync_enabled < 0)
+		return sync_enabled;
 
 	if (already_enabled) {
 		/* Facilitate smooth refclk across the transition */
@@ -2259,6 +2262,9 @@ static int arizona_enable_fll(struct arizona_fll *fll)
 		return -EINVAL;
 	}
 
+	if (already_enabled && !!sync_enabled != use_sync)
+		arizona_fll_warn(fll, "Synchroniser changed on active FLL\n");
+
 	/*
 	 * Increase the bandwidth if we're not using a low frequency
 	 * sync source.
@@ -2274,12 +2280,12 @@ static int arizona_enable_fll(struct arizona_fll *fll)
 	if (!already_enabled)
 		pm_runtime_get_sync(arizona->dev);
 
-	regmap_update_bits_async(arizona->regmap, fll->base + 1,
-				 ARIZONA_FLL1_ENA, ARIZONA_FLL1_ENA);
 	if (use_sync)
 		regmap_update_bits_async(arizona->regmap, fll->base + 0x11,
 					 ARIZONA_FLL1_SYNC_ENA,
 					 ARIZONA_FLL1_SYNC_ENA);
+	regmap_update_bits_async(arizona->regmap, fll->base + 1,
+				 ARIZONA_FLL1_ENA, ARIZONA_FLL1_ENA);
 
 	if (already_enabled)
 		regmap_update_bits_async(arizona->regmap, fll->base + 1,
