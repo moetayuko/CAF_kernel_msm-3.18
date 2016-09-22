@@ -28,7 +28,7 @@ extern const char *sort_order;
 extern const char *field_order;
 extern const char default_parent_pattern[];
 extern const char *parent_pattern;
-extern const char default_sort_order[];
+extern const char *default_sort_order;
 extern regex_t ignore_callees_regex;
 extern int have_ignore_callees;
 extern enum sort_mode sort__mode;
@@ -40,6 +40,7 @@ extern struct sort_entry sort_dso_from;
 extern struct sort_entry sort_dso_to;
 extern struct sort_entry sort_sym_from;
 extern struct sort_entry sort_sym_to;
+extern struct sort_entry sort_srcline;
 extern enum sort_type sort__first_dimension;
 extern const char default_mem_sort_order[];
 
