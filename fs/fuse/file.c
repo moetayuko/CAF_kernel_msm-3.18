@@ -914,25 +914,47 @@ out:
 	return err;
 }
 
-static ssize_t fuse_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+static ssize_t fuse_update_attr_before_read(struct file *filp, loff_t pos,
+					    size_t len)
 {
-	struct inode *inode = iocb->ki_filp->f_mapping->host;
+	struct inode *inode = filp->f_mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	int err = 0;
 
 	/*
 	 * In auto invalidate mode, always update attributes on read.
 	 * Otherwise, only update if we attempt to read past EOF (to ensure
 	 * i_size is up to date).
 	 */
-	if (fc->auto_inval_data ||
-	    (iocb->ki_pos + iov_iter_count(to) > i_size_read(inode))) {
-		int err;
-		err = fuse_update_attributes(inode, NULL, iocb->ki_filp, NULL);
-		if (err)
-			return err;
-	}
+	if (fc->auto_inval_data || (pos + len > i_size_read(inode)))
+		err = fuse_update_attributes(inode, NULL, filp, NULL);
+
+	return err;
+}
+
+static ssize_t fuse_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+{
+	ssize_t err;
+
+	err = fuse_update_attr_before_read(iocb->ki_filp, iocb->ki_pos,
+					   iov_iter_count(to));
+	if (err)
+		return err;
 
 	return generic_file_read_iter(iocb, to);
+}
+
+static ssize_t fuse_file_splice_read(struct file *in, loff_t *ppos,
+				     struct pipe_inode_info *pipe, size_t len,
+				     unsigned int flags)
+{
+	ssize_t err;
+
+	err = fuse_update_attr_before_read(in, *ppos, len);
+	if (err)
+		return err;
+
+	return generic_file_splice_read(in, ppos, pipe, len, flags);
 }
 
 static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
@@ -3033,7 +3055,7 @@ static const struct file_operations fuse_file_operations = {
 	.fsync		= fuse_fsync,
 	.lock		= fuse_file_lock,
 	.flock		= fuse_file_flock,
-	.splice_read	= generic_file_splice_read,
+	.splice_read	= fuse_file_splice_read,
 	.unlocked_ioctl	= fuse_file_ioctl,
 	.compat_ioctl	= fuse_file_compat_ioctl,
 	.poll		= fuse_file_poll,
