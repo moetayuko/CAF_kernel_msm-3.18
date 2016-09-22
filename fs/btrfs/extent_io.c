@@ -20,6 +20,7 @@
 #include "locking.h"
 #include "rcu-string.h"
 #include "backref.h"
+#include "transaction.h"
 
 static struct kmem_cache *extent_state_cache;
 static struct kmem_cache *extent_buffer_cache;
@@ -1729,7 +1730,7 @@ out_failed:
 }
 
 void extent_clear_unlock_delalloc(struct inode *inode, u64 start, u64 end,
-				 struct page *locked_page,
+				 u64 delalloc_end, struct page *locked_page,
 				 unsigned clear_bits,
 				 unsigned long page_ops)
 {
@@ -3624,7 +3625,6 @@ static void end_extent_buffer_writeback(struct extent_buffer *eb)
 static void set_btree_ioerr(struct page *page)
 {
 	struct extent_buffer *eb = (struct extent_buffer *)page->private;
-	struct btrfs_inode *btree_ino = BTRFS_I(eb->fs_info->btree_inode);
 
 	SetPageError(page);
 	if (test_and_set_bit(EXTENT_BUFFER_WRITE_ERR, &eb->bflags))
@@ -3670,13 +3670,13 @@ static void set_btree_ioerr(struct page *page)
 	 */
 	switch (eb->log_index) {
 	case -1:
-		set_bit(BTRFS_INODE_BTREE_ERR, &btree_ino->runtime_flags);
+		set_bit(BTRFS_FS_BTREE_ERR, &eb->fs_info->flags);
 		break;
 	case 0:
-		set_bit(BTRFS_INODE_BTREE_LOG1_ERR, &btree_ino->runtime_flags);
+		set_bit(BTRFS_FS_LOG1_ERR, &eb->fs_info->flags);
 		break;
 	case 1:
-		set_bit(BTRFS_INODE_BTREE_LOG2_ERR, &btree_ino->runtime_flags);
+		set_bit(BTRFS_FS_LOG2_ERR, &eb->fs_info->flags);
 		break;
 	default:
 		BUG(); /* unexpected, logic error */
@@ -4487,10 +4487,23 @@ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			flags |= (FIEMAP_EXTENT_DELALLOC |
 				  FIEMAP_EXTENT_UNKNOWN);
 		} else if (fieinfo->fi_extents_max) {
+			struct btrfs_trans_handle *trans;
+
 			u64 bytenr = em->block_start -
 				(em->start - em->orig_start);
 
 			disko = em->block_start + offset_in_extent;
+
+			/*
+			 * We need a trans handle to get delayed refs
+			 */
+			trans = btrfs_join_transaction(root);
+			/*
+			 * It's OK if we can't start a trans we can still check
+			 * from commit_root
+			 */
+			if (IS_ERR(trans))
+				trans = NULL;
 
 			/*
 			 * As btrfs supports shared space, this information
@@ -4499,9 +4512,11 @@ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			 * then we're just getting a count and we can skip the
 			 * lookup stuff.
 			 */
-			ret = btrfs_check_shared(NULL, root->fs_info,
+			ret = btrfs_check_shared(trans, root->fs_info,
 						 root->objectid,
 						 btrfs_ino(inode), bytenr);
+			if (trans)
+				btrfs_end_transaction(trans, root);
 			if (ret < 0)
 				goto out_free;
 			if (ret)
@@ -5173,11 +5188,10 @@ int extent_buffer_uptodate(struct extent_buffer *eb)
 }
 
 int read_extent_buffer_pages(struct extent_io_tree *tree,
-			     struct extent_buffer *eb, u64 start, int wait,
+			     struct extent_buffer *eb, int wait,
 			     get_extent_t *get_extent, int mirror_num)
 {
 	unsigned long i;
-	unsigned long start_i;
 	struct page *page;
 	int err;
 	int ret = 0;
@@ -5191,16 +5205,8 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 	if (test_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags))
 		return 0;
 
-	if (start) {
-		WARN_ON(start < eb->start);
-		start_i = (start >> PAGE_SHIFT) -
-			(eb->start >> PAGE_SHIFT);
-	} else {
-		start_i = 0;
-	}
-
 	num_pages = num_extent_pages(eb->start, eb->len);
-	for (i = start_i; i < num_pages; i++) {
+	for (i = 0; i < num_pages; i++) {
 		page = eb->pages[i];
 		if (wait == WAIT_NONE) {
 			if (!trylock_page(page))
@@ -5209,21 +5215,29 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 			lock_page(page);
 		}
 		locked_pages++;
+	}
+	/*
+	 * We need to firstly lock all pages to make sure that
+	 * the uptodate bit of our pages won't be affected by
+	 * clear_extent_buffer_uptodate().
+	 */
+	for (i = 0; i < num_pages; i++) {
+		page = eb->pages[i];
 		if (!PageUptodate(page)) {
 			num_reads++;
 			all_uptodate = 0;
 		}
 	}
+
 	if (all_uptodate) {
-		if (start_i == 0)
-			set_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags);
+		set_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags);
 		goto unlock_exit;
 	}
 
 	clear_bit(EXTENT_BUFFER_READ_ERR, &eb->bflags);
 	eb->read_mirror = 0;
 	atomic_set(&eb->io_pages, num_reads);
-	for (i = start_i; i < num_pages; i++) {
+	for (i = 0; i < num_pages; i++) {
 		page = eb->pages[i];
 
 		if (!PageUptodate(page)) {
@@ -5264,7 +5278,7 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 	if (ret || wait != WAIT_COMPLETE)
 		return ret;
 
-	for (i = start_i; i < num_pages; i++) {
+	for (i = 0; i < num_pages; i++) {
 		page = eb->pages[i];
 		wait_on_page_locked(page);
 		if (!PageUptodate(page))
@@ -5274,12 +5288,10 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 	return ret;
 
 unlock_exit:
-	i = start_i;
 	while (locked_pages > 0) {
-		page = eb->pages[i];
-		i++;
-		unlock_page(page);
 		locked_pages--;
+		page = eb->pages[locked_pages];
+		unlock_page(page);
 	}
 	return ret;
 }
