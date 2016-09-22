@@ -45,9 +45,7 @@ static int tree_mod_log_free_eb(struct btrfs_fs_info *fs_info,
 
 struct btrfs_path *btrfs_alloc_path(void)
 {
-	struct btrfs_path *path;
-	path = kmem_cache_zalloc(btrfs_path_cachep, GFP_NOFS);
-	return path;
+	return kmem_cache_zalloc(btrfs_path_cachep, GFP_NOFS);
 }
 
 /*
@@ -2268,7 +2266,6 @@ static void reada_for_search(struct btrfs_root *root,
 	u64 search;
 	u64 target;
 	u64 nread = 0;
-	u64 gen;
 	struct extent_buffer *eb;
 	u32 nr;
 	u32 blocksize;
@@ -2313,7 +2310,6 @@ static void reada_for_search(struct btrfs_root *root,
 		search = btrfs_node_blockptr(node, nr);
 		if ((search <= target && target - search <= 65536) ||
 		    (search > target && search - target <= 65536)) {
-			gen = btrfs_node_ptr_generation(node, nr);
 			readahead_tree_block(root, search);
 			nread += blocksize;
 		}
@@ -4341,7 +4337,11 @@ again:
 			if (path->slots[1] == 0)
 				fixup_low_keys(fs_info, path, &disk_key, 1);
 		}
-		btrfs_mark_buffer_dirty(right);
+		/*
+		 * We create a new leaf 'right' for the required ins_len and
+		 * we'll do btrfs_mark_buffer_dirty() on this leaf after copying
+		 * the content of ins_len to 'right'.
+		 */
 		return ret;
 	}
 
@@ -4772,8 +4772,9 @@ void setup_items_for_insert(struct btrfs_root *root, struct btrfs_path *path,
 
 	if (btrfs_leaf_free_space(root, leaf) < total_size) {
 		btrfs_print_leaf(root, leaf);
-		btrfs_crit(root->fs_info, "not enough freespace need %u have %d",
-		       total_size, btrfs_leaf_free_space(root, leaf));
+		btrfs_crit(root->fs_info,
+			   "not enough freespace need %u have %d",
+			   total_size, btrfs_leaf_free_space(root, leaf));
 		BUG();
 	}
 
@@ -4782,8 +4783,9 @@ void setup_items_for_insert(struct btrfs_root *root, struct btrfs_path *path,
 
 		if (old_data < data_end) {
 			btrfs_print_leaf(root, leaf);
-			btrfs_crit(root->fs_info, "slot %d old_data %d data_end %d",
-			       slot, old_data, data_end);
+			btrfs_crit(root->fs_info,
+				   "slot %d old_data %d data_end %d",
+				   slot, old_data, data_end);
 			BUG_ON(1);
 		}
 		/*
@@ -4793,7 +4795,7 @@ void setup_items_for_insert(struct btrfs_root *root, struct btrfs_path *path,
 		for (i = slot; i < nritems; i++) {
 			u32 ioff;
 
-			item = btrfs_item_nr( i);
+			item = btrfs_item_nr(i);
 			ioff = btrfs_token_item_offset(leaf, item, &token);
 			btrfs_set_token_item_offset(leaf, item,
 						    ioff - total_data, &token);
