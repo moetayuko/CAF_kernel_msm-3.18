@@ -1634,6 +1634,9 @@ static noinline int btrfs_ioctl_snap_create_transid(struct file *file,
 	int namelen;
 	int ret = 0;
 
+	if (!S_ISDIR(file_inode(file)->i_mode))
+		return -ENOTDIR;
+
 	ret = mnt_want_write_file(file);
 	if (ret)
 		goto out;
@@ -1691,6 +1694,9 @@ static noinline int btrfs_ioctl_snap_create(struct file *file,
 	struct btrfs_ioctl_vol_args *vol_args;
 	int ret;
 
+	if (!S_ISDIR(file_inode(file)->i_mode))
+		return -ENOTDIR;
+
 	vol_args = memdup_user(arg, sizeof(*vol_args));
 	if (IS_ERR(vol_args))
 		return PTR_ERR(vol_args);
@@ -1713,6 +1719,9 @@ static noinline int btrfs_ioctl_snap_create_v2(struct file *file,
 	u64 *ptr = NULL;
 	bool readonly = false;
 	struct btrfs_qgroup_inherit *inherit = NULL;
+
+	if (!S_ISDIR(file_inode(file)->i_mode))
+		return -ENOTDIR;
 
 	vol_args = memdup_user(arg, sizeof(*vol_args));
 	if (IS_ERR(vol_args))
@@ -1894,8 +1903,9 @@ static noinline int may_destroy_subvol(struct btrfs_root *root)
 		btrfs_dir_item_key_to_cpu(path->nodes[0], di, &key);
 		if (key.objectid == root->root_key.objectid) {
 			ret = -EPERM;
-			btrfs_err(root->fs_info, "deleting default subvolume "
-				  "%llu is not allowed", key.objectid);
+			btrfs_err(root->fs_info,
+				  "deleting default subvolume %llu is not allowed",
+				  key.objectid);
 			goto out;
 		}
 		btrfs_release_path(path);
@@ -2356,6 +2366,9 @@ static noinline int btrfs_ioctl_snap_destroy(struct file *file,
 	int namelen;
 	int ret;
 	int err = 0;
+
+	if (!S_ISDIR(dir->i_mode))
+		return -ENOTDIR;
 
 	vol_args = memdup_user(arg, sizeof(*vol_args));
 	if (IS_ERR(vol_args))
@@ -4085,8 +4098,8 @@ static long btrfs_ioctl_default_subvol(struct file *file, void __user *argp)
 	if (IS_ERR_OR_NULL(di)) {
 		btrfs_free_path(path);
 		btrfs_end_transaction(trans, root);
-		btrfs_err(new_root->fs_info, "Umm, you don't have the default dir"
-			   "item, this isn't going to work");
+		btrfs_err(new_root->fs_info,
+			  "Umm, you don't have the default diritem, this isn't going to work");
 		ret = -ENOENT;
 		goto out;
 	}
@@ -5295,8 +5308,9 @@ static int btrfs_ioctl_set_fslabel(struct file *file, void __user *arg)
 		return -EFAULT;
 
 	if (strnlen(label, BTRFS_LABEL_SIZE) == BTRFS_LABEL_SIZE) {
-		btrfs_err(root->fs_info, "unable to set label with more than %d bytes",
-		       BTRFS_LABEL_SIZE - 1);
+		btrfs_err(root->fs_info,
+			  "unable to set label with more than %d bytes",
+			  BTRFS_LABEL_SIZE - 1);
 		return -EINVAL;
 	}
 
