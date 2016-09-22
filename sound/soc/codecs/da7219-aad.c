@@ -13,6 +13,7 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/clk.h>
 #include <linux/i2c.h>
 #include <linux/property.h>
 #include <linux/pm_wakeirq.h>
@@ -114,12 +115,37 @@ static void da7219_aad_hptest_work(struct work_struct *work)
 	struct da7219_priv *da7219 = snd_soc_codec_get_drvdata(codec);
 
 	u16 tonegen_freq_hptest;
-	u8 accdet_cfg8;
-	int report = 0;
+	u8 pll_srm_sts, gain_ramp_ctrl, accdet_cfg8;
+	int report = 0, ret = 0;
 
 	/* Lock DAPM and any Kcontrols that are affected by this test */
 	snd_soc_dapm_mutex_lock(dapm);
 	mutex_lock(&da7219->lock);
+
+	/* Ensure MCLK is available for HP test procedure */
+	if (da7219->mclk) {
+		ret = clk_prepare_enable(da7219->mclk);
+		if (ret) {
+			dev_err(codec->dev, "Failed to enable mclk - %d\n", ret);
+			mutex_unlock(&da7219->lock);
+			snd_soc_dapm_mutex_unlock(dapm);
+			return;
+		}
+	}
+
+	/*
+	 * If MCLK not present, then we're using the internal oscillator and
+	 * require different frequency settings to achieve the same result.
+	 */
+	pll_srm_sts = snd_soc_read(codec, DA7219_PLL_SRM_STS);
+	if (pll_srm_sts & DA7219_PLL_SRM_STS_MCLK)
+		tonegen_freq_hptest = cpu_to_le16(DA7219_AAD_HPTEST_RAMP_FREQ);
+	else
+		tonegen_freq_hptest = cpu_to_le16(DA7219_AAD_HPTEST_RAMP_FREQ_INT_OSC);
+
+	/* Ensure gain ramping at fastest rate */
+	gain_ramp_ctrl = snd_soc_read(codec, DA7219_GAIN_RAMP_CTRL);
+	snd_soc_write(codec, DA7219_GAIN_RAMP_CTRL, DA7219_GAIN_RAMP_RATE_X8);
 
 	/* Bypass cache so it saves current settings */
 	regcache_cache_bypass(da7219->regmap, true);
@@ -183,9 +209,15 @@ static void da7219_aad_hptest_work(struct work_struct *work)
 	snd_soc_write(codec, DA7219_HP_R_CTRL,
 		      DA7219_HP_R_AMP_OE_MASK | DA7219_HP_R_AMP_EN_MASK);
 
+	/*
+	 * If we're running from the internal oscillator then give audio paths
+	 * time to settle before running test.
+	 */
+	if (!(pll_srm_sts & DA7219_PLL_SRM_STS_MCLK))
+		msleep(DA7219_AAD_HPTEST_INT_OSC_PATH_DELAY);
+
 	/* Configure & start Tone Generator */
 	snd_soc_write(codec, DA7219_TONE_GEN_ON_PER, DA7219_BEEP_ON_PER_MASK);
-	tonegen_freq_hptest = cpu_to_le16(DA7219_AAD_HPTEST_RAMP_FREQ);
 	regmap_raw_write(da7219->regmap, DA7219_TONE_GEN_FREQ1_L,
 			 &tonegen_freq_hptest, sizeof(tonegen_freq_hptest));
 	snd_soc_update_bits(codec, DA7219_TONE_GEN_CFG2,
@@ -244,11 +276,25 @@ static void da7219_aad_hptest_work(struct work_struct *work)
 	snd_soc_update_bits(codec, DA7219_ACCDET_CONFIG_8,
 			    DA7219_HPTEST_EN_MASK, 0);
 
+	/*
+	 * If we're running from the internal oscillator then give audio paths
+	 * time to settle before allowing headphones to be driven as required.
+	 */
+	if (!(pll_srm_sts & DA7219_PLL_SRM_STS_MCLK))
+		msleep(DA7219_AAD_HPTEST_INT_OSC_PATH_DELAY);
+
+	/* Restore gain ramping rate */
+	snd_soc_write(codec, DA7219_GAIN_RAMP_CTRL, gain_ramp_ctrl);
+
 	/* Drive Headphones/lineout */
 	snd_soc_update_bits(codec, DA7219_HP_L_CTRL, DA7219_HP_L_AMP_OE_MASK,
 			    DA7219_HP_L_AMP_OE_MASK);
 	snd_soc_update_bits(codec, DA7219_HP_R_CTRL, DA7219_HP_R_AMP_OE_MASK,
 			    DA7219_HP_R_AMP_OE_MASK);
+
+	/* Remove MCLK, if previously enabled */
+	if (da7219->mclk)
+		clk_disable_unprepare(da7219->mclk);
 
 	mutex_unlock(&da7219->lock);
 	snd_soc_dapm_mutex_unlock(dapm);
