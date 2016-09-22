@@ -16,15 +16,16 @@
 #include <linux/hugetlb_inline.h>
 
 /*
- * Bits in mapping->flags.  The lower __GFP_BITS_SHIFT bits are the page
- * allocation mode flags.
+ * Bits in mapping->flags.
  */
 enum mapping_flags {
-	AS_EIO		= __GFP_BITS_SHIFT + 0,	/* IO error on async write */
-	AS_ENOSPC	= __GFP_BITS_SHIFT + 1,	/* ENOSPC on async write */
-	AS_MM_ALL_LOCKS	= __GFP_BITS_SHIFT + 2,	/* under mm_take_all_locks() */
-	AS_UNEVICTABLE	= __GFP_BITS_SHIFT + 3,	/* e.g., ramdisk, SHM_LOCK */
-	AS_EXITING	= __GFP_BITS_SHIFT + 4, /* final truncate in progress */
+	AS_EIO		= 0,	/* IO error on async write */
+	AS_ENOSPC	= 1,	/* ENOSPC on async write */
+	AS_MM_ALL_LOCKS	= 2,	/* under mm_take_all_locks() */
+	AS_UNEVICTABLE	= 3,	/* e.g., ramdisk, SHM_LOCK */
+	AS_EXITING	= 4, 	/* final truncate in progress */
+	/* writeback related tags are not used */
+	AS_NO_WRITEBACK_TAGS = 5,
 };
 
 static inline void mapping_set_error(struct address_space *mapping, int error)
@@ -64,9 +65,19 @@ static inline int mapping_exiting(struct address_space *mapping)
 	return test_bit(AS_EXITING, &mapping->flags);
 }
 
+static inline void mapping_set_no_writeback_tags(struct address_space *mapping)
+{
+	set_bit(AS_NO_WRITEBACK_TAGS, &mapping->flags);
+}
+
+static inline int mapping_use_writeback_tags(struct address_space *mapping)
+{
+	return !test_bit(AS_NO_WRITEBACK_TAGS, &mapping->flags);
+}
+
 static inline gfp_t mapping_gfp_mask(struct address_space * mapping)
 {
-	return (__force gfp_t)mapping->flags & __GFP_BITS_MASK;
+	return mapping->gfp_mask;
 }
 
 /* Restricts the given gfp_mask to what the mapping allows. */
@@ -82,8 +93,7 @@ static inline gfp_t mapping_gfp_constraint(struct address_space *mapping,
  */
 static inline void mapping_set_gfp_mask(struct address_space *m, gfp_t mask)
 {
-	m->flags = (m->flags & ~(__force unsigned long)__GFP_BITS_MASK) |
-				(__force unsigned long)mask;
+	m->gfp_mask = mask;
 }
 
 void release_pages(struct page **pages, int nr, bool cold);
@@ -396,7 +406,7 @@ static inline loff_t page_offset(struct page *page)
 
 static inline loff_t page_file_offset(struct page *page)
 {
-	return ((loff_t)page_file_index(page)) << PAGE_SHIFT;
+	return ((loff_t)page_index(page)) << PAGE_SHIFT;
 }
 
 extern pgoff_t linear_hugepage_index(struct vm_area_struct *vma,
