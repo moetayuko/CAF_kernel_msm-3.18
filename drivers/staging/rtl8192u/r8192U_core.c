@@ -114,9 +114,9 @@ static int channels = 0x3fff;
 
 
 
-module_param(ifname, charp, S_IRUGO | S_IWUSR);
-module_param(hwwep, int, S_IRUGO | S_IWUSR);
-module_param(channels, int, S_IRUGO | S_IWUSR);
+module_param(ifname, charp, 0644);
+module_param(hwwep, int, 0644);
+module_param(channels, int, 0644);
 
 MODULE_PARM_DESC(ifname, " Net interface name, wlan%d=default");
 MODULE_PARM_DESC(hwwep, " Try to use hardware security support. ");
@@ -1702,11 +1702,8 @@ short rtl8192_tx(struct net_device *dev, struct sk_buff *skb)
 		}
 		if (bSend0Byte) {
 			tx_urb_zero = usb_alloc_urb(0, GFP_ATOMIC);
-			if (!tx_urb_zero) {
-				RT_TRACE(COMP_ERR,
-					 "can't alloc urb for zero byte\n");
+			if (!tx_urb_zero)
 				return -ENOMEM;
-			}
 			usb_fill_bulk_urb(tx_urb_zero, udev,
 					  usb_sndbulkpipe(udev, idx_pipe),
 					  &zero, 0, tx_zero_isr, dev);
@@ -4209,7 +4206,7 @@ static void rtl8192_process_phyinfo(struct r8192_priv *priv, u8 *buffer,
  *
  * Return:		0-100 percentage
  *---------------------------------------------------------------------------*/
-static u8 rtl819x_query_rxpwrpercentage(char antpower)
+static u8 rtl819x_query_rxpwrpercentage(s8 antpower)
 {
 	if ((antpower <= -100) || (antpower >= 20))
 		return	0;
@@ -4220,9 +4217,9 @@ static u8 rtl819x_query_rxpwrpercentage(char antpower)
 
 }	/* QueryRxPwrPercentage */
 
-static u8 rtl819x_evm_dbtopercentage(char value)
+static u8 rtl819x_evm_dbtopercentage(s8 value)
 {
-	char ret_val;
+	s8 ret_val;
 
 	ret_val = value;
 
@@ -4297,8 +4294,8 @@ static void rtl8192_query_rxphystatus(struct r8192_priv *priv,
 	phy_ofdm_rx_status_rxsc_sgien_exintfflag *prxsc;
 	u8	*prxpkt;
 	u8	i, max_spatial_stream, tmp_rxsnr, tmp_rxevm, rxsc_sgien_exflg;
-	char	rx_pwr[4], rx_pwr_all = 0;
-	char	rx_snrX, rx_evmX;
+	s8	rx_pwr[4], rx_pwr_all = 0;
+	s8	rx_snrX, rx_evmX;
 	u8	evm, pwdb_all;
 	u32	RSSI, total_rssi = 0;
 	u8	is_cck_rate = 0;
@@ -4423,7 +4420,7 @@ static void rtl8192_query_rxphystatus(struct r8192_priv *priv,
 
 			/* Get Rx snr value in DB */
 			tmp_rxsnr =	pofdm_buf->rxsnr_X[i];
-			rx_snrX = (char)(tmp_rxsnr);
+			rx_snrX = (s8)(tmp_rxsnr);
 			rx_snrX /= 2;
 			priv->stats.rxSNRdB[i] = (long)rx_snrX;
 
@@ -4457,7 +4454,7 @@ static void rtl8192_query_rxphystatus(struct r8192_priv *priv,
 
 		for (i = 0; i < max_spatial_stream; i++) {
 			tmp_rxevm =	pofdm_buf->rxevm_X[i];
-			rx_evmX = (char)(tmp_rxevm);
+			rx_evmX = (s8)(tmp_rxevm);
 
 			/* Do not use shift operation like "rx_evmX >>= 1"
 			 * because the compiler of free build environment will
@@ -4475,10 +4472,10 @@ static void rtl8192_query_rxphystatus(struct r8192_priv *priv,
 				 */
 				pstats->SignalQuality =
 					precord_stats->SignalQuality =
-					(u8)(evm & 0xff);
+					evm & 0xff;
 			pstats->RxMIMOSignalQuality[i] =
 				precord_stats->RxMIMOSignalQuality[i] =
-				(u8)(evm & 0xff);
+				evm & 0xff;
 		}
 
 
@@ -5013,8 +5010,7 @@ static int rtl8192_usb_probe(struct usb_interface *intf,
 
 	dev->netdev_ops = &rtl8192_netdev_ops;
 
-	dev->wireless_handlers =
-		(struct iw_handler_def *)&r8192_wx_handlers_def;
+	dev->wireless_handlers = &r8192_wx_handlers_def;
 
 	dev->type = ARPHRD_ETHER;
 
@@ -5222,7 +5218,8 @@ void setKey(struct net_device *dev, u8 EntryNo, u8 KeyIndex, u16 KeyType,
 		} else {
 			/* Key Material */
 			if (KeyContent) {
-				write_nic_dword(dev, WCAMI, (u32)(*(KeyContent + i - 2)));
+				write_nic_dword(dev, WCAMI,
+						*(KeyContent + i - 2));
 				write_nic_dword(dev, RWCAM, TargetCommand);
 			}
 		}

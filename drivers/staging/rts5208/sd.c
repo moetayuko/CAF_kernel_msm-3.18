@@ -1428,7 +1428,6 @@ static int sd_switch_function(struct rtsx_chip *chip, u8 bus_width)
 			continue;
 		}
 
-
 		if (func_to_switch)
 			break;
 
@@ -1437,9 +1436,9 @@ static int sd_switch_function(struct rtsx_chip *chip, u8 bus_width)
 		func_to_switch);
 
 #ifdef SUPPORT_SD_LOCK
-	if ((sd_card->sd_lock_status & SD_SDR_RST)
-			&& (DDR50_SUPPORT == func_to_switch)
-			&& (sd_card->func_group1_mask & SDR50_SUPPORT_MASK)) {
+	if ((sd_card->sd_lock_status & SD_SDR_RST) &&
+	    (func_to_switch == DDR50_SUPPORT) &&
+	    (sd_card->func_group1_mask & SDR50_SUPPORT_MASK)) {
 		func_to_switch = SDR50_SUPPORT;
 		dev_dbg(rtsx_dev(chip), "Using SDR50 instead of DDR50 for SD Lock\n");
 	}
@@ -2975,7 +2974,6 @@ SD_UNLOCK_ENTRY:
 	return STATUS_SUCCESS;
 }
 
-
 static int mmc_test_switch_bus(struct rtsx_chip *chip, u8 width)
 {
 	struct sd_info *sd_card = &(chip->sd_card);
@@ -3105,7 +3103,6 @@ static int mmc_test_switch_bus(struct rtsx_chip *chip, u8 width)
 	return SWITCH_FAIL;
 }
 
-
 static int mmc_switch_timing_bus(struct rtsx_chip *chip, bool switch_ddr)
 {
 	struct sd_info *sd_card = &(chip->sd_card);
@@ -3229,7 +3226,6 @@ static int mmc_switch_timing_bus(struct rtsx_chip *chip, bool switch_ddr)
 
 	return STATUS_SUCCESS;
 }
-
 
 static int reset_mmc(struct rtsx_chip *chip)
 {

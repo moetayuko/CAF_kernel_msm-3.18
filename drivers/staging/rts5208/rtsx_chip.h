@@ -101,7 +101,6 @@
 #define TRANSPORT_NO_SENSE	2  /* Command failed, no auto-sense    */
 #define TRANSPORT_ERROR		3   /* Transport bad (i.e. device dead) */
 
-
 /*-----------------------------------
     Start-Stop-Unit
 -----------------------------------*/
@@ -228,7 +227,6 @@
 #define ASCQ_LOAD_EJCT_ERR      0x00
 #define	ASCQ_WRITE_PROTECT	0x00
 
-
 struct sense_data_t {
 	unsigned char   err_code;	/* error code */
 	/* bit7 : valid */
@@ -268,22 +266,22 @@ struct sense_data_t {
 #define TRIG_DMA		(0x01 << 31)
 
 /* Bus interrupt pending register */
-#define CMD_DONE_INT		(1 << 31)
-#define DATA_DONE_INT		(1 << 30)
-#define TRANS_OK_INT		(1 << 29)
-#define TRANS_FAIL_INT		(1 << 28)
-#define XD_INT			(1 << 27)
-#define MS_INT			(1 << 26)
-#define SD_INT			(1 << 25)
-#define GPIO0_INT		(1 << 24)
-#define OC_INT			(1 << 23)
-#define SD_WRITE_PROTECT	(1 << 19)
-#define XD_EXIST		(1 << 18)
-#define MS_EXIST		(1 << 17)
-#define SD_EXIST		(1 << 16)
+#define CMD_DONE_INT		BIT(31)
+#define DATA_DONE_INT		BIT(30)
+#define TRANS_OK_INT		BIT(29)
+#define TRANS_FAIL_INT		BIT(28)
+#define XD_INT			BIT(27)
+#define MS_INT			BIT(26)
+#define SD_INT			BIT(25)
+#define GPIO0_INT		BIT(24)
+#define OC_INT			BIT(23)
+#define SD_WRITE_PROTECT	BIT(19)
+#define XD_EXIST		BIT(18)
+#define MS_EXIST		BIT(17)
+#define SD_EXIST		BIT(16)
 #define DELINK_INT		GPIO0_INT
-#define MS_OC_INT		(1 << 23)
-#define SD_OC_INT		(1 << 22)
+#define MS_OC_INT		BIT(23)
+#define SD_OC_INT		BIT(22)
 
 #define CARD_INT		(XD_INT | MS_INT | SD_INT)
 #define NEED_COMPLETE_INT	(DATA_DONE_INT | TRANS_OK_INT | TRANS_FAIL_INT)
@@ -305,14 +303,12 @@ struct sense_data_t {
 #define MS_OC_INT_EN		(1 << 23)
 #define SD_OC_INT_EN		(1 << 22)
 
-
 #define READ_REG_CMD		0
 #define WRITE_REG_CMD		1
 #define CHECK_REG_CMD		2
 
 #define HOST_TO_DEVICE		0
 #define DEVICE_TO_HOST		1
-
 
 #define RTSX_RESV_BUF_LEN	4096
 #define HOST_CMDS_BUF_LEN	1024
@@ -331,7 +327,6 @@ struct sense_data_t {
 
 #define XD_FREE_TABLE_CNT	1200
 #define MS_FREE_TABLE_CNT	512
-
 
 /* Bit Operation */
 #define SET_BIT(data, idx)	((data) |= 1 << (idx))
@@ -617,7 +612,6 @@ struct spi_info {
 
 	int spi_clock;
 };
-
 
 #ifdef _MSG_TRACE
 struct trace_msg_t {
