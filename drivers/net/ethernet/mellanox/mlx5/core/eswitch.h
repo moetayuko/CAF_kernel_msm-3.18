@@ -109,6 +109,16 @@ struct vport_egress {
 	struct mlx5_flow_rule  *drop_rule;
 };
 
+struct mlx5_vport_info {
+	u8                      mac[ETH_ALEN];
+	u16                     vlan;
+	u8                      qos;
+	u64                     node_guid;
+	int                     link_state;
+	bool                    spoofchk;
+	bool                    trusted;
+};
+
 struct mlx5_vport {
 	struct mlx5_core_dev    *dev;
 	int                     vport;
@@ -121,10 +131,8 @@ struct mlx5_vport {
 	struct vport_ingress    ingress;
 	struct vport_egress     egress;
 
-	u16                     vlan;
-	u8                      qos;
-	bool                    spoofchk;
-	bool                    trusted;
+	struct mlx5_vport_info  info;
+
 	bool                    enabled;
 	u16                     enabled_events;
 };
@@ -201,9 +209,14 @@ struct mlx5_eswitch {
 	int                     mode;
 };
 
+void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports);
+int esw_offloads_init(struct mlx5_eswitch *esw, int nvports);
+
 /* E-Switch API */
 int mlx5_eswitch_init(struct mlx5_core_dev *dev);
 void mlx5_eswitch_cleanup(struct mlx5_eswitch *esw);
+void mlx5_eswitch_attach(struct mlx5_eswitch *esw);
+void mlx5_eswitch_detach(struct mlx5_eswitch *esw);
 void mlx5_eswitch_vport_event(struct mlx5_eswitch *esw, struct mlx5_eqe *eqe);
 int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, int mode);
 void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw);
