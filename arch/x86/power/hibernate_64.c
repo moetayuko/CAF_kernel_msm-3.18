@@ -11,6 +11,10 @@
 #include <linux/gfp.h>
 #include <linux/smp.h>
 #include <linux/suspend.h>
+#include <linux/scatterlist.h>
+#include <linux/kdebug.h>
+
+#include <crypto/hash.h>
 
 #include <asm/init.h>
 #include <asm/proto.h>
@@ -177,14 +181,88 @@ int pfn_is_nosave(unsigned long pfn)
 	return (pfn >= nosave_begin_pfn) && (pfn < nosave_end_pfn);
 }
 
+#define MD5_DIGEST_SIZE 16
+
 struct restore_data_record {
 	unsigned long jump_address;
 	unsigned long jump_address_phys;
 	unsigned long cr3;
 	unsigned long magic;
+	u8 e820_digest[MD5_DIGEST_SIZE];
 };
 
-#define RESTORE_MAGIC	0x123456789ABCDEF0UL
+#define RESTORE_MAGIC	0x23456789ABCDEF01UL
+
+#if IS_BUILTIN(CONFIG_CRYPTO_MD5)
+/**
+ * get_e820_md5 - calculate md5 according to given e820 map
+ *
+ * @map: the e820 map to be calculated
+ * @buf: the md5 result to be stored to
+ */
+static int get_e820_md5(struct e820map *map, void *buf)
+{
+	struct scatterlist sg;
+	struct crypto_ahash *tfm;
+	struct ahash_request *req;
+	int ret = 0;
+
+	tfm = crypto_alloc_ahash("md5", 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm))
+		return -ENOMEM;
+
+	req = ahash_request_alloc(tfm, GFP_KERNEL);
+	if (!req) {
+		ret = -ENOMEM;
+		goto free_ahash;
+	}
+
+	sg_init_one(&sg, (u8 *)map, sizeof(struct e820map));
+	ahash_request_set_callback(req, 0, NULL, NULL);
+	ahash_request_set_crypt(req, &sg, buf, sizeof(struct e820map));
+
+	if (crypto_ahash_digest(req))
+		ret = -EINVAL;
+
+	ahash_request_free(req);
+ free_ahash:
+	crypto_free_ahash(tfm);
+
+	return ret;
+}
+
+static void hibernation_e820_save(void *buf)
+{
+	get_e820_md5(&e820_saved, buf);
+}
+
+static bool hibernation_e820_mismatch(void *buf)
+{
+	int ret;
+	u8 result[MD5_DIGEST_SIZE];
+
+	memset(result, 0, MD5_DIGEST_SIZE);
+	/* If there is no digest in suspend kernel, let it go. */
+	if (!memcmp(result, buf, MD5_DIGEST_SIZE))
+		return false;
+
+	ret = get_e820_md5(&e820_saved, result);
+	if (ret)
+		return true;
+
+	return !!memcmp(result, buf, MD5_DIGEST_SIZE);
+}
+#else
+static void hibernation_e820_save(void *buf)
+{
+}
+
+static bool hibernation_e820_mismatch(void *buf)
+{
+	/* If md5 is not builtin for restore kernel, let it go. */
+	return false;
+}
+#endif
 
 /**
  *	arch_hibernation_header_save - populate the architecture specific part
@@ -201,6 +279,9 @@ int arch_hibernation_header_save(void *addr, unsigned int max_size)
 	rdr->jump_address_phys = __pa_symbol(&restore_registers);
 	rdr->cr3 = restore_cr3;
 	rdr->magic = RESTORE_MAGIC;
+
+	hibernation_e820_save(rdr->e820_digest);
+
 	return 0;
 }
 
@@ -216,5 +297,12 @@ int arch_hibernation_header_restore(void *addr)
 	restore_jump_address = rdr->jump_address;
 	jump_address_phys = rdr->jump_address_phys;
 	restore_cr3 = rdr->cr3;
-	return (rdr->magic == RESTORE_MAGIC) ? 0 : -EINVAL;
+
+	if (rdr->magic != RESTORE_MAGIC)
+		return -EINVAL;
+
+	if (hibernation_e820_mismatch(rdr->e820_digest))
+		return -ENODEV;
+
+	return 0;
 }
