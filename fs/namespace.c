@@ -725,6 +725,7 @@ bool __is_local_mountpoint(struct dentry *dentry)
 out:
 	return is_covered;
 }
+EXPORT_SYMBOL(__is_local_mountpoint);
 
 static struct mountpoint *lookup_mountpoint(struct dentry *dentry)
 {

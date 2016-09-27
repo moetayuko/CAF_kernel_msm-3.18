@@ -127,12 +127,3 @@ struct proc_mounts {
 };
 
 extern const struct seq_operations mounts_op;
-
-extern bool __is_local_mountpoint(struct dentry *dentry);
-static inline bool is_local_mountpoint(struct dentry *dentry)
-{
-	if (!d_mountpoint(dentry))
-		return false;
-
-	return __is_local_mountpoint(dentry);
-}
