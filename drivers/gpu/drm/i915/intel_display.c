@@ -3408,6 +3408,8 @@ static void skylake_update_primary_plane(struct drm_plane *plane,
 	dst_w--;
 	dst_h--;
 
+	intel_crtc->dspaddr_offset = surf_addr;
+
 	intel_crtc->adjusted_x = src_x;
 	intel_crtc->adjusted_y = src_y;
 
@@ -3627,6 +3629,7 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 		intel_runtime_pm_disable_interrupts(dev_priv);
 		intel_runtime_pm_enable_interrupts(dev_priv);
 
+		intel_pps_unlock_regs_wa(dev_priv);
 		intel_modeset_init_hw(dev);
 
 		spin_lock_irq(&dev_priv->irq_lock);
@@ -12265,7 +12268,7 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 
 		work->flip_queued_req = i915_gem_active_get(&obj->last_write,
 							    &obj->base.dev->struct_mutex);
-		schedule_work(&work->mmio_work);
+		queue_work(system_unbound_wq, &work->mmio_work);
 	} else {
 		request = i915_gem_request_alloc(engine, engine->last_context);
 		if (IS_ERR(request)) {
