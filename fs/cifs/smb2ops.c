@@ -70,6 +70,10 @@ smb2_add_credits(struct TCP_Server_Info *server, const unsigned int add,
 	spin_lock(&server->req_lock);
 	val = server->ops->get_credits_field(server, optype);
 	*val += add;
+	if (*val > 65000) {
+		*val = 65000; /* Don't get near 64K credits, avoid srv bugs */
+		printk_once(KERN_WARNING "server overflowed SMB3 credits\n");
+	}
 	server->in_flight--;
 	if (server->in_flight == 0 && (optype & CIFS_OP_MASK) != CIFS_NEG_OP)
 		rc = change_conf(server);
@@ -541,6 +545,7 @@ smb2_set_fid(struct cifsFileInfo *cfile, struct cifs_fid *fid, __u32 oplock)
 	server->ops->set_oplock_level(cinode, oplock, fid->epoch,
 				      &fid->purge_cache);
 	cinode->can_cache_brlcks = CIFS_CACHE_WRITE(cinode);
+	memcpy(cfile->fid.create_guid, fid->create_guid, 16);
 }
 
 static void
@@ -1041,7 +1046,7 @@ smb2_set_lease_key(struct inode *inode, struct cifs_fid *fid)
 static void
 smb2_new_lease_key(struct cifs_fid *fid)
 {
-	get_random_bytes(fid->lease_key, SMB2_LEASE_KEY_SIZE);
+	generate_random_uuid(fid->lease_key);
 }
 
 #define SMB2_SYMLINK_STRUCT_SIZE \
