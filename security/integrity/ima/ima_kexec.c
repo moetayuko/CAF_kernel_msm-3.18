@@ -33,8 +33,7 @@ static int ima_dump_measurement_list(unsigned long *buffer_size, void **buffer,
 {
 	struct ima_queue_entry *qe;
 	struct seq_file file;
-	struct ima_kexec_hdr khdr = {
-		.version = 1, .buffer_size = 0, .count = 0};
+	struct ima_kexec_hdr khdr;
 	int ret = 0;
 
 	/* segment size can't change between kexec load and execute */
@@ -48,6 +47,8 @@ static int ima_dump_measurement_list(unsigned long *buffer_size, void **buffer,
 	file.read_pos = 0;
 	file.count = sizeof(khdr);	/* reserved space */
 
+	memset(&khdr, 0, sizeof(khdr));
+	khdr.version = 1;
 	list_for_each_entry_rcu(qe, &ima_measurements, later) {
 		if (file.count < file.size) {
 			khdr.count++;
@@ -66,7 +67,13 @@ static int ima_dump_measurement_list(unsigned long *buffer_size, void **buffer,
 	 * (eg. version, buffer size, number of measurements)
 	 */
 	khdr.buffer_size = file.count;
+	if (ima_canonical_fmt) {
+		khdr.version = cpu_to_le16(khdr.version);
+		khdr.count = cpu_to_le64(khdr.count);
+		khdr.buffer_size = cpu_to_le64(khdr.buffer_size);
+	}
 	memcpy(file.buf, &khdr, sizeof(khdr));
+
 	print_hex_dump(KERN_DEBUG, "ima dump: ", DUMP_PREFIX_NONE,
 			16, 1, file.buf,
 			file.count < 100 ? file.count : 100, true);
