@@ -236,7 +236,7 @@ static int autofs4_tree_busy(struct vfsmount *mnt,
 		 * count for the autofs dentry.
 		 * If the fs is busy update the expiry counter.
 		 */
-		if (d_mountpoint(p)) {
+		if (is_local_mountpoint(p)) {
 			if (autofs4_mount_busy(mnt, p)) {
 				top_ino->last_used = jiffies;
 				dput(p);
@@ -280,7 +280,7 @@ static struct dentry *autofs4_check_leaves(struct vfsmount *mnt,
 	while ((p = get_next_positive_dentry(p, parent))) {
 		pr_debug("dentry %p %pd\n", p, p);
 
-		if (d_mountpoint(p)) {
+		if (is_local_mountpoint(p)) {
 			/* Can we umount this guy */
 			if (autofs4_mount_busy(mnt, p))
 				continue;
