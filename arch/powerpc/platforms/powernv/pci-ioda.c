@@ -3033,6 +3033,38 @@ static void pnv_ioda_setup_pe_seg(struct pnv_ioda_pe *pe)
 	}
 }
 
+#ifdef CONFIG_DEBUG_FS
+static int pnv_pci_diag_data_set(void *data, u64 val)
+{
+	struct pci_controller *hose;
+	struct pnv_phb *phb;
+	s64 ret;
+
+	if (val != 1ULL)
+		return -EINVAL;
+
+	hose = (struct pci_controller *)data;
+	if (!hose || !hose->private_data)
+		return -ENODEV;
+
+	phb = hose->private_data;
+
+	/* Retrieve the diag data from firmware */
+	ret = opal_pci_get_phb_diag_data2(phb->opal_id, phb->diag.blob,
+					  PNV_PCI_DIAG_BUF_SIZE);
+	if (ret != OPAL_SUCCESS)
+		return -EIO;
+
+	/* Print the diag data to the kernel log */
+	pnv_pci_dump_phb_diag_data(phb->hose, phb->diag.blob);
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(pnv_pci_diag_data_fops, NULL,
+			pnv_pci_diag_data_set, "%llu\n");
+
+#endif /* CONFIG_DEBUG_FS */
+
 static void pnv_pci_ioda_create_dbgfs(void)
 {
 #ifdef CONFIG_DEBUG_FS
@@ -3048,9 +3080,14 @@ static void pnv_pci_ioda_create_dbgfs(void)
 
 		sprintf(name, "PCI%04x", hose->global_number);
 		phb->dbgfs = debugfs_create_dir(name, powerpc_debugfs_root);
-		if (!phb->dbgfs)
+		if (!phb->dbgfs) {
 			pr_warning("%s: Error on creating debugfs on PHB#%x\n",
 				__func__, hose->global_number);
+			continue;
+		}
+
+		debugfs_create_file("dump_diag_regs", 0200, phb->dbgfs, hose,
+				    &pnv_pci_diag_data_fops);
 	}
 #endif /* CONFIG_DEBUG_FS */
 }
@@ -3763,10 +3800,11 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
 	if (rc)
 		pr_warning("  OPAL Error %ld performing IODA table reset !\n", rc);
 
-	/* If we're running in kdump kerenl, the previous kerenl never
+	/*
+	 * If we're running in kdump kernel, the previous kernel never
 	 * shutdown PCI devices correctly. We already got IODA table
 	 * cleaned out. So we have to issue PHB reset to stop all PCI
-	 * transactions from previous kerenl.
+	 * transactions from previous kernel.
 	 */
 	if (is_kdump_kernel()) {
 		pr_info("  Issue PHB reset ...\n");
