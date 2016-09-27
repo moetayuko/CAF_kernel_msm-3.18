@@ -14,6 +14,12 @@ int kimage_is_destination_range(struct kimage *image,
 
 extern struct mutex kexec_mutex;
 
+#define for_each_kimage_entry(image, ptr, entry) \
+	for (ptr = &image->head; (entry = *ptr) && !(entry & IND_DONE); \
+		ptr = (entry & IND_INDIRECTION) ? \
+			boot_phys_to_virt((entry & PAGE_MASK)) : ptr + 1)
+
+
 #ifdef CONFIG_KEXEC_FILE
 struct kexec_sha_region {
 	unsigned long start;
