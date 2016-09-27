@@ -98,6 +98,9 @@ void kimage_file_post_load_cleanup(struct kimage *image)
 	vfree(pi->purgatory_buf);
 	pi->purgatory_buf = NULL;
 
+	kfree(pi->digest_buf);
+	pi->digest_buf = NULL;
+
 	vfree(pi->sechdrs);
 	pi->sechdrs = NULL;
 
@@ -527,7 +530,6 @@ static int kexec_calculate_store_digests(struct kimage *image)
 	struct shash_desc *desc;
 	int ret = 0, i, j, zero_buf_sz, sha_region_sz;
 	size_t desc_size, nullsz;
-	char *digest;
 	void *zero_buf;
 	struct kexec_sha_region *sha_regions;
 	struct purgatory_info *pi = &image->purgatory_info;
@@ -553,6 +555,37 @@ static int kexec_calculate_store_digests(struct kimage *image)
 	if (!sha_regions)
 		goto out_free_desc;
 
+	/*
+	 * Set sha_regions early so that we can write it to the purgatory
+	 * and include it in the checksum.
+	 */
+	for (j = i = 0; i < image->nr_segments; i++) {
+		struct kexec_segment *ksegment = &image->segment[i];
+
+		if (ksegment->kbuf == pi->digest_buf)
+			continue;
+
+		if (IS_ENABLED(CONFIG_ARCH_MODIFIES_KEXEC_PURGATORY) &&
+		    ksegment->kbuf == pi->purgatory_buf)
+			continue;
+
+		sha_regions[j].start = ksegment->mem;
+		sha_regions[j].len = ksegment->memsz;
+		j++;
+	}
+
+	ret = kexec_purgatory_get_set_symbol(image, "sha_regions", sha_regions,
+					     sha_region_sz, false);
+	if (ret)
+		goto out_free_sha_regions;
+
+	ret = kexec_purgatory_get_set_symbol(image, "sha256_digest",
+					     &pi->digest_load_addr,
+					     sizeof(pi->digest_load_addr),
+					     false);
+	if (ret)
+		goto out_free_sha_regions;
+
 	desc->tfm   = tfm;
 	desc->flags = 0;
 
@@ -560,21 +593,24 @@ static int kexec_calculate_store_digests(struct kimage *image)
 	if (ret < 0)
 		goto out_free_sha_regions;
 
-	digest = kzalloc(SHA256_DIGEST_SIZE, GFP_KERNEL);
-	if (!digest) {
-		ret = -ENOMEM;
-		goto out_free_sha_regions;
-	}
-
-	for (j = i = 0; i < image->nr_segments; i++) {
+	for (i = 0; i < image->nr_segments; i++) {
 		struct kexec_segment *ksegment;
 
 		ksegment = &image->segment[i];
 		/*
-		 * Skip purgatory as it will be modified once we put digest
-		 * info in purgatory.
+		 * Skip the digest segment as it will be modified with the
+		 * result of the checksum calculation.
 		 */
-		if (ksegment->kbuf == pi->purgatory_buf)
+		if (ksegment->kbuf == pi->digest_buf)
+			continue;
+
+		/*
+		 * Some architectures need to modify the purgatory before
+		 * jumping into it, so in those cases we need to skip the
+		 * purgatory from the checksum calculation.
+		 */
+		if (IS_ENABLED(CONFIG_ARCH_MODIFIES_KEXEC_PURGATORY) &&
+		    ksegment->kbuf == pi->purgatory_buf)
 			continue;
 
 		ret = crypto_shash_update(desc, ksegment->kbuf,
@@ -600,29 +636,11 @@ static int kexec_calculate_store_digests(struct kimage *image)
 
 		if (ret)
 			break;
-
-		sha_regions[j].start = ksegment->mem;
-		sha_regions[j].len = ksegment->memsz;
-		j++;
 	}
 
-	if (!ret) {
-		ret = crypto_shash_final(desc, digest);
-		if (ret)
-			goto out_free_digest;
-		ret = kexec_purgatory_get_set_symbol(image, "sha_regions",
-						sha_regions, sha_region_sz, 0);
-		if (ret)
-			goto out_free_digest;
+	if (!ret)
+		ret = crypto_shash_final(desc, pi->digest_buf);
 
-		ret = kexec_purgatory_get_set_symbol(image, "sha256_digest",
-						digest, SHA256_DIGEST_SIZE, 0);
-		if (ret)
-			goto out_free_digest;
-	}
-
-out_free_digest:
-	kfree(digest);
 out_free_sha_regions:
 	vfree(sha_regions);
 out_free_desc:
@@ -875,6 +893,10 @@ int kexec_load_purgatory(struct kimage *image, unsigned long min,
 			 unsigned long *load_addr)
 {
 	struct purgatory_info *pi = &image->purgatory_info;
+	struct kexec_buf kbuf = { .image = image, .bufsz = SHA256_DIGEST_SIZE,
+				  .memsz = SHA256_DIGEST_SIZE, .buf_align = 1,
+				  .buf_min = min, .buf_max = max,
+				  .top_down = top_down };
 	int ret;
 
 	if (kexec_purgatory_size <= 0)
@@ -899,6 +921,22 @@ int kexec_load_purgatory(struct kimage *image, unsigned long min,
 	ret = __kexec_load_purgatory(image, min, max, top_down);
 	if (ret)
 		return ret;
+
+	pi->digest_buf = kzalloc(SHA256_DIGEST_SIZE, GFP_KERNEL);
+	if (!pi->digest_buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	/*
+	 * Add a separate segment for the digest so that we don't have to modify
+	 * the purgatory segment after we calculate the kexec image checksum.
+	 */
+	kbuf.buffer = pi->digest_buf;
+	ret = kexec_add_buffer(&kbuf);
+	if (ret)
+		goto out;
+	pi->digest_load_addr = kbuf.mem;
 
 	ret = kexec_apply_relocations(image);
 	if (ret)

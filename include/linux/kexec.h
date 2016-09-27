@@ -124,8 +124,14 @@ struct purgatory_info {
 	 */
 	void *purgatory_buf;
 
+	/* Digest of the contents of segments. */
+	void *digest_buf;
+
 	/* Address where purgatory is finally loaded and is executed from */
 	unsigned long purgatory_load_addr;
+
+	/* Address where the digest is loaded. */
+	unsigned long digest_load_addr;
 };
 
 typedef int (kexec_probe_t)(const char *kernel_buf, unsigned long kernel_size);
