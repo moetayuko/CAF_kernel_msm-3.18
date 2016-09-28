@@ -52,9 +52,27 @@ struct nvdimm_drvdata {
 struct nd_region_data {
 	int ns_count;
 	int ns_active;
-	unsigned int flush_mask;
-	void __iomem *flush_wpq[0][0];
+	unsigned int hints_shift;
+	void __iomem *flush_wpq[0];
 };
+
+static inline void __iomem *ndrd_get_flush_wpq(struct nd_region_data *ndrd,
+		int dimm, int hint)
+{
+	unsigned int num = 1 << ndrd->hints_shift;
+	unsigned int mask = num - 1;
+
+	return ndrd->flush_wpq[dimm * num + (hint & mask)];
+}
+
+static inline void ndrd_set_flush_wpq(struct nd_region_data *ndrd, int dimm,
+		int hint, void __iomem *flush)
+{
+	unsigned int num = 1 << ndrd->hints_shift;
+	unsigned int mask = num - 1;
+
+	ndrd->flush_wpq[dimm * num + (hint & mask)] = flush;
+}
 
 static inline struct nd_namespace_index *to_namespace_index(
 		struct nvdimm_drvdata *ndd, int i)
@@ -191,6 +209,7 @@ void nvdimm_exit(void);
 void nd_region_exit(void);
 struct nvdimm;
 struct nvdimm_drvdata *to_ndd(struct nd_mapping *nd_mapping);
+int nvdimm_check_config_data(struct device *dev);
 int nvdimm_init_nsarea(struct nvdimm_drvdata *ndd);
 int nvdimm_init_config_data(struct nvdimm_drvdata *ndd);
 int nvdimm_set_config_data(struct nvdimm_drvdata *ndd, size_t offset,
