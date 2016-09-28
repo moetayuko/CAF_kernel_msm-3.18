@@ -785,7 +785,8 @@ static void sti_hqvdp_disable(struct sti_hqvdp *hqvdp)
  * RETURNS:
  * 0 on success.
  */
-static int sti_hqvdp_vtg_cb(struct notifier_block *nb, unsigned long evt, void *data)
+static int
+sti_hqvdp_vtg_cb(struct notifier_block *nb, unsigned long evt, void *data)
 {
 	struct sti_hqvdp *hqvdp = container_of(nb, struct sti_hqvdp, vtg_nb);
 	int btm_cmd_offset, top_cmd_offest;

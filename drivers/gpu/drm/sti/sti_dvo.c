@@ -107,7 +107,8 @@ struct sti_dvo_connector {
 	container_of(x, struct sti_dvo_connector, drm_connector)
 
 #define BLANKING_LEVEL 16
-static int dvo_awg_generate_code(struct sti_dvo *dvo, u8 *ram_size, u32 *ram_code)
+static int
+dvo_awg_generate_code(struct sti_dvo *dvo, u8 *ram_size, u32 *ram_code)
 {
 	struct drm_display_mode *mode = &dvo->mode;
 	struct dvo_config *config = dvo->config;
