@@ -22,6 +22,7 @@
 #include "util/evlist.h"
 #include "util/evsel.h"
 #include "util/debug.h"
+#include "util/drv_configs.h"
 #include "util/session.h"
 #include "util/tool.h"
 #include "util/symbol.h"
@@ -42,7 +43,7 @@
 #include <sched.h>
 #include <sys/mman.h>
 #include <asm/bug.h>
-
+#include <linux/time64.h>
 
 struct record {
 	struct perf_tool	tool;
@@ -96,7 +97,7 @@ backward_rb_find_range(void *buf, int mask, u64 head, u64 *start, u64 *end)
 	*start = head;
 	while (true) {
 		if (evt_head - head >= (unsigned int)size) {
-			pr_debug("Finshed reading backward ring buffer: rewind\n");
+			pr_debug("Finished reading backward ring buffer: rewind\n");
 			if (evt_head - head > (unsigned int)size)
 				evt_head -= pheader->size;
 			*end = evt_head;
@@ -106,7 +107,7 @@ backward_rb_find_range(void *buf, int mask, u64 head, u64 *start, u64 *end)
 		pheader = (struct perf_event_header *)(buf + (evt_head & mask));
 
 		if (pheader->size == 0) {
-			pr_debug("Finshed reading backward ring buffer: get start\n");
+			pr_debug("Finished reading backward ring buffer: get start\n");
 			*end = evt_head;
 			return 0;
 		}
@@ -383,6 +384,7 @@ static int record__open(struct record *rec)
 	struct perf_evlist *evlist = rec->evlist;
 	struct perf_session *session = rec->session;
 	struct record_opts *opts = &rec->opts;
+	struct perf_evsel_config_term *err_term;
 	int rc = 0;
 
 	perf_evlist__config(evlist, opts, &callchain_param);
@@ -408,6 +410,14 @@ try_again:
 		error("failed to set filter \"%s\" on event %s with %d (%s)\n",
 			pos->filter, perf_evsel__name(pos), errno,
 			str_error_r(errno, msg, sizeof(msg)));
+		rc = -1;
+		goto out;
+	}
+
+	if (perf_evlist__apply_drv_configs(evlist, &pos, &err_term)) {
+		error("failed to set config \"%s\" on event %s with %d (%s)\n",
+		      err_term->val.drv_cfg, perf_evsel__name(pos), errno,
+		      str_error_r(errno, msg, sizeof(msg)));
 		rc = -1;
 		goto out;
 	}
@@ -954,7 +964,7 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 	}
 
 	if (opts->initial_delay) {
-		usleep(opts->initial_delay * 1000);
+		usleep(opts->initial_delay * USEC_PER_MSEC);
 		perf_evlist__enable(rec->evlist);
 	}
 
