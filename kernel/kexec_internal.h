@@ -14,26 +14,16 @@ int kimage_is_destination_range(struct kimage *image,
 
 extern struct mutex kexec_mutex;
 
+#define for_each_kimage_entry(image, ptr, entry) \
+	for (ptr = &image->head; (entry = *ptr) && !(entry & IND_DONE); \
+		ptr = (entry & IND_INDIRECTION) ? \
+			boot_phys_to_virt((entry & PAGE_MASK)) : ptr + 1)
+
+
 #ifdef CONFIG_KEXEC_FILE
 struct kexec_sha_region {
 	unsigned long start;
 	unsigned long len;
-};
-
-/*
- * Keeps track of buffer parameters as provided by caller for requesting
- * memory placement of buffer.
- */
-struct kexec_buf {
-	struct kimage *image;
-	char *buffer;
-	unsigned long bufsz;
-	unsigned long mem;
-	unsigned long memsz;
-	unsigned long buf_align;
-	unsigned long buf_min;
-	unsigned long buf_max;
-	bool top_down;		/* allocate from top of memory hole */
 };
 
 void kimage_file_post_load_cleanup(struct kimage *image);

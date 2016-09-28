@@ -22,7 +22,7 @@ unsigned long backup_dest = 0;
 unsigned long backup_src = 0;
 unsigned long backup_sz = 0;
 
-u8 sha256_digest[SHA256_DIGEST_SIZE] = { 0 };
+u8 *sha256_digest = NULL;
 
 struct sha_region sha_regions[16] = {};
 
