@@ -1370,10 +1370,17 @@ struct ib_udata {
 
 struct ib_pd {
 	u32			local_dma_lkey;
+	u32			flags;
 	struct ib_device       *device;
 	struct ib_uobject      *uobject;
 	atomic_t          	usecnt; /* count all resources */
-	struct ib_mr	       *local_mr;
+
+	u32			unsafe_global_rkey;
+
+	/*
+	 * Implementation details of the RDMA core, don't use in drivers:
+	 */
+	struct ib_mr	       *__internal_mr;
 };
 
 struct ib_xrcd {
@@ -2497,8 +2504,23 @@ int ib_find_gid(struct ib_device *device, union ib_gid *gid,
 int ib_find_pkey(struct ib_device *device,
 		 u8 port_num, u16 pkey, u16 *index);
 
-struct ib_pd *ib_alloc_pd(struct ib_device *device);
+enum ib_pd_flags {
+	/*
+	 * Create a memory registration for all memory in the system and place
+	 * the rkey for it into pd->unsafe_global_rkey.  This can be used by
+	 * ULPs to avoid the overhead of dynamic MRs.
+	 *
+	 * This flag is generally considered unsafe and must only be used in
+	 * extremly trusted environments.  Every use of it will log a warning
+	 * in the kernel log.
+	 */
+	IB_PD_UNSAFE_GLOBAL_RKEY	= 0x01,
+};
 
+struct ib_pd *__ib_alloc_pd(struct ib_device *device, unsigned int flags,
+		const char *caller);
+#define ib_alloc_pd(device, flags) \
+	__ib_alloc_pd((device), (flags), __func__)
 void ib_dealloc_pd(struct ib_pd *pd);
 
 /**
@@ -2850,18 +2872,6 @@ static inline int ib_req_ncomp_notif(struct ib_cq *cq, int wc_cnt)
 		cq->device->req_ncomp_notif(cq, wc_cnt) :
 		-ENOSYS;
 }
-
-/**
- * ib_get_dma_mr - Returns a memory region for system memory that is
- *   usable for DMA.
- * @pd: The protection domain associated with the memory region.
- * @mr_access_flags: Specifies the memory access rights.
- *
- * Note that the ib_dma_*() functions defined below must be used
- * to create/destroy addresses used with the Lkey or Rkey returned
- * by ib_get_dma_mr().
- */
-struct ib_mr *ib_get_dma_mr(struct ib_pd *pd, int mr_access_flags);
 
 /**
  * ib_dma_mapping_error - check a DMA addr for error
