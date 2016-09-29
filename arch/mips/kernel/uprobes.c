@@ -157,7 +157,6 @@ bool is_trap_insn(uprobe_opcode_t *insn)
 int arch_uprobe_pre_xol(struct arch_uprobe *aup, struct pt_regs *regs)
 {
 	struct uprobe_task *utask = current->utask;
-	union mips_instruction insn;
 
 	/*
 	 * Now find the EPC where to resume after the breakpoint has been
@@ -168,10 +167,10 @@ int arch_uprobe_pre_xol(struct arch_uprobe *aup, struct pt_regs *regs)
 		unsigned long epc;
 
 		epc = regs->cp0_epc;
-		__compute_return_epc_for_insn(regs, insn);
+		__compute_return_epc_for_insn(regs,
+			(union mips_instruction) aup->insn[0]);
 		aup->resume_epc = regs->cp0_epc;
 	}
-
 	utask->autask.saved_trap_nr = current->thread.trap_nr;
 	current->thread.trap_nr = UPROBE_TRAP_NR;
 	regs->cp0_epc = current->utask->xol_vaddr;
@@ -257,7 +256,7 @@ unsigned long arch_uretprobe_hijack_return_addr(
 	ra = regs->regs[31];
 
 	/* Replace the return address with the trampoline address */
-	regs->regs[31] = ra;
+	regs->regs[31] = trampoline_vaddr;
 
 	return ra;
 }
@@ -280,40 +279,17 @@ int __weak set_swbp(struct arch_uprobe *auprobe, struct mm_struct *mm,
 	return uprobe_write_opcode(mm, vaddr, UPROBE_SWBP_INSN);
 }
 
-/**
- * set_orig_insn - Restore the original instruction.
- * @mm: the probed process address space.
- * @auprobe: arch specific probepoint information.
- * @vaddr: the virtual address to insert the opcode.
- *
- * For mm @mm, restore the original opcode (opcode) at @vaddr.
- * Return 0 (success) or a negative errno.
- *
- * This overrides the weak version in kernel/events/uprobes.c.
- */
-int set_orig_insn(struct arch_uprobe *auprobe, struct mm_struct *mm,
-		 unsigned long vaddr)
-{
-	return uprobe_write_opcode(mm, vaddr,
-			*(uprobe_opcode_t *)&auprobe->orig_inst[0].word);
-}
-
 void __weak arch_uprobe_copy_ixol(struct page *page, unsigned long vaddr,
 				  void *src, unsigned long len)
 {
-	void *kaddr;
+	unsigned long kaddr, kstart;
 
 	/* Initialize the slot */
-	kaddr = kmap_atomic(page);
-	memcpy(kaddr + (vaddr & ~PAGE_MASK), src, len);
-	kunmap_atomic(kaddr);
-
-	/*
-	 * The MIPS version of flush_icache_range will operate safely on
-	 * user space addresses and more importantly, it doesn't require a
-	 * VMA argument.
-	 */
-	flush_icache_range(vaddr, vaddr + len);
+	kaddr = (unsigned long)kmap_atomic(page);
+	kstart = kaddr + (vaddr & ~PAGE_MASK);
+	memcpy((void *)kstart, src, len);
+	flush_icache_range(kstart, kstart + len);
+	kunmap_atomic((void *)kaddr);
 }
 
 /**
