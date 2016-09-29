@@ -254,7 +254,7 @@ extern struct dentry *d_find_alias(struct inode *);
 extern void d_prune_aliases(struct inode *);
 
 /* test whether we have any submounts in a subdir tree */
-extern int have_submounts(struct dentry *);
+extern int have_local_submounts(struct dentry *);
 
 /*
  * This adds the entry to the hash queues.
