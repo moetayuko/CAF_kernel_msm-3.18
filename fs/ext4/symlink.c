@@ -65,16 +65,14 @@ static const char *ext4_encrypted_get_link(struct dentry *dentry,
 	res = fscrypt_fname_alloc_buffer(inode, cstr.len, &pstr);
 	if (res)
 		goto errout;
-
-	res = fscrypt_fname_disk_to_usr(inode, 0, 0, &cstr, &pstr);
-	if (res < 0)
-		goto errout;
-
 	paddr = pstr.name;
 
+	res = fscrypt_fname_disk_to_usr(inode, 0, 0, &cstr, &pstr);
+	if (res)
+		goto errout;
+
 	/* Null-terminate the name */
-	if (res <= pstr.len)
-		paddr[res] = '\0';
+	paddr[pstr.len] = '\0';
 	if (cpage)
 		put_page(cpage);
 	set_delayed_call(done, kfree_link, paddr);
