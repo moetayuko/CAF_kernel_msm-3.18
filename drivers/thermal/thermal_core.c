@@ -258,13 +258,6 @@ int unregister_thermal_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(unregister_thermal_notifier);
 
-static void print_bind_err_msg(struct thermal_zone_device *tz,
-			struct thermal_cooling_device *cdev, int ret)
-{
-	dev_err(&tz->device, "binding zone %s with cdev %s failed:%d\n",
-				tz->type, cdev->type, ret);
-}
-
 int thermal_build_list_of_policies(char *buf)
 {
 	struct thermal_governor *pos;
