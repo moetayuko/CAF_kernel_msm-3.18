@@ -438,6 +438,7 @@ static int acpi_pci_link_set(struct acpi_pci_link *link, int irq)
  * enabled system.
  */
 
+#define ACPI_MAX_IRQS		256
 #define ACPI_MAX_ISA_IRQS	16
 
 #define PIRQ_PENALTY_PCI_POSSIBLE	(16*16)
@@ -446,7 +447,7 @@ static int acpi_pci_link_set(struct acpi_pci_link *link, int irq)
 #define PIRQ_PENALTY_ISA_USED		(16*16*16*16*16)
 #define PIRQ_PENALTY_ISA_ALWAYS		(16*16*16*16*16*16)
 
-static int acpi_isa_irq_penalty[ACPI_MAX_ISA_IRQS] = {
+static int acpi_irq_penalty[ACPI_MAX_IRQS] = {
 	PIRQ_PENALTY_ISA_ALWAYS,	/* IRQ0 timer */
 	PIRQ_PENALTY_ISA_ALWAYS,	/* IRQ1 keyboard */
 	PIRQ_PENALTY_ISA_ALWAYS,	/* IRQ2 cascade */
@@ -511,7 +512,7 @@ static int acpi_irq_get_penalty(int irq)
 	}
 
 	if (irq < ACPI_MAX_ISA_IRQS)
-		return penalty + acpi_isa_irq_penalty[irq];
+		return penalty + acpi_irq_penalty[irq];
 
 	penalty += acpi_irq_pci_sharing_penalty(irq);
 	return penalty;
@@ -538,14 +539,14 @@ int __init acpi_irq_penalty_init(void)
 
 			for (i = 0; i < link->irq.possible_count; i++) {
 				if (link->irq.possible[i] < ACPI_MAX_ISA_IRQS)
-					acpi_isa_irq_penalty[link->irq.
+					acpi_irq_penalty[link->irq.
 							 possible[i]] +=
 					    penalty;
 			}
 
 		} else if (link->irq.active &&
-				(link->irq.active < ACPI_MAX_ISA_IRQS)) {
-			acpi_isa_irq_penalty[link->irq.active] +=
+				(link->irq.active < ACPI_MAX_IRQS)) {
+			acpi_irq_penalty[link->irq.active] +=
 			    PIRQ_PENALTY_PCI_POSSIBLE;
 		}
 	}
@@ -828,7 +829,7 @@ static void acpi_pci_link_remove(struct acpi_device *device)
 }
 
 /*
- * modify acpi_isa_irq_penalty[] from cmdline
+ * modify acpi_irq_penalty[] from cmdline
  */
 static int __init acpi_irq_penalty_update(char *str, int used)
 {
@@ -837,24 +838,24 @@ static int __init acpi_irq_penalty_update(char *str, int used)
 	for (i = 0; i < 16; i++) {
 		int retval;
 		int irq;
-		int new_penalty;
 
 		retval = get_option(&str, &irq);
 
 		if (!retval)
 			break;	/* no number found */
 
-		/* see if this is a ISA IRQ */
-		if ((irq < 0) || (irq >= ACPI_MAX_ISA_IRQS))
+		if (irq < 0)
+			continue;
+
+		if (irq >= ARRAY_SIZE(acpi_irq_penalty))
 			continue;
 
 		if (used)
-			new_penalty = acpi_irq_get_penalty(irq) +
-					PIRQ_PENALTY_ISA_USED;
+			acpi_irq_penalty[irq] = acpi_irq_get_penalty(irq) +
+				PIRQ_PENALTY_ISA_USED;
 		else
-			new_penalty = 0;
+			acpi_irq_penalty[irq] = 0;
 
-		acpi_isa_irq_penalty[irq] = new_penalty;
 		if (retval != 2)	/* no next number */
 			break;
 	}
@@ -870,14 +871,14 @@ static int __init acpi_irq_penalty_update(char *str, int used)
  */
 void acpi_penalize_isa_irq(int irq, int active)
 {
-	if ((irq >= 0) && (irq < ARRAY_SIZE(acpi_isa_irq_penalty)))
-		acpi_isa_irq_penalty[irq] = acpi_irq_get_penalty(irq) +
-		  (active ? PIRQ_PENALTY_ISA_USED : PIRQ_PENALTY_PCI_USING);
+	if (irq >= 0 && irq < ARRAY_SIZE(acpi_irq_penalty))
+		acpi_irq_penalty[irq] = acpi_irq_get_penalty(irq) +
+		    (active ? PIRQ_PENALTY_ISA_USED : PIRQ_PENALTY_PCI_USING);
 }
 
 bool acpi_isa_irq_available(int irq)
 {
-	return irq >= 0 && (irq >= ARRAY_SIZE(acpi_isa_irq_penalty) ||
+	return irq >= 0 && (irq >= ARRAY_SIZE(acpi_irq_penalty) ||
 		    acpi_irq_get_penalty(irq) < PIRQ_PENALTY_ISA_ALWAYS);
 }
 
