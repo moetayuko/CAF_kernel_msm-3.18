@@ -1440,7 +1440,7 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	if (ret == COMPACT_CONTINUE) {
 		fragindex = fragmentation_index(zone, order);
 		if (fragindex >= 0 && fragindex <= sysctl_extfrag_threshold)
-			return COMPACT_NOT_SUITABLE_ZONE;
+			ret = COMPACT_NOT_SUITABLE_ZONE;
 	}
 
 	trace_mm_compaction_suitable(zone, order, ret);
