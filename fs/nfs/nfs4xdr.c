@@ -52,6 +52,7 @@
 #include <linux/nfs.h>
 #include <linux/nfs4.h>
 #include <linux/nfs_fs.h>
+#include <linux/fs_struct.h>
 
 #include "nfs4_fs.h"
 #include "internal.h"
@@ -1003,7 +1004,7 @@ static void encode_nfs4_verifier(struct xdr_stream *xdr, const nfs4_verifier *ve
 static void encode_attrs(struct xdr_stream *xdr, const struct iattr *iap,
 				const struct nfs4_label *label,
 				const struct nfs_server *server,
-				bool excl_check)
+				bool excl_check, const umode_t *umask)
 {
 	char owner_name[IDMAP_NAMESZ];
 	char owner_group[IDMAP_NAMESZ];
@@ -1085,6 +1086,11 @@ static void encode_attrs(struct xdr_stream *xdr, const struct iattr *iap,
 		bmval[2] |= FATTR4_WORD2_SECURITY_LABEL;
 	}
 
+	if (umask && (server->caps & NFS_CAP_UMASK)) {
+		bmval[2] |= FATTR4_WORD2_UMASK;
+		len += 4;
+	}
+
 	if (bmval[2] != 0)
 		bmval_len = 3;
 	else if (bmval[1] != 0)
@@ -1128,6 +1134,9 @@ static void encode_attrs(struct xdr_stream *xdr, const struct iattr *iap,
 		*p++ = cpu_to_be32(label->pi);
 		*p++ = cpu_to_be32(label->len);
 		p = xdr_encode_opaque_fixed(p, label->label, label->len);
+	}
+	if (bmval[2] & FATTR4_WORD2_UMASK) {
+		*p++ = cpu_to_be32(*umask);
 	}
 
 /* out: */
@@ -1183,7 +1192,8 @@ static void encode_create(struct xdr_stream *xdr, const struct nfs4_create_arg *
 	}
 
 	encode_string(xdr, create->name->len, create->name->name);
-	encode_attrs(xdr, create->attrs, create->label, create->server, false);
+	encode_attrs(xdr, create->attrs, create->label, create->server, false,
+		     &create->umask);
 }
 
 static void encode_getattr_one(struct xdr_stream *xdr, uint32_t bitmap, struct compound_hdr *hdr)
@@ -1403,11 +1413,13 @@ static inline void encode_createmode(struct xdr_stream *xdr, const struct nfs_op
 	switch(arg->createmode) {
 	case NFS4_CREATE_UNCHECKED:
 		*p = cpu_to_be32(NFS4_CREATE_UNCHECKED);
-		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, false);
+		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, false,
+			     &arg->umask);
 		break;
 	case NFS4_CREATE_GUARDED:
 		*p = cpu_to_be32(NFS4_CREATE_GUARDED);
-		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, false);
+		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, false,
+			     &arg->umask);
 		break;
 	case NFS4_CREATE_EXCLUSIVE:
 		*p = cpu_to_be32(NFS4_CREATE_EXCLUSIVE);
@@ -1416,7 +1428,8 @@ static inline void encode_createmode(struct xdr_stream *xdr, const struct nfs_op
 	case NFS4_CREATE_EXCLUSIVE4_1:
 		*p = cpu_to_be32(NFS4_CREATE_EXCLUSIVE4_1);
 		encode_nfs4_verifier(xdr, &arg->u.verifier);
-		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, true);
+		encode_attrs(xdr, arg->u.attrs, arg->label, arg->server, true,
+			     &arg->umask);
 	}
 }
 
@@ -1672,7 +1685,7 @@ static void encode_setattr(struct xdr_stream *xdr, const struct nfs_setattrargs 
 {
 	encode_op_hdr(xdr, OP_SETATTR, decode_setattr_maxsz, hdr);
 	encode_nfs4_stateid(xdr, &arg->stateid);
-	encode_attrs(xdr, arg->iap, arg->label, server, false);
+	encode_attrs(xdr, arg->iap, arg->label, server, false, NULL);
 }
 
 static void encode_setclientid(struct xdr_stream *xdr, const struct nfs4_setclientid *setclientid, struct compound_hdr *hdr)
