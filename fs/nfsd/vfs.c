@@ -513,6 +513,14 @@ __be32 nfsd4_clone_file_range(struct file *src, u64 src_pos, struct file *dst,
 			count));
 }
 
+ssize_t nfsd_copy_file_range(struct file *src, u64 src_pos, struct file *dst,
+			     u64 dst_pos, u64 count)
+{
+	/* Arbitrary 4 megabyte copy cap */
+	count = min_t(u64, count, 1 << 22);
+	return vfs_copy_file_range(src, src_pos, dst, dst_pos, count, 0);
+}
+
 __be32 nfsd4_vfs_fallocate(struct svc_rqst *rqstp, struct svc_fh *fhp,
 			   struct file *file, loff_t offset, loff_t len,
 			   int flags)
