@@ -1297,14 +1297,10 @@ intel_dp_sink_rates(struct intel_dp *intel_dp, const int **sink_rates)
 bool intel_dp_source_supports_hbr2(struct intel_dp *intel_dp)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
-	struct drm_device *dev = dig_port->base.base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 
-	/* WaDisableHBR2:skl */
-	if (IS_SKL_REVID(dev, 0, SKL_REVID_B0))
-		return false;
-
-	if ((IS_HASWELL(dev) && !IS_HSW_ULX(dev)) || IS_BROADWELL(dev) ||
-	    (INTEL_INFO(dev)->gen >= 9))
+	if ((IS_HASWELL(dev_priv) && !IS_HSW_ULX(dev_priv)) ||
+	    IS_BROADWELL(dev_priv) || (INTEL_GEN(dev_priv) >= 9))
 		return true;
 	else
 		return false;
@@ -1314,13 +1310,13 @@ static int
 intel_dp_source_rates(struct intel_dp *intel_dp, const int **source_rates)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
-	struct drm_device *dev = dig_port->base.base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 	int size;
 
-	if (IS_BROXTON(dev)) {
+	if (IS_BROXTON(dev_priv)) {
 		*source_rates = bxt_rates;
 		size = ARRAY_SIZE(bxt_rates);
-	} else if (IS_SKYLAKE(dev) || IS_KABYLAKE(dev)) {
+	} else if (IS_SKYLAKE(dev_priv) || IS_KABYLAKE(dev_priv)) {
 		*source_rates = skl_rates;
 		size = ARRAY_SIZE(skl_rates);
 	} else {
@@ -4337,7 +4333,7 @@ intel_dp_unset_edid(struct intel_dp *intel_dp)
 	intel_dp->has_audio = false;
 }
 
-static void
+static enum drm_connector_status
 intel_dp_long_pulse(struct intel_connector *intel_connector)
 {
 	struct drm_connector *connector = &intel_connector->base;
@@ -4361,7 +4357,7 @@ intel_dp_long_pulse(struct intel_connector *intel_connector)
 	else
 		status = connector_status_disconnected;
 
-	if (status != connector_status_connected) {
+	if (status == connector_status_disconnected) {
 		intel_dp->compliance_test_active = 0;
 		intel_dp->compliance_test_type = 0;
 		intel_dp->compliance_test_data = 0;
@@ -4423,8 +4419,8 @@ intel_dp_long_pulse(struct intel_connector *intel_connector)
 	intel_dp->aux.i2c_defer_count = 0;
 
 	intel_dp_set_edid(intel_dp);
-
-	status = connector_status_connected;
+	if (is_edp(intel_dp) || intel_connector->detect_edid)
+		status = connector_status_connected;
 	intel_dp->detect_done = true;
 
 	/* Try to read the source of the interrupt */
@@ -4443,12 +4439,11 @@ intel_dp_long_pulse(struct intel_connector *intel_connector)
 	}
 
 out:
-	if ((status != connector_status_connected) &&
-	    (intel_dp->is_mst == false))
+	if (status != connector_status_connected && !intel_dp->is_mst)
 		intel_dp_unset_edid(intel_dp);
 
 	intel_display_power_put(to_i915(dev), power_domain);
-	return;
+	return status;
 }
 
 static enum drm_connector_status
@@ -4457,7 +4452,7 @@ intel_dp_detect(struct drm_connector *connector, bool force)
 	struct intel_dp *intel_dp = intel_attached_dp(connector);
 	struct intel_digital_port *intel_dig_port = dp_to_dig_port(intel_dp);
 	struct intel_encoder *intel_encoder = &intel_dig_port->base;
-	struct intel_connector *intel_connector = to_intel_connector(connector);
+	enum drm_connector_status status = connector->status;
 
 	DRM_DEBUG_KMS("[CONNECTOR:%d:%s]\n",
 		      connector->base.id, connector->name);
@@ -4472,14 +4467,11 @@ intel_dp_detect(struct drm_connector *connector, bool force)
 
 	/* If full detect is not performed yet, do a full detect */
 	if (!intel_dp->detect_done)
-		intel_dp_long_pulse(intel_dp->attached_connector);
+		status = intel_dp_long_pulse(intel_dp->attached_connector);
 
 	intel_dp->detect_done = false;
 
-	if (is_edp(intel_dp) || intel_connector->detect_edid)
-		return connector_status_connected;
-	else
-		return connector_status_disconnected;
+	return status;
 }
 
 static void
@@ -4831,36 +4823,34 @@ intel_dp_hpd_pulse(struct intel_digital_port *intel_dig_port, bool long_hpd)
 		      port_name(intel_dig_port->port),
 		      long_hpd ? "long" : "short");
 
+	if (long_hpd) {
+		intel_dp->detect_done = false;
+		return IRQ_NONE;
+	}
+
 	power_domain = intel_display_port_aux_power_domain(intel_encoder);
 	intel_display_power_get(dev_priv, power_domain);
 
-	if (long_hpd) {
-		intel_dp_long_pulse(intel_dp->attached_connector);
-		if (intel_dp->is_mst)
-			ret = IRQ_HANDLED;
-		goto put_power;
-
-	} else {
-		if (intel_dp->is_mst) {
-			if (intel_dp_check_mst_status(intel_dp) == -EINVAL) {
-				/*
-				 * If we were in MST mode, and device is not
-				 * there, get out of MST mode
-				 */
-				DRM_DEBUG_KMS("MST device may have disappeared %d vs %d\n",
-					      intel_dp->is_mst, intel_dp->mst_mgr.mst_state);
-				intel_dp->is_mst = false;
-				drm_dp_mst_topology_mgr_set_mst(&intel_dp->mst_mgr,
-								intel_dp->is_mst);
-				goto put_power;
-			}
+	if (intel_dp->is_mst) {
+		if (intel_dp_check_mst_status(intel_dp) == -EINVAL) {
+			/*
+			 * If we were in MST mode, and device is not
+			 * there, get out of MST mode
+			 */
+			DRM_DEBUG_KMS("MST device may have disappeared %d vs %d\n",
+				      intel_dp->is_mst, intel_dp->mst_mgr.mst_state);
+			intel_dp->is_mst = false;
+			drm_dp_mst_topology_mgr_set_mst(&intel_dp->mst_mgr,
+							intel_dp->is_mst);
+			intel_dp->detect_done = false;
+			goto put_power;
 		}
+	}
 
-		if (!intel_dp->is_mst) {
-			if (!intel_dp_short_pulse(intel_dp)) {
-				intel_dp_long_pulse(intel_dp->attached_connector);
-				goto put_power;
-			}
+	if (!intel_dp->is_mst) {
+		if (!intel_dp_short_pulse(intel_dp)) {
+			intel_dp->detect_done = false;
+			goto put_power;
 		}
 	}
 
@@ -5832,6 +5822,7 @@ bool intel_dp_init(struct drm_device *dev,
 		intel_encoder->crtc_mask = (1 << 0) | (1 << 1) | (1 << 2);
 	}
 	intel_encoder->cloneable = 0;
+	intel_encoder->port = port;
 
 	intel_dig_port->hpd_pulse = intel_dp_hpd_pulse;
 	dev_priv->hotplug.irq_port[port] = intel_dig_port;

@@ -2581,8 +2581,6 @@ static void i915_gem_reset_engine(struct intel_engine_cs *engine)
 	struct i915_gem_context *incomplete_ctx;
 	bool ring_hung;
 
-	/* Ensure irq handler finishes, and not run again. */
-	tasklet_kill(&engine->irq_tasklet);
 	if (engine->irq_seqno_barrier)
 		engine->irq_seqno_barrier(engine);
 
@@ -2591,6 +2589,9 @@ static void i915_gem_reset_engine(struct intel_engine_cs *engine)
 		return;
 
 	ring_hung = engine->hangcheck.score >= HANGCHECK_SCORE_RING_HUNG;
+	if (engine->hangcheck.seqno != intel_engine_get_seqno(engine))
+		ring_hung = false;
+
 	i915_set_reset_status(request->ctx, ring_hung);
 	if (!ring_hung)
 		return;
@@ -2631,6 +2632,13 @@ void i915_gem_reset(struct drm_i915_private *dev_priv)
 	mod_delayed_work(dev_priv->wq, &dev_priv->gt.idle_work, 0);
 
 	i915_gem_restore_fences(&dev_priv->drm);
+
+	if (dev_priv->gt.awake) {
+		intel_sanitize_gt_powersave(dev_priv);
+		intel_enable_gt_powersave(dev_priv);
+		if (INTEL_GEN(dev_priv) >= 6)
+			gen6_rps_busy(dev_priv);
+	}
 }
 
 static void nop_submit_request(struct drm_i915_gem_request *request)
@@ -4589,6 +4597,19 @@ void i915_gem_load_cleanup(struct drm_device *dev)
 	rcu_barrier();
 }
 
+int i915_gem_freeze(struct drm_i915_private *dev_priv)
+{
+	intel_runtime_pm_get(dev_priv);
+
+	mutex_lock(&dev_priv->drm.struct_mutex);
+	i915_gem_shrink_all(dev_priv);
+	mutex_unlock(&dev_priv->drm.struct_mutex);
+
+	intel_runtime_pm_put(dev_priv);
+
+	return 0;
+}
+
 int i915_gem_freeze_late(struct drm_i915_private *dev_priv)
 {
 	struct drm_i915_gem_object *obj;
@@ -4612,7 +4633,8 @@ int i915_gem_freeze_late(struct drm_i915_private *dev_priv)
 	 * the objects as well.
 	 */
 
-	i915_gem_shrink_all(dev_priv);
+	mutex_lock(&dev_priv->drm.struct_mutex);
+	i915_gem_shrink(dev_priv, -1UL, I915_SHRINK_UNBOUND);
 
 	for (p = phases; *p; p++) {
 		list_for_each_entry(obj, *p, global_list) {
@@ -4620,6 +4642,7 @@ int i915_gem_freeze_late(struct drm_i915_private *dev_priv)
 			obj->base.write_domain = I915_GEM_DOMAIN_CPU;
 		}
 	}
+	mutex_unlock(&dev_priv->drm.struct_mutex);
 
 	return 0;
 }
