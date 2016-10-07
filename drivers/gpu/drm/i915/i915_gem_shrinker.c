@@ -37,10 +37,20 @@
 
 static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
-	if (!mutex_trylock(&dev->struct_mutex))
-		*unlock = false;
+	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
+	case MUTEX_TRYLOCK_FAILED:
+		return false;
 
-	return true;
+	case MUTEX_TRYLOCK_SUCCESS:
+		*unlock = true;
+		return true;
+
+	case MUTEX_TRYLOCK_RECURSIVE:
+		*unlock = false;
+		return true;
+	}
+
+	BUG();
 }
 
 static bool any_vma_pinned(struct drm_i915_gem_object *obj)
