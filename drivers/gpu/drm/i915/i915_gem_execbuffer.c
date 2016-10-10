@@ -429,7 +429,7 @@ static void *reloc_iomap(struct drm_i915_gem_object *obj,
 	}
 
 	if (cache->vaddr) {
-		io_mapping_unmap_atomic(unmask_page(cache->vaddr));
+		io_mapping_unmap_atomic((void __force __iomem *) unmask_page(cache->vaddr));
 	} else {
 		struct i915_vma *vma;
 		int ret;
@@ -451,8 +451,8 @@ static void *reloc_iomap(struct drm_i915_gem_object *obj,
 				 0, ggtt->mappable_end,
 				 DRM_MM_SEARCH_DEFAULT,
 				 DRM_MM_CREATE_DEFAULT);
-			if (ret)
-				return ERR_PTR(ret);
+			if (ret) /* no inactive aperture space, use cpu reloc */
+				return NULL;
 		} else {
 			ret = i915_vma_put_fence(vma);
 			if (ret) {
@@ -474,7 +474,7 @@ static void *reloc_iomap(struct drm_i915_gem_object *obj,
 		offset += page << PAGE_SHIFT;
 	}
 
-	vaddr = io_mapping_map_atomic_wc(&cache->i915->ggtt.mappable, offset);
+	vaddr = (void __force *) io_mapping_map_atomic_wc(&cache->i915->ggtt.mappable, offset);
 	cache->page = page;
 	cache->vaddr = (unsigned long)vaddr;
 

@@ -73,13 +73,40 @@ enum intel_engine_hangcheck_action {
 
 #define HANGCHECK_SCORE_RING_HUNG 31
 
+#define I915_MAX_SLICES	3
+#define I915_MAX_SUBSLICES 3
+
+#define instdone_slice_mask(dev_priv__) \
+	(INTEL_GEN(dev_priv__) == 7 ? \
+	 1 : INTEL_INFO(dev_priv__)->sseu.slice_mask)
+
+#define instdone_subslice_mask(dev_priv__) \
+	(INTEL_GEN(dev_priv__) == 7 ? \
+	 1 : INTEL_INFO(dev_priv__)->sseu.subslice_mask)
+
+#define for_each_instdone_slice_subslice(dev_priv__, slice__, subslice__) \
+	for ((slice__) = 0, (subslice__) = 0; \
+	     (slice__) < I915_MAX_SLICES; \
+	     (subslice__) = ((subslice__) + 1) < I915_MAX_SUBSLICES ? (subslice__) + 1 : 0, \
+	       (slice__) += ((subslice__) == 0)) \
+		for_each_if((BIT(slice__) & instdone_slice_mask(dev_priv__)) && \
+			    (BIT(subslice__) & instdone_subslice_mask(dev_priv__)))
+
+struct intel_instdone {
+	u32 instdone;
+	/* The following exist only in the RCS engine */
+	u32 slice_common;
+	u32 sampler[I915_MAX_SLICES][I915_MAX_SUBSLICES];
+	u32 row[I915_MAX_SLICES][I915_MAX_SUBSLICES];
+};
+
 struct intel_engine_hangcheck {
 	u64 acthd;
 	u32 seqno;
 	int score;
 	enum intel_engine_hangcheck_action action;
 	int deadlock;
-	u32 instdone[I915_NUM_INSTDONE_REG];
+	struct intel_instdone instdone;
 };
 
 struct intel_ring {
@@ -328,6 +355,7 @@ struct intel_engine_cs {
 	 * inspecting request list.
 	 */
 	u32 last_submitted_seqno;
+	u32 last_pending_seqno;
 
 	/* An RCU guarded pointer to the last request. No reference is
 	 * held to the request, users must carefully acquire a reference to
@@ -492,7 +520,6 @@ int __intel_ring_space(int head, int tail, int size);
 void intel_ring_update_space(struct intel_ring *ring);
 
 void intel_engine_init_seqno(struct intel_engine_cs *engine, u32 seqno);
-void intel_engine_reset_irq(struct intel_engine_cs *engine);
 
 void intel_engine_setup_common(struct intel_engine_cs *engine);
 int intel_engine_init_common(struct intel_engine_cs *engine);
@@ -514,6 +541,8 @@ int intel_init_blt_ring_buffer(struct intel_engine_cs *engine);
 int intel_init_vebox_ring_buffer(struct intel_engine_cs *engine);
 
 u64 intel_engine_get_active_head(struct intel_engine_cs *engine);
+u64 intel_engine_get_last_batch_head(struct intel_engine_cs *engine);
+
 static inline u32 intel_engine_get_seqno(struct intel_engine_cs *engine)
 {
 	return intel_read_status_page(engine, I915_GEM_HWS_INDEX);
@@ -584,6 +613,7 @@ static inline bool intel_engine_wakeup(const struct intel_engine_cs *engine)
 	return wakeup;
 }
 
+void intel_engine_reset_breadcrumbs(struct intel_engine_cs *engine);
 void intel_engine_fini_breadcrumbs(struct intel_engine_cs *engine);
 unsigned int intel_kick_waiters(struct drm_i915_private *i915);
 unsigned int intel_kick_signalers(struct drm_i915_private *i915);
