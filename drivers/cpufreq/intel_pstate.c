@@ -562,12 +562,12 @@ static void intel_pstate_hwp_set(const struct cpumask *cpumask)
 	int min, hw_min, max, hw_max, cpu, range, adj_range;
 	u64 value, cap;
 
-	rdmsrl(MSR_HWP_CAPABILITIES, cap);
-	hw_min = HWP_LOWEST_PERF(cap);
-	hw_max = HWP_HIGHEST_PERF(cap);
-	range = hw_max - hw_min;
-
 	for_each_cpu(cpu, cpumask) {
+		rdmsrl_on_cpu(cpu, MSR_HWP_CAPABILITIES, &cap);
+		hw_min = HWP_LOWEST_PERF(cap);
+		hw_max = HWP_HIGHEST_PERF(cap);
+		range = hw_max - hw_min;
+
 		rdmsrl_on_cpu(cpu, MSR_HWP_REQUEST, &value);
 		adj_range = limits->min_perf_pct * range / 100;
 		min = hw_min + adj_range;
@@ -1251,10 +1251,11 @@ static inline int32_t get_target_pstate_use_performance(struct cpudata *cpu)
 	u64 duration_ns;
 
 	/*
-	 * perf_scaled is the average performance during the last sampling
-	 * period scaled by the ratio of the maximum P-state to the P-state
-	 * requested last time (in percent).  That measures the system's
-	 * response to the previous P-state selection.
+	 * perf_scaled is the ratio of the average P-state during the last
+	 * sampling period to the P-state requested last time (in percent).
+	 *
+	 * That measures the system's response to the previous P-state
+	 * selection.
 	 */
 	max_pstate = cpu->pstate.max_pstate_physical;
 	current_pstate = cpu->pstate.current_pstate;
