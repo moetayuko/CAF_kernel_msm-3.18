@@ -1082,6 +1082,9 @@ static int ubifs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	struct timespec time;
 	unsigned int uninitialized_var(saved_nlink);
 
+	if (flags & ~RENAME_NOREPLACE)
+		return -EINVAL;
+
 	/*
 	 * Budget request settings: deletion direntry, new direntry, removing
 	 * the old inode, and changing old and new parent directory inodes.
@@ -1384,13 +1387,10 @@ const struct inode_operations ubifs_dir_inode_operations = {
 	.mkdir       = ubifs_mkdir,
 	.rmdir       = ubifs_rmdir,
 	.mknod       = ubifs_mknod,
-	.rename2     = ubifs_rename2,
+	.rename     = ubifs_rename2,
 	.setattr     = ubifs_setattr,
 	.getattr     = ubifs_getattr,
-	.setxattr    = generic_setxattr,
-	.getxattr    = generic_getxattr,
 	.listxattr   = ubifs_listxattr,
-	.removexattr = generic_removexattr,
 #ifdef CONFIG_UBIFS_ATIME_SUPPORT
 	.update_time = ubifs_update_time,
 #endif
