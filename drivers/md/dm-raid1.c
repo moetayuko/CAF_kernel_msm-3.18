@@ -1266,16 +1266,6 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio, int error)
 		goto out;
 
 	if (unlikely(error)) {
-		if (!bio_record->details.bi_bdev) {
-			/*
-			 * There wasn't enough memory to record necessary
-			 * information for a retry or there was no other
-			 * mirror in-sync.
-			 */
-			DMERR_LIMIT("Mirror read failed.");
-			return -EIO;
-		}
-
 		m = bio_record->m;
 
 		DMERR("Mirror read failed from %s. Trying alternative device.",
@@ -1291,7 +1281,6 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio, int error)
 			bd = &bio_record->details;
 
 			dm_bio_restore(bd, bio);
-			bio_record->details.bi_bdev = NULL;
 			bio->bi_error = 0;
 
 			queue_bio(ms, bio, rw);
