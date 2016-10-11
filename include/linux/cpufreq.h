@@ -645,6 +645,9 @@ static inline int cpufreq_table_find_index_al(struct cpufreq_policy *policy,
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
 
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+
 		if (freq >= target_freq)
 			return i;
 
@@ -664,6 +667,9 @@ static inline int cpufreq_table_find_index_dl(struct cpufreq_policy *policy,
 
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
+
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
 
 		if (freq == target_freq)
 			return i;
@@ -706,6 +712,9 @@ static inline int cpufreq_table_find_index_ah(struct cpufreq_policy *policy,
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
 
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+
 		if (freq == target_freq)
 			return i;
 
@@ -734,6 +743,9 @@ static inline int cpufreq_table_find_index_dh(struct cpufreq_policy *policy,
 
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
+
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
 
 		if (freq <= target_freq)
 			return i;
@@ -767,6 +779,9 @@ static inline int cpufreq_table_find_index_ac(struct cpufreq_policy *policy,
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
 
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+
 		if (freq == target_freq)
 			return i;
 
@@ -799,6 +814,9 @@ static inline int cpufreq_table_find_index_dc(struct cpufreq_policy *policy,
 
 	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		freq = table[i].frequency;
+
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
 
 		if (freq == target_freq)
 			return i;
