@@ -1891,12 +1891,11 @@ static int cleaner_kthread(void *arg)
 		btrfs_run_defrag_inodes(root->fs_info);
 
 		/*
-		 * Acquires fs_info->delete_unused_bgs_mutex to avoid racing
-		 * with relocation (btrfs_relocate_chunk) and relocation
-		 * acquires fs_info->cleaner_mutex (btrfs_relocate_block_group)
-		 * after acquiring fs_info->delete_unused_bgs_mutex. So we
-		 * can't hold, nor need to, fs_info->cleaner_mutex when deleting
-		 * unused block groups.
+		 * Acquires fs_info->bg_delete_sem to avoid racing with
+		 * relocation (btrfs_relocate_chunk) and relocation acquires
+		 * fs_info->cleaner_mutex (btrfs_relocate_block_group) after
+		 * acquiring fs_info->bg_delete_sem. So we can't hold, nor need
+		 * to, fs_info->cleaner_mutex when deleting unused block groups.
 		 */
 		btrfs_delete_unused_bgs(root->fs_info);
 sleep:
@@ -2586,6 +2585,7 @@ int open_ctree(struct super_block *sb,
 	int num_backups_tried = 0;
 	int backup_index = 0;
 	int max_active;
+	int clear_free_space_tree = 0;
 
 	tree_root = fs_info->tree_root = btrfs_alloc_root(fs_info, GFP_KERNEL);
 	chunk_root = fs_info->chunk_root = btrfs_alloc_root(fs_info, GFP_KERNEL);
@@ -2654,7 +2654,6 @@ int open_ctree(struct super_block *sb,
 	spin_lock_init(&fs_info->unused_bgs_lock);
 	rwlock_init(&fs_info->tree_mod_log_lock);
 	mutex_init(&fs_info->unused_bg_unpin_mutex);
-	mutex_init(&fs_info->delete_unused_bgs_mutex);
 	mutex_init(&fs_info->reloc_mutex);
 	mutex_init(&fs_info->delalloc_root_mutex);
 	mutex_init(&fs_info->cleaner_delayed_iput_mutex);
@@ -2742,6 +2741,7 @@ int open_ctree(struct super_block *sb,
 	init_rwsem(&fs_info->commit_root_sem);
 	init_rwsem(&fs_info->cleanup_work_sem);
 	init_rwsem(&fs_info->subvol_sem);
+	init_rwsem(&fs_info->bg_delete_sem);
 	sema_init(&fs_info->uuid_tree_rescan_sem, 1);
 
 	btrfs_init_dev_replace_locks(fs_info);
@@ -3148,6 +3148,26 @@ retry_root_backup:
 	if (sb->s_flags & MS_RDONLY)
 		return 0;
 
+	if (btrfs_test_opt(fs_info, CLEAR_CACHE) &&
+	    btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE)) {
+		clear_free_space_tree = 1;
+	} else if (btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE) &&
+		   !btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE_VALID)) {
+		btrfs_warn(fs_info, "free space tree is invalid");
+		clear_free_space_tree = 1;
+	}
+
+	if (clear_free_space_tree) {
+		btrfs_info(fs_info, "clearing free space tree");
+		ret = btrfs_clear_free_space_tree(fs_info);
+		if (ret) {
+			btrfs_warn(fs_info,
+				   "failed to clear free space tree: %d", ret);
+			close_ctree(tree_root);
+			return ret;
+		}
+	}
+
 	if (btrfs_test_opt(tree_root->fs_info, FREE_SPACE_TREE) &&
 	    !btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE)) {
 		btrfs_info(fs_info, "creating free space tree");
@@ -3184,18 +3204,6 @@ retry_root_backup:
 	}
 
 	btrfs_qgroup_rescan_resume(fs_info);
-
-	if (btrfs_test_opt(tree_root->fs_info, CLEAR_CACHE) &&
-	    btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE)) {
-		btrfs_info(fs_info, "clearing free space tree");
-		ret = btrfs_clear_free_space_tree(fs_info);
-		if (ret) {
-			btrfs_warn(fs_info,
-				"failed to clear free space tree: %d", ret);
-			close_ctree(tree_root);
-			return ret;
-		}
-	}
 
 	if (!fs_info->uuid_root) {
 		btrfs_info(fs_info, "creating UUID tree");
