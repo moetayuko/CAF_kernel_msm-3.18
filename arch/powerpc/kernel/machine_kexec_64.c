@@ -31,6 +31,7 @@
 #include <asm/sections.h>	/* _end */
 #include <asm/prom.h>
 #include <asm/smp.h>
+#include <asm/ima.h>
 #include <asm/hw_breakpoint.h>
 #include <asm/asm-prototypes.h>
 
