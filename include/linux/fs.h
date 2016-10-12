@@ -1783,6 +1783,19 @@ extern int vfs_clone_file_range(struct file *file_in, loff_t pos_in,
 extern int vfs_dedupe_file_range(struct file *file,
 				 struct file_dedupe_range *same);
 
+static inline int do_clone_file_range(struct file *file_in, loff_t pos_in,
+				      struct file *file_out, loff_t pos_out,
+				      u64 len)
+{
+	int ret;
+
+	sb_start_write(file_inode(file_out)->i_sb);
+	ret = vfs_clone_file_range(file_in, pos_in, file_out, pos_out, len);
+	sb_end_write(file_inode(file_out)->i_sb);
+
+	return ret;
+}
+
 struct super_operations {
    	struct inode *(*alloc_inode)(struct super_block *sb);
 	void (*destroy_inode)(struct inode *);
@@ -2934,6 +2947,7 @@ extern int vfs_stat(const char __user *, struct kstat *);
 extern int vfs_lstat(const char __user *, struct kstat *);
 extern int vfs_fstat(unsigned int, struct kstat *);
 extern int vfs_fstatat(int , const char __user *, struct kstat *, int);
+extern const char *vfs_get_link(struct dentry *, struct delayed_call *);
 
 extern int __generic_block_fiemap(struct inode *inode,
 				  struct fiemap_extent_info *fieinfo,
