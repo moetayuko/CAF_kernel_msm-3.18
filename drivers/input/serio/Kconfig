@@ -1,21 +1,3 @@
-#
-# Input core configuration
-#
-config SERIO
-	tristate "Serial I/O support"
-	default y
-	help
-	  Say Yes here if you have any input device that uses serial I/O to
-	  communicate with the system. This includes the
-	  		* standard AT keyboard and PS/2 mouse *
-	  as well as serial mice, Sun keyboards, some joysticks and 6dof
-	  devices and more.
-
-	  If unsure, say Y.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called serio.
-
 config ARCH_MIGHT_HAVE_PC_SERIO
 	bool
 	help

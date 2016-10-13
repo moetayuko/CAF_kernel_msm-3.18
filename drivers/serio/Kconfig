@@ -1,0 +1,18 @@
+#
+# serio core configuration
+#
+menuconfig SERIO
+	tristate "Serial I/O bus support"
+	default y
+	help
+	  Say Yes here if you have any serial attached devices that use serial
+	  I/O to communicate with the system. This includes the
+			* standard AT keyboard and PS/2 mouse *
+	  as well as serial mice, Sun keyboards, some joysticks, 6dof devices,
+	  UART-based Bluetooth/WiFi/NFC devices and more.
+
+	  If unsure, say Y.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called serio.
+

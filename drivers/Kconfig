@@ -50,6 +50,8 @@ source "drivers/lightnvm/Kconfig"
 
 source "drivers/input/Kconfig"
 
+source "drivers/serio/Kconfig"
+
 source "drivers/char/Kconfig"
 
 source "drivers/i2c/Kconfig"
