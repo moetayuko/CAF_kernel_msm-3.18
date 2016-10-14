@@ -3589,7 +3589,7 @@ void intel_prepare_reset(struct drm_i915_private *dev_priv)
 	return;
 
 err:
-	drm_atomic_state_free(state);
+	drm_atomic_state_put(state);
 }
 
 void intel_finish_reset(struct drm_i915_private *dev_priv)
@@ -3651,6 +3651,8 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 		intel_hpd_init(dev_priv);
 	}
 
+	if (state)
+		drm_atomic_state_put(state);
 	drm_modeset_drop_locks(ctx);
 	drm_modeset_acquire_fini(ctx);
 	mutex_unlock(&dev->mode_config.mutex);
@@ -6886,7 +6888,7 @@ static void intel_crtc_disable_noatomic(struct drm_crtc *crtc)
 
 	dev_priv->display.crtc_disable(crtc_state, state);
 
-	drm_atomic_state_free(state);
+	drm_atomic_state_put(state);
 
 	DRM_DEBUG_KMS("[CRTC:%d:%s] hw state adjusted, was enabled, now disabled\n",
 		      crtc->base.id, crtc->name);
@@ -11299,8 +11301,8 @@ found:
 	return true;
 
 fail:
-	drm_atomic_state_free(state);
-	drm_atomic_state_free(restore_state);
+	drm_atomic_state_put(state);
+	drm_atomic_state_put(restore_state);
 	restore_state = state = NULL;
 
 	if (ret == -EDEADLK) {
@@ -11329,10 +11331,9 @@ void intel_release_load_detect_pipe(struct drm_connector *connector,
 		return;
 
 	ret = drm_atomic_commit(state);
-	if (ret) {
+	if (ret)
 		DRM_DEBUG_KMS("Couldn't release load detect pipe: %i\n", ret);
-		drm_atomic_state_free(state);
-	}
+	drm_atomic_state_put(state);
 }
 
 static int i9xx_pll_refclk(struct drm_device *dev,
@@ -12402,8 +12403,7 @@ retry:
 			goto retry;
 		}
 
-		if (ret)
-			drm_atomic_state_free(state);
+		drm_atomic_state_put(state);
 
 		if (ret == 0 && event) {
 			spin_lock_irq(&dev->event_lock);
@@ -14495,7 +14495,7 @@ static void intel_atomic_commit_tail(struct drm_atomic_state *state)
 
 	drm_atomic_helper_commit_cleanup_done(state);
 
-	drm_atomic_state_free(state);
+	drm_atomic_state_put(state);
 
 	/* As one of the primary mmio accessors, KMS has a high likelihood
 	 * of triggering bugs in unclaimed access. After we finish
@@ -14578,6 +14578,7 @@ static int intel_atomic_commit(struct drm_device *dev,
 	intel_shared_dpll_commit(state);
 	intel_atomic_track_fbs(state);
 
+	drm_atomic_state_get(state);
 	if (nonblock)
 		queue_work(system_unbound_wq, &state->commit_work);
 	else
@@ -14619,9 +14620,8 @@ retry:
 		goto retry;
 	}
 
-	if (ret)
 out:
-		drm_atomic_state_free(state);
+	drm_atomic_state_put(state);
 }
 
 /*
@@ -16363,8 +16363,8 @@ retry:
 		dev_priv->display.optimize_watermarks(cs);
 	}
 
-	drm_atomic_state_free(state);
 fail:
+	drm_atomic_state_put(state);
 	drm_modeset_drop_locks(&ctx);
 	drm_modeset_acquire_fini(&ctx);
 }
@@ -17002,10 +17002,9 @@ void intel_display_resume(struct drm_device *dev)
 	drm_modeset_acquire_fini(&ctx);
 	mutex_unlock(&dev->mode_config.mutex);
 
-	if (ret) {
+	if (ret)
 		DRM_ERROR("Restoring old state failed with %i\n", ret);
-		drm_atomic_state_free(state);
-	}
+	drm_atomic_state_put(state);
 }
 
 void intel_modeset_gem_init(struct drm_device *dev)
