@@ -1193,6 +1193,7 @@ static int get_station(struct wiphy *wiphy, struct net_device *dev,
 	u32 i = 0;
 	u32 associatedsta = ~0;
 	u32 inactive_time = 0;
+
 	priv = wiphy_priv(wiphy);
 	vif = netdev_priv(dev);
 
@@ -1590,28 +1591,25 @@ static int remain_on_channel(struct wiphy *wiphy,
 	priv->strRemainOnChanParams.u32ListenDuration = duration;
 	priv->strRemainOnChanParams.u32ListenSessionID++;
 
-	s32Error = wilc_remain_on_channel(vif,
+	return wilc_remain_on_channel(vif,
 				priv->strRemainOnChanParams.u32ListenSessionID,
 				duration, chan->hw_value,
 				WILC_WFI_RemainOnChannelExpired,
 				WILC_WFI_RemainOnChannelReady, (void *)priv);
-
-	return s32Error;
 }
 
 static int cancel_remain_on_channel(struct wiphy *wiphy,
 				    struct wireless_dev *wdev,
 				    u64 cookie)
 {
-	s32 s32Error = 0;
 	struct wilc_priv *priv;
 	struct wilc_vif *vif;
 
 	priv = wiphy_priv(wiphy);
 	vif = netdev_priv(priv->dev);
 
-	s32Error = wilc_listen_state_expired(vif, priv->strRemainOnChanParams.u32ListenSessionID);
-	return s32Error;
+	return wilc_listen_state_expired(vif,
+			priv->strRemainOnChanParams.u32ListenSessionID);
 }
 
 static int mgmt_tx(struct wiphy *wiphy,
@@ -1935,12 +1933,10 @@ static int start_ap(struct wiphy *wiphy, struct net_device *dev,
 	wilc_wlan_set_bssid(dev, wl->vif[vif->idx]->src_addr, AP_MODE);
 	wilc_set_power_mgmt(vif, 0, 0);
 
-	s32Error = wilc_add_beacon(vif, settings->beacon_interval,
+	return wilc_add_beacon(vif, settings->beacon_interval,
 				   settings->dtim_period, beacon->head_len,
 				   (u8 *)beacon->head, beacon->tail_len,
 				   (u8 *)beacon->tail);
-
-	return s32Error;
 }
 
 static int change_beacon(struct wiphy *wiphy, struct net_device *dev,
@@ -1948,16 +1944,13 @@ static int change_beacon(struct wiphy *wiphy, struct net_device *dev,
 {
 	struct wilc_priv *priv;
 	struct wilc_vif *vif;
-	s32 s32Error = 0;
 
 	priv = wiphy_priv(wiphy);
 	vif = netdev_priv(priv->dev);
 
-	s32Error = wilc_add_beacon(vif, 0, 0, beacon->head_len,
+	return wilc_add_beacon(vif, 0, 0, beacon->head_len,
 				   (u8 *)beacon->head, beacon->tail_len,
 				   (u8 *)beacon->tail);
-
-	return s32Error;
 }
 
 static int stop_ap(struct wiphy *wiphy, struct net_device *dev)

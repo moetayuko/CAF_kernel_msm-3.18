@@ -575,11 +575,11 @@ static int lynxfb_ops_check_var(struct fb_var_screeninfo *var,
 	return hw_sm750_crtc_checkMode(crtc, var);
 }
 
-static int lynxfb_ops_setcolreg(unsigned regno,
-				unsigned red,
-				unsigned green,
-				unsigned blue,
-				unsigned transp,
+static int lynxfb_ops_setcolreg(unsigned int regno,
+				unsigned int red,
+				unsigned int green,
+				unsigned int blue,
+				unsigned int transp,
 				struct fb_info *info)
 {
 	struct lynxfb_par *par;
@@ -1209,7 +1209,6 @@ static struct pci_driver lynxfb_driver = {
 static int __init lynxfb_init(void)
 {
 	char *option;
-	int ret;
 
 #ifdef MODULE
 	option = g_option;
@@ -1219,8 +1218,7 @@ static int __init lynxfb_init(void)
 #endif
 
 	lynxfb_setup(option);
-	ret = pci_register_driver(&lynxfb_driver);
-	return ret;
+	return pci_register_driver(&lynxfb_driver);
 }
 module_init(lynxfb_init);
 
