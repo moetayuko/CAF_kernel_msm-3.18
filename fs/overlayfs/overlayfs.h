@@ -12,17 +12,12 @@
 struct ovl_entry;
 
 enum ovl_path_type {
-	__OVL_PATH_PURE		= (1 << 0),
-	__OVL_PATH_UPPER	= (1 << 1),
-	__OVL_PATH_MERGE	= (1 << 2),
+	__OVL_PATH_UPPER	= (1 << 0),
+	__OVL_PATH_MERGE	= (1 << 1),
 };
 
 #define OVL_TYPE_UPPER(type)	((type) & __OVL_PATH_UPPER)
 #define OVL_TYPE_MERGE(type)	((type) & __OVL_PATH_MERGE)
-#define OVL_TYPE_PURE_UPPER(type) ((type) & __OVL_PATH_PURE)
-#define OVL_TYPE_MERGE_OR_LOWER(type) \
-	(OVL_TYPE_MERGE(type) || !OVL_TYPE_UPPER(type))
-
 
 #define OVL_XATTR_PREFIX XATTR_TRUSTED_PREFIX "overlay."
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"
@@ -161,6 +156,8 @@ struct dentry *ovl_workdir(struct dentry *dentry);
 int ovl_want_write(struct dentry *dentry);
 void ovl_drop_write(struct dentry *dentry);
 bool ovl_dentry_is_opaque(struct dentry *dentry);
+bool ovl_lower_positive(struct dentry *dentry);
+bool ovl_dentry_is_whiteout(struct dentry *dentry);
 void ovl_dentry_set_opaque(struct dentry *dentry, bool opaque);
 bool ovl_is_whiteout(struct dentry *dentry);
 const struct cred *ovl_override_creds(struct super_block *sb);
@@ -195,7 +192,7 @@ int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags);
 int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 bool ovl_is_private_xattr(const char *name);
 
-struct inode *ovl_new_inode(struct super_block *sb, umode_t mode);
+struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev);
 struct inode *ovl_get_inode(struct super_block *sb, struct inode *realinode);
 static inline void ovl_copyattr(struct inode *from, struct inode *to)
 {

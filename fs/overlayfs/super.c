@@ -80,12 +80,10 @@ enum ovl_path_type ovl_path_type(struct dentry *dentry)
 
 		/*
 		 * Non-dir dentry can hold lower dentry from previous
-		 * location. Its purity depends only on opaque flag.
+		 * location.
 		 */
-		if (oe->numlower && S_ISDIR(dentry->d_inode->i_mode))
+		if (oe->numlower && d_is_dir(dentry))
 			type |= __OVL_PATH_MERGE;
-		else if (!oe->opaque)
-			type |= __OVL_PATH_PURE;
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
@@ -209,6 +207,11 @@ bool ovl_dentry_is_opaque(struct dentry *dentry)
 	return oe->opaque;
 }
 
+bool ovl_dentry_is_whiteout(struct dentry *dentry)
+{
+	return !dentry->d_inode && ovl_dentry_is_opaque(dentry);
+}
+
 void ovl_dentry_set_opaque(struct dentry *dentry, bool opaque)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
@@ -304,7 +307,7 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 {
 	struct dentry *real;
 
-	if (d_is_dir(dentry)) {
+	if (!d_is_reg(dentry)) {
 		if (!inode || inode == d_inode(dentry))
 			return dentry;
 		goto bug;
@@ -424,7 +427,6 @@ static inline struct dentry *ovl_lookup_real(struct dentry *dir,
 	struct dentry *dentry;
 
 	dentry = lookup_one_len_unlocked(name->name, dir, name->len);
-
 	if (IS_ERR(dentry)) {
 		if (PTR_ERR(dentry) == -ENOENT)
 			dentry = NULL;
@@ -471,7 +473,9 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	bool upperopaque = false;
-	struct dentry *this, *prev = NULL;
+	bool stop = false;
+	bool isdir = false;
+	struct dentry *this;
 	unsigned int i;
 	int err;
 
@@ -492,23 +496,26 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			if (ovl_is_whiteout(this)) {
 				dput(this);
 				this = NULL;
-				upperopaque = true;
-			} else if (poe->numlower && ovl_is_opaquedir(this)) {
-				upperopaque = true;
+				stop = upperopaque = true;
+			} else if (!d_is_dir(this)) {
+				stop = true;
+			} else {
+				isdir = true;
+				if (poe->numlower && ovl_is_opaquedir(this))
+					stop = upperopaque = true;
 			}
 		}
-		upperdentry = prev = this;
+		upperdentry = this;
 	}
 
-	if (!upperopaque && poe->numlower) {
+	if (!stop && poe->numlower) {
 		err = -ENOMEM;
 		stack = kcalloc(poe->numlower, sizeof(struct path), GFP_KERNEL);
 		if (!stack)
 			goto out_put_upper;
 	}
 
-	for (i = 0; !upperopaque && i < poe->numlower; i++) {
-		bool opaque = false;
+	for (i = 0; !stop && i < poe->numlower; i++) {
 		struct path lowerpath = poe->lowerstack[i];
 
 		this = ovl_lookup_real(lowerpath.dentry, &dentry->d_name);
@@ -528,35 +535,26 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			break;
 		}
 		/*
-		 * Only makes sense to check opaque dir if this is not the
-		 * lowermost layer.
-		 */
-		if (i < poe->numlower - 1 && ovl_is_opaquedir(this))
-			opaque = true;
-
-		if (prev && (!S_ISDIR(prev->d_inode->i_mode) ||
-			     !S_ISDIR(this->d_inode->i_mode))) {
-			/*
-			 * FIXME: check for upper-opaqueness maybe better done
-			 * in remove code.
-			 */
-			if (prev == upperdentry)
-				upperopaque = true;
-			dput(this);
-			break;
-		}
-		/*
 		 * If this is a non-directory then stop here.
 		 */
-		if (!S_ISDIR(this->d_inode->i_mode))
-			opaque = true;
+		if (!d_is_dir(this)) {
+			if (isdir) {
+				dput(this);
+				break;
+			}
+			stop = true;
+		} else {
+			/*
+			 * Only makes sense to check opaque dir if this is not
+			 * the lowermost layer.
+			 */
+			if (i < poe->numlower - 1 && ovl_is_opaquedir(this))
+				stop = true;
+		}
 
 		stack[ctr].dentry = this;
 		stack[ctr].mnt = lowerpath.mnt;
 		ctr++;
-		prev = this;
-		if (opaque)
-			break;
 	}
 
 	oe = ovl_alloc_entry(ctr);
@@ -575,7 +573,8 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		if (upperdentry && !d_is_dir(upperdentry)) {
 			inode = ovl_get_inode(dentry->d_sb, realinode);
 		} else {
-			inode = ovl_new_inode(dentry->d_sb, realinode->i_mode);
+			inode = ovl_new_inode(dentry->d_sb, realinode->i_mode,
+					      realinode->i_rdev);
 			if (inode)
 				ovl_inode_init(inode, realinode, !!upperdentry);
 		}
@@ -605,6 +604,59 @@ out_put_upper:
 out:
 	revert_creds(old_cred);
 	return ERR_PTR(err);
+}
+
+bool ovl_lower_positive(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+	struct ovl_entry *poe = dentry->d_parent->d_fsdata;
+	const struct qstr *name = &dentry->d_name;
+	unsigned int i;
+	bool positive = false;
+	bool done = false;
+
+	/*
+	 * If dentry is negative, then lower is positive iff this is a
+	 * whiteout.
+	 */
+	if (!dentry->d_inode)
+		return oe->opaque;
+
+	/* Negative upper -> positive lower */
+	if (!oe->__upperdentry)
+		return true;
+
+	/* Positive upper -> have to look up lower to see whether it exists */
+	for (i = 0; !done && !positive && i < poe->numlower; i++) {
+		struct dentry *this;
+		struct dentry *lowerdir = poe->lowerstack[i].dentry;
+
+		this = lookup_one_len_unlocked(name->name, lowerdir,
+					       name->len);
+		if (IS_ERR(this)) {
+			switch (PTR_ERR(this)) {
+			case -ENOENT:
+			case -ENAMETOOLONG:
+				break;
+
+			default:
+				/*
+				 * Assume something is there, we just couldn't
+				 * access it.
+				 */
+				positive = true;
+				break;
+			}
+		} else {
+			if (this->d_inode) {
+				positive = !ovl_is_whiteout(this);
+				done = true;
+			}
+			dput(this);
+		}
+	}
+
+	return positive;
 }
 
 struct file *ovl_path_open(struct path *path, int flags)
@@ -903,7 +955,7 @@ static int ovl_mount_dir_noesc(const char *name, struct path *path)
 		pr_err("overlayfs: filesystem on '%s' not supported\n", name);
 		goto out_put;
 	}
-	if (!S_ISDIR(path->dentry->d_inode->i_mode)) {
+	if (!d_is_dir(path->dentry)) {
 		pr_err("overlayfs: '%s' not a directory\n", name);
 		goto out_put;
 	}
@@ -1309,7 +1361,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_fs_info = ufs;
 	sb->s_flags |= MS_POSIXACL | MS_NOREMOTELOCK;
 
-	root_dentry = d_make_root(ovl_new_inode(sb, S_IFDIR));
+	root_dentry = d_make_root(ovl_new_inode(sb, S_IFDIR, 0));
 	if (!root_dentry)
 		goto out_free_oe;
 
