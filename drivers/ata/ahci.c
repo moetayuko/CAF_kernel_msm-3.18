@@ -1418,29 +1418,32 @@ static int ahci_init_msi(struct pci_dev *pdev, unsigned int n_ports,
 	 * Message mode could be enforced. In this case assume that advantage
 	 * of multipe MSIs is negated and use single MSI mode instead.
 	 */
-	nvec = pci_alloc_irq_vectors(pdev, n_ports, INT_MAX,
-			PCI_IRQ_MSIX | PCI_IRQ_MSI);
-	if (nvec > 0) {
-		if (!(readl(hpriv->mmio + HOST_CTL) & HOST_MRSM)) {
-			hpriv->get_irq_vector = ahci_get_irq_vector;
-			hpriv->flags |= AHCI_HFLAG_MULTI_MSI;
-			return nvec;
+	if (n_ports > 1) {
+		nvec = pci_alloc_irq_vectors(pdev, n_ports, INT_MAX,
+				PCI_IRQ_MSIX | PCI_IRQ_MSI);
+		if (nvec > 0) {
+			if (!(readl(hpriv->mmio + HOST_CTL) & HOST_MRSM)) {
+				hpriv->get_irq_vector = ahci_get_irq_vector;
+				hpriv->flags |= AHCI_HFLAG_MULTI_MSI;
+				return nvec;
+			}
+
+			/*
+			 * Fallback to single MSI mode if the controller
+			 * enforced MRSM mode.
+			 */
+			printk(KERN_INFO
+				"ahci: MRSM is on, fallback to single MSI\n");
+			pci_free_irq_vectors(pdev);
 		}
 
 		/*
-		 * Fallback to single MSI mode if the controller enforced MRSM
-		 * mode.
+		 * -ENOSPC indicated we don't have enough vectors.  Don't bother
+		 * trying a single vectors for any other error:
 		 */
-		printk(KERN_INFO "ahci: MRSM is on, fallback to single MSI\n");
-		pci_free_irq_vectors(pdev);
+		if (nvec < 0 && nvec != -ENOSPC)
+			return nvec;
 	}
-
-	/*
-	 * -ENOSPC indicated we don't have enough vectors.  Don't bother trying
-	 * a single vectors for any other error:
-	 */
-	if (nvec < 0 && nvec != -ENOSPC)
-		return nvec;
 
 	/*
 	 * If the host is not capable of supporting per-port vectors, fall
