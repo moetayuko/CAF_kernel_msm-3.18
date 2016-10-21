@@ -1547,11 +1547,11 @@ static int rt5663_jack_detect(struct snd_soc_codec *codec, int jack_insert)
 			msleep(sleep_time[i]);
 			val = snd_soc_read(codec, RT5663_EM_JACK_TYPE_2) &
 				0x0003;
+			dev_dbg(codec->dev, "%s: MX-00e7 val=%x sleep %d\n",
+				__func__, val, sleep_time[i]);
 			i++;
 			if (val == 0x1 || val == 0x2 || val == 0x3)
 				break;
-			dev_dbg(codec->dev, "%s: MX-00e7 val=%x sleep %d\n",
-				__func__, val, sleep_time[i]);
 		}
 		dev_dbg(codec->dev, "%s val = %d\n", __func__, val);
 		switch (val) {
@@ -3140,12 +3140,21 @@ static int rt5663_i2c_probe(struct i2c_client *i2c,
 			RT5668_LDO1_DVO_0_9V | RT5668_AMP_HP_3X);
 			break;
 	case CODEC_TYPE_RT5663:
+		regmap_update_bits(rt5663->regmap, RT5663_DIG_MISC,
+			RT5668_DIG_GATE_CTRL_MASK, RT5668_DIG_GATE_CTRL_EN);
+		regmap_update_bits(rt5663->regmap, RT5663_AUTO_1MRC_CLK,
+			RT5668_IRQ_POW_SAV_MASK, RT5668_IRQ_POW_SAV_EN);
+		regmap_update_bits(rt5663->regmap, RT5663_IRQ_1,
+			RT5663_EN_IRQ_JD1_MASK, RT5663_EN_IRQ_JD1_EN);
+		regmap_update_bits(rt5663->regmap, RT5663_GPIO_1,
+			RT5663_GPIO1_TYPE_MASK, RT5663_GPIO1_TYPE_EN);
 		regmap_write(rt5663->regmap, RT5663_VREF_RECMIX, 0x0032);
 		regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xa2be);
 		msleep(20);
 		regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xf2be);
 		regmap_update_bits(rt5663->regmap, RT5663_GPIO_2,
-			RT5663_GP1_PIN_CONF_MASK, RT5663_GP1_PIN_CONF_OUTPUT);
+			RT5663_GP1_PIN_CONF_MASK | RT5663_SEL_GPIO1_MASK,
+			RT5663_GP1_PIN_CONF_OUTPUT | RT5663_SEL_GPIO1_EN);
 		/* DACREF LDO control */
 		regmap_update_bits(rt5663->regmap, RT5663_DACREF_LDO, 0x3e0e,
 			0x3a0a);
