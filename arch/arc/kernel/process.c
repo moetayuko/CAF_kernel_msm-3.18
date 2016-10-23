@@ -41,6 +41,31 @@ SYSCALL_DEFINE0(arc_gettls)
 	return task_thread_info(current)->thr_ptr;
 }
 
+SYSCALL_DEFINE3(arc_usr_cmpxchg, int *, uaddr, int, expected, int, new)
+{
+	int uval;
+	int ret;
+
+	if (!access_ok(VERIFY_WRITE, uaddr, sizeof(int)))
+		return ret;
+
+	preempt_disable();
+
+	ret = __get_user(uval, uaddr);
+	if (ret)
+		goto done;
+
+	if (uval != expected)
+		ret = -EAGAIN;
+	else
+		ret = __put_user(new, uaddr);
+
+done:
+	preempt_enable();
+
+	return ret;
+}
+
 void arch_cpu_idle(void)
 {
 	/* sleep, but enable all interrupts before committing */
