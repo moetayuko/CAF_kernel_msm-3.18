@@ -541,6 +541,9 @@ MODULE_DEVICE_TABLE(platform, cros_ec_id);
 static int __maybe_unused ec_device_suspend(struct device *dev)
 {
 	struct cros_ec_dev *ec = dev_get_drvdata(dev);
+
+	cros_ec_debugfs_suspend(ec);
+
 	if (!dev_dark_resume_active(dev))
 		lb_suspend(ec);
 
@@ -562,6 +565,8 @@ static int __maybe_unused ec_device_resume(struct device *dev)
 	}
 	if (!dev_dark_resume_active(dev))
 		lb_resume(ec);
+
+	cros_ec_debugfs_resume(ec);
 
 	return 0;
 }
