@@ -18,7 +18,7 @@ menuconfig WLAN
 if WLAN
 
 config WIRELESS_WDS
-	bool "mac80211-based legacy WDS support"
+	bool "mac80211-based legacy WDS support" if EXPERT
 	help
 	  This option enables the deprecated WDS support, the newer
 	  mac80211-based 4-addr AP/client support supersedes it with
