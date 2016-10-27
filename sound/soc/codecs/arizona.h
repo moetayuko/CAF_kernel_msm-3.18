@@ -273,6 +273,8 @@ extern int arizona_eq_coeff_put(struct snd_kcontrol *kcontrol,
 extern int arizona_lhpf_coeff_put(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol);
 
+extern int arizona_clk_ev(struct snd_soc_dapm_widget *w,
+			  struct snd_kcontrol *kcontrol, int event);
 extern int arizona_set_sysclk(struct snd_soc_codec *codec, int clk_id,
 			      int source, unsigned int freq, int dir);
 
@@ -315,7 +317,8 @@ extern int arizona_init_gpio(struct snd_soc_codec *codec);
 extern int arizona_init_mono(struct snd_soc_codec *codec);
 extern int arizona_init_notifiers(struct snd_soc_codec *codec);
 
-extern int arizona_free_spk(struct snd_soc_codec *codec);
+extern int arizona_init_spk_irqs(struct arizona *arizona);
+extern int arizona_free_spk_irqs(struct arizona *arizona);
 
 extern int arizona_init_dai(struct arizona_priv *priv, int dai);
 
