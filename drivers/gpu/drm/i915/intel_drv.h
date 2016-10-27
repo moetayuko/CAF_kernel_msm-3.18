@@ -883,6 +883,14 @@ enum link_m_n_set {
 	M2_N2
 };
 
+struct intel_dp_desc {
+	u8 oui[3];
+	u8 device_id[6];
+	u8 hw_rev;
+	u8 sw_major_rev;
+	u8 sw_minor_rev;
+} __packed;
+
 struct intel_dp {
 	i915_reg_t output_reg;
 	i915_reg_t aux_ch_ctl_reg;
@@ -905,6 +913,8 @@ struct intel_dp {
 	/* sink rates as reported by DP_SUPPORTED_LINK_RATES */
 	uint8_t num_sink_rates;
 	int sink_rates[DP_MAX_SUPPORTED_RATES];
+	/* sink or branch descriptor */
+	struct intel_dp_desc desc;
 	struct drm_dp_aux aux;
 	uint8_t train_set[4];
 	int panel_power_up_delay;
@@ -964,7 +974,7 @@ struct intel_dp {
 struct intel_lspcon {
 	bool active;
 	enum drm_lspcon_mode mode;
-	struct drm_dp_aux *aux;
+	bool desc_valid;
 };
 
 struct intel_digital_port {
@@ -1123,6 +1133,9 @@ void intel_check_pch_fifo_underruns(struct drm_i915_private *dev_priv);
 /* i915_irq.c */
 void gen5_enable_gt_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 void gen5_disable_gt_irq(struct drm_i915_private *dev_priv, uint32_t mask);
+void gen6_reset_pm_iir(struct drm_i915_private *dev_priv, u32 mask);
+void gen6_mask_pm_irq(struct drm_i915_private *dev_priv, u32 mask);
+void gen6_unmask_pm_irq(struct drm_i915_private *dev_priv, u32 mask);
 void gen6_enable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 void gen6_disable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 void gen6_reset_rps_interrupts(struct drm_i915_private *dev_priv);
@@ -1145,6 +1158,9 @@ void gen8_irq_power_well_post_enable(struct drm_i915_private *dev_priv,
 				     unsigned int pipe_mask);
 void gen8_irq_power_well_pre_disable(struct drm_i915_private *dev_priv,
 				     unsigned int pipe_mask);
+void gen9_reset_guc_interrupts(struct drm_i915_private *dev_priv);
+void gen9_enable_guc_interrupts(struct drm_i915_private *dev_priv);
+void gen9_disable_guc_interrupts(struct drm_i915_private *dev_priv);
 
 /* intel_crt.c */
 void intel_crt_init(struct drm_device *dev);
@@ -1451,6 +1467,11 @@ static inline unsigned int intel_dp_unused_lane_mask(int lane_count)
 	return ~((1 << lane_count) - 1) & 0xf;
 }
 
+bool intel_dp_read_dpcd(struct intel_dp *intel_dp);
+bool __intel_dp_read_desc(struct intel_dp *intel_dp,
+			  struct intel_dp_desc *desc);
+bool intel_dp_read_desc(struct intel_dp *intel_dp);
+
 /* intel_dp_aux_backlight.c */
 int intel_dp_aux_init_backlight_funcs(struct intel_connector *intel_connector);
 
@@ -1653,23 +1674,6 @@ assert_rpm_wakelock_held(struct drm_i915_private *dev_priv)
 	 * too much noise. */
 	if (!atomic_read(&dev_priv->pm.wakeref_count))
 		DRM_DEBUG_DRIVER("RPM wakelock ref not held during HW access");
-}
-
-static inline int
-assert_rpm_atomic_begin(struct drm_i915_private *dev_priv)
-{
-	int seq = atomic_read(&dev_priv->pm.atomic_seq);
-
-	assert_rpm_wakelock_held(dev_priv);
-
-	return seq;
-}
-
-static inline void
-assert_rpm_atomic_end(struct drm_i915_private *dev_priv, int begin_seq)
-{
-	WARN_ONCE(atomic_read(&dev_priv->pm.atomic_seq) != begin_seq,
-		  "HW access outside of RPM atomic section\n");
 }
 
 /**
