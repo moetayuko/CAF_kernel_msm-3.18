@@ -1451,42 +1451,35 @@ static void intel_dp_print_rates(struct intel_dp *intel_dp)
 	DRM_DEBUG_KMS("common rates: %s\n", str);
 }
 
-static void intel_dp_print_hw_revision(struct intel_dp *intel_dp)
+bool
+__intel_dp_read_desc(struct intel_dp *intel_dp, struct intel_dp_desc *desc)
 {
-	uint8_t rev;
-	int len;
+	u32 base = drm_dp_is_branch(intel_dp->dpcd) ? DP_BRANCH_OUI :
+						      DP_SINK_OUI;
 
-	if ((drm_debug & DRM_UT_KMS) == 0)
-		return;
-
-	if (!(intel_dp->dpcd[DP_DOWNSTREAMPORT_PRESENT] &
-	      DP_DWN_STRM_PORT_PRESENT))
-		return;
-
-	len = drm_dp_dpcd_read(&intel_dp->aux, DP_BRANCH_HW_REV, &rev, 1);
-	if (len < 0)
-		return;
-
-	DRM_DEBUG_KMS("sink hw revision: %d.%d\n", (rev & 0xf0) >> 4, rev & 0xf);
+	return drm_dp_dpcd_read(&intel_dp->aux, base, desc, sizeof(*desc)) ==
+	       sizeof(*desc);
 }
 
-static void intel_dp_print_sw_revision(struct intel_dp *intel_dp)
+bool intel_dp_read_desc(struct intel_dp *intel_dp)
 {
-	uint8_t rev[2];
-	int len;
+	struct intel_dp_desc *desc = &intel_dp->desc;
+	bool oui_sup = intel_dp->dpcd[DP_DOWN_STREAM_PORT_COUNT] &
+		       DP_OUI_SUPPORT;
+	int dev_id_len;
 
-	if ((drm_debug & DRM_UT_KMS) == 0)
-		return;
+	if (!__intel_dp_read_desc(intel_dp, desc))
+		return false;
 
-	if (!(intel_dp->dpcd[DP_DOWNSTREAMPORT_PRESENT] &
-	      DP_DWN_STRM_PORT_PRESENT))
-		return;
+	dev_id_len = strnlen(desc->device_id, sizeof(desc->device_id));
+	DRM_DEBUG_KMS("DP %s: OUI %*phD%s dev-ID %*pE HW-rev %d.%d SW-rev %d.%d\n",
+		      drm_dp_is_branch(intel_dp->dpcd) ? "branch" : "sink",
+		      (int)sizeof(desc->oui), desc->oui, oui_sup ? "" : "(NS)",
+		      dev_id_len, desc->device_id,
+		      desc->hw_rev >> 4, desc->hw_rev & 0xf,
+		      desc->sw_major_rev, desc->sw_minor_rev);
 
-	len = drm_dp_dpcd_read(&intel_dp->aux, DP_BRANCH_SW_REV, &rev, 2);
-	if (len < 0)
-		return;
-
-	DRM_DEBUG_KMS("sink sw revision: %d.%d\n", rev[0], rev[1]);
+	return true;
 }
 
 static int rate_to_index(int find, const int *rates)
@@ -3504,7 +3497,7 @@ intel_dp_link_down(struct intel_dp *intel_dp)
 	intel_dp->DP = DP;
 }
 
-static bool
+bool
 intel_dp_read_dpcd(struct intel_dp *intel_dp)
 {
 	if (drm_dp_dpcd_read(&intel_dp->aux, 0x000, intel_dp->dpcd,
@@ -3527,6 +3520,8 @@ intel_edp_init_dpcd(struct intel_dp *intel_dp)
 
 	if (!intel_dp_read_dpcd(intel_dp))
 		return false;
+
+	intel_dp_read_desc(intel_dp);
 
 	if (intel_dp->dpcd[DP_DPCD_REV] >= 0x11)
 		dev_priv->no_aux_handshake = intel_dp->dpcd[DP_MAX_DOWNSPREAD] &
@@ -3615,8 +3610,7 @@ intel_dp_get_dpcd(struct intel_dp *intel_dp)
 	if (!is_edp(intel_dp) && !intel_dp->sink_count)
 		return false;
 
-	if (!(intel_dp->dpcd[DP_DOWNSTREAMPORT_PRESENT] &
-	      DP_DWN_STRM_PORT_PRESENT))
+	if (!drm_dp_is_branch(intel_dp->dpcd))
 		return true; /* native DP sink */
 
 	if (intel_dp->dpcd[DP_DPCD_REV] == 0x10)
@@ -3628,23 +3622,6 @@ intel_dp_get_dpcd(struct intel_dp *intel_dp)
 		return false; /* downstream port status fetch failed */
 
 	return true;
-}
-
-static void
-intel_dp_probe_oui(struct intel_dp *intel_dp)
-{
-	u8 buf[3];
-
-	if (!(intel_dp->dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_OUI_SUPPORT))
-		return;
-
-	if (drm_dp_dpcd_read(&intel_dp->aux, DP_SINK_OUI, buf, 3) == 3)
-		DRM_DEBUG_KMS("Sink OUI: %02hx%02hx%02hx\n",
-			      buf[0], buf[1], buf[2]);
-
-	if (drm_dp_dpcd_read(&intel_dp->aux, DP_BRANCH_OUI, buf, 3) == 3)
-		DRM_DEBUG_KMS("Branch OUI: %02hx%02hx%02hx\n",
-			      buf[0], buf[1], buf[2]);
 }
 
 static bool
@@ -4134,7 +4111,7 @@ intel_dp_detect_dpcd(struct intel_dp *intel_dp)
 		return connector_status_connected;
 
 	/* if there's no downstream port, we're done */
-	if (!(dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT))
+	if (!drm_dp_is_branch(dpcd))
 		return connector_status_connected;
 
 	/* If we're HPD-aware, SINK_COUNT changes dynamically */
@@ -4425,10 +4402,7 @@ intel_dp_long_pulse(struct intel_connector *intel_connector)
 
 	intel_dp_print_rates(intel_dp);
 
-	intel_dp_probe_oui(intel_dp);
-
-	intel_dp_print_hw_revision(intel_dp);
-	intel_dp_print_sw_revision(intel_dp);
+	intel_dp_read_desc(intel_dp);
 
 	intel_dp_configure_mst(intel_dp);
 
@@ -4492,20 +4466,10 @@ static enum drm_connector_status
 intel_dp_detect(struct drm_connector *connector, bool force)
 {
 	struct intel_dp *intel_dp = intel_attached_dp(connector);
-	struct intel_digital_port *intel_dig_port = dp_to_dig_port(intel_dp);
-	struct intel_encoder *intel_encoder = &intel_dig_port->base;
 	enum drm_connector_status status = connector->status;
 
 	DRM_DEBUG_KMS("[CONNECTOR:%d:%s]\n",
 		      connector->base.id, connector->name);
-
-	if (intel_dp->is_mst) {
-		/* MST devices are disconnected from a monitor POV */
-		intel_dp_unset_edid(intel_dp);
-		if (intel_encoder->type != INTEL_OUTPUT_EDP)
-			intel_encoder->type = INTEL_OUTPUT_DP;
-		return connector_status_disconnected;
-	}
 
 	/* If full detect is not performed yet, do a full detect */
 	if (!intel_dp->detect_done)
