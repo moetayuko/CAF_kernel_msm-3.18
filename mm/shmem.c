@@ -1692,6 +1692,11 @@ repeat:
 				goto alloc_huge;
 			/* TODO: implement fadvise() hints */
 			goto alloc_nohuge;
+		case SHMEM_HUGE_ALWAYS:
+			i_size = i_size_read(inode);
+			if (index < HPAGE_PMD_NR && i_size < HPAGE_PMD_SIZE)
+				goto alloc_nohuge;
+			break;
 		}
 
 alloc_huge:
