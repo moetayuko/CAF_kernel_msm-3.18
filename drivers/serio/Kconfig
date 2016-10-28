@@ -16,3 +16,14 @@ menuconfig SERIO
 	  To compile this driver as a module, choose M here: the
 	  module will be called serio.
 
+if SERIO
+comment "Host port drivers"
+
+config SERIO_TTYPORT
+	tristate "TTY port based host"
+	default y
+	depends on TTY
+	help
+	  Say Yes here to enable support for host support using TTY drivers.
+
+endif
