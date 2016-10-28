@@ -238,6 +238,9 @@ values:
   - "force":
     Force the huge option on for all - very useful for testing;
 
+To avoid overhead for small files, we don't allocate huge pages for a file
+until it grows to size of huge pages.
+
 == Need of application restart ==
 
 The transparent_hugepage/enabled values and tmpfs mount option only affect
