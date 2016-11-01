@@ -13,6 +13,7 @@
 #define __LINUX_LEDS_H_INCLUDED
 
 #include <linux/device.h>
+#include <linux/kernfs.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
@@ -93,6 +94,8 @@ struct led_classdev {
 
 	struct work_struct	set_brightness_work;
 	int			delayed_set_value;
+
+	struct kernfs_node	*brightness_kn;
 
 #ifdef CONFIG_LEDS_TRIGGERS
 	/* Protects the trigger data below */
@@ -191,6 +194,15 @@ extern int led_set_brightness_sync(struct led_classdev *led_cdev,
  * Returns: 0 on success or negative error value on failure
  */
 extern int led_update_brightness(struct led_classdev *led_cdev);
+
+/**
+ * led_notify_brightness_change - Notify userspace of brightness changes
+ * @led_cdev: the LED to do the notify on
+ *
+ * Let any users waiting for POLL_PRI on the led's brightness sysfs
+ * atrribute know that the brightness has been changed.
+ */
+extern void led_notify_brightness_change(struct led_classdev *led_cdev);
 
 /**
  * led_sysfs_disable - disable LED sysfs interface

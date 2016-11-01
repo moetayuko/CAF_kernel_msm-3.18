@@ -204,6 +204,14 @@ int led_classdev_register(struct device *parent, struct led_classdev *led_cdev)
 		dev_warn(parent, "Led %s renamed to %s due to name collision",
 				led_cdev->name, dev_name(led_cdev->dev));
 
+	led_cdev->brightness_kn = sysfs_get_dirent(led_cdev->dev->kobj.sd,
+						   "brightness");
+	if (!led_cdev->brightness_kn) {
+		dev_err(led_cdev->dev, "Error getting brightness kernfs_node\n");
+		device_unregister(led_cdev->dev);
+		return -ENODEV;
+	}
+
 #ifdef CONFIG_LEDS_TRIGGERS
 	init_rwsem(&led_cdev->trigger_lock);
 #endif
@@ -255,6 +263,7 @@ void led_classdev_unregister(struct led_classdev *led_cdev)
 
 	flush_work(&led_cdev->set_brightness_work);
 
+	sysfs_put(led_cdev->brightness_kn);
 	device_unregister(led_cdev->dev);
 
 	down_write(&leds_list_lock);
