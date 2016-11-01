@@ -1273,6 +1273,7 @@ static void rproc_type_release(struct device *dev)
 	if (rproc->index >= 0)
 		ida_simple_remove(&rproc_dev_index, rproc->index);
 
+	kfree(rproc->firmware);
 	kfree(rproc);
 }
 
@@ -1310,31 +1311,31 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 {
 	struct rproc *rproc;
 	char *p, *template = "rproc-%s-fw";
-	int name_len = 0;
+	int name_len;
 
 	if (!dev || !name || !ops)
 		return NULL;
 
-	if (!firmware)
+	if (!firmware) {
 		/*
-		 * Make room for default firmware name (minus %s plus '\0').
 		 * If the caller didn't pass in a firmware name then
-		 * construct a default name.  We're already glomming 'len'
-		 * bytes onto the end of the struct rproc allocation, so do
-		 * a few more for the default firmware name (but only if
-		 * the caller doesn't pass one).
+		 * construct a default name.
 		 */
 		name_len = strlen(name) + strlen(template) - 2 + 1;
-
-	rproc = kzalloc(sizeof(*rproc) + len + name_len, GFP_KERNEL);
-	if (!rproc)
-		return NULL;
-
-	if (!firmware) {
-		p = (char *)rproc + sizeof(struct rproc) + len;
+		p = kmalloc(name_len, GFP_KERNEL);
+		if (!p)
+			return NULL;
 		snprintf(p, name_len, template, name);
 	} else {
-		p = (char *)firmware;
+		p = kstrdup(firmware, GFP_KERNEL);
+		if (!p)
+			return NULL;
+	}
+
+	rproc = kzalloc(sizeof(struct rproc) + len, GFP_KERNEL);
+	if (!rproc) {
+		kfree(p);
+		return NULL;
 	}
 
 	rproc->firmware = p;
@@ -1346,6 +1347,7 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	device_initialize(&rproc->dev);
 	rproc->dev.parent = dev;
 	rproc->dev.type = &rproc_type;
+	rproc->dev.class = &rproc_class;
 
 	/* Assign a unique device index and name */
 	rproc->index = ida_simple_get(&rproc_dev_index, 0, 0, GFP_KERNEL);
@@ -1484,6 +1486,7 @@ EXPORT_SYMBOL(rproc_report_crash);
 
 static int __init remoteproc_init(void)
 {
+	rproc_init_sysfs();
 	rproc_init_debugfs();
 
 	return 0;
@@ -1495,6 +1498,7 @@ static void __exit remoteproc_exit(void)
 	ida_destroy(&rproc_dev_index);
 
 	rproc_exit_debugfs();
+	rproc_exit_sysfs();
 }
 module_exit(remoteproc_exit);
 
