@@ -75,8 +75,11 @@ struct hci_uart_proto {
 	struct sk_buff *(*dequeue)(struct hci_uart *hu);
 };
 
+struct serio;
+
 struct hci_uart {
 	struct tty_struct	*tty;
+	struct serio		*serio;
 	struct hci_dev		*hdev;
 	unsigned long		flags;
 	unsigned long		hdev_flags;
