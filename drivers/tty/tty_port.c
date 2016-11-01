@@ -90,11 +90,31 @@ struct device *tty_port_register_device_attr(struct tty_port *port,
 		struct device *device, void *drvdata,
 		const struct attribute_group **attr_grp)
 {
+	port->dev = device;
 	tty_port_link_device(port, driver, index);
 	return tty_register_device_attr(driver, index, device, drvdata,
 			attr_grp);
 }
 EXPORT_SYMBOL_GPL(tty_port_register_device_attr);
+
+int tty_port_get_registered_ports(int (*func)(struct tty_port *,
+				  struct tty_driver *, int))
+{
+	int i;
+	struct tty_driver *p;
+
+	list_for_each_entry(p, &tty_drivers, tty_drivers) {
+		if (!p->ports)
+			continue;
+		for (i = 0; i < p->num; i++) {
+			if (!p->ports[i])
+				continue;
+			(*func)(p->ports[i], p, i);
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tty_port_get_registered_ports);
 
 int tty_port_alloc_xmit_buf(struct tty_port *port)
 {

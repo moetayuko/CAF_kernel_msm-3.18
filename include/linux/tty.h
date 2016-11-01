@@ -249,6 +249,7 @@ struct tty_port {
 						   set to size of fifo */
 	struct kref		kref;		/* Ref counter */
 	void 			*client_data;
+	struct device		*dev;		/* */
 };
 
 /* tty_port::iflags bits -- use atomic bit ops */
@@ -465,6 +466,8 @@ extern struct device *tty_register_device_attr(struct tty_driver *driver,
 				void *drvdata,
 				const struct attribute_group **attr_grp);
 extern void tty_unregister_device(struct tty_driver *driver, unsigned index);
+extern int tty_port_get_registered_ports(int (*func)(struct tty_port *,
+				  struct tty_driver *, int));
 extern void tty_write_message(struct tty_struct *tty, char *msg);
 extern int tty_send_xchar(struct tty_struct *tty, char ch);
 extern int tty_put_char(struct tty_struct *tty, unsigned char c);
