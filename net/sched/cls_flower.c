@@ -269,6 +269,14 @@ static void fl_hw_update_stats(struct tcf_proto *tp, struct cls_fl_filter *f)
 	dev->netdev_ops->ndo_setup_tc(dev, tp->q->handle, tp->protocol, &tc);
 }
 
+static void __fl_delete(struct tcf_proto *tp, struct cls_fl_filter *f)
+{
+	list_del_rcu(&f->list);
+	fl_hw_destroy_filter(tp, (unsigned long)f);
+	tcf_unbind_filter(tp, &f->res);
+	call_rcu(&f->rcu, fl_destroy_filter);
+}
+
 static bool fl_destroy(struct tcf_proto *tp, bool force)
 {
 	struct cls_fl_head *head = rtnl_dereference(tp->root);
@@ -277,11 +285,8 @@ static bool fl_destroy(struct tcf_proto *tp, bool force)
 	if (!force && !list_empty(&head->filters))
 		return false;
 
-	list_for_each_entry_safe(f, next, &head->filters, list) {
-		fl_hw_destroy_filter(tp, (unsigned long)f);
-		list_del_rcu(&f->list);
-		call_rcu(&f->rcu, fl_destroy_filter);
-	}
+	list_for_each_entry_safe(f, next, &head->filters, list)
+		__fl_delete(tp, f);
 	RCU_INIT_POINTER(tp->root, NULL);
 	if (head->mask_assigned)
 		rhashtable_destroy(&head->ht);
@@ -339,6 +344,10 @@ static const struct nla_policy fl_policy[TCA_FLOWER_MAX + 1] = {
 	[TCA_FLOWER_KEY_TCP_DST_MASK]	= { .type = NLA_U16 },
 	[TCA_FLOWER_KEY_UDP_SRC_MASK]	= { .type = NLA_U16 },
 	[TCA_FLOWER_KEY_UDP_DST_MASK]	= { .type = NLA_U16 },
+	[TCA_FLOWER_KEY_SCTP_SRC_MASK]	= { .type = NLA_U16 },
+	[TCA_FLOWER_KEY_SCTP_DST_MASK]	= { .type = NLA_U16 },
+	[TCA_FLOWER_KEY_SCTP_SRC]	= { .type = NLA_U16 },
+	[TCA_FLOWER_KEY_SCTP_DST]	= { .type = NLA_U16 },
 };
 
 static void fl_set_key_val(struct nlattr **tb,
@@ -447,6 +456,13 @@ static int fl_set_key(struct net *net, struct nlattr **tb,
 			       sizeof(key->tp.src));
 		fl_set_key_val(tb, &key->tp.dst, TCA_FLOWER_KEY_UDP_DST,
 			       &mask->tp.dst, TCA_FLOWER_KEY_UDP_DST_MASK,
+			       sizeof(key->tp.dst));
+	} else if (key->basic.ip_proto == IPPROTO_SCTP) {
+		fl_set_key_val(tb, &key->tp.src, TCA_FLOWER_KEY_SCTP_SRC,
+			       &mask->tp.src, TCA_FLOWER_KEY_SCTP_SRC_MASK,
+			       sizeof(key->tp.src));
+		fl_set_key_val(tb, &key->tp.dst, TCA_FLOWER_KEY_SCTP_DST,
+			       &mask->tp.dst, TCA_FLOWER_KEY_SCTP_DST_MASK,
 			       sizeof(key->tp.dst));
 	}
 
@@ -741,10 +757,7 @@ static int fl_delete(struct tcf_proto *tp, unsigned long arg)
 
 	rhashtable_remove_fast(&head->ht, &f->ht_node,
 			       head->ht_params);
-	list_del_rcu(&f->list);
-	fl_hw_destroy_filter(tp, (unsigned long)f);
-	tcf_unbind_filter(tp, &f->res);
-	call_rcu(&f->rcu, fl_destroy_filter);
+	__fl_delete(tp, f);
 	return 0;
 }
 
@@ -893,6 +906,14 @@ static int fl_dump(struct net *net, struct tcf_proto *tp, unsigned long fh,
 				  sizeof(key->tp.src)) ||
 		  fl_dump_key_val(skb, &key->tp.dst, TCA_FLOWER_KEY_UDP_DST,
 				  &mask->tp.dst, TCA_FLOWER_KEY_UDP_DST_MASK,
+				  sizeof(key->tp.dst))))
+		goto nla_put_failure;
+	else if (key->basic.ip_proto == IPPROTO_SCTP &&
+		 (fl_dump_key_val(skb, &key->tp.src, TCA_FLOWER_KEY_SCTP_SRC,
+				  &mask->tp.src, TCA_FLOWER_KEY_SCTP_SRC_MASK,
+				  sizeof(key->tp.src)) ||
+		  fl_dump_key_val(skb, &key->tp.dst, TCA_FLOWER_KEY_SCTP_DST,
+				  &mask->tp.dst, TCA_FLOWER_KEY_SCTP_DST_MASK,
 				  sizeof(key->tp.dst))))
 		goto nla_put_failure;
 
