@@ -1078,12 +1078,6 @@ bytes respectively. Such letter suffixes can also be entirely omitted::
 	nopku		[X86] Disable Memory Protection Keys CPU feature found
 			in some Intel CPUs.
 
-	eagerfpu=	[X86]
-			on	enable eager fpu restore
-			off	disable eager fpu restore
-			auto	selects the default scheme, which automatically
-				enables eagerfpu restore for xsaveopt.
-
 	module.async_probe [KNL]
 			Enable asynchronous probe on this module.
 
@@ -1965,9 +1959,6 @@ bytes respectively. Such letter suffixes can also be entirely omitted::
 			kmemcheck=2 (one-shot mode)
 			Default: 2 (one-shot mode)
 
-	kstack=N	[X86] Print N words from the kernel stack
-			in oops dumps.
-
 	kvm.ignore_msrs=[KVM] Ignore guest accesses to unhandled MSRs.
 			Default is 0 (don't ignore, but inject #GP)
 
@@ -2760,6 +2751,10 @@ bytes respectively. Such letter suffixes can also be entirely omitted::
 
 	no-kvmapf	[X86,KVM] Disable paravirtualized asynchronous page
 			fault handling.
+
+	no-vmw-sched-clock
+			[X86,PV_OPS] Disable paravirtualized VMware scheduler
+			clock and use the default one.
 
 	no-steal-acc    [X86,KVM] Disable paravirtualized steal time accounting.
 			steal time is computed, but won't influence scheduler
@@ -3835,12 +3830,6 @@ bytes respectively. Such letter suffixes can also be entirely omitted::
 
 	shapers=	[NET]
 			Maximal number of shapers.
-
-	show_msr=	[x86] show boot-time MSR settings
-			Format: { <integer> }
-			Show boot-time (BIOS-initialized) MSR settings.
-			The parameter means the number of CPUs to show,
-			for example 1 means boot CPU only.
 
 	simeth=		[IA-64]
 	simscsi=
