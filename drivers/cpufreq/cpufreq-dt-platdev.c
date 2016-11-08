@@ -26,6 +26,9 @@ static const struct of_device_id machines[] __initconst = {
 	{ .compatible = "allwinner,sun8i-a83t", },
 	{ .compatible = "allwinner,sun8i-h3", },
 
+	{ .compatible = "arm,integrator-ap", },
+	{ .compatible = "arm,integrator-cp", },
+
 	{ .compatible = "hisilicon,hi6220", },
 
 	{ .compatible = "fsl,imx27", },
@@ -71,6 +74,12 @@ static const struct of_device_id machines[] __initconst = {
 	{ .compatible = "rockchip,rk3399", },
 
 	{ .compatible = "sigma,tango4" },
+
+	{ .compatible = "socionext,uniphier-pro5", },
+	{ .compatible = "socionext,uniphier-pxs2", },
+	{ .compatible = "socionext,uniphier-ld6b", },
+	{ .compatible = "socionext,uniphier-ld11", },
+	{ .compatible = "socionext,uniphier-ld20", },
 
 	{ .compatible = "ti,am33xx", },
 	{ .compatible = "ti,dra7", },
