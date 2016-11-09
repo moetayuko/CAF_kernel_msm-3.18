@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/timer.h>
+#include <uapi/linux/uleds.h>
 #include "leds.h"
 
 static struct class *leds_class;
@@ -187,7 +188,7 @@ static int led_classdev_next_name(const char *init_name, char *name,
  */
 int led_classdev_register(struct device *parent, struct led_classdev *led_cdev)
 {
-	char name[64];
+	char name[LEDS_MAX_NAME_SIZE];
 	int ret;
 
 	ret = led_classdev_next_name(led_cdev->name, name, sizeof(name));
@@ -202,6 +203,14 @@ int led_classdev_register(struct device *parent, struct led_classdev *led_cdev)
 	if (ret)
 		dev_warn(parent, "Led %s renamed to %s due to name collision",
 				led_cdev->name, dev_name(led_cdev->dev));
+
+	led_cdev->brightness_kn = sysfs_get_dirent(led_cdev->dev->kobj.sd,
+						   "brightness");
+	if (!led_cdev->brightness_kn) {
+		dev_err(led_cdev->dev, "Error getting brightness kernfs_node\n");
+		device_unregister(led_cdev->dev);
+		return -ENODEV;
+	}
 
 #ifdef CONFIG_LEDS_TRIGGERS
 	init_rwsem(&led_cdev->trigger_lock);
@@ -254,6 +263,7 @@ void led_classdev_unregister(struct led_classdev *led_cdev)
 
 	flush_work(&led_cdev->set_brightness_work);
 
+	sysfs_put(led_cdev->brightness_kn);
 	device_unregister(led_cdev->dev);
 
 	down_write(&leds_list_lock);

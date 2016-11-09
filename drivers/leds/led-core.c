@@ -33,16 +33,24 @@ static int __led_set_brightness(struct led_classdev *led_cdev,
 
 	led_cdev->brightness_set(led_cdev, value);
 
+	led_notify_brightness_change(led_cdev);
+
 	return 0;
 }
 
 static int __led_set_brightness_blocking(struct led_classdev *led_cdev,
 					 enum led_brightness value)
 {
+	int ret;
+
 	if (!led_cdev->brightness_set_blocking)
 		return -ENOTSUPP;
 
-	return led_cdev->brightness_set_blocking(led_cdev, value);
+	ret = led_cdev->brightness_set_blocking(led_cdev, value);
+	if (ret >= 0)
+		led_notify_brightness_change(led_cdev);
+
+	return ret;
 }
 
 static void led_timer_function(unsigned long data)
@@ -307,6 +315,12 @@ int led_update_brightness(struct led_classdev *led_cdev)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(led_update_brightness);
+
+void led_notify_brightness_change(struct led_classdev *led_cdev)
+{
+	sysfs_notify_dirent(led_cdev->brightness_kn);
+}
+EXPORT_SYMBOL_GPL(led_notify_brightness_change);
 
 /* Caller must ensure led_cdev->led_access held */
 void led_sysfs_disable(struct led_classdev *led_cdev)
