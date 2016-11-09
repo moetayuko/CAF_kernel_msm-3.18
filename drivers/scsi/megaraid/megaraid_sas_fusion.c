@@ -2463,12 +2463,15 @@ irqreturn_t megasas_isr_fusion(int irq, void *devp)
 			/* Start collecting crash, if DMA bit is done */
 			if ((fw_state == MFI_STATE_FAULT) && dma_state)
 				schedule_work(&instance->crash_init);
-			else if (fw_state == MFI_STATE_FAULT)
-				schedule_work(&instance->work_init);
+			else if (fw_state == MFI_STATE_FAULT) {
+				if (instance->unload == 0)
+					schedule_work(&instance->work_init);
+			}
 		} else if (fw_state == MFI_STATE_FAULT) {
 			dev_warn(&instance->pdev->dev, "Iop2SysDoorbellInt"
 			       "for scsi%d\n", instance->host->host_no);
-			schedule_work(&instance->work_init);
+			if (instance->unload == 0)
+				schedule_work(&instance->work_init);
 		}
 	}
 
@@ -2823,6 +2826,7 @@ int megasas_wait_for_outstanding_fusion(struct megasas_instance *instance,
 		dev_err(&instance->pdev->dev, "pending commands remain after waiting, "
 		       "will reset adapter scsi%d.\n",
 		       instance->host->host_no);
+		*convert = 1;
 		retval = 1;
 	}
 out:
