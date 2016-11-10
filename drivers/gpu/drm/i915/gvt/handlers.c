@@ -239,13 +239,27 @@ static int handle_device_reset(struct intel_vgpu *vgpu, unsigned int offset,
 	vgpu->resetting = true;
 
 	intel_vgpu_stop_schedule(vgpu);
-	if (scheduler->current_vgpu == vgpu) {
+	/*
+	 * The current_vgpu will set to NULL after stopping the
+	 * scheduler when the reset is triggered by current vgpu.
+	 */
+	if (scheduler->current_vgpu == NULL) {
 		mutex_unlock(&vgpu->gvt->lock);
 		intel_gvt_wait_vgpu_idle(vgpu);
 		mutex_lock(&vgpu->gvt->lock);
 	}
 
 	intel_vgpu_reset_execlist(vgpu, bitmap);
+
+	/* full GPU reset */
+	if (bitmap == 0xff) {
+		mutex_unlock(&vgpu->gvt->lock);
+		intel_vgpu_clean_gtt(vgpu);
+		mutex_lock(&vgpu->gvt->lock);
+		setup_vgpu_mmio(vgpu);
+		populate_pvinfo_page(vgpu);
+		intel_vgpu_init_gtt(vgpu);
+	}
 
 	vgpu->resetting = false;
 
@@ -258,6 +272,7 @@ static int gdrst_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	u32 data;
 	u64 bitmap = 0;
 
+	write_vreg(vgpu, offset, p_data, bytes);
 	data = vgpu_vreg(vgpu, offset);
 
 	if (data & GEN6_GRDOM_FULL) {
@@ -1143,7 +1158,10 @@ static int fpga_dbg_mmio_write(struct intel_vgpu *vgpu,
 static int dma_ctrl_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
-	u32 mode = *(u32 *)p_data;
+	u32 mode;
+
+	write_vreg(vgpu, offset, p_data, bytes);
+	mode = vgpu_vreg(vgpu, offset);
 
 	if (GFX_MODE_BIT_SET_IN_MASK(mode, START_DMA)) {
 		WARN_ONCE(1, "VM(%d): iGVT-g doesn't supporte GuC\n",
@@ -1260,19 +1278,20 @@ static int skl_misc_ctl_write(struct intel_vgpu *vgpu, unsigned int offset,
 	switch (offset) {
 	case 0x4ddc:
 		vgpu_vreg(vgpu, offset) = 0x8000003c;
+		/* WaCompressedResourceSamplerPbeMediaNewHashMode:skl */
+		if (IS_SKL_REVID(dev_priv, SKL_REVID_C0, REVID_FOREVER))
+			I915_WRITE(reg, vgpu_vreg(vgpu, offset));
 		break;
 	case 0x42080:
 		vgpu_vreg(vgpu, offset) = 0x8000;
+		/* WaCompressedResourceDisplayNewHashMode:skl */
+		if (IS_SKL_REVID(dev_priv, SKL_REVID_E0, REVID_FOREVER))
+			I915_WRITE(reg, vgpu_vreg(vgpu, offset));
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	/**
-	 * TODO: need detect stepping info after gvt contain such information
-	 * 0x4ddc enabled after C0, 0x42080 enabled after E0.
-	 */
-	I915_WRITE(reg, vgpu_vreg(vgpu, offset));
 	return 0;
 }
 
@@ -1305,7 +1324,7 @@ static int elsp_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	int ring_id = render_mmio_to_ring_id(vgpu->gvt, offset);
 	struct intel_vgpu_execlist *execlist;
 	u32 data = *(u32 *)p_data;
-	int ret;
+	int ret = 0;
 
 	if (WARN_ON(ring_id < 0 || ring_id > I915_NUM_ENGINES - 1))
 		return -EINVAL;
@@ -1313,12 +1332,15 @@ static int elsp_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	execlist = &vgpu->execlist[ring_id];
 
 	execlist->elsp_dwords.data[execlist->elsp_dwords.index] = data;
-	if (execlist->elsp_dwords.index == 3)
+	if (execlist->elsp_dwords.index == 3) {
 		ret = intel_vgpu_submit_execlist(vgpu, ring_id);
+		if(ret)
+			gvt_err("fail submit workload on ring %d\n", ring_id);
+	}
 
 	++execlist->elsp_dwords.index;
 	execlist->elsp_dwords.index &= 0x3;
-	return 0;
+	return ret;
 }
 
 static int ring_mode_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
@@ -1349,6 +1371,8 @@ static int gvt_reg_tlb_control_handler(struct intel_vgpu *vgpu,
 	int rc = 0;
 	unsigned int id = 0;
 
+	write_vreg(vgpu, offset, p_data, bytes);
+
 	switch (offset) {
 	case 0x4260:
 		id = RCS;
@@ -1372,6 +1396,23 @@ static int gvt_reg_tlb_control_handler(struct intel_vgpu *vgpu,
 	set_bit(id, (void *)vgpu->tlb_handle_pending);
 
 	return rc;
+}
+
+static int ring_reset_ctl_write(struct intel_vgpu *vgpu,
+	unsigned int offset, void *p_data, unsigned int bytes)
+{
+	u32 data;
+
+	write_vreg(vgpu, offset, p_data, bytes);
+	data = vgpu_vreg(vgpu, offset);
+
+	if (data & _MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET))
+		data |= RESET_CTL_READY_TO_RESET;
+	else if (data & _MASKED_BIT_DISABLE(RESET_CTL_REQUEST_RESET))
+		data &= ~RESET_CTL_READY_TO_RESET;
+
+	vgpu_vreg(vgpu, offset) = data;
+	return 0;
 }
 
 #define MMIO_F(reg, s, f, am, rm, d, r, w) do { \
@@ -2279,6 +2320,15 @@ static int init_broadwell_mmio_info(struct intel_gvt *gvt)
 			ring_timestamp_mmio_read, NULL);
 
 	MMIO_RING_D(RING_ACTHD_UDW, D_BDW_PLUS);
+
+#define RING_REG(base) (base + 0xd0)
+	MMIO_RING_F(RING_REG, 4, F_RO, 0,
+		~_MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET), D_BDW_PLUS, NULL,
+		ring_reset_ctl_write);
+	MMIO_F(RING_REG(GEN8_BSD2_RING_BASE), 4, F_RO, 0,
+		~_MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET), D_BDW_PLUS, NULL,
+		ring_reset_ctl_write);
+#undef RING_REG
 
 #define RING_REG(base) (base + 0x230)
 	MMIO_RING_DFH(RING_REG, D_BDW_PLUS, 0, NULL, elsp_mmio_write);
