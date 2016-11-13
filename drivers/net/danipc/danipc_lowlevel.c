@@ -473,12 +473,17 @@ static void danipc_cdev_rx_poll(unsigned long data)
 	n = danipc_cdev_recv(cdev, 0);
 	n += danipc_cdev_recv(cdev, 2);
 
+	if (!n) {
+		__raw_writel_no_log(intval,
+				    (void *)(base_addr + CDU_INT0_CLEAR_F0));
+		n = danipc_cdev_recv(cdev, 0);
+		n += danipc_cdev_recv(cdev, 2);
+	}
+
 	if (n) {
 		tasklet_schedule(&cdev->rx_work);
 		wake_up(&cdev->rx_wq);
 	} else {
-		__raw_writel_no_log(intval,
-				    (void *)(base_addr + CDU_INT0_CLEAR_F0));
 		__raw_writel_no_log(~intval,
 				    (void *)(base_addr + CDU_INT0_MASK_F0));
 	}
