@@ -1061,7 +1061,8 @@ static void vlv_invert_wms(struct intel_crtc *crtc)
 
 	for (level = 0; level < wm_state->num_levels; level++) {
 		struct drm_device *dev = crtc->base.dev;
-		const int sr_fifo_size = INTEL_INFO(dev)->num_pipes * 512 - 1;
+		const int sr_fifo_size =
+			INTEL_INFO(to_i915(dev))->num_pipes * 512 - 1;
 		struct intel_plane *plane;
 
 		wm_state->sr[level].plane = sr_fifo_size - wm_state->sr[level].plane;
@@ -1091,15 +1092,16 @@ static void vlv_invert_wms(struct intel_crtc *crtc)
 static void vlv_compute_wm(struct intel_crtc *crtc)
 {
 	struct drm_device *dev = crtc->base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct vlv_wm_state *wm_state = &crtc->wm_state;
 	struct intel_plane *plane;
-	int sr_fifo_size = INTEL_INFO(dev)->num_pipes * 512 - 1;
+	int sr_fifo_size = INTEL_INFO(dev_priv)->num_pipes * 512 - 1;
 	int level;
 
 	memset(wm_state, 0, sizeof(*wm_state));
 
 	wm_state->cxsr = crtc->pipe != PIPE_C && crtc->wm.cxsr_allowed;
-	wm_state->num_levels = to_i915(dev)->wm.max_level + 1;
+	wm_state->num_levels = dev_priv->wm.max_level + 1;
 
 	wm_state->num_active_planes = 0;
 
@@ -1179,7 +1181,7 @@ static void vlv_compute_wm(struct intel_crtc *crtc)
 	}
 
 	/* clear any (partially) filled invalid levels */
-	for (level = wm_state->num_levels; level < to_i915(dev)->wm.max_level + 1; level++) {
+	for (level = wm_state->num_levels; level < dev_priv->wm.max_level + 1; level++) {
 		memset(&wm_state->wm[level], 0, sizeof(wm_state->wm[level]));
 		memset(&wm_state->sr[level], 0, sizeof(wm_state->sr[level]));
 	}
@@ -1920,7 +1922,7 @@ static unsigned int ilk_plane_wm_max(const struct drm_device *dev,
 
 	/* HSW allows LP1+ watermarks even with multiple pipes */
 	if (level == 0 || config->num_pipes_active > 1) {
-		fifo_size /= INTEL_INFO(dev)->num_pipes;
+		fifo_size /= INTEL_INFO(to_i915(dev))->num_pipes;
 
 		/*
 		 * For some reason the non self refresh
@@ -3624,6 +3626,9 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		y_min_scanlines = 4;
 	}
 
+	if (apply_memory_bw_wa)
+		y_min_scanlines *= 2;
+
 	plane_bytes_per_line = width * cpp;
 	if (fb->modifier[0] == I915_FORMAT_MOD_Y_TILED ||
 	    fb->modifier[0] == I915_FORMAT_MOD_Yf_TILED) {
@@ -3644,8 +3649,6 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 				 plane_blocks_per_line);
 
 	y_tile_minimum = plane_blocks_per_line * y_min_scanlines;
-	if (apply_memory_bw_wa)
-		y_tile_minimum *= 2;
 
 	if (fb->modifier[0] == I915_FORMAT_MOD_Y_TILED ||
 	    fb->modifier[0] == I915_FORMAT_MOD_Yf_TILED) {
