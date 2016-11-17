@@ -377,6 +377,32 @@ long danipc_cdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		break;
+	case DANIPC_IOCS_RECVACK_RECV_MAX:
+		if (copy_from_user(&danipc_bufs, argp, sizeof(danipc_bufs))) {
+			rc = -EFAULT;
+			break;
+		}
+
+		if (danipc_bufs.num_entry) {
+			rc = danipc_cdev_mapped_recv_done(cdev,
+							  cdev->rx_vma,
+							  &danipc_bufs);
+			if (rc)
+				break;
+		}
+
+		danipc_bufs.num_entry = DANIPC_BUFS_MAX_NUM_BUF;
+
+		rc = danipc_cdev_mapped_recv(cdev, cdev->rx_vma, &danipc_bufs);
+
+		if (rc < 0)
+			break;
+
+		if (copy_to_user(argp, &danipc_bufs, sizeof(danipc_bufs))) {
+			rc = -EFAULT;
+			break;
+		}
+		break;
 	case DANIPC_IOCS_SEND:
 		if (copy_from_user(&danipc_bufs, argp, sizeof(danipc_bufs))) {
 			rc = -EFAULT;
