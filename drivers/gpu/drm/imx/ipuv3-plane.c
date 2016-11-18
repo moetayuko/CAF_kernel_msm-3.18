@@ -322,7 +322,7 @@ static int ipu_plane_atomic_check(struct drm_plane *plane,
 	 */
 	if (old_fb && (state->src_w != old_state->src_w ||
 			      state->src_h != old_state->src_h ||
-			      fb->format->format != old_fb->format->format))
+			      fb->format != old_fb->format))
 		crtc_state->mode_changed = true;
 
 	eba = drm_plane_state_to_eba(state);
