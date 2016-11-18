@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -25,6 +25,7 @@
 
 #include <linux/io.h>
 #include <linux/errno.h>
+#include <asm/cacheflush.h>
 
 #include "ipc_reg.h"
 #include "ipc_api.h"
@@ -117,6 +118,7 @@ char *ipc_trns_fifo_buf_alloc(uint8_t cpuid, enum ipc_trns_prio prio)
 void ipc_trns_fifo_buf_free(char *ptr, uint8_t cpuid, enum ipc_trns_prio prio)
 {
 	uint32_t		fifo_addr;
+	uint32_t		buf_addr;
 
 	if (likely(ptr)) {
 		if (prio == ipc_trns_prio_0)
@@ -124,8 +126,9 @@ void ipc_trns_fifo_buf_free(char *ptr, uint8_t cpuid, enum ipc_trns_prio prio)
 		else
 			fifo_addr = IPC_FIFO_WR_OUT_HIGH_ADDR(cpuid);
 
-		__raw_writel_no_log(virt_to_ipc(cpuid, prio, (void *)ptr),
-				    (void *)fifo_addr);
+		buf_addr = virt_to_ipc(cpuid, prio, (void *)ptr);
+
+		__raw_writel_no_log(buf_addr, (void *)fifo_addr);
 	}
 }
 

@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -1732,7 +1732,7 @@ static int danipc_tx_mmap(struct danipc_cdev *cdev, struct vm_area_struct *vma)
 		return -EINVAL;
 	}
 
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vma->vm_page_prot = pgprot_writethroughcache(vma->vm_page_prot);
 
 	if (remap_pfn_range(vma,
 			    vma->vm_start,

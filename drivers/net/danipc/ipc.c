@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -23,6 +23,7 @@
 #include <linux/cache.h>
 #include <linux/slab.h>
 #include <linux/err.h>
+#include <asm/cacheflush.h>
 
 #include "ipc_reg.h"
 #include "ipc_api.h"
@@ -416,7 +417,7 @@ err:
  */
 int32_t ipc_msg_send(char *buf_first, enum ipc_trns_prio prio)
 {
-	struct ipc_next_buf		*buf;
+	struct ipc_first_buf		*buf;
 	struct ipc_trns_func const	*trns_funcs;
 	ipc_trns_send_t			send_func;
 	uint8_t				dest_aid;
@@ -427,7 +428,16 @@ int32_t ipc_msg_send(char *buf_first, enum ipc_trns_prio prio)
 		dest_aid	= (((struct ipc_first_buf *)buf_first)->
 							msg_hdr).dest_aid;
 		cpuid		= ipc_get_node(dest_aid);
-		buf		= (struct ipc_next_buf *)buf_first;
+		buf		= (struct ipc_first_buf *)buf_first;
+
+		/* Flush to DDR entire message */
+		/* No data offset in IPC message */
+		/* Flush the cache with the length indicated in IPC header */
+		dmac_flush_range(
+			buf_first,
+			buf_first +
+			buf->msg_hdr.msg_len + sizeof(struct ipc_msg_hdr));
+
 		trns_funcs	= get_trns_funcs(cpuid);
 		if (likely(trns_funcs)) {
 			send_func = trns_funcs->trns_send;
