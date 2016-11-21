@@ -27,6 +27,8 @@
 
 #include <linux/skbuff.h>
 
+struct serdev_device;
+
 /**
  * enum proto-type - The protocol on WiLink chips which share a
  *	common physical interface like UART.
@@ -72,7 +74,7 @@ struct st_proto_s {
 	long (*recv) (void *, struct sk_buff *);
 	unsigned char (*match_packet) (const unsigned char *data);
 	void (*reg_complete_cb) (void *, int data);
-	long (*write) (struct sk_buff *skb);
+	long (*write) (struct device *, struct sk_buff *skb);
 	void *priv_data;
 
 	unsigned char chnl_id;
@@ -83,9 +85,8 @@ struct st_proto_s {
 	unsigned char reserve;
 };
 
-extern long st_register(struct st_proto_s *);
-extern long st_unregister(struct st_proto_s *);
-
+long st_register(struct device *, struct st_proto_s *);
+extern long st_unregister(struct device *, struct st_proto_s *);
 
 /*
  * header information used by st_core.c
@@ -157,7 +158,7 @@ struct st_data_s {
 	unsigned char	protos_registered;
 	unsigned long ll_state;
 	void *kim_data;
-	struct tty_struct *tty;
+	struct serdev_device *serdev;
 	struct work_struct work_write_wakeup;
 };
 
@@ -173,13 +174,6 @@ int st_get_uart_wr_room(struct st_data_s *st_gdata);
  */
 int st_int_write(struct st_data_s*, const unsigned char*, int);
 
-/**
- * st_write -
- * internal write function, passed onto protocol drivers
- * via the write function ptr of protocol struct
- */
-long st_write(struct sk_buff *);
-
 /* function to be called from ST-LL */
 void st_ll_send_frame(enum proto_type, struct sk_buff *);
 
@@ -187,11 +181,11 @@ void st_ll_send_frame(enum proto_type, struct sk_buff *);
 void st_tx_wakeup(struct st_data_s *st_data);
 
 /* init, exit entry funcs called from KIM */
-int st_core_init(struct st_data_s **);
+int st_core_init(struct serdev_device *, struct st_data_s **);
 void st_core_exit(struct st_data_s *);
 
 /* ask for reference from KIM */
-void st_kim_ref(struct st_data_s **, int);
+struct st_data_s *st_kim_ref(struct serdev_device *serdev);
 
 #define GPS_STUB_TEST
 #ifdef GPS_STUB_TEST
@@ -258,11 +252,11 @@ struct chip_version {
  */
 struct kim_data_s {
 	long uim_pid;
-	struct platform_device *kim_pdev;
+	struct serdev_device *kim_pdev;
 	struct completion kim_rcvd, ldisc_installed;
 	char resp_buffer[30];
 	const struct firmware *fw_entry;
-	unsigned nshutdown;
+	struct gpio_desc *nshutdown;
 	unsigned long rx_state;
 	unsigned long rx_count;
 	struct sk_buff *rx_skb;
@@ -441,12 +435,6 @@ struct ti_st_plat_data {
 	unsigned char dev_name[UART_DEV_NAME_LEN]; /* uart name */
 	u32 flow_cntrl; /* flow control flag */
 	u32 baud_rate;
-	int (*suspend)(struct platform_device *, pm_message_t);
-	int (*resume)(struct platform_device *);
-	int (*chip_enable) (struct kim_data_s *);
-	int (*chip_disable) (struct kim_data_s *);
-	int (*chip_asleep) (struct kim_data_s *);
-	int (*chip_awake) (struct kim_data_s *);
 };
 
 #endif /* TI_WILINK_ST_H */

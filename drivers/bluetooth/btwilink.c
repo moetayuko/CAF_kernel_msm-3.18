@@ -52,7 +52,7 @@
 struct ti_st {
 	struct hci_dev *hdev;
 	int reg_status;
-	long (*st_write) (struct sk_buff *);
+	long (*st_write) (struct device *, struct sk_buff *);
 	struct completion wait_reg_completion;
 };
 
@@ -173,7 +173,7 @@ static int ti_st_open(struct hci_dev *hdev)
 		 */
 		hst->reg_status = -EINPROGRESS;
 
-		err = st_register(&ti_st_proto[i]);
+		err = st_register(hdev->dev.parent, &ti_st_proto[i]);
 		if (!err)
 			goto done;
 
@@ -211,7 +211,7 @@ done:
 			BT_ERR("undefined ST write function");
 			for (i = 0; i < MAX_BT_CHNL_IDS; i++) {
 				/* Undo registration with ST */
-				err = st_unregister(&ti_st_proto[i]);
+				err = st_unregister(hdev->dev.parent, &ti_st_proto[i]);
 				if (err)
 					BT_ERR("st_unregister() failed with "
 							"error %d", err);
@@ -230,7 +230,7 @@ static int ti_st_close(struct hci_dev *hdev)
 	struct ti_st *hst = hci_get_drvdata(hdev);
 
 	for (i = MAX_BT_CHNL_IDS-1; i >= 0; i--) {
-		err = st_unregister(&ti_st_proto[i]);
+		err = st_unregister(hdev->dev.parent, &ti_st_proto[i]);
 		if (err)
 			BT_ERR("st_unregister(%d) failed with error %d",
 					ti_st_proto[i].chnl_id, err);
@@ -260,7 +260,7 @@ static int ti_st_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 	 * so don't free skb memory here.
 	 */
 	pkt_type = hci_skb_pkt_type(skb);
-	len = hst->st_write(skb);
+	len = hst->st_write(hdev->dev.parent, skb);
 	if (len < 0) {
 		kfree_skb(skb);
 		BT_ERR("ST write failed (%ld)", len);
@@ -293,6 +293,7 @@ static int bt_ti_probe(struct platform_device *pdev)
 	BT_DBG("hdev %p", hdev);
 
 	hst->hdev = hdev;
+	hdev->dev.parent = &pdev->dev;
 	hdev->bus = HCI_UART;
 	hci_set_drvdata(hdev, hst);
 	hdev->open = ti_st_open;

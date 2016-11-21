@@ -22,6 +22,7 @@
 
 #define pr_fmt(fmt) "(stk) :" fmt
 #include <linux/platform_device.h>
+#include <linux/serdev.h>
 #include <linux/jiffies.h>
 #include <linux/firmware.h>
 #include <linux/delay.h>
@@ -30,31 +31,15 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/sched.h>
-#include <linux/sysfs.h>
-#include <linux/tty.h>
 
 #include <linux/skbuff.h>
 #include <linux/ti_wilink_st.h>
 #include <linux/module.h>
-
-#define MAX_ST_DEVICES	3	/* Imagine 1 on each UART for now */
-static struct platform_device *st_kim_devices[MAX_ST_DEVICES];
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 /**********************************************************************/
 /* internal functions */
-
-/**
- * st_get_plat_device -
- *	function which returns the reference to the platform device
- *	requested by id. As of now only 1 such device exists (id=0)
- *	the context requesting for reference can get the id to be
- *	requested by a. The protocol driver which is registering or
- *	b. the tty device which is opened.
- */
-static struct platform_device *st_get_plat_device(int id)
-{
-	return st_kim_devices[id];
-}
 
 /**
  * validate_firmware_response -
@@ -459,41 +444,17 @@ long st_kim_start(void *kim_data)
 {
 	long err = 0;
 	long retry = POR_RETRY_COUNT;
-	struct ti_st_plat_data	*pdata;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
 
 	pr_info(" %s", __func__);
-	pdata = kim_gdata->kim_pdev->dev.platform_data;
 
 	do {
-		/* platform specific enabling code here */
-		if (pdata->chip_enable)
-			pdata->chip_enable(kim_gdata);
-
 		/* Configure BT nShutdown to HIGH state */
-		gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_LOW);
+		gpiod_set_value_cansleep(kim_gdata->nshutdown, 1);
 		mdelay(5);	/* FIXME: a proper toggle */
-		gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_HIGH);
+		gpiod_set_value_cansleep(kim_gdata->nshutdown, 0);
 		mdelay(100);
-		/* re-initialize the completion */
-		reinit_completion(&kim_gdata->ldisc_installed);
-		/* send notification to UIM */
-		kim_gdata->ldisc_install = 1;
-		pr_info("ldisc_install = 1");
-		sysfs_notify(&kim_gdata->kim_pdev->dev.kobj,
-				NULL, "install");
-		/* wait for ldisc to be installed */
-		err = wait_for_completion_interruptible_timeout(
-			&kim_gdata->ldisc_installed, msecs_to_jiffies(LDISC_TIME));
-		if (!err) {
-			/* ldisc installation timeout,
-			 * flush uart, power cycle BT_EN */
-			pr_err("ldisc installation timeout");
-			err = st_kim_stop(kim_gdata);
-			continue;
-		} else {
-			/* ldisc installed now */
-			pr_info("line discipline installed");
+		{
 			err = download_firmware(kim_gdata);
 			if (err != 0) {
 				/* ldisc installed but fw download failed,
@@ -523,41 +484,17 @@ long st_kim_stop(void *kim_data)
 {
 	long err = 0;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
-	struct ti_st_plat_data	*pdata =
-		kim_gdata->kim_pdev->dev.platform_data;
-	struct tty_struct	*tty = kim_gdata->core_data->tty;
 
-	reinit_completion(&kim_gdata->ldisc_installed);
-
-	if (tty) {	/* can be called before ldisc is installed */
-		/* Flush any pending characters in the driver and discipline. */
-		tty_ldisc_flush(tty);
-		tty_driver_flush_buffer(tty);
-	}
-
-	/* send uninstall notification to UIM */
-	pr_info("ldisc_install = 0");
-	kim_gdata->ldisc_install = 0;
-	sysfs_notify(&kim_gdata->kim_pdev->dev.kobj, NULL, "install");
-
-	/* wait for ldisc to be un-installed */
-	err = wait_for_completion_interruptible_timeout(
-		&kim_gdata->ldisc_installed, msecs_to_jiffies(LDISC_TIME));
-	if (!err) {		/* timeout */
-		pr_err(" timed out waiting for ldisc to be un-installed");
-		err = -ETIMEDOUT;
-	}
+	serdev_device_write_flush(kim_gdata->kim_pdev);
 
 	/* By default configure BT nShutdown to LOW state */
-	gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_LOW);
+	gpiod_set_value_cansleep(kim_gdata->nshutdown, 1);
 	mdelay(1);
-	gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_HIGH);
+	gpiod_set_value_cansleep(kim_gdata->nshutdown, 0);
 	mdelay(1);
-	gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_LOW);
+	gpiod_set_value_cansleep(kim_gdata->nshutdown, 1);
 
 	/* platform specific disable */
-	if (pdata->chip_disable)
-		pdata->chip_disable(kim_gdata);
 	return err;
 }
 
@@ -581,89 +518,6 @@ static int show_list(struct seq_file *s, void *unused)
 	return 0;
 }
 
-static ssize_t show_install(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	return sprintf(buf, "%d\n", kim_data->ldisc_install);
-}
-
-#ifdef DEBUG
-static ssize_t store_dev_name(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	pr_debug("storing dev name >%s<", buf);
-	strncpy(kim_data->dev_name, buf, count);
-	pr_debug("stored dev name >%s<", kim_data->dev_name);
-	return count;
-}
-
-static ssize_t store_baud_rate(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	pr_debug("storing baud rate >%s<", buf);
-	sscanf(buf, "%ld", &kim_data->baud_rate);
-	pr_debug("stored baud rate >%ld<", kim_data->baud_rate);
-	return count;
-}
-#endif	/* if DEBUG */
-
-static ssize_t show_dev_name(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	return sprintf(buf, "%s\n", kim_data->dev_name);
-}
-
-static ssize_t show_baud_rate(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	return sprintf(buf, "%d\n", kim_data->baud_rate);
-}
-
-static ssize_t show_flow_cntrl(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct kim_data_s *kim_data = dev_get_drvdata(dev);
-	return sprintf(buf, "%d\n", kim_data->flow_cntrl);
-}
-
-/* structures specific for sysfs entries */
-static struct kobj_attribute ldisc_install =
-__ATTR(install, 0444, (void *)show_install, NULL);
-
-static struct kobj_attribute uart_dev_name =
-#ifdef DEBUG	/* TODO: move this to debug-fs if possible */
-__ATTR(dev_name, 0644, (void *)show_dev_name, (void *)store_dev_name);
-#else
-__ATTR(dev_name, 0444, (void *)show_dev_name, NULL);
-#endif
-
-static struct kobj_attribute uart_baud_rate =
-#ifdef DEBUG	/* TODO: move to debugfs */
-__ATTR(baud_rate, 0644, (void *)show_baud_rate, (void *)store_baud_rate);
-#else
-__ATTR(baud_rate, 0444, (void *)show_baud_rate, NULL);
-#endif
-
-static struct kobj_attribute uart_flow_cntrl =
-__ATTR(flow_cntrl, 0444, (void *)show_flow_cntrl, NULL);
-
-static struct attribute *uim_attrs[] = {
-	&ldisc_install.attr,
-	&uart_dev_name.attr,
-	&uart_baud_rate.attr,
-	&uart_flow_cntrl.attr,
-	NULL,
-};
-
-static struct attribute_group uim_attr_grp = {
-	.attrs = uim_attrs,
-};
-
 /**
  * st_kim_ref - reference the core's data
  *	This references the per-ST platform device in the arch/xx/
@@ -671,22 +525,13 @@ static struct attribute_group uim_attr_grp = {
  *	This would enable multiple such platform devices to exist
  *	on a given platform
  */
-void st_kim_ref(struct st_data_s **core_data, int id)
+struct st_data_s *st_kim_ref(struct serdev_device *serdev)
 {
-	struct platform_device	*pdev;
-	struct kim_data_s	*kim_gdata;
-	/* get kim_gdata reference from platform device */
-	pdev = st_get_plat_device(id);
-	if (!pdev)
-		goto err;
-	kim_gdata = platform_get_drvdata(pdev);
+	struct kim_data_s *kim_gdata = serdev_device_get_drvdata(serdev);
 	if (!kim_gdata)
-		goto err;
+		return NULL;
 
-	*core_data = kim_gdata->core_data;
-	return;
-err:
-	*core_data = NULL;
+	return kim_gdata->core_data;
 }
 
 static int kim_version_open(struct inode *i, struct file *f)
@@ -720,68 +565,50 @@ static const struct file_operations list_debugfs_fops = {
  * board-*.c file
  */
 
+static const struct of_device_id kim_of_match[] = {
+{
+	.compatible = "ti,wl1835-st",
+	},
+	{}
+};
+MODULE_DEVICE_TABLE(of, kim_of_match);
+
 static struct dentry *kim_debugfs_dir;
-static int kim_probe(struct platform_device *pdev)
+static int kim_probe(struct serdev_device *serdev)
 {
 	struct kim_data_s	*kim_gdata;
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
 	int err;
 
-	if ((pdev->id != -1) && (pdev->id < MAX_ST_DEVICES)) {
-		/* multiple devices could exist */
-		st_kim_devices[pdev->id] = pdev;
-	} else {
-		/* platform's sure about existence of 1 device */
-		st_kim_devices[0] = pdev;
-	}
-
-	kim_gdata = kzalloc(sizeof(struct kim_data_s), GFP_ATOMIC);
+	kim_gdata = devm_kzalloc(&serdev->dev, sizeof(struct kim_data_s), GFP_ATOMIC);
 	if (!kim_gdata) {
 		pr_err("no mem to allocate");
 		return -ENOMEM;
 	}
-	platform_set_drvdata(pdev, kim_gdata);
+	serdev_device_set_drvdata(serdev, kim_gdata);
 
-	err = st_core_init(&kim_gdata->core_data);
+	kim_gdata->nshutdown = devm_gpiod_get(&serdev->dev, "shutdown", GPIOD_OUT_HIGH);
+	if (IS_ERR(kim_gdata->nshutdown))
+		return PTR_ERR(kim_gdata->nshutdown);
+
+	err = st_core_init(serdev, &kim_gdata->core_data);
 	if (err != 0) {
 		pr_err(" ST core init failed");
-		err = -EIO;
-		goto err_core_init;
+		return -EIO;
 	}
 	/* refer to itself */
 	kim_gdata->core_data->kim_data = kim_gdata;
 
-	/* Claim the chip enable nShutdown gpio from the system */
-	kim_gdata->nshutdown = pdata->nshutdown_gpio;
-	err = gpio_request(kim_gdata->nshutdown, "kim");
-	if (unlikely(err)) {
-		pr_err(" gpio %d request failed ", kim_gdata->nshutdown);
-		return err;
-	}
-
-	/* Configure nShutdown GPIO as output=0 */
-	err = gpio_direction_output(kim_gdata->nshutdown, 0);
-	if (unlikely(err)) {
-		pr_err(" unable to configure gpio %d", kim_gdata->nshutdown);
-		return err;
-	}
 	/* get reference of pdev for request_firmware
 	 */
-	kim_gdata->kim_pdev = pdev;
+	kim_gdata->kim_pdev = serdev;
 	init_completion(&kim_gdata->kim_rcvd);
 	init_completion(&kim_gdata->ldisc_installed);
 
-	err = sysfs_create_group(&pdev->dev.kobj, &uim_attr_grp);
-	if (err) {
-		pr_err("failed to create sysfs entries");
-		goto err_sysfs_group;
-	}
+	serdev_device_set_baudrate(serdev, 115200);
+	serdev_device_set_flow_control(serdev, true);
 
-	/* copying platform data */
-	strncpy(kim_gdata->dev_name, pdata->dev_name, UART_DEV_NAME_LEN);
-	kim_gdata->flow_cntrl = pdata->flow_cntrl;
-	kim_gdata->baud_rate = pdata->baud_rate;
-	pr_info("sysfs entries created\n");
+	/* Create the child BT device */
+	platform_device_register_data(&serdev->dev, "btwilink", -1, NULL, 0);
 
 	kim_debugfs_dir = debugfs_create_dir("ti-st", NULL);
 	if (!kim_debugfs_dir) {
@@ -794,75 +621,34 @@ static int kim_probe(struct platform_device *pdev)
 	debugfs_create_file("protocols", S_IRUGO, kim_debugfs_dir,
 				kim_gdata, &list_debugfs_fops);
 	return 0;
-
-err_sysfs_group:
-	st_core_exit(kim_gdata->core_data);
-
-err_core_init:
-	kfree(kim_gdata);
-
-	return err;
 }
 
-static int kim_remove(struct platform_device *pdev)
+static void kim_remove(struct serdev_device *serdev)
 {
-	/* free the GPIOs requested */
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
 	struct kim_data_s	*kim_gdata;
 
-	kim_gdata = platform_get_drvdata(pdev);
-
-	/* Free the Bluetooth/FM/GPIO
-	 * nShutdown gpio from the system
-	 */
-	gpio_free(pdata->nshutdown_gpio);
-	pr_info("nshutdown GPIO Freed");
+	kim_gdata = serdev_device_get_drvdata(serdev);
 
 	debugfs_remove_recursive(kim_debugfs_dir);
-	sysfs_remove_group(&pdev->dev.kobj, &uim_attr_grp);
-	pr_info("sysfs entries removed");
 
 	kim_gdata->kim_pdev = NULL;
 	st_core_exit(kim_gdata->core_data);
 
 	kfree(kim_gdata);
-	kim_gdata = NULL;
-	return 0;
-}
-
-static int kim_suspend(struct platform_device *pdev, pm_message_t state)
-{
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
-
-	if (pdata->suspend)
-		return pdata->suspend(pdev, state);
-
-	return 0;
-}
-
-static int kim_resume(struct platform_device *pdev)
-{
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
-
-	if (pdata->resume)
-		return pdata->resume(pdev);
-
-	return 0;
 }
 
 /**********************************************************************/
 /* entry point for ST KIM module, called in from ST Core */
-static struct platform_driver kim_platform_driver = {
+static struct serdev_device_driver kim_platform_driver = {
 	.probe = kim_probe,
 	.remove = kim_remove,
-	.suspend = kim_suspend,
-	.resume = kim_resume,
 	.driver = {
 		.name = "kim",
+		.of_match_table = of_match_ptr(kim_of_match),
 	},
 };
 
-module_platform_driver(kim_platform_driver);
+module_serdev_device_driver(kim_platform_driver);
 
 MODULE_AUTHOR("Pavan Savoy <pavan_savoy@ti.com>");
 MODULE_DESCRIPTION("Shared Transport Driver for TI BT/FM/GPS combo chips ");

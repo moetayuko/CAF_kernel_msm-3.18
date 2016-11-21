@@ -22,7 +22,7 @@
 #define pr_fmt(fmt)	"(stc): " fmt
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/tty.h>
+#include <linux/serdev.h>
 
 #include <linux/seq_file.h>
 #include <linux/skbuff.h>
@@ -64,13 +64,13 @@ static void remove_channel_from_table(struct st_data_s *st_gdata,
  */
 int st_get_uart_wr_room(struct st_data_s *st_gdata)
 {
-	struct tty_struct *tty;
-	if (unlikely(st_gdata == NULL || st_gdata->tty == NULL)) {
+	struct serdev_device *serdev;
+	if (unlikely(st_gdata == NULL || st_gdata->serdev == NULL)) {
 		pr_err("tty unavailable to perform write");
 		return -1;
 	}
-	tty = st_gdata->tty;
-	return tty->ops->write_room(tty);
+	serdev = st_gdata->serdev;
+	return serdev_device_write_room(serdev);
 }
 
 /* can be called in from
@@ -83,17 +83,17 @@ int st_get_uart_wr_room(struct st_data_s *st_gdata)
 int st_int_write(struct st_data_s *st_gdata,
 	const unsigned char *data, int count)
 {
-	struct tty_struct *tty;
-	if (unlikely(st_gdata == NULL || st_gdata->tty == NULL)) {
+	struct serdev_device *serdev;
+	if (unlikely(st_gdata == NULL || st_gdata->serdev == NULL)) {
 		pr_err("tty unavailable to perform write");
 		return -EINVAL;
 	}
-	tty = st_gdata->tty;
+	serdev = st_gdata->serdev;
 #ifdef VERBOSE
 	print_hex_dump(KERN_DEBUG, "<out<", DUMP_PREFIX_NONE,
 		16, 1, data, count, 0);
 #endif
-	return tty->ops->write(tty, data, count);
+	return serdev_device_write_buf(serdev, data, count);
 
 }
 
@@ -488,8 +488,6 @@ void st_tx_wakeup(struct st_data_s *st_data)
 		while ((skb = st_int_dequeue(st_data))) {
 			int len;
 			spin_lock_irqsave(&st_data->lock, flags);
-			/* enable wake-up from TTY */
-			set_bit(TTY_DO_WRITE_WAKEUP, &st_data->tty->flags);
 			len = st_int_write(st_data, skb->data, skb->len);
 			skb_pull(skb, len);
 			/* if skb->len = len as expected, skb->len=0 */
@@ -521,18 +519,44 @@ void kim_st_list_protocols(struct st_data_s *st_gdata, void *buf)
 			st_gdata->is_registered[0x09] == true ? 'R' : 'U');
 }
 
+/*
+ * called in protocol stack drivers
+ * via the write function pointer
+ */
+static long st_write(struct device *dev, struct sk_buff *skb)
+{
+	struct st_data_s *st_gdata = st_kim_ref(to_serdev_device(dev->parent));
+	long len;
+
+	if (unlikely(skb == NULL || st_gdata == NULL
+		|| st_gdata->serdev == NULL)) {
+		pr_err("data/tty unavailable to perform write");
+		return -EINVAL;
+	}
+
+	pr_debug("%d to be written", skb->len);
+	len = skb->len;
+
+	/* st_ll to decide where to enqueue the skb */
+	st_int_enqueue(st_gdata, skb);
+	/* wake up */
+	st_tx_wakeup(st_gdata);
+
+	/* return number of bytes written */
+	return len;
+}
+
 /********************************************************************/
 /*
  * functions called from protocol stack drivers
  * to be EXPORT-ed
  */
-long st_register(struct st_proto_s *new_proto)
+long st_register(struct device *dev, struct st_proto_s *new_proto)
 {
-	struct st_data_s	*st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(to_serdev_device(dev->parent));
 	long err = 0;
 	unsigned long flags = 0;
 
-	st_kim_ref(&st_gdata, 0);
 	if (st_gdata == NULL || new_proto == NULL || new_proto->recv == NULL
 	    || new_proto->reg_complete_cb == NULL) {
 		pr_err("gdata/new_proto/recv or reg_complete_cb not ready");
@@ -638,15 +662,14 @@ EXPORT_SYMBOL_GPL(st_register);
 /* to unregister a protocol -
  * to be called from protocol stack driver
  */
-long st_unregister(struct st_proto_s *proto)
+long st_unregister(struct device *dev, struct st_proto_s *proto)
 {
 	long err = 0;
 	unsigned long flags = 0;
-	struct st_data_s	*st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(to_serdev_device(dev->parent));
 
 	pr_debug("%s: %d ", __func__, proto->chnl_id);
 
-	st_kim_ref(&st_gdata, 0);
 	if (!st_gdata || proto->chnl_id >= ST_MAX_CHANNELS) {
 		pr_err(" chnl_id %d not supported", proto->chnl_id);
 		return -EPROTONOSUPPORT;
@@ -670,46 +693,12 @@ long st_unregister(struct st_proto_s *proto)
 	    (!test_bit(ST_REG_PENDING, &st_gdata->st_state))) {
 		pr_info(" all chnl_ids unregistered ");
 
-		/* stop traffic on tty */
-		if (st_gdata->tty) {
-			tty_ldisc_flush(st_gdata->tty);
-			stop_tty(st_gdata->tty);
-		}
-
 		/* all chnl_ids now unregistered */
 		st_kim_stop(st_gdata->kim_data);
 		/* disable ST LL */
 		st_ll_disable(st_gdata);
 	}
 	return err;
-}
-
-/*
- * called in protocol stack drivers
- * via the write function pointer
- */
-long st_write(struct sk_buff *skb)
-{
-	struct st_data_s *st_gdata;
-	long len;
-
-	st_kim_ref(&st_gdata, 0);
-	if (unlikely(skb == NULL || st_gdata == NULL
-		|| st_gdata->tty == NULL)) {
-		pr_err("data/tty unavailable to perform write");
-		return -EINVAL;
-	}
-
-	pr_debug("%d to be written", skb->len);
-	len = skb->len;
-
-	/* st_ll to decide where to enqueue the skb */
-	st_int_enqueue(st_gdata, skb);
-	/* wake up */
-	st_tx_wakeup(st_gdata);
-
-	/* return number of bytes written */
-	return len;
 }
 
 /* for protocols making use of shared transport */
@@ -719,39 +708,10 @@ EXPORT_SYMBOL_GPL(st_unregister);
 /*
  * functions called from TTY layer
  */
-static int st_tty_open(struct tty_struct *tty)
-{
-	int err = 0;
-	struct st_data_s *st_gdata;
-	pr_info("%s ", __func__);
-
-	st_kim_ref(&st_gdata, 0);
-	st_gdata->tty = tty;
-	tty->disc_data = st_gdata;
-
-	/* don't do an wakeup for now */
-	clear_bit(TTY_DO_WRITE_WAKEUP, &tty->flags);
-
-	/* mem already allocated
-	 */
-	tty->receive_room = 65536;
-	/* Flush any pending characters in the driver and discipline. */
-	tty_ldisc_flush(tty);
-	tty_driver_flush_buffer(tty);
-	/*
-	 * signal to UIM via KIM that -
-	 * installation of N_TI_WL ldisc is complete
-	 */
-	st_kim_complete(st_gdata->kim_data);
-	pr_debug("done %s", __func__);
-	return err;
-}
-
-static void st_tty_close(struct tty_struct *tty)
+static void st_tty_close(struct st_data_s *st_gdata)
 {
 	unsigned char i = ST_MAX_CHANNELS;
 	unsigned long flags = 0;
-	struct	st_data_s *st_gdata = tty->disc_data;
 
 	pr_info("%s ", __func__);
 
@@ -773,15 +733,16 @@ static void st_tty_close(struct tty_struct *tty)
 	 * N_TI_WL ldisc is un-installed
 	 */
 	st_kim_complete(st_gdata->kim_data);
-	st_gdata->tty = NULL;
+
 	/* Flush any pending characters in the driver and discipline. */
-	tty_ldisc_flush(tty);
-	tty_driver_flush_buffer(tty);
+	serdev_device_close(st_gdata->serdev);
 
 	spin_lock_irqsave(&st_gdata->lock, flags);
 	/* empty out txq and tx_waitq */
 	skb_queue_purge(&st_gdata->txq);
 	skb_queue_purge(&st_gdata->tx_waitq);
+	kfree_skb(st_gdata->tx_skb);
+	st_gdata->tx_skb = NULL;
 	/* reset the TTY Rx states of ST */
 	st_gdata->rx_count = 0;
 	st_gdata->rx_state = ST_W4_PACKET_TYPE;
@@ -792,9 +753,11 @@ static void st_tty_close(struct tty_struct *tty)
 	pr_debug("%s: done ", __func__);
 }
 
-static void st_tty_receive(struct tty_struct *tty, const unsigned char *data,
-			   char *tty_flags, int count)
+static int st_tty_receive(struct serdev_device *sdev, const unsigned char *data,
+			   size_t count)
 {
+	struct st_data_s *st_gdata = st_kim_ref(sdev);
+
 #ifdef VERBOSE
 	print_hex_dump(KERN_DEBUG, ">in>", DUMP_PREFIX_NONE,
 		16, 1, data, count, 0);
@@ -804,19 +767,19 @@ static void st_tty_receive(struct tty_struct *tty, const unsigned char *data,
 	 * if fw download is in progress then route incoming data
 	 * to KIM for validation
 	 */
-	st_recv(tty->disc_data, data, count);
+	st_recv(st_gdata, data, count);
 	pr_debug("done %s", __func__);
+	return count;
 }
 
 /* wake-up function called in from the TTY layer
  * inside the internal wakeup function will be called
  */
-static void st_tty_wakeup(struct tty_struct *tty)
+static void st_tty_wakeup(struct serdev_device *sdev)
 {
-	struct	st_data_s *st_gdata = tty->disc_data;
+	struct st_data_s *st_gdata = st_kim_ref(sdev);
+
 	pr_debug("%s ", __func__);
-	/* don't do an wakeup for now */
-	clear_bit(TTY_DO_WRITE_WAKEUP, &tty->flags);
 
 	/*
 	 * schedule the internal wakeup instead of calling directly to
@@ -826,52 +789,22 @@ static void st_tty_wakeup(struct tty_struct *tty)
 	schedule_work(&st_gdata->work_write_wakeup);
 }
 
-static void st_tty_flush_buffer(struct tty_struct *tty)
-{
-	struct	st_data_s *st_gdata = tty->disc_data;
-	pr_debug("%s ", __func__);
-
-	kfree_skb(st_gdata->tx_skb);
-	st_gdata->tx_skb = NULL;
-
-	tty_driver_flush_buffer(tty);
-	return;
-}
-
-static struct tty_ldisc_ops st_ldisc_ops = {
-	.magic = TTY_LDISC_MAGIC,
-	.name = "n_st",
-	.open = st_tty_open,
-	.close = st_tty_close,
+static struct serdev_device_ops st_serdev_ops = {
 	.receive_buf = st_tty_receive,
 	.write_wakeup = st_tty_wakeup,
-	.flush_buffer = st_tty_flush_buffer,
-	.owner = THIS_MODULE
 };
 
 /********************************************************************/
-int st_core_init(struct st_data_s **core_data)
+int st_core_init(struct serdev_device *serdev, struct st_data_s **core_data)
 {
 	struct st_data_s *st_gdata;
 	long err;
 
-	err = tty_register_ldisc(N_TI_WL, &st_ldisc_ops);
-	if (err) {
-		pr_err("error registering %d line discipline %ld",
-			   N_TI_WL, err);
-		return err;
-	}
-	pr_debug("registered n_shared line discipline");
-
 	st_gdata = kzalloc(sizeof(struct st_data_s), GFP_KERNEL);
-	if (!st_gdata) {
-		pr_err("memory allocation failed");
-		err = tty_unregister_ldisc(N_TI_WL);
-		if (err)
-			pr_err("unable to un-register ldisc %ld", err);
-		err = -ENOMEM;
-		return err;
-	}
+	if (!st_gdata)
+		return -ENOMEM;
+
+	st_gdata->serdev = serdev;
 
 	/* Initialize ST TxQ and Tx waitQ queue head. All BT/FM/GPS module skb's
 	 * will be pushed in this queue for actual transmission.
@@ -886,15 +819,16 @@ int st_core_init(struct st_data_s **core_data)
 	if (err) {
 		pr_err("error during st_ll initialization(%ld)", err);
 		kfree(st_gdata);
-		err = tty_unregister_ldisc(N_TI_WL);
-		if (err)
-			pr_err("unable to un-register ldisc");
 		return err;
 	}
 
 	INIT_WORK(&st_gdata->work_write_wakeup, work_fn_write_wakeup);
 
 	*core_data = st_gdata;
+
+	serdev_device_set_client_ops(serdev, &st_serdev_ops);
+	serdev_device_open(st_gdata->serdev);
+
 	return 0;
 }
 
@@ -907,13 +841,7 @@ void st_core_exit(struct st_data_s *st_gdata)
 		pr_err("error during deinit of ST LL %ld", err);
 
 	if (st_gdata != NULL) {
-		/* Free ST Tx Qs and skbs */
-		skb_queue_purge(&st_gdata->txq);
-		skb_queue_purge(&st_gdata->tx_waitq);
-		kfree_skb(st_gdata->rx_skb);
-		kfree_skb(st_gdata->tx_skb);
-		/* TTY ldisc cleanup */
-		err = tty_unregister_ldisc(N_TI_WL);
+		st_tty_close(st_gdata);
 		if (err)
 			pr_err("unable to un-register ldisc %ld", err);
 		/* free the global data pointer */
