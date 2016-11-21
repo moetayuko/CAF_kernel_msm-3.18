@@ -1601,6 +1601,9 @@ static void btrfs_split_extent_hook(struct inode *inode,
 	if (!(orig->state & EXTENT_DELALLOC))
 		return;
 
+	if (btrfs_is_free_space_inode(inode))
+		return;
+
 	size = orig->end - orig->start + 1;
 	if (size > BTRFS_MAX_EXTENT_SIZE) {
 		u64 num_extents;
@@ -1641,6 +1644,9 @@ static void btrfs_merge_extent_hook(struct inode *inode,
 
 	/* not delalloc, ignore it */
 	if (!(other->state & EXTENT_DELALLOC))
+		return;
+
+	if (btrfs_is_free_space_inode(inode))
 		return;
 
 	if (new->start > other->start)
@@ -1738,7 +1744,6 @@ static void btrfs_del_delalloc_inode(struct btrfs_root *root,
 static void btrfs_set_bit_hook(struct inode *inode,
 			       struct extent_state *state, unsigned *bits)
 {
-
 	if ((*bits & EXTENT_DEFRAG) && !(*bits & EXTENT_DELALLOC))
 		WARN_ON(1);
 	/*
@@ -1749,13 +1754,16 @@ static void btrfs_set_bit_hook(struct inode *inode,
 	if (!(state->state & EXTENT_DELALLOC) && (*bits & EXTENT_DELALLOC)) {
 		struct btrfs_root *root = BTRFS_I(inode)->root;
 		u64 len = state->end + 1 - state->start;
+		u64 num_extents = div64_u64(len + BTRFS_MAX_EXTENT_SIZE - 1,
+					    BTRFS_MAX_EXTENT_SIZE);
 		bool do_list = !btrfs_is_free_space_inode(inode);
 
-		if (*bits & EXTENT_FIRST_DELALLOC) {
+		if (*bits & EXTENT_FIRST_DELALLOC)
 			*bits &= ~EXTENT_FIRST_DELALLOC;
-		} else {
+
+		if (do_list) {
 			spin_lock(&BTRFS_I(inode)->lock);
-			BTRFS_I(inode)->outstanding_extents++;
+			BTRFS_I(inode)->outstanding_extents += num_extents;
 			spin_unlock(&BTRFS_I(inode)->lock);
 		}
 
@@ -1803,7 +1811,7 @@ static void btrfs_clear_bit_hook(struct inode *inode,
 
 		if (*bits & EXTENT_FIRST_DELALLOC) {
 			*bits &= ~EXTENT_FIRST_DELALLOC;
-		} else if (!(*bits & EXTENT_DO_ACCOUNTING)) {
+		} else if (!(*bits & EXTENT_DO_ACCOUNTING) && do_list) {
 			spin_lock(&BTRFS_I(inode)->lock);
 			BTRFS_I(inode)->outstanding_extents -= num_extents;
 			spin_unlock(&BTRFS_I(inode)->lock);
@@ -2001,9 +2009,52 @@ static noinline int add_pending_csums(struct btrfs_trans_handle *trans,
 int btrfs_set_extent_delalloc(struct inode *inode, u64 start, u64 end,
 			      struct extent_state **cached_state, int dedupe)
 {
+	int ret;
+	u64 num_extents = div64_u64(end - start + BTRFS_MAX_EXTENT_SIZE,
+				    BTRFS_MAX_EXTENT_SIZE);
+
 	WARN_ON((end & (PAGE_SIZE - 1)) == 0);
-	return set_extent_delalloc(&BTRFS_I(inode)->io_tree, start, end,
-				   cached_state);
+	ret = set_extent_delalloc(&BTRFS_I(inode)->io_tree, start, end,
+				  cached_state);
+
+	/*
+	 * btrfs_delalloc_reserve_metadata() will first add number of
+	 * outstanding extents according to data length, which is inaccurate
+	 * for case like dirtying already dirty pages.
+	 * so here we will decrease such inaccurate numbers, to make
+	 * outstanding_extents only rely on the correct values added by
+	 * set_bit_hook()
+	 *
+	 * Also, we skipped the metadata space reserve for space cache inodes,
+	 * so don't modify the outstanding_extents value.
+	 */
+	if (ret == 0 && !btrfs_is_free_space_inode(inode)) {
+		spin_lock(&BTRFS_I(inode)->lock);
+		BTRFS_I(inode)->outstanding_extents -= num_extents;
+		spin_unlock(&BTRFS_I(inode)->lock);
+	}
+
+	return ret;
+}
+
+int btrfs_set_extent_defrag(struct inode *inode, u64 start, u64 end,
+			    struct extent_state **cached_state)
+{
+	int ret;
+	u64 num_extents = div64_u64(end - start + BTRFS_MAX_EXTENT_SIZE,
+				    BTRFS_MAX_EXTENT_SIZE);
+
+	WARN_ON((end & (PAGE_SIZE - 1)) == 0);
+	ret = set_extent_defrag(&BTRFS_I(inode)->io_tree, start, end,
+				cached_state);
+
+	if (ret == 0 && !btrfs_is_free_space_inode(inode)) {
+		spin_lock(&BTRFS_I(inode)->lock);
+		BTRFS_I(inode)->outstanding_extents -= num_extents;
+		spin_unlock(&BTRFS_I(inode)->lock);
+	}
+
+	return ret;
 }
 
 /* see btrfs_writepage_start_hook for details on why this is required */
@@ -4483,8 +4534,19 @@ search_again:
 		if (found_type > min_type) {
 			del_item = 1;
 		} else {
-			if (item_end < new_size)
+			if (item_end < new_size) {
+				/*
+				 * With NO_HOLES mode, for the following mapping
+				 *
+				 * [0-4k][hole][8k-12k]
+				 *
+				 * if truncating isize down to 6k, it ends up
+				 * isize being 8k.
+				 */
+				if (btrfs_fs_incompat(root->fs_info, NO_HOLES))
+					last_size = new_size;
 				break;
+			}
 			if (found_key.offset >= new_size)
 				del_item = 1;
 			else
@@ -4666,6 +4728,9 @@ out:
 			btrfs_abort_transaction(trans, ret);
 	}
 error:
+	if (err == 0)
+		ASSERT(last_size == new_size);
+
 	if (root->root_key.objectid != BTRFS_TREE_LOG_OBJECTID)
 		btrfs_ordered_update_i_size(inode, last_size, NULL);
 
@@ -9227,6 +9292,7 @@ static int btrfs_truncate(struct inode *inode)
 			break;
 		}
 
+		btrfs_block_rsv_release(root, rsv, -1);
 		ret = btrfs_block_rsv_migrate(&root->fs_info->trans_block_rsv,
 					      rsv, min_size, 0);
 		BUG_ON(ret);	/* shouldn't happen */
