@@ -1291,20 +1291,17 @@ napi_del:
 static int nicvf_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	struct nicvf *nic = netdev_priv(netdev);
-
-	if (new_mtu > NIC_HW_MAX_FRS)
-		return -EINVAL;
-
-	if (new_mtu < NIC_HW_MIN_FRS)
-		return -EINVAL;
+	int orig_mtu = netdev->mtu;
 
 	netdev->mtu = new_mtu;
 
 	if (!netif_running(netdev))
 		return 0;
 
-	if (nicvf_update_hw_max_frs(nic, new_mtu))
+	if (nicvf_update_hw_max_frs(nic, new_mtu)) {
+		netdev->mtu = orig_mtu;
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -1630,6 +1627,10 @@ static int nicvf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netdev->netdev_ops = &nicvf_netdev_ops;
 	netdev->watchdog_timeo = NICVF_TX_TIMEOUT;
+
+	/* MTU range: 64 - 9200 */
+	netdev->min_mtu = NIC_HW_MIN_FRS;
+	netdev->max_mtu = NIC_HW_MAX_FRS;
 
 	INIT_WORK(&nic->reset_task, nicvf_reset_task);
 
