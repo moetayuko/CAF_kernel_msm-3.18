@@ -1288,6 +1288,9 @@ static int kvmppc_get_one_reg_hv(struct kvm_vcpu *vcpu, u64 id,
 	case KVM_REG_PPC_TM_CR:
 		*val = get_reg_val(id, vcpu->arch.cr_tm);
 		break;
+	case KVM_REG_PPC_TM_XER:
+		*val = get_reg_val(id, vcpu->arch.xer_tm);
+		break;
 	case KVM_REG_PPC_TM_LR:
 		*val = get_reg_val(id, vcpu->arch.lr_tm);
 		break;
@@ -1497,6 +1500,9 @@ static int kvmppc_set_one_reg_hv(struct kvm_vcpu *vcpu, u64 id,
 	}
 	case KVM_REG_PPC_TM_CR:
 		vcpu->arch.cr_tm = set_reg_val(id, *val);
+		break;
+	case KVM_REG_PPC_TM_XER:
+		vcpu->arch.xer_tm = set_reg_val(id, *val);
 		break;
 	case KVM_REG_PPC_TM_LR:
 		vcpu->arch.lr_tm = set_reg_val(id, *val);
@@ -2123,8 +2129,7 @@ static bool can_dynamic_split(struct kvmppc_vcore *vc, struct core_info *cip)
 	cip->subcore_threads[sub] = vc->num_threads;
 	cip->subcore_vm[sub] = vc->kvm;
 	init_master_vcore(vc);
-	list_del(&vc->preempt_list);
-	list_add_tail(&vc->preempt_list, &cip->vcs[sub]);
+	list_move_tail(&vc->preempt_list, &cip->vcs[sub]);
 
 	return true;
 }
@@ -2970,6 +2975,15 @@ static void kvmppc_core_commit_memory_region_hv(struct kvm *kvm,
 	unsigned long npages = mem->memory_size >> PAGE_SHIFT;
 	struct kvm_memslots *slots;
 	struct kvm_memory_slot *memslot;
+
+	/*
+	 * If we are making a new memslot, it might make
+	 * some address that was previously cached as emulated
+	 * MMIO be no longer emulated MMIO, so invalidate
+	 * all the caches of emulated MMIO translations.
+	 */
+	if (npages)
+		atomic64_inc(&kvm->arch.mmio_update);
 
 	if (npages && old->npages) {
 		/*

@@ -88,6 +88,8 @@ long kvmppc_alloc_hpt(struct kvm *kvm, u32 *htab_orderp)
 	/* 128 (2**7) bytes in each HPTEG */
 	kvm->arch.hpt_mask = (1ul << (order - 7)) - 1;
 
+	atomic64_set(&kvm->arch.mmio_update, 0);
+
 	/* Allocate reverse map array */
 	rev = vmalloc(sizeof(struct revmap_entry) * kvm->arch.hpt_npte);
 	if (!rev) {
@@ -255,7 +257,7 @@ static void kvmppc_mmu_book3s_64_hv_reset_msr(struct kvm_vcpu *vcpu)
 	kvmppc_set_msr(vcpu, msr);
 }
 
-long kvmppc_virtmode_do_h_enter(struct kvm *kvm, unsigned long flags,
+static long kvmppc_virtmode_do_h_enter(struct kvm *kvm, unsigned long flags,
 				long pte_index, unsigned long pteh,
 				unsigned long ptel, unsigned long *pte_idx_ret)
 {
@@ -451,6 +453,7 @@ int kvmppc_book3s_hv_page_fault(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	unsigned int writing, write_ok;
 	struct vm_area_struct *vma;
 	unsigned long rcbits;
+	long mmio_update;
 
 	/*
 	 * Real-mode code has already searched the HPT and found the
@@ -460,6 +463,19 @@ int kvmppc_book3s_hv_page_fault(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	 */
 	if (ea != vcpu->arch.pgfault_addr)
 		return RESUME_GUEST;
+
+	if (vcpu->arch.pgfault_cache) {
+		mmio_update = atomic64_read(&kvm->arch.mmio_update);
+		if (mmio_update == vcpu->arch.pgfault_cache->mmio_update) {
+			r = vcpu->arch.pgfault_cache->rpte;
+			psize = hpte_page_size(vcpu->arch.pgfault_hpte[0], r);
+			gpa_base = r & HPTE_R_RPN & ~(psize - 1);
+			gfn_base = gpa_base >> PAGE_SHIFT;
+			gpa = gpa_base | (ea & (psize - 1));
+			return kvmppc_hv_emulate_mmio(run, vcpu, gpa, ea,
+						dsisr & DSISR_ISSTORE);
+		}
+	}
 	index = vcpu->arch.pgfault_index;
 	hptep = (__be64 *)(kvm->arch.hpt_virt + (index << 4));
 	rev = &kvm->arch.revmap[index];
@@ -575,7 +591,8 @@ int kvmppc_book3s_hv_page_fault(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	 */
 	if (psize < PAGE_SIZE)
 		psize = PAGE_SIZE;
-	r = (r & ~(HPTE_R_PP0 - psize)) | ((pfn << PAGE_SHIFT) & ~(psize - 1));
+	r = (r & HPTE_R_KEY_HI) | (r & ~(HPTE_R_PP0 - psize)) |
+					((pfn << PAGE_SHIFT) & ~(psize - 1));
 	if (hpte_is_writable(r) && !write_ok)
 		r = hpte_make_readonly(r);
 	ret = RESUME_GUEST;
@@ -758,6 +775,7 @@ static int kvm_unmap_rmapp(struct kvm *kvm, unsigned long *rmapp,
 		    hpte_rpn(ptel, psize) == gfn) {
 			hptep[0] |= cpu_to_be64(HPTE_V_ABSENT);
 			kvmppc_invalidate_hpte(kvm, hptep, i);
+			hptep[1] &= ~cpu_to_be64(HPTE_R_KEY_HI | HPTE_R_KEY_LO);
 			/* Harvest R and C */
 			rcbits = be64_to_cpu(hptep[1]) & (HPTE_R_R | HPTE_R_C);
 			*rmapp |= rcbits << KVMPPC_RMAP_RC_SHIFT;
@@ -1608,7 +1626,7 @@ static ssize_t debugfs_htab_read(struct file *file, char __user *buf,
 	return ret;
 }
 
-ssize_t debugfs_htab_write(struct file *file, const char __user *buf,
+static ssize_t debugfs_htab_write(struct file *file, const char __user *buf,
 			   size_t len, loff_t *ppos)
 {
 	return -EACCES;
