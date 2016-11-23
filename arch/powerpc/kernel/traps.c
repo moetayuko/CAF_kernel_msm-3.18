@@ -122,9 +122,6 @@ static unsigned long oops_begin(struct pt_regs *regs)
 	int cpu;
 	unsigned long flags;
 
-	if (debugger(regs))
-		return 1;
-
 	oops_enter();
 
 	/* racy, but better than risking deadlock. */
@@ -150,14 +147,15 @@ static void oops_end(unsigned long flags, struct pt_regs *regs,
 			       int signr)
 {
 	bust_spinlocks(0);
-	die_owner = -1;
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
 	die_nest_count--;
 	oops_exit();
 	printk("\n");
-	if (!die_nest_count)
+	if (!die_nest_count) {
 		/* Nest count reaches zero, release the lock. */
+		die_owner = -1;
 		arch_spin_unlock(&die_lock);
+	}
 	raw_local_irq_restore(flags);
 
 	crash_fadump(regs, "die oops");
@@ -227,8 +225,12 @@ NOKPROBE_SYMBOL(__die);
 
 void die(const char *str, struct pt_regs *regs, long err)
 {
-	unsigned long flags = oops_begin(regs);
+	unsigned long flags;
 
+	if (debugger(regs))
+		return;
+
+	flags = oops_begin(regs);
 	if (__die(str, regs, err))
 		err = 0;
 	oops_end(flags, regs, err);
@@ -365,7 +367,7 @@ static inline int check_io_access(struct pt_regs *regs)
 			       (*nip & 0x100)? "OUT to": "IN from",
 			       regs->gpr[rb] - _IO_BASE, nip);
 			regs->msr |= MSR_RI;
-			regs->nip = entry->fixup;
+			regs->nip = extable_fixup(entry);
 			return 1;
 		}
 	}
@@ -1430,7 +1432,6 @@ void facility_unavailable_exception(struct pt_regs *regs)
 		[FSCR_TM_LG] = "TM",
 		[FSCR_EBB_LG] = "EBB",
 		[FSCR_TAR_LG] = "TAR",
-		[FSCR_LM_LG] = "LM",
 	};
 	char *facility = "unknown";
 	u64 value;
@@ -1487,14 +1488,6 @@ void facility_unavailable_exception(struct pt_regs *regs)
 			regs->nip += 4;
 			emulate_single_step(regs);
 		}
-		return;
-	} else if ((status == FSCR_LM_LG) && cpu_has_feature(CPU_FTR_ARCH_300)) {
-		/*
-		 * This process has touched LM, so turn it on forever
-		 * for this process
-		 */
-		current->thread.fscr |= FSCR_LM;
-		mtspr(SPRN_FSCR, current->thread.fscr);
 		return;
 	}
 
