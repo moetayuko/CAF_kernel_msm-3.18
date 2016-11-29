@@ -23,7 +23,7 @@ CROSS32AR		:= $(CROSS32_COMPILE)ar
 ifeq ($(HAS_BIARCH),y)
 ifeq ($(CROSS32_COMPILE),)
 CROSS32CC	:= $(CC) -m32
-CROSS32AR	:= GNUTARGET=elf32-powerpc $(AR)
+KBUILD_ARFLAGS	+= --target=elf32-powerpc
 endif
 endif
 
@@ -85,7 +85,7 @@ ifeq ($(HAS_BIARCH),y)
 override AS	+= -a$(BITS)
 override LD	+= -m elf$(BITS)$(LDEMULATION)
 override CC	+= -m$(BITS)
-override AR	:= GNUTARGET=elf$(BITS)-$(GNUTARGET) $(AR)
+KBUILD_ARFLAGS	+= --target=elf$(BITS)-$(GNUTARGET)
 endif
 
 LDFLAGS_vmlinux-y := -Bstatic
@@ -121,6 +121,7 @@ CFLAGS-$(CONFIG_PPC32)	:= -ffixed-r2 $(MULTIPLEWORD)
 
 ifeq ($(CONFIG_PPC_BOOK3S_64),y)
 CFLAGS-$(CONFIG_GENERIC_CPU) += $(call cc-option,-mtune=power7,-mtune=power4)
+CFLAGS-$(CONFIG_GENERIC_CPU) += -mcpu=power4
 else
 CFLAGS-$(CONFIG_GENERIC_CPU) += -mcpu=powerpc64
 endif
@@ -275,16 +276,16 @@ zImage: relocs_check
 endif
 
 $(BOOT_TARGETS1): vmlinux
-	$(Q)$(MAKE) ARCH=ppc64 $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
+	$(Q)$(MAKE) $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
 $(BOOT_TARGETS2): vmlinux
-	$(Q)$(MAKE) ARCH=ppc64 $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
+	$(Q)$(MAKE) $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
 
 
 bootwrapper_install:
-	$(Q)$(MAKE) ARCH=ppc64 $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
+	$(Q)$(MAKE) $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
 
 %.dtb: scripts
-	$(Q)$(MAKE) ARCH=ppc64 $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
+	$(Q)$(MAKE) $(build)=$(boot) $(patsubst %,$(boot)/%,$@)
 
 # Used to create 'merged defconfigs'
 # To use it $(call) it with the first argument as the base defconfig
