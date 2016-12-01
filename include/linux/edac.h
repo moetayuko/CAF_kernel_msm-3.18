@@ -138,6 +138,7 @@ enum dev_type {
 enum hw_event_mc_err_type {
 	HW_EVENT_ERR_CORRECTED,
 	HW_EVENT_ERR_UNCORRECTED,
+	HW_EVENT_ERR_DEFERRED,
 	HW_EVENT_ERR_FATAL,
 	HW_EVENT_ERR_INFO,
 };
@@ -149,6 +150,8 @@ static inline char *mc_event_error_type(const unsigned int err_type)
 		return "Corrected";
 	case HW_EVENT_ERR_UNCORRECTED:
 		return "Uncorrected";
+	case HW_EVENT_ERR_DEFERRED:
+		return "Deferred";
 	case HW_EVENT_ERR_FATAL:
 		return "Fatal";
 	default:
@@ -200,6 +203,7 @@ static inline char *mc_event_error_type(const unsigned int err_type)
  * @MEM_DDR4:		Unbuffered DDR4 RAM
  * @MEM_RDDR4:		Registered DDR4 RAM
  *			This is a variant of the DDR4 memories.
+ * @MEM_LRDDR4:		Load-Reduced DDR4 memory.
  */
 enum mem_type {
 	MEM_EMPTY = 0,
@@ -222,6 +226,7 @@ enum mem_type {
 	MEM_LRDDR3,
 	MEM_DDR4,
 	MEM_RDDR4,
+	MEM_LRDDR4,
 };
 
 #define MEM_FLAG_EMPTY		BIT(MEM_EMPTY)
@@ -243,6 +248,7 @@ enum mem_type {
 #define MEM_FLAG_RDDR3          BIT(MEM_RDDR3)
 #define MEM_FLAG_DDR4           BIT(MEM_DDR4)
 #define MEM_FLAG_RDDR4          BIT(MEM_RDDR4)
+#define MEM_FLAG_LRDDR4         BIT(MEM_LRDDR4)
 
 /**
  * enum edac-type - Error Detection and Correction capabilities and mode
