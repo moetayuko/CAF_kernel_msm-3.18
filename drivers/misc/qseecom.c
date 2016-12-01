@@ -6875,7 +6875,8 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		break;
 	}
 	case QSEECOM_IOCTL_SEND_CMD_SERVICE_REQ: {
-		if (data->type != QSEECOM_GENERIC) {
+		if ((data->type != QSEECOM_GENERIC) &&
+			(data->type != QSEECOM_SECURE_SERVICE)) {
 			pr_err("send cmd svc req: invalid handle (%d)\n",
 								data->type);
 			ret = -EINVAL;
