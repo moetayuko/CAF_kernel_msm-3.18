@@ -91,10 +91,10 @@ static struct nf_hook_ops ipv6_defrag_ops[] = {
 
 static void __net_exit defrag6_net_exit(struct net *net)
 {
-	if (net->ct.defrag_ipv6) {
+	if (net->nf.defrag_ipv6) {
 		nf_unregister_net_hooks(net, ipv6_defrag_ops,
 					ARRAY_SIZE(ipv6_defrag_ops));
-		net->ct.defrag_ipv6 = false;
+		net->nf.defrag_ipv6 = false;
 	}
 }
 
@@ -136,17 +136,17 @@ int nf_defrag_ipv6_enable(struct net *net)
 
 	might_sleep();
 
-	if (net->ct.defrag_ipv6)
+	if (net->nf.defrag_ipv6)
 		return 0;
 
 	mutex_lock(&defrag6_mutex);
-	if (net->ct.defrag_ipv6)
+	if (net->nf.defrag_ipv6)
 		goto out_unlock;
 
 	err = nf_register_net_hooks(net, ipv6_defrag_ops,
 				    ARRAY_SIZE(ipv6_defrag_ops));
 	if (err == 0)
-		net->ct.defrag_ipv6 = true;
+		net->nf.defrag_ipv6 = true;
 
  out_unlock:
 	mutex_unlock(&defrag6_mutex);

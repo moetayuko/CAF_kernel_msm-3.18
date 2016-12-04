@@ -124,8 +124,6 @@ struct netns_ct {
 	int			sysctl_acct;
 	int			sysctl_auto_assign_helper;
 	bool			auto_assign_helper_warned;
-	bool			defrag_ipv4;
-	bool			defrag_ipv6;
 	int			sysctl_tstamp;
 	int			sysctl_checksum;
 
