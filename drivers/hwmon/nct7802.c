@@ -326,8 +326,9 @@ static int nct7802_write_voltage(struct nct7802_data *data, int nr, int index,
 	int shift = 8 - REG_VOLTAGE_LIMIT_MSB_SHIFT[index - 1][nr];
 	int err;
 
-	voltage = DIV_ROUND_CLOSEST(voltage, nct7802_vmul[nr]);
-	voltage = clamp_val(voltage, 0, 0x3ff);
+	voltage = DIV_ROUND_CLOSEST(clamp_val(voltage, 0,
+					      0x3ff * nct7802_vmul[nr]),
+				    nct7802_vmul[nr]);
 
 	mutex_lock(&data->access_lock);
 	err = regmap_write(data->regmap,
@@ -402,7 +403,7 @@ static ssize_t store_temp(struct device *dev, struct device_attribute *attr,
 	if (err < 0)
 		return err;
 
-	val = clamp_val(DIV_ROUND_CLOSEST(val, 1000), -128, 127);
+	val = DIV_ROUND_CLOSEST(clamp_val(val, -127000, 127000), 1000);
 
 	err = regmap_write(data->regmap, nr, val & 0xff);
 	return err ? : count;
