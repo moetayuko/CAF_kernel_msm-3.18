@@ -122,6 +122,8 @@ void nft_fib4_eval(const struct nft_expr *expr, struct nft_regs *regs,
 		fl4.saddr = get_saddr(iph->daddr);
 	}
 
+	*dest = 0;
+
 	if (fib_lookup(nft_net(pkt), &fl4, &res, FIB_LOOKUP_IGNORE_LINKSTATE))
 		return;
 
@@ -198,7 +200,7 @@ nft_fib4_select_ops(const struct nft_ctx *ctx,
 	if (!tb[NFTA_FIB_RESULT])
 		return ERR_PTR(-EINVAL);
 
-	result = htonl(nla_get_be32(tb[NFTA_FIB_RESULT]));
+	result = ntohl(nla_get_be32(tb[NFTA_FIB_RESULT]));
 
 	switch (result) {
 	case NFT_FIB_RESULT_OIF:
