@@ -257,6 +257,7 @@ static void nft_payload_set_eval(const struct nft_expr *expr,
 	const struct nft_payload_set *priv = nft_expr_priv(expr);
 	struct sk_buff *skb = pkt->skb;
 	const u32 *src = &regs->data[priv->sreg];
+	bool csum_mangled = false;
 	int offset, csum_offset;
 	__wsum fsum, tsum;
 	__sum16 sum;
@@ -295,9 +296,11 @@ static void nft_payload_set_eval(const struct nft_expr *expr,
 		if (!skb_make_writable(skb, csum_offset + sizeof(sum)) ||
 		    skb_store_bits(skb, csum_offset, &sum, sizeof(sum)) < 0)
 			goto err;
+
+		csum_mangled = true;
 	}
 
-	if (priv->csum_flags &&
+	if (priv->csum_flags && csum_mangled &&
 	    nft_payload_l4csum_update(pkt, skb, fsum, tsum) < 0)
 		goto err;
 
