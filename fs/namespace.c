@@ -1183,7 +1183,7 @@ bool path_is_mountpoint(struct path *path)
 	bool res;
 
 	if (!d_mountpoint(path->dentry))
-		return 0;
+		return false;
 
 	rcu_read_lock();
 	res = __path_is_mountpoint(path);
@@ -1197,7 +1197,7 @@ EXPORT_SYMBOL(path_is_mountpoint);
 bool path_is_mountpoint_rcu(struct path *path)
 {
 	if (!d_mountpoint(path->dentry))
-		return 0;
+		return false;
 
 	return __path_is_mountpoint(path);
 }
