@@ -43,6 +43,8 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 
+#include "../../include/linux/libcfs/libcfs.h"
+#include "lustre_cfg.h"
 #include "lustre/lustre_idl.h"
 
 struct lprocfs_vars {
@@ -701,9 +703,9 @@ static struct lustre_attr lustre_attr_##name = __ATTR(name, mode, show, store)
 extern const struct sysfs_ops lustre_sysfs_ops;
 
 struct root_squash_info;
-int lprocfs_wr_root_squash(const char *buffer, unsigned long count,
+int lprocfs_wr_root_squash(const char __user *buffer, unsigned long count,
 			   struct root_squash_info *squash, char *name);
-int lprocfs_wr_nosquash_nids(const char *buffer, unsigned long count,
+int lprocfs_wr_nosquash_nids(const char __user *buffer, unsigned long count,
 			     struct root_squash_info *squash, char *name);
 
 /* all quota proc functions */
