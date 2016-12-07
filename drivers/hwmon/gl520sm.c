@@ -209,10 +209,11 @@ static ssize_t get_cpu_vid(struct device *dev, struct device_attribute *attr,
 static DEVICE_ATTR(cpu0_vid, S_IRUGO, get_cpu_vid, NULL);
 
 #define VDD_FROM_REG(val) (((val) * 95 + 2) / 4)
-#define VDD_TO_REG(val) clamp_val((((val) * 4 + 47) / 95), 0, 255)
+#define VDD_TO_REG(val) \
+	DIV_ROUND_CLOSEST(clamp_val(val, 0, 255 * 95 / 4) * 4, 95)
 
 #define IN_FROM_REG(val) ((val) * 19)
-#define IN_TO_REG(val) clamp_val((((val) + 9) / 19), 0, 255)
+#define IN_TO_REG(val) DIV_ROUND_CLOSEST(clamp_val(val, 0, 255 * 19), 19)
 
 static ssize_t get_in_input(struct device *dev, struct device_attribute *attr,
 			    char *buf)
@@ -514,8 +515,8 @@ static DEVICE_ATTR(fan1_off, S_IRUGO | S_IWUSR,
 		get_fan_off, set_fan_off);
 
 #define TEMP_FROM_REG(val) (((val) - 130) * 1000)
-#define TEMP_TO_REG(val) clamp_val(((((val) < 0 ? \
-			(val) - 500 : (val) + 500) / 1000) + 130), 0, 255)
+#define TEMP_TO_REG(val) (DIV_ROUND_CLOSEST(clamp_val(val, -130000, 125000), \
+					    1000) + 130)
 
 static ssize_t get_temp_input(struct device *dev, struct device_attribute *attr,
 			      char *buf)

@@ -483,8 +483,7 @@ static ssize_t set_temp_min(struct device *dev,
 	if (kstrtol(buf, 10, &temp))
 		return -EINVAL;
 
-	temp = DIV_ROUND_CLOSEST(temp, 1000);
-	temp = clamp_val(temp, -128, 127);
+	temp = DIV_ROUND_CLOSEST(clamp_val(temp, -128000, 127000), 1000);
 
 	mutex_lock(&data->lock);
 	data->temp_min[attr->index] = temp;
@@ -517,8 +516,7 @@ static ssize_t set_temp_max(struct device *dev,
 	if (kstrtol(buf, 10, &temp))
 		return -EINVAL;
 
-	temp = DIV_ROUND_CLOSEST(temp, 1000);
-	temp = clamp_val(temp, -128, 127);
+	temp = DIV_ROUND_CLOSEST(clamp_val(temp, -128000, 127000), 1000);
 
 	mutex_lock(&data->lock);
 	data->temp_max[attr->index] = temp;
@@ -880,8 +878,7 @@ static ssize_t set_pwm_tmin(struct device *dev,
 	if (kstrtol(buf, 10, &temp))
 		return -EINVAL;
 
-	temp = DIV_ROUND_CLOSEST(temp, 1000);
-	temp = clamp_val(temp, -128, 127);
+	temp = DIV_ROUND_CLOSEST(clamp_val(temp, -128000, 127000), 1000);
 
 	mutex_lock(&data->lock);
 	data->pwm_tmin[attr->index] = temp;
