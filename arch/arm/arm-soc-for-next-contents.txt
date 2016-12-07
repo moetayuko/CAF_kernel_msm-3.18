@@ -1,10 +1,7 @@
 fixes
-	<no branch> (e5cd7ff7058dc6f2133455636809a09b691ee419)
-		https://git.kernel.org/pub/scm/linux/kernel/git/mripard/linux tags/sunxi-fixes-for-4.9-2
-	<no branch> (86b4522d19329b3bf9c05722f217568b803439f7)
-		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-dt-for-v4.9-rc-round2
 	patch
-		arm64: dts: juno: Correct PCI IO window
+		dts: sun8i-h3: correct UART3 pin definitions
+		ARM: dts: imx7d: fix LCDIF clock assignment
 
 next/fixes-non-critical
 	patch
@@ -24,6 +21,10 @@ next/fixes-non-critical
 	patch
 		soc: ti: qmss: fix the case when !SMP
 		bus: vexpress-config: fix device reference leak
+		arm64: dts: zx: Fix gic GICR property
+		arm64: dts: zte: clean up gic-v3 redistributor properties
+
+next/cleanup
 
 next/soc
 	vexpress/fixes
@@ -68,6 +69,8 @@ next/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.10/soc-3
 	broadcom/soc
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.10/soc
+	zynq/soc
+		https://github.com/Xilinx/linux-xlnx tags/zynq-soc-for-4.10
 
 next/arm64
 	patch
@@ -86,7 +89,7 @@ next/arm64
 		arm64: defconfig: Do not lower CONFIG_LOG_BUF_SHIFT
 	broadcom/maintainer
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.10/maintainers-arm64
-	<no branch> (9efacfc80902c6ddf538a2f396e0112c1f6d1e23)
+	broadcom/defconfig-64
 		http://github.com/Broadcom/stblinux tags/arm-soc/for-4.10/defconfig-arm64
 	patch
 		arm64: defconfig: drop GPIO_SYSFS on multiplatforms
@@ -175,10 +178,14 @@ next/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip tags/v4.10-rockchip-dts32-2
 	berlin/dt
 		git://git.kernel.org/pub/scm/linux/kernel/git/jszhang/linux-berlin tags/berlin-dt-for-v4.10-1
-	<no branch> (26ca8b52d6e18c10109cabda0f775dd9345bbfdf)
+	mvebu/dt-2
 		git://git.infradead.org/linux-mvebu tags/mvebu-dt-4.10-2
-	<no branch> (5817430ba7250cfc5a9c4a397935b07da16c9762)
+	omap/dt-late
 		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.10/dt-late-signed
+	davinci/dt-4
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.10/dt-4
+	zynq/dt
+		https://github.com/Xilinx/linux-xlnx tags/zynq-dt-for-4.10
 
 next/dt64
 	juno/dt
@@ -275,6 +282,8 @@ next/defconfig
 		ARM: defconfig: drop GPIO_SYSFS on multiplatforms
 	sti/defconfig-2
 		git://git.kernel.org/pub/scm/linux/kernel/git/pchotard/sti tags/sti-defconfig-for-4.10-round3
+	davinci/defconfig-4
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.10/defconfig-4
 
 next/drivers
 	renesas/drivers
@@ -320,5 +329,4 @@ next/drivers
 		https://github.com/t-kristo/linux-pm for-4.10-ti-sci-base
 	qcom/drivers-2
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.10-2
-
 
