@@ -81,12 +81,14 @@ struct uniphier_clk_data {
 		.name = (_name),				\
 		.type = UNIPHIER_CLK_TYPE_CPUGEAR,		\
 		.idx = (_idx),					\
-		.cpugear = {					\
-			.parent_names = { __VA_ARGS__ },	\
-			.num_parents = (_num_parents),		\
-			.regbase = (_regbase),			\
-			.mask = (_mask)				\
-		 },						\
+		{						\
+			.cpugear = {				\
+				.parent_names = { __VA_ARGS__ },\
+				.num_parents = (_num_parents),	\
+				.regbase = (_regbase),		\
+				.mask = (_mask)			\
+			 },					\
+		}						\
 	}
 
 #define UNIPHIER_CLK_FACTOR(_name, _idx, _parent, _mult, _div)	\
@@ -94,10 +96,12 @@ struct uniphier_clk_data {
 		.name = (_name),				\
 		.type = UNIPHIER_CLK_TYPE_FIXED_FACTOR,		\
 		.idx = (_idx),					\
-		.factor = {					\
-			.parent_name = (_parent),		\
-			.mult = (_mult),			\
-			.div = (_div),				\
+		{						\
+			.factor = {				\
+				.parent_name = (_parent),	\
+				.mult = (_mult),		\
+				.div = (_div),			\
+			},					\
 		},						\
 	}
 
@@ -106,11 +110,13 @@ struct uniphier_clk_data {
 		.name = (_name),				\
 		.type = UNIPHIER_CLK_TYPE_GATE,			\
 		.idx = (_idx),					\
-		.gate = {					\
-			.parent_name = (_parent),		\
-			.reg = (_reg),				\
-			.bit = (_bit),				\
-		},						\
+		{						\
+			.gate = {				\
+				.parent_name = (_parent),	\
+				.reg = (_reg),			\
+				.bit = (_bit),			\
+			},					\
+		}						\
 	}
 
 #define UNIPHIER_CLK_DIV(parent, div)				\
