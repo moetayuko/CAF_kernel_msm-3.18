@@ -54,6 +54,7 @@
 #include "mdss_fb.h"
 #include "mdss_mdp_splash_logo.h"
 
+#include <linux/of_gpio.h>
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -67,6 +68,7 @@
 #define MAX_FBI_LIST 32
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
+unsigned int keypad_led_gpio;
 
 static u32 mdss_fb_pseudo_palette[16] = {
 	0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -203,6 +205,7 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 }
 
 static int lcd_backlight_registered;
+static int keypad_backlight_registered;
 
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
@@ -228,14 +231,22 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		mutex_unlock(&mfd->bl_lock);
 	}
 }
-
+static void mdss_fb_set_kpdbl_brightness(struct led_classdev *led_cdev,
+		enum led_brightness value)
+{
+	gpio_set_value(keypad_led_gpio, value?1:0);
+}
 static struct led_classdev backlight_led = {
 	.name           = "lcd-backlight",
 	.brightness     = MDSS_MAX_BL_BRIGHTNESS,
 	.brightness_set = mdss_fb_set_bl_brightness,
 	.max_brightness = MDSS_MAX_BL_BRIGHTNESS,
 };
-
+static struct led_classdev keypadlight_led = {
+	.name           = "button-backlight",
+	.max_brightness = MDSS_MAX_BL_BRIGHTNESS,
+	.brightness_set = mdss_fb_set_kpdbl_brightness,
+};
 static ssize_t mdss_fb_get_type(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -712,6 +723,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	struct mdss_panel_data *pdata;
 	struct fb_info *fbi;
 	int rc;
+	int ret;
 
 	if (fbi_list_index >= MAX_FBI_LIST)
 		return -ENOMEM;
@@ -784,6 +796,22 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("led_classdev_register failed\n");
 		else
 			lcd_backlight_registered = 1;
+	}
+
+	/* android supports for keypad-backlight/led for now */
+	if (!keypad_backlight_registered) {
+		if (led_classdev_register(&pdev->dev, &keypadlight_led))
+			pr_err("led_classdev_register failed\n");
+		else{
+			keypad_backlight_registered = 1;
+			keypad_led_gpio = of_get_named_gpio(pdev->dev.of_node, "keypad_backlight", 0);
+			pr_debug("keypad_led_gpio = %d\n", keypad_led_gpio);
+			ret = gpio_request(keypad_led_gpio, NULL);
+			if (ret) {
+				printk("keypad_led_gpio request failed!\n");
+			}
+			gpio_direction_output(keypad_led_gpio, 0);
+		}
 	}
 
 	mdss_fb_create_sysfs(mfd);
@@ -860,6 +888,13 @@ static int mdss_fb_remove(struct platform_device *pdev)
 	if (lcd_backlight_registered) {
 		lcd_backlight_registered = 0;
 		led_classdev_unregister(&backlight_led);
+	}
+
+	if (keypad_backlight_registered) {
+		keypad_backlight_registered = 0;
+		gpio_set_value(keypad_led_gpio, 0);
+		gpio_free(keypad_led_gpio);
+		led_classdev_unregister(&keypadlight_led);
 	}
 
 	return 0;
@@ -1117,6 +1152,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 			mfd->bl_level = bkl_lvl;
 		} else {
 			pr_debug("backlight sent to panel :%d\n", temp);
+			msleep(140);
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_level = bkl_lvl;
 			mfd->bl_level_old = temp;

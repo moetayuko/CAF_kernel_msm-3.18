@@ -160,6 +160,12 @@ struct msm8916_asoc_mach_data {
 	int codec_type;
 	int ext_pa;
 	int us_euro_gpio;
+#ifdef CONFIG_HARDWARE_ID_RJIL_RUGGED
+	int audio_sw;
+	int audio_pa_en;
+	int audio_pa_en_1;
+	struct regulator *vdd;
+#endif
 	int spk_ext_pa_gpio;
 	int mclk_freq;
 	int lb_mode;

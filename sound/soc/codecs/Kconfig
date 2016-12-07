@@ -559,3 +559,9 @@ config SND_SOC_MSM_HDMI_CODEC_RX
 	help
 	HDMI audio drivers should be built only if the platform
         supports hdmi panel.
+config HARDWARE_ID_RJIL_RUGGED
+	tristate "Product ID is RJIL_RUGGED"
+	default n
+	help
+	Enabling only for  RJIL_RUGGED device.
+
