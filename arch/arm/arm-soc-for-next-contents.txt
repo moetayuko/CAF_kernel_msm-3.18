@@ -23,6 +23,8 @@ next/fixes-non-critical
 		bus: vexpress-config: fix device reference leak
 		arm64: dts: zx: Fix gic GICR property
 		arm64: dts: zte: clean up gic-v3 redistributor properties
+		arm64: tegra: Add missing Smaug revision
+		arm64: tegra: Add VDD_GPU regulator to Jetson TX1
 
 next/cleanup
 
