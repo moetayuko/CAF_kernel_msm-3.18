@@ -279,7 +279,8 @@ static inline int IN_FROM_REG(int reg, int nominal, int res)
 
 static inline int IN_TO_REG(long val, int nominal)
 {
-	return clamp_val((val * 192 + nominal / 2) / nominal, 0, 255);
+	return DIV_ROUND_CLOSEST(clamp_val(val, 0, 255 * nominal / 192) * 192,
+				 nominal);
 }
 
 /*
@@ -295,7 +296,7 @@ static inline int TEMP_FROM_REG(int reg, int res)
 
 static inline int TEMP_TO_REG(long val)
 {
-	return clamp_val((val < 0 ? val - 500 : val + 500) / 1000, -128, 127);
+	return DIV_ROUND_CLOSEST(clamp_val(val, -128000, 127000), 1000);
 }
 
 /* Temperature range */
@@ -1027,6 +1028,8 @@ static ssize_t set_zone(struct device *dev, struct device_attribute *attr,
 	err = kstrtol(buf, 10, &val);
 	if (err)
 		return err;
+
+	val = clamp_val(val, -256000, 255000);
 
 	mutex_lock(&data->update_lock);
 	switch (fn) {
