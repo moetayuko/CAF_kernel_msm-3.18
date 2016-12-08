@@ -703,9 +703,7 @@ static ssize_t lunid_show(struct device *dev,
 	}
 	memcpy(lunid, hdev->scsi3addr, sizeof(lunid));
 	spin_unlock_irqrestore(&h->lock, flags);
-	return snprintf(buf, 20, "0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-		lunid[0], lunid[1], lunid[2], lunid[3],
-		lunid[4], lunid[5], lunid[6], lunid[7]);
+	return snprintf(buf, 20, "0x%8phN\n", lunid);
 }
 
 static ssize_t unique_id_show(struct device *dev,
@@ -867,6 +865,16 @@ static ssize_t path_info_show(struct device *dev,
 	return output_len;
 }
 
+static ssize_t host_show_ctlr_num(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct ctlr_info *h;
+	struct Scsi_Host *shost = class_to_shost(dev);
+
+	h = shost_to_hba(shost);
+	return snprintf(buf, 20, "%d\n", h->ctlr);
+}
+
 static DEVICE_ATTR(raid_level, S_IRUGO, raid_level_show, NULL);
 static DEVICE_ATTR(lunid, S_IRUGO, lunid_show, NULL);
 static DEVICE_ATTR(unique_id, S_IRUGO, unique_id_show, NULL);
@@ -890,6 +898,8 @@ static DEVICE_ATTR(resettable, S_IRUGO,
 	host_show_resettable, NULL);
 static DEVICE_ATTR(lockup_detected, S_IRUGO,
 	host_show_lockup_detected, NULL);
+static DEVICE_ATTR(ctlr_num, S_IRUGO,
+	host_show_ctlr_num, NULL);
 
 static struct device_attribute *hpsa_sdev_attrs[] = {
 	&dev_attr_raid_level,
@@ -910,6 +920,7 @@ static struct device_attribute *hpsa_shost_attrs[] = {
 	&dev_attr_hp_ssd_smart_path_status,
 	&dev_attr_raid_offload_debug,
 	&dev_attr_lockup_detected,
+	&dev_attr_ctlr_num,
 	NULL,
 };
 
@@ -2827,14 +2838,8 @@ static void hpsa_print_cmd(struct ctlr_info *h, char *txt,
 	const u8 *cdb = c->Request.CDB;
 	const u8 *lun = c->Header.LUN.LunAddrBytes;
 
-	dev_warn(&h->pdev->dev, "%s: LUN:%02x%02x%02x%02x%02x%02x%02x%02x"
-	" CDB:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-		txt, lun[0], lun[1], lun[2], lun[3],
-		lun[4], lun[5], lun[6], lun[7],
-		cdb[0], cdb[1], cdb[2], cdb[3],
-		cdb[4], cdb[5], cdb[6], cdb[7],
-		cdb[8], cdb[9], cdb[10], cdb[11],
-		cdb[12], cdb[13], cdb[14], cdb[15]);
+	dev_warn(&h->pdev->dev, "%s: LUN:%8phN CDB:%16phN\n",
+		 txt, lun, cdb);
 }
 
 static void hpsa_scsi_interpret_error(struct ctlr_info *h,
@@ -3628,8 +3633,32 @@ out:
 static inline int hpsa_scsi_do_report_phys_luns(struct ctlr_info *h,
 		struct ReportExtendedLUNdata *buf, int bufsize)
 {
-	return hpsa_scsi_do_report_luns(h, 0, buf, bufsize,
-						HPSA_REPORT_PHYS_EXTENDED);
+	int rc;
+	struct ReportLUNdata *lbuf;
+
+	rc = hpsa_scsi_do_report_luns(h, 0, buf, bufsize,
+				      HPSA_REPORT_PHYS_EXTENDED);
+	if (!rc || !hpsa_allow_any)
+		return rc;
+
+	/* REPORT PHYS EXTENDED is not supported */
+	lbuf = kzalloc(sizeof(*lbuf), GFP_KERNEL);
+	if (!lbuf)
+		return -ENOMEM;
+
+	rc = hpsa_scsi_do_report_luns(h, 0, lbuf, sizeof(*lbuf), 0);
+	if (!rc) {
+		int i;
+		u32 nphys;
+
+		/* Copy ReportLUNdata header */
+		memcpy(buf, lbuf, 8);
+		nphys = be32_to_cpu(*((__be32 *)lbuf->LUNListLength)) / 8;
+		for (i = 0; i < nphys; i++)
+			memcpy(buf->LUN[i].lunid, lbuf->LUN[i], 8);
+	}
+	kfree(lbuf);
+	return rc;
 }
 
 static inline int hpsa_scsi_do_report_log_luns(struct ctlr_info *h,
@@ -5493,7 +5522,7 @@ static int hpsa_scsi_queue_command(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 
 	dev = cmd->device->hostdata;
 	if (!dev) {
-		cmd->result = NOT_READY << 16; /* host byte */
+		cmd->result = DID_NO_CONNECT << 16;
 		cmd->scsi_done(cmd);
 		return 0;
 	}
@@ -6012,11 +6041,9 @@ static int hpsa_send_reset_as_abort_ioaccel2(struct ctlr_info *h,
 
 	if (h->raid_offload_debug > 0)
 		dev_info(&h->pdev->dev,
-			"scsi %d:%d:%d:%d %s scsi3addr 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
+			"scsi %d:%d:%d:%d %s scsi3addr 0x%8phN\n",
 			h->scsi_host->host_no, dev->bus, dev->target, dev->lun,
-			"Reset as abort",
-			scsi3addr[0], scsi3addr[1], scsi3addr[2], scsi3addr[3],
-			scsi3addr[4], scsi3addr[5], scsi3addr[6], scsi3addr[7]);
+			"Reset as abort", scsi3addr);
 
 	if (!dev->offload_enabled) {
 		dev_warn(&h->pdev->dev,
@@ -6033,32 +6060,28 @@ static int hpsa_send_reset_as_abort_ioaccel2(struct ctlr_info *h,
 	/* send the reset */
 	if (h->raid_offload_debug > 0)
 		dev_info(&h->pdev->dev,
-			"Reset as abort: Resetting physical device at scsi3addr 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-			psa[0], psa[1], psa[2], psa[3],
-			psa[4], psa[5], psa[6], psa[7]);
+			"Reset as abort: Resetting physical device at scsi3addr 0x%8phN\n",
+			psa);
 	rc = hpsa_do_reset(h, dev, psa, HPSA_PHYS_TARGET_RESET, reply_queue);
 	if (rc != 0) {
 		dev_warn(&h->pdev->dev,
-			"Reset as abort: Failed on physical device at scsi3addr 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-			psa[0], psa[1], psa[2], psa[3],
-			psa[4], psa[5], psa[6], psa[7]);
+			"Reset as abort: Failed on physical device at scsi3addr 0x%8phN\n",
+			psa);
 		return rc; /* failed to reset */
 	}
 
 	/* wait for device to recover */
 	if (wait_for_device_to_become_ready(h, psa, reply_queue) != 0) {
 		dev_warn(&h->pdev->dev,
-			"Reset as abort: Failed: Device never recovered from reset: 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-			psa[0], psa[1], psa[2], psa[3],
-			psa[4], psa[5], psa[6], psa[7]);
+			"Reset as abort: Failed: Device never recovered from reset: 0x%8phN\n",
+			psa);
 		return -1;  /* failed to recover */
 	}
 
 	/* device recovered */
 	dev_info(&h->pdev->dev,
-		"Reset as abort: Device recovered from reset: scsi3addr 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
-		psa[0], psa[1], psa[2], psa[3],
-		psa[4], psa[5], psa[6], psa[7]);
+		"Reset as abort: Device recovered from reset: scsi3addr 0x%8phN\n",
+		psa);
 
 	return rc; /* success */
 }
