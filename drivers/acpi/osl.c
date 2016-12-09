@@ -181,15 +181,15 @@ void acpi_os_vprintf(const char *fmt, va_list args)
 static unsigned long acpi_rsdp;
 static int __init setup_acpi_rsdp(char *arg)
 {
-	if (kstrtoul(arg, 16, &acpi_rsdp))
-		return -EINVAL;
-	return 0;
+	return kstrtoul(arg, 16, &acpi_rsdp);
 }
 early_param("acpi_rsdp", setup_acpi_rsdp);
 #endif
 
 acpi_physical_address __init acpi_os_get_root_pointer(void)
 {
+	acpi_physical_address pa = 0;
+
 #ifdef CONFIG_KEXEC
 	if (acpi_rsdp)
 		return acpi_rsdp;
@@ -198,21 +198,14 @@ acpi_physical_address __init acpi_os_get_root_pointer(void)
 	if (efi_enabled(EFI_CONFIG_TABLES)) {
 		if (efi.acpi20 != EFI_INVALID_TABLE_ADDR)
 			return efi.acpi20;
-		else if (efi.acpi != EFI_INVALID_TABLE_ADDR)
+		if (efi.acpi != EFI_INVALID_TABLE_ADDR)
 			return efi.acpi;
-		else {
-			printk(KERN_ERR PREFIX
-			       "System description tables not found\n");
-			return 0;
-		}
+		pr_err(PREFIX "System description tables not found\n");
 	} else if (IS_ENABLED(CONFIG_ACPI_LEGACY_TABLES_LOOKUP)) {
-		acpi_physical_address pa = 0;
-
 		acpi_find_root_pointer(&pa);
-		return pa;
 	}
 
-	return 0;
+	return pa;
 }
 
 /* Must be called with 'acpi_ioremap_lock' or RCU read lock held. */
@@ -433,10 +426,37 @@ void __ref acpi_os_unmap_memory(void *virt, acpi_size size)
 }
 EXPORT_SYMBOL_GPL(acpi_os_unmap_memory);
 
+/*******************************************************************************
+ *
+ * acpi_get_table_with_size()/early_acpi_os_unmap_memory():
+ *
+ * These 2 functions are traditionally used by Linux to map/unmap physical
+ * addressed ACPI tables during the early stage.
+ * They are deprectated now. Do not use them in the new code, but use
+ * acpi_get_table()/acpi_put_table() instead.
+ *
+ ******************************************************************************/
+acpi_status
+acpi_get_table_with_size(char *signature,
+	       u32 instance, struct acpi_table_header **out_table,
+	       acpi_size *tbl_size)
+{
+	acpi_status status;
+
+	status = acpi_get_table(signature, instance, out_table);
+	if (ACPI_SUCCESS(status)) {
+		/* No longer used by early_acpi_os_unmap_memory() */
+		*tbl_size = 0;
+	}
+
+	return (status);
+}
+
+ACPI_EXPORT_SYMBOL(acpi_get_table_with_size)
+
 void __init early_acpi_os_unmap_memory(void __iomem *virt, acpi_size size)
 {
-	if (!acpi_gbl_permanent_mmap)
-		__acpi_unmap_table(virt, size);
+	acpi_put_table(ACPI_CAST_PTR(struct acpi_table_header, virt));
 }
 
 int acpi_os_map_generic_address(struct acpi_generic_address *gas)
