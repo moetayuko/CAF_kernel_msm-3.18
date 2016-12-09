@@ -1087,7 +1087,7 @@ __skb_set_sw_hash(struct sk_buff *skb, __u32 hash, bool is_l4)
 }
 
 void __skb_get_hash(struct sk_buff *skb);
-u32 __skb_get_hash_symmetric(struct sk_buff *skb);
+u32 __skb_get_hash_symmetric(const struct sk_buff *skb);
 u32 skb_get_poff(const struct sk_buff *skb);
 u32 __skb_get_poff(const struct sk_buff *skb, void *data,
 		   const struct flow_keys *keys, int hlen);
@@ -1799,11 +1799,11 @@ static inline unsigned int skb_headlen(const struct sk_buff *skb)
 	return skb->len - skb->data_len;
 }
 
-static inline int skb_pagelen(const struct sk_buff *skb)
+static inline unsigned int skb_pagelen(const struct sk_buff *skb)
 {
-	int i, len = 0;
+	unsigned int i, len = 0;
 
-	for (i = (int)skb_shinfo(skb)->nr_frags - 1; i >= 0; i--)
+	for (i = skb_shinfo(skb)->nr_frags - 1; (int)i >= 0; i--)
 		len += skb_frag_size(&skb_shinfo(skb)->frags[i]);
 	return len + skb_headlen(skb);
 }
@@ -1965,6 +1965,8 @@ static inline int pskb_may_pull(struct sk_buff *skb, unsigned int len)
 		return 0;
 	return __pskb_pull_tail(skb, len - skb_headlen(skb)) != NULL;
 }
+
+void skb_condense(struct sk_buff *skb);
 
 /**
  *	skb_headroom - bytes at buffer head
@@ -3033,9 +3035,13 @@ static inline void skb_frag_list_init(struct sk_buff *skb)
 int __skb_wait_for_more_packets(struct sock *sk, int *err, long *timeo_p,
 				const struct sk_buff *skb);
 struct sk_buff *__skb_try_recv_datagram(struct sock *sk, unsigned flags,
+					void (*destructor)(struct sock *sk,
+							   struct sk_buff *skb),
 					int *peeked, int *off, int *err,
 					struct sk_buff **last);
 struct sk_buff *__skb_recv_datagram(struct sock *sk, unsigned flags,
+				    void (*destructor)(struct sock *sk,
+						       struct sk_buff *skb),
 				    int *peeked, int *off, int *err);
 struct sk_buff *skb_recv_datagram(struct sock *sk, unsigned flags, int noblock,
 				  int *err);
