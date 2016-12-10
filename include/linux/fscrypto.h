@@ -20,8 +20,10 @@
 
 #define FS_CRYPTO_BLOCK_SIZE		16
 
+#define FS_CTX_REQUIRES_FREE_ENCRYPT_FL		0x00000001
+#define FS_CTX_HAS_BOUNCE_BUFFER_FL		0x00000002
+
 struct fscrypt_info;
-struct fscrypt_ctx;
 
 struct fscrypt_ctx {
 	union {
@@ -80,7 +82,7 @@ struct fscrypt_name {
 /*
  * fscrypt superblock flags
  */
-#define FS_CFLG_INPLACE_ENCRYPTION (1U << 1)
+#define FS_CFLG_OWN_PAGES (1U << 1)
 
 /*
  * crypto opertions for filesystems
@@ -168,14 +170,13 @@ static inline void fscrypt_set_d_op(struct dentry *dentry)
 #if IS_ENABLED(CONFIG_FS_ENCRYPTION)
 /* crypto.c */
 extern struct kmem_cache *fscrypt_info_cachep;
-
 extern struct fscrypt_ctx *fscrypt_get_ctx(const struct inode *, gfp_t);
 extern void fscrypt_release_ctx(struct fscrypt_ctx *);
 extern struct page *fscrypt_encrypt_page(const struct inode *, struct page *,
 						unsigned int, unsigned int,
-						pgoff_t, gfp_t);
+						u64, gfp_t);
 extern int fscrypt_decrypt_page(const struct inode *, struct page *, unsigned int,
-				unsigned int, pgoff_t);
+				unsigned int, u64);
 extern void fscrypt_decrypt_bio_pages(struct fscrypt_ctx *, struct bio *);
 extern void fscrypt_pullback_bio_page(struct page **, bool);
 extern void fscrypt_restore_control_page(struct page *);
@@ -221,14 +222,14 @@ static inline struct page *fscrypt_notsupp_encrypt_page(const struct inode *i,
 						struct page *p,
 						unsigned int len,
 						unsigned int offs,
-						pgoff_t index, gfp_t f)
+						u64 lblk_num, gfp_t f)
 {
 	return ERR_PTR(-EOPNOTSUPP);
 }
 
 static inline int fscrypt_notsupp_decrypt_page(const struct inode *i, struct page *p,
 						unsigned int len, unsigned int offs,
-						pgoff_t index)
+						u64 lblk_num)
 {
 	return -EOPNOTSUPP;
 }
