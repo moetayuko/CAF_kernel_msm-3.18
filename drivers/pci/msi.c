@@ -610,11 +610,11 @@ static int msi_verify_entries(struct pci_dev *dev)
  * msi_capability_init - configure device's MSI capability structure
  * @dev: pointer to the pci_dev data structure of MSI device function
  * @nvec: number of interrupts to allocate
- * @affinity: flag to indicate cpu irq affinity mask should be set
+ * @affinity: flag to indicate CPU IRQ affinity mask should be set
  *
  * Setup the MSI capability structure of the device with the requested
  * number of interrupts.  A return value of zero indicates the successful
- * setup of an entry with the new MSI irq.  A negative return value indicates
+ * setup of an entry with the new MSI IRQ.  A negative return value indicates
  * an error, and a positive return value indicates the number of interrupts
  * which could have been allocated.
  */
@@ -753,11 +753,11 @@ static void msix_program_entries(struct pci_dev *dev,
  * @dev: pointer to the pci_dev data structure of MSI-X device function
  * @entries: pointer to an array of struct msix_entry entries
  * @nvec: number of @entries
- * @affinity: flag to indicate cpu irq affinity mask should be set
+ * @affinity: flag to indicate CPU IRQ affinity mask should be set
  *
  * Setup the MSI-X capability structure of device function with a
- * single MSI-X irq. A return of zero indicates the successful setup of
- * requested MSI-X entries with allocated irqs or non-zero for otherwise.
+ * single MSI-X IRQ. A return of zero indicates the successful setup of
+ * requested MSI-X entries with allocated IRQs or non-zero for otherwise.
  **/
 static int msix_capability_init(struct pci_dev *dev, struct msix_entry *entries,
 				int nvec, bool affinity)
@@ -1294,7 +1294,8 @@ const struct cpumask *pci_irq_get_affinity(struct pci_dev *dev, int nr)
 	} else if (dev->msi_enabled) {
 		struct msi_desc *entry = first_pci_msi_entry(dev);
 
-		if (WARN_ON_ONCE(!entry || nr >= entry->nvec_used))
+		if (WARN_ON_ONCE(!entry || !entry->affinity ||
+				 nr >= entry->nvec_used))
 			return NULL;
 
 		return &entry->affinity[nr];
