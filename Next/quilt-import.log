@@ -1,0 +1,13 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 4.9-rc8
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 3e5de27e940d00d8d504dfb96625fb654f641509
+HEAD is now at 3e5de27e940d Linux 4.9-rc8
+$ git am --patch-format=mbox ../quilt/dmi/dmi_scan-always-show-system-identification.patch
+Applying: firmware: dmi_scan: Always show system identification string
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+   c8d2bc9bc39e..27ec191a79ca  master     -> dmi/master
