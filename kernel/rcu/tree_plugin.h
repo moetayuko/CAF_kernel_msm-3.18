@@ -680,6 +680,17 @@ void synchronize_rcu(void)
 EXPORT_SYMBOL_GPL(synchronize_rcu);
 
 /**
+ * rcu_trivial_gp - Are RCU grace periods trivially zero cost?
+ *
+ * Returns true if RCU grace periods are currently zero cost, which
+ * they are during boot.
+ */
+bool rcu_trivial_gp(void)
+{
+	return !rcu_scheduler_active;
+}
+
+/**
  * rcu_barrier - Wait until all in-flight call_rcu() callbacks complete.
  *
  * Note that this primitive does not necessarily wait for an RCU grace period
@@ -1159,15 +1170,17 @@ static void rcu_boost_kthread_setaffinity(struct rcu_node *rnp, int outgoingcpu)
 	unsigned long mask = rcu_rnp_online_cpus(rnp);
 	cpumask_var_t cm;
 	int cpu;
+	unsigned long bit;
 
 	if (!t)
 		return;
 	if (!zalloc_cpumask_var(&cm, GFP_KERNEL))
 		return;
-	for_each_leaf_node_possible_cpu(rnp, cpu)
-		if ((mask & leaf_node_cpu_bit(rnp, cpu)) &&
-		    cpu != outgoingcpu)
+
+	leaf_node_for_each_mask_possible_cpu(rnp, mask, bit, cpu)
+		if (cpu != outgoingcpu)
 			cpumask_set_cpu(cpu, cm);
+
 	if (cpumask_weight(cm) == 0)
 		cpumask_setall(cm);
 	set_cpus_allowed_ptr(t, cm);
@@ -1643,7 +1656,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 	       "o."[!!(rdp->grpmask & rdp->mynode->qsmaskinit)],
 	       "N."[!!(rdp->grpmask & rdp->mynode->qsmaskinitnext)],
 	       ticks_value, ticks_title,
-	       atomic_read(&rdtp->dynticks) & 0xfff,
+	       rcu_dynticks_snap(rdtp) & 0xfff,
 	       rdtp->dynticks_nesting, rdtp->dynticks_nmi_nesting,
 	       rdp->softirq_snap, kstat_softirqs_cpu(RCU_SOFTIRQ, cpu),
 	       READ_ONCE(rsp->n_force_qs) - rsp->n_force_qs_gpstart,

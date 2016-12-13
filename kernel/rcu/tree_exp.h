@@ -356,12 +356,11 @@ static void sync_rcu_exp_select_cpus(struct rcu_state *rsp,
 		mask_ofl_test = 0;
 		for_each_leaf_node_possible_cpu(rnp, cpu) {
 			struct rcu_data *rdp = per_cpu_ptr(rsp->rda, cpu);
-			struct rcu_dynticks *rdtp = &per_cpu(rcu_dynticks, cpu);
 
 			rdp->exp_dynticks_snap =
-				atomic_add_return(0, &rdtp->dynticks);
+				rcu_dynticks_snap(rdp->dynticks);
 			if (raw_smp_processor_id() == cpu ||
-			    !(rdp->exp_dynticks_snap & 0x1) ||
+			    rcu_dynticks_in_eqs(rdp->exp_dynticks_snap) ||
 			    !(rnp->qsmaskinitnext & rdp->grpmask))
 				mask_ofl_test |= rdp->grpmask;
 		}
@@ -380,13 +379,12 @@ static void sync_rcu_exp_select_cpus(struct rcu_state *rsp,
 		for_each_leaf_node_possible_cpu(rnp, cpu) {
 			unsigned long mask = leaf_node_cpu_bit(rnp, cpu);
 			struct rcu_data *rdp = per_cpu_ptr(rsp->rda, cpu);
-			struct rcu_dynticks *rdtp = &per_cpu(rcu_dynticks, cpu);
 
 			if (!(mask_ofl_ipi & mask))
 				continue;
 retry_ipi:
-			if (atomic_add_return(0, &rdtp->dynticks) !=
-			    rdp->exp_dynticks_snap) {
+			if (rcu_dynticks_in_eqs_since(rdp->dynticks,
+						      rdp->exp_dynticks_snap)) {
 				mask_ofl_test |= mask;
 				continue;
 			}
@@ -421,7 +419,7 @@ static void synchronize_sched_expedited_wait(struct rcu_state *rsp)
 	int cpu;
 	unsigned long jiffies_stall;
 	unsigned long jiffies_start;
-	unsigned long mask;
+	unsigned long bit;
 	int ndetected;
 	struct rcu_node *rnp;
 	struct rcu_node *rnp_root = rcu_get_root(rsp);
@@ -446,12 +444,9 @@ static void synchronize_sched_expedited_wait(struct rcu_state *rsp)
 		ndetected = 0;
 		rcu_for_each_leaf_node(rsp, rnp) {
 			ndetected += rcu_print_task_exp_stall(rnp);
-			for_each_leaf_node_possible_cpu(rnp, cpu) {
+			leaf_node_for_each_mask_possible_cpu(rnp, rnp->expmask, bit, cpu) {
 				struct rcu_data *rdp;
 
-				mask = leaf_node_cpu_bit(rnp, cpu);
-				if (!(rnp->expmask & mask))
-					continue;
 				ndetected++;
 				rdp = per_cpu_ptr(rsp->rda, cpu);
 				pr_cont(" %d-%c%c%c", cpu,
@@ -477,14 +472,10 @@ static void synchronize_sched_expedited_wait(struct rcu_state *rsp)
 			}
 			pr_cont("\n");
 		}
-		rcu_for_each_leaf_node(rsp, rnp) {
-			for_each_leaf_node_possible_cpu(rnp, cpu) {
-				mask = leaf_node_cpu_bit(rnp, cpu);
-				if (!(rnp->expmask & mask))
-					continue;
+		rcu_for_each_leaf_node(rsp, rnp)
+			leaf_node_for_each_mask_possible_cpu(rnp, rnp->expmask, bit, cpu)
 				dump_cpu_task(cpu);
-			}
-		}
+
 		jiffies_stall = 3 * rcu_jiffies_till_stall_check() + 3;
 	}
 }
