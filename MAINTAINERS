@@ -6191,12 +6191,6 @@ S:	Maintained
 F:	Documentation/cdrom/ide-cd
 F:	drivers/ide/ide-cd*
 
-IDLE-I7300
-M:	Andy Henroid <andrew.d.henroid@intel.com>
-L:	linux-pm@vger.kernel.org
-S:	Supported
-F:	drivers/idle/i7300_idle.c
-
 IEEE 802.15.4 SUBSYSTEM
 M:	Alexander Aring <aar@pengutronix.de>
 M:	Stefan Schmidt <stefan@osg.samsung.com>
@@ -10274,6 +10268,14 @@ M:	Dennis Dalessandro <dennis.dalessandro@intel.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/sw/rdmavt
+
+RDT - RESOURCE ALLOCATION
+M:	Fenghua Yu <fenghua.yu@intel.com>
+L:	linux-kernel@vger.kernel.org
+S:	Supported
+F:	arch/x86/kernel/cpu/intel_rdt*
+F:	arch/x86/include/asm/intel_rdt*
+F:	Documentation/x86/intel_rdt*
 
 READ-COPY UPDATE (RCU)
 M:	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
