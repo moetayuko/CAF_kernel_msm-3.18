@@ -236,7 +236,7 @@ static void hdlcd_plane_atomic_update(struct drm_plane *plane,
 	scanout_start = gem->paddr + plane->state->fb->offsets[0] +
 		plane->state->crtc_y * plane->state->fb->pitches[0] +
 		plane->state->crtc_x *
-		drm_format_plane_cpp(plane->state->fb->pixel_format, 0);
+		plane->state->fb->format->cpp[0];
 
 	hdlcd = plane->dev->dev_private;
 	hdlcd_write(hdlcd, HDLCD_REG_FB_LINE_LENGTH, plane->state->fb->pitches[0]);
