@@ -93,7 +93,7 @@ static int malidp_de_plane_check(struct drm_plane *plane,
 		return 0;
 
 	format_id = malidp_hw_get_format_id(&mp->hwdev->map, mp->layer->id,
-					    state->fb->pixel_format);
+					    state->fb->format->format);
 	if (format_id == MALIDP_INVALID_FORMAT_ID)
 		return -EINVAL;
 
@@ -109,8 +109,8 @@ static int malidp_de_plane_check(struct drm_plane *plane,
 
 	/* packed RGB888 / BGR888 can't be rotated or flipped */
 	if (state->rotation != DRM_ROTATE_0 &&
-	    (state->fb->pixel_format == DRM_FORMAT_RGB888 ||
-	     state->fb->pixel_format == DRM_FORMAT_BGR888))
+	    (state->fb->format->format == DRM_FORMAT_RGB888 ||
+	     state->fb->format->format == DRM_FORMAT_BGR888))
 		return -EINVAL;
 
 	ms->rotmem_size = 0;
@@ -119,7 +119,7 @@ static int malidp_de_plane_check(struct drm_plane *plane,
 
 		val = mp->hwdev->rotmem_required(mp->hwdev, state->crtc_h,
 						 state->crtc_w,
-						 state->fb->pixel_format);
+						 state->fb->format->format);
 		if (val < 0)
 			return val;
 
@@ -143,7 +143,7 @@ static void malidp_de_plane_update(struct drm_plane *plane,
 	mp = to_malidp_plane(plane);
 
 	map = &mp->hwdev->map;
-	format = plane->state->fb->pixel_format;
+	format = plane->state->fb->format->format;
 	format_id = malidp_hw_get_format_id(map, mp->layer->id, format);
 	num_planes = drm_format_num_planes(format);
 
