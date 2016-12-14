@@ -4707,7 +4707,7 @@ error:
 
 	if (err == 0) {
 		/* only inline file may have last_size != new_size */
-		if (new_size >= root->sectorsize ||
+		if (new_size >= fs_info->sectorsize ||
 		    new_size > root->fs_info->max_inline)
 			ASSERT(last_size == new_size);
 	}
