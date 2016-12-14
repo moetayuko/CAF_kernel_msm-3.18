@@ -70,7 +70,7 @@ drm_plane_state_to_eba(struct drm_plane_state *state)
 
 	return cma_obj->paddr + fb->offsets[0] +
 	       fb->pitches[0] * (state->src_y >> 16) +
-	       (fb->bits_per_pixel >> 3) * (state->src_x >> 16);
+	       (fb->format->cpp[0]) * (state->src_x >> 16);
 }
 
 static inline unsigned long
