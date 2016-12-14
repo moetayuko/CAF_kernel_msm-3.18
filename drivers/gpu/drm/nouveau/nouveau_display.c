@@ -254,7 +254,7 @@ nouveau_framebuffer_init(struct drm_device *dev,
 	struct drm_framebuffer *fb = &nv_fb->base;
 	int ret;
 
-	drm_helper_mode_fill_fb_struct(fb, mode_cmd);
+	drm_helper_mode_fill_fb_struct(dev, fb, mode_cmd);
 	nv_fb->nvbo = nvbo;
 
 	ret = drm_framebuffer_init(dev, fb, &nouveau_framebuffer_funcs);
