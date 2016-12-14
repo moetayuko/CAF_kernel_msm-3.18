@@ -569,7 +569,7 @@ nv_crtc_mode_set_regs(struct drm_crtc *crtc, struct drm_display_mode * mode)
 		regp->CRTC[NV_CIO_CRE_86] = 0x1;
 	}
 
-	regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] = (crtc->primary->fb->depth + 1) / 8;
+	regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] = (crtc->primary->fb->format->depth + 1) / 8;
 	/* Enable slaved mode (called MODE_TV in nv4ref.h) */
 	if (lvds_output || tmds_output || tv_output)
 		regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] |= (1 << 7);
@@ -583,7 +583,7 @@ nv_crtc_mode_set_regs(struct drm_crtc *crtc, struct drm_display_mode * mode)
 	regp->ramdac_gen_ctrl = NV_PRAMDAC_GENERAL_CONTROL_BPC_8BITS |
 				NV_PRAMDAC_GENERAL_CONTROL_VGA_STATE_SEL |
 				NV_PRAMDAC_GENERAL_CONTROL_PIXMIX_ON;
-	if (crtc->primary->fb->depth == 16)
+	if (crtc->primary->fb->format->depth == 16)
 		regp->ramdac_gen_ctrl |= NV_PRAMDAC_GENERAL_CONTROL_ALT_MODE_SEL;
 	if (drm->device.info.chipset >= 0x11)
 		regp->ramdac_gen_ctrl |= NV_PRAMDAC_GENERAL_CONTROL_PIPE_LONG;
@@ -847,16 +847,16 @@ nv04_crtc_do_mode_set_base(struct drm_crtc *crtc,
 
 	nv_crtc->fb.offset = fb->nvbo->bo.offset;
 
-	if (nv_crtc->lut.depth != drm_fb->depth) {
-		nv_crtc->lut.depth = drm_fb->depth;
+	if (nv_crtc->lut.depth != drm_fb->format->depth) {
+		nv_crtc->lut.depth = drm_fb->format->depth;
 		nv_crtc_gamma_load(crtc);
 	}
 
 	/* Update the framebuffer format. */
 	regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] &= ~3;
-	regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] |= (crtc->primary->fb->depth + 1) / 8;
+	regp->CRTC[NV_CIO_CRE_PIXEL_INDEX] |= (crtc->primary->fb->format->depth + 1) / 8;
 	regp->ramdac_gen_ctrl &= ~NV_PRAMDAC_GENERAL_CONTROL_ALT_MODE_SEL;
-	if (crtc->primary->fb->depth == 16)
+	if (crtc->primary->fb->format->depth == 16)
 		regp->ramdac_gen_ctrl |= NV_PRAMDAC_GENERAL_CONTROL_ALT_MODE_SEL;
 	crtc_wr_cio_state(crtc, regp, NV_CIO_CRE_PIXEL_INDEX);
 	NVWriteRAMDAC(dev, nv_crtc->index, NV_PRAMDAC_GENERAL_CONTROL,

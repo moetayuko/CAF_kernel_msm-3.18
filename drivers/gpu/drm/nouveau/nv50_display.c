@@ -710,7 +710,7 @@ nv50_crtc_set_dither(struct nouveau_crtc *nv_crtc, bool update)
 	nv_connector = nouveau_crtc_connector_get(nv_crtc);
 	connector = &nv_connector->base;
 	if (nv_connector->dithering_mode == DITHERING_MODE_AUTO) {
-		if (nv_crtc->base.primary->fb->depth > connector->display_info.bpc * 3)
+		if (nv_crtc->base.primary->fb->format->depth > connector->display_info.bpc * 3)
 			mode = DITHERING_MODE_DYNAMIC2X2;
 	} else {
 		mode = nv_connector->dithering_mode;
@@ -2434,7 +2434,7 @@ nv50_fb_ctor(struct drm_framebuffer *fb)
 	if (drm->device.info.chipset >= 0xc0)
 		tile >>= 4; /* yep.. */
 
-	switch (fb->depth) {
+	switch (fb->format->depth) {
 	case  8: nv_fb->r_format = 0x1e00; break;
 	case 15: nv_fb->r_format = 0xe900; break;
 	case 16: nv_fb->r_format = 0xe800; break;
@@ -2442,7 +2442,7 @@ nv50_fb_ctor(struct drm_framebuffer *fb)
 	case 32: nv_fb->r_format = 0xcf00; break;
 	case 30: nv_fb->r_format = 0xd100; break;
 	default:
-		 NV_ERROR(drm, "unknown depth %d\n", fb->depth);
+		 NV_ERROR(drm, "unknown depth %d\n", fb->format->depth);
 		 return -EINVAL;
 	}
 
