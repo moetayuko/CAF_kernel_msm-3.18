@@ -17,6 +17,41 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 
+static int tty_port_default_receive_buf(struct tty_port *port,
+					const unsigned char *p,
+					const unsigned char *f, size_t count)
+{
+	int ret;
+	struct tty_struct *tty;
+	struct tty_ldisc *disc;
+
+	tty = READ_ONCE(port->itty);
+	if (!tty)
+		return 0;
+
+	disc = tty_ldisc_ref(tty);
+	if (!disc)
+		return 0;
+
+	ret = tty_ldisc_receive_buf(disc, p, (char *)f, count);
+
+	tty_ldisc_deref(disc);
+
+	return ret;
+}
+
+static void tty_port_default_wakeup(struct tty_port *port)
+{
+	/* tty_port_tty_wakeup already took a reference to the tty */
+	tty_wakeup(port->tty);
+}
+
+static const struct tty_port_client_operations default_client_ops = {
+	.receive_buf = tty_port_default_receive_buf,
+	.write_wakeup = tty_port_default_wakeup,
+};
+
+
 void tty_port_init(struct tty_port *port)
 {
 	memset(port, 0, sizeof(*port));
@@ -28,6 +63,7 @@ void tty_port_init(struct tty_port *port)
 	spin_lock_init(&port->lock);
 	port->close_delay = (50 * HZ) / 100;
 	port->closing_wait = (3000 * HZ) / 100;
+	port->client_ops = &default_client_ops;
 	kref_init(&port->kref);
 }
 EXPORT_SYMBOL(tty_port_init);
@@ -275,7 +311,8 @@ void tty_port_tty_wakeup(struct tty_port *port)
 	struct tty_struct *tty = tty_port_tty_get(port);
 
 	if (tty) {
-		tty_wakeup(tty);
+		if (test_bit(TTY_DO_WRITE_WAKEUP, &tty->flags))
+			port->client_ops->write_wakeup(port);
 		tty_kref_put(tty);
 	}
 }
