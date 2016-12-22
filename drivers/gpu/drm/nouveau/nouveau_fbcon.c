@@ -41,6 +41,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_helper.h>
+#include <drm/drm_atomic.h>
 
 #include "nouveau_drv.h"
 #include "nouveau_gem.h"
