@@ -17,7 +17,10 @@
 / {
 	model = "RUGGED 8909";
 	compatible = "qcom,msm8909-qrd", "qcom,msm8909", "qcom,qrd";
-	qcom,board-id= <0x2000b 2>;
+	qcom,board-id= <0xb 0x102>;
+	chosen {
+		bootargs = "boot_cpus=0,1 sched_enable_hmp=1";
+	};
 };
 
 &i2c_4 {
