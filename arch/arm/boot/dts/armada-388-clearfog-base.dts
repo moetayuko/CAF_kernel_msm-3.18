@@ -74,7 +74,17 @@
 	phy = <&phy1>;
 };
 
+&gpio0 {
+	phy1_reset {
+		gpio-hog;
+		gpios = <19 GPIO_ACTIVE_LOW>;
+		output-low;
+		line-name = "phy1-reset";
+	};
+};
+
 &mdio {
+	pinctrl-0 = <&mdio_pins &microsom_phy_clk_pins &clearfog_phy_pins>;
 	phy1: ethernet-phy@1 {
 		/*
 		 * Annoyingly, the marvell phy driver configures the LED
@@ -87,6 +97,11 @@
 };
 
 &pinctrl {
+	/* phy1 reset */
+	clearfog_phy_pins: clearfog-phy-pins {
+		marvell,pins = "mpp19";
+		marvell,function = "gpio";
+	};
 	rear_button_pins: rear-button-pins {
 		marvell,pins = "mpp44";
 		marvell,function = "gpio";
