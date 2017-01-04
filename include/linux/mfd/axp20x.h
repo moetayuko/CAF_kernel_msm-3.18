@@ -238,7 +238,6 @@ enum {
 #define AXP288_PMIC_ADC_H               0x56
 #define AXP288_PMIC_ADC_L               0x57
 #define AXP288_ADC_TS_PIN_CTRL          0x84
-#define AXP288_PMIC_ADC_EN              0x84
 
 /* Fuel Gauge */
 #define AXP288_FG_RDC1_REG          0xba
@@ -523,6 +522,7 @@ enum axp809_irqs {
 struct axp20x_dev {
 	struct device			*dev;
 	int				irq;
+	unsigned long			irq_flags;
 	struct regmap			*regmap;
 	struct regmap_irq_chip_data	*regmap_irqc;
 	long				variant;
@@ -611,7 +611,7 @@ int axp20x_match_device(struct axp20x_dev *axp20x);
 int axp20x_device_probe(struct axp20x_dev *axp20x);
 
 /**
- * axp20x_device_probe(): Remove a axp20x device
+ * axp20x_device_remove(): Remove a axp20x device
  *
  * @axp20x: axp20x device to remove
  *
