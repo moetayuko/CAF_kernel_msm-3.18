@@ -159,7 +159,6 @@ nfsd3_proc_read(struct svc_rqst *rqstp, struct nfsd3_readargs *argp,
 	 * + 1 (xdr opaque byte count) = 26
 	 */
 	resp->count = cnt;
-	svc_reserve_auth(rqstp, ((1 + NFS3_POST_OP_ATTR_WORDS + 3)<<2) + resp->count +4);
 
 	fh_copy(&resp->fh, &argp->fh);
 	nfserr = nfsd_read(rqstp, &resp->fh,
@@ -193,11 +192,9 @@ nfsd3_proc_write(struct svc_rqst *rqstp, struct nfsd3_writeargs *argp,
 
 	fh_copy(&resp->fh, &argp->fh);
 	resp->committed = argp->stable;
-	nfserr = nfsd_write(rqstp, &resp->fh, NULL,
-				   argp->offset,
-				   rqstp->rq_vec, argp->vlen,
-				   &cnt,
-				   &resp->committed);
+	nfserr = nfsd_write(rqstp, &resp->fh, argp->offset,
+				rqstp->rq_vec, argp->vlen,
+				&cnt, resp->committed);
 	resp->count = cnt;
 	RETURN_STATUS(nfserr);
 }
