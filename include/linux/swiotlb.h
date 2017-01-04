@@ -117,7 +117,7 @@ extern void __init swiotlb_free(void);
 unsigned int swiotlb_max_segment(void);
 #else
 static inline void swiotlb_free(void) { }
-unsigned int swiotlb_max_segment(void) { return 0; }
+static inline unsigned int swiotlb_max_segment(void) { return 0; }
 #endif
 
 extern void swiotlb_print_info(void);
