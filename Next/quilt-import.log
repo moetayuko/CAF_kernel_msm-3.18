@@ -1,0 +1,5 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 4.10-rc2
+	quilt series is empty
+$ git branch -f dmi/master 0c744ea4f77d72b3dcebb7a8f2684633ec79be88
