@@ -183,7 +183,6 @@ nfsd_proc_read(struct svc_rqst *rqstp, struct nfsd_readargs *argp,
 				argp->count);
 		argp->count = NFSSVC_MAXBLKSIZE_V2;
 	}
-	svc_reserve_auth(rqstp, (19<<2) + argp->count + 4);
 
 	resp->count = argp->count;
 	nfserr = nfsd_read(rqstp, fh_copy(&resp->fh, &argp->fh),
@@ -204,18 +203,14 @@ nfsd_proc_write(struct svc_rqst *rqstp, struct nfsd_writeargs *argp,
 					struct nfsd_attrstat  *resp)
 {
 	__be32	nfserr;
-	int	stable = 1;
 	unsigned long cnt = argp->len;
 
 	dprintk("nfsd: WRITE    %s %d bytes at %d\n",
 		SVCFH_fmt(&argp->fh),
 		argp->len, argp->offset);
 
-	nfserr = nfsd_write(rqstp, fh_copy(&resp->fh, &argp->fh), NULL,
-				   argp->offset,
-				   rqstp->rq_vec, argp->vlen,
-			           &cnt,
-				   &stable);
+	nfserr = nfsd_write(rqstp, fh_copy(&resp->fh, &argp->fh), argp->offset,
+				rqstp->rq_vec, argp->vlen, &cnt, NFS_DATA_SYNC);
 	return nfsd_return_attrs(nfserr, resp);
 }
 
