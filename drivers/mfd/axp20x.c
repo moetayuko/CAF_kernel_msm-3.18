@@ -207,14 +207,14 @@ static struct resource axp22x_pek_resources[] = {
 static struct resource axp288_power_button_resources[] = {
 	{
 		.name	= "PEK_DBR",
-		.start	= AXP288_IRQ_POKN,
-		.end	= AXP288_IRQ_POKN,
+		.start	= AXP288_IRQ_POKP,
+		.end	= AXP288_IRQ_POKP,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		.name	= "PEK_DBF",
-		.start	= AXP288_IRQ_POKP,
-		.end	= AXP288_IRQ_POKP,
+		.start	= AXP288_IRQ_POKN,
+		.end	= AXP288_IRQ_POKN,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -407,6 +407,9 @@ static const struct regmap_irq axp288_regmap_irqs[] = {
 	INIT_REGMAP_IRQ(AXP288, VBUS_FALL,              0, 2),
 	INIT_REGMAP_IRQ(AXP288, VBUS_RISE,              0, 3),
 	INIT_REGMAP_IRQ(AXP288, OV,                     0, 4),
+	INIT_REGMAP_IRQ(AXP288, FALLING_ALT,            0, 5),
+	INIT_REGMAP_IRQ(AXP288, RISING_ALT,             0, 6),
+	INIT_REGMAP_IRQ(AXP288, OV_ALT,                 0, 7),
 
 	INIT_REGMAP_IRQ(AXP288, DONE,                   1, 2),
 	INIT_REGMAP_IRQ(AXP288, CHARGING,               1, 3),
@@ -802,6 +805,7 @@ int axp20x_match_device(struct axp20x_dev *axp20x)
 		axp20x->nr_cells = ARRAY_SIZE(axp288_cells);
 		axp20x->regmap_cfg = &axp288_regmap_config;
 		axp20x->regmap_irq_chip = &axp288_regmap_irq_chip;
+		axp20x->irq_flags = IRQF_TRIGGER_LOW;
 		break;
 	case AXP806_ID:
 		axp20x->nr_cells = ARRAY_SIZE(axp806_cells);
@@ -831,9 +835,8 @@ int axp20x_device_probe(struct axp20x_dev *axp20x)
 	int ret;
 
 	ret = regmap_add_irq_chip(axp20x->regmap, axp20x->irq,
-				  IRQF_ONESHOT | IRQF_SHARED, -1,
-				  axp20x->regmap_irq_chip,
-				  &axp20x->regmap_irqc);
+			  IRQF_ONESHOT | IRQF_SHARED | axp20x->irq_flags,
+			   -1, axp20x->regmap_irq_chip, &axp20x->regmap_irqc);
 	if (ret) {
 		dev_err(axp20x->dev, "failed to add irq chip: %d\n", ret);
 		return ret;
