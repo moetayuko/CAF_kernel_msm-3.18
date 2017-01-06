@@ -441,12 +441,6 @@ struct ti_st_plat_data {
 	unsigned char dev_name[UART_DEV_NAME_LEN]; /* uart name */
 	u32 flow_cntrl; /* flow control flag */
 	u32 baud_rate;
-	int (*suspend)(struct platform_device *, pm_message_t);
-	int (*resume)(struct platform_device *);
-	int (*chip_enable) (struct kim_data_s *);
-	int (*chip_disable) (struct kim_data_s *);
-	int (*chip_asleep) (struct kim_data_s *);
-	int (*chip_awake) (struct kim_data_s *);
 };
 
 #endif /* TI_WILINK_ST_H */

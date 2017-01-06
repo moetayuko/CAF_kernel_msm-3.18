@@ -459,17 +459,11 @@ long st_kim_start(void *kim_data)
 {
 	long err = 0;
 	long retry = POR_RETRY_COUNT;
-	struct ti_st_plat_data	*pdata;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
 
 	pr_info(" %s", __func__);
-	pdata = kim_gdata->kim_pdev->dev.platform_data;
 
 	do {
-		/* platform specific enabling code here */
-		if (pdata->chip_enable)
-			pdata->chip_enable(kim_gdata);
-
 		/* Configure BT nShutdown to HIGH state */
 		gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_LOW);
 		mdelay(5);	/* FIXME: a proper toggle */
@@ -523,8 +517,6 @@ long st_kim_stop(void *kim_data)
 {
 	long err = 0;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
-	struct ti_st_plat_data	*pdata =
-		kim_gdata->kim_pdev->dev.platform_data;
 	struct tty_struct	*tty = kim_gdata->core_data->tty;
 
 	reinit_completion(&kim_gdata->ldisc_installed);
@@ -555,9 +547,6 @@ long st_kim_stop(void *kim_data)
 	mdelay(1);
 	gpio_set_value_cansleep(kim_gdata->nshutdown, GPIO_LOW);
 
-	/* platform specific disable */
-	if (pdata->chip_disable)
-		pdata->chip_disable(kim_gdata);
 	return err;
 }
 
@@ -830,33 +819,11 @@ static int kim_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int kim_suspend(struct platform_device *pdev, pm_message_t state)
-{
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
-
-	if (pdata->suspend)
-		return pdata->suspend(pdev, state);
-
-	return 0;
-}
-
-static int kim_resume(struct platform_device *pdev)
-{
-	struct ti_st_plat_data	*pdata = pdev->dev.platform_data;
-
-	if (pdata->resume)
-		return pdata->resume(pdev);
-
-	return 0;
-}
-
 /**********************************************************************/
 /* entry point for ST KIM module, called in from ST Core */
 static struct platform_driver kim_platform_driver = {
 	.probe = kim_probe,
 	.remove = kim_remove,
-	.suspend = kim_suspend,
-	.resume = kim_resume,
 	.driver = {
 		.name = "kim",
 	},
