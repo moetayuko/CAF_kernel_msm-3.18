@@ -173,13 +173,6 @@ int st_get_uart_wr_room(struct st_data_s *st_gdata);
  */
 int st_int_write(struct st_data_s*, const unsigned char*, int);
 
-/**
- * st_write -
- * internal write function, passed onto protocol drivers
- * via the write function ptr of protocol struct
- */
-long st_write(struct sk_buff *);
-
 /* function to be called from ST-LL */
 void st_ll_send_frame(enum proto_type, struct sk_buff *);
 

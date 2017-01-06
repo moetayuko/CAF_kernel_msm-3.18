@@ -521,6 +521,34 @@ void kim_st_list_protocols(struct st_data_s *st_gdata, void *buf)
 			st_gdata->is_registered[0x09] == true ? 'R' : 'U');
 }
 
+/*
+ * called in protocol stack drivers
+ * via the write function pointer
+ */
+static long st_write(struct sk_buff *skb)
+{
+	struct st_data_s *st_gdata;
+	long len;
+
+	st_kim_ref(&st_gdata, 0);
+	if (unlikely(skb == NULL || st_gdata == NULL
+		|| st_gdata->tty == NULL)) {
+		pr_err("data/tty unavailable to perform write");
+		return -EINVAL;
+	}
+
+	pr_debug("%d to be written", skb->len);
+	len = skb->len;
+
+	/* st_ll to decide where to enqueue the skb */
+	st_int_enqueue(st_gdata, skb);
+	/* wake up */
+	st_tx_wakeup(st_gdata);
+
+	/* return number of bytes written */
+	return len;
+}
+
 /********************************************************************/
 /*
  * functions called from protocol stack drivers
@@ -682,34 +710,6 @@ long st_unregister(struct st_proto_s *proto)
 		st_ll_disable(st_gdata);
 	}
 	return err;
-}
-
-/*
- * called in protocol stack drivers
- * via the write function pointer
- */
-long st_write(struct sk_buff *skb)
-{
-	struct st_data_s *st_gdata;
-	long len;
-
-	st_kim_ref(&st_gdata, 0);
-	if (unlikely(skb == NULL || st_gdata == NULL
-		|| st_gdata->tty == NULL)) {
-		pr_err("data/tty unavailable to perform write");
-		return -EINVAL;
-	}
-
-	pr_debug("%d to be written", skb->len);
-	len = skb->len;
-
-	/* st_ll to decide where to enqueue the skb */
-	st_int_enqueue(st_gdata, skb);
-	/* wake up */
-	st_tx_wakeup(st_gdata);
-
-	/* return number of bytes written */
-	return len;
 }
 
 /* for protocols making use of shared transport */
