@@ -132,7 +132,7 @@ static int armada_drm_load(struct drm_device *dev, unsigned long flags)
 	return ret;
 }
 
-static int armada_drm_unload(struct drm_device *dev)
+static void armada_drm_unload(struct drm_device *dev)
 {
 	struct armada_private *priv = dev->dev_private;
 
@@ -146,7 +146,7 @@ static int armada_drm_unload(struct drm_device *dev)
 	flush_work(&priv->fb_unref_work);
 	dev->dev_private = NULL;
 
-	return 0;
+	return;
 }
 
 /* These are called under the vbl_lock. */

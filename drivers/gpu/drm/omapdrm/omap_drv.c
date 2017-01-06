@@ -687,7 +687,7 @@ static int dev_load(struct drm_device *dev, unsigned long flags)
 	return 0;
 }
 
-static int dev_unload(struct drm_device *dev)
+static void dev_unload(struct drm_device *dev)
 {
 	struct omap_drm_private *priv = dev->dev_private;
 
@@ -710,8 +710,6 @@ static int dev_unload(struct drm_device *dev)
 	dev->dev_private = NULL;
 
 	dev_set_drvdata(dev->dev, NULL);
-
-	return 0;
 }
 
 static int dev_open(struct drm_device *dev, struct drm_file *file)

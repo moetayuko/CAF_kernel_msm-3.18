@@ -194,7 +194,7 @@ static int cpufreq_transition(struct notifier_block *nb,
  * DRM operations:
  */
 
-static int tilcdc_unload(struct drm_device *dev)
+static void tilcdc_unload(struct drm_device *dev)
 {
 	struct tilcdc_drm_private *priv = dev->dev_private;
 
@@ -225,7 +225,7 @@ static int tilcdc_unload(struct drm_device *dev)
 
 	pm_runtime_disable(dev->dev);
 
-	return 0;
+	return;
 }
 
 static int tilcdc_load(struct drm_device *dev, unsigned long flags)
