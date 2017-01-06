@@ -527,10 +527,9 @@ void kim_st_list_protocols(struct st_data_s *st_gdata, void *buf)
  */
 static long st_write(struct sk_buff *skb)
 {
-	struct st_data_s *st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(NULL);
 	long len;
 
-	st_kim_ref(&st_gdata, 0);
 	if (unlikely(skb == NULL || st_gdata == NULL
 		|| st_gdata->tty == NULL)) {
 		pr_err("data/tty unavailable to perform write");
@@ -556,11 +555,10 @@ static long st_write(struct sk_buff *skb)
  */
 long st_register(struct st_proto_s *new_proto)
 {
-	struct st_data_s	*st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(NULL);
 	long err = 0;
 	unsigned long flags = 0;
 
-	st_kim_ref(&st_gdata, 0);
 	if (st_gdata == NULL || new_proto == NULL || new_proto->recv == NULL
 	    || new_proto->reg_complete_cb == NULL) {
 		pr_err("gdata/new_proto/recv or reg_complete_cb not ready");
@@ -670,11 +668,10 @@ long st_unregister(struct st_proto_s *proto)
 {
 	long err = 0;
 	unsigned long flags = 0;
-	struct st_data_s	*st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(NULL);
 
 	pr_debug("%s: %d ", __func__, proto->chnl_id);
 
-	st_kim_ref(&st_gdata, 0);
 	if (!st_gdata || proto->chnl_id >= ST_MAX_CHANNELS) {
 		pr_err(" chnl_id %d not supported", proto->chnl_id);
 		return -EPROTONOSUPPORT;
@@ -722,10 +719,9 @@ EXPORT_SYMBOL_GPL(st_unregister);
 static int st_tty_open(struct tty_struct *tty)
 {
 	int err = 0;
-	struct st_data_s *st_gdata;
+	struct st_data_s *st_gdata = st_kim_ref(NULL);
 	pr_info("%s ", __func__);
 
-	st_kim_ref(&st_gdata, 0);
 	st_gdata->tty = tty;
 	tty->disc_data = st_gdata;
 
