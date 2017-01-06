@@ -27,6 +27,8 @@
 
 #include <linux/skbuff.h>
 
+struct serdev_device;
+
 /**
  * enum proto-type - The protocol on WiLink chips which share a
  *	common physical interface like UART.
@@ -111,7 +113,6 @@ extern long st_unregister(struct st_proto_s *);
  *	the recv function, as in during fw download only HCI events
  *	can occur , where as during other times other events CH8, CH9
  *	can occur.
- * @tty: tty provided by the TTY core for line disciplines.
  * @tx_skb: If for some reason the tty's write returns lesser bytes written
  *	then to maintain the rest of data to be written on next instance.
  *	This needs to be protected, hence the lock inside wakeup func.
@@ -138,6 +139,7 @@ extern long st_unregister(struct st_proto_s *);
  * @ll_state: the various PM states the chip can be, the states are notified
  *	to us, when the chip sends relevant PM packets(SLEEP_IND, WAKE_IND).
  * @kim_data: reference to the parent encapsulating structure.
+ * @serdev: serdev device.
  *
  */
 struct st_data_s {
@@ -157,7 +159,7 @@ struct st_data_s {
 	unsigned char	protos_registered;
 	unsigned long ll_state;
 	void *kim_data;
-	struct tty_struct *tty;
+	struct serdev_device *serdev;
 	struct work_struct work_write_wakeup;
 };
 
@@ -180,17 +182,11 @@ void st_ll_send_frame(enum proto_type, struct sk_buff *);
 void st_tx_wakeup(struct st_data_s *st_data);
 
 /* init, exit entry funcs called from KIM */
-int st_core_init(struct st_data_s **);
+int st_core_init(struct serdev_device *, struct st_data_s **);
 void st_core_exit(struct st_data_s *);
 
 /* ask for reference from KIM */
 struct st_data_s *st_kim_ref(struct device *);
-
-#define GPS_STUB_TEST
-#ifdef GPS_STUB_TEST
-int gps_chrdrv_stub_write(const unsigned char*, int);
-void gps_chrdrv_stub_init(void);
-#endif
 
 /*
  * header information used by st_kim.c
@@ -204,9 +200,6 @@ void gps_chrdrv_stub_init(void);
 #define CMD_WR_TIME	5000
 #define MAKEWORD(a, b)  ((unsigned short)(((unsigned char)(a)) \
 	| ((unsigned short)((unsigned char)(b))) << 8))
-
-#define GPIO_HIGH 1
-#define GPIO_LOW  0
 
 /* the Power-On-Reset logic, requires to attempt
  * to download firmware onto chip more than once
@@ -230,14 +223,10 @@ struct chip_version {
  *	platform's drv data. One for each ST device in the system.
  * @uim_pid: KIM needs to communicate with UIM to request to install
  *	the ldisc by opening UART when protocol drivers register.
- * @kim_pdev: the platform device added in one of the board-XX.c file
- *	in arch/XX/ directory, 1 for each ST device.
+ * @kim_sdev: the serdev device, 1 for each ST device.
  * @kim_rcvd: completion handler to notify when data was received,
  *	mainly used during fw download, which involves multiple send/wait
  *	for each of the HCI-VS commands.
- * @ldisc_installed: completion handler to notify that the UIM accepted
- *	the request to install ldisc, notify from tty_open which suggests
- *	the ldisc was properly installed.
  * @resp_buffer: data buffer for the .bts fw file name.
  * @fw_entry: firmware class struct to request/release the fw.
  * @rx_state: the rx state for kim's receive func during fw download.
@@ -251,18 +240,17 @@ struct chip_version {
  */
 struct kim_data_s {
 	long uim_pid;
-	struct platform_device *kim_pdev;
+	struct serdev_device *kim_sdev;
 	struct completion kim_rcvd, ldisc_installed;
 	char resp_buffer[30];
 	const struct firmware *fw_entry;
-	unsigned nshutdown;
+	struct gpio_desc *nshutdown;
 	unsigned long rx_state;
 	unsigned long rx_count;
 	struct sk_buff *rx_skb;
 	struct st_data_s *core_data;
 	struct chip_version version;
 	unsigned char ldisc_install;
-	unsigned char dev_name[UART_DEV_NAME_LEN + 1];
 	unsigned flow_cntrl;
 	unsigned baud_rate;
 };
@@ -275,7 +263,6 @@ struct kim_data_s {
 long st_kim_start(void *);
 long st_kim_stop(void *);
 
-void st_kim_complete(void *);
 void kim_st_list_protocols(struct st_data_s *, void *);
 void st_kim_recv(void *, const unsigned char *, long);
 
@@ -406,34 +393,5 @@ struct gps_event_hdr {
 	u8 opcode;
 	u16 plen;
 } __attribute__ ((packed));
-
-/**
- * struct ti_st_plat_data - platform data shared between ST driver and
- *	platform specific board file which adds the ST device.
- * @nshutdown_gpio: Host's GPIO line to which chip's BT_EN is connected.
- * @dev_name: The UART/TTY name to which chip is interfaced. (eg: /dev/ttyS1)
- * @flow_cntrl: Should always be 1, since UART's CTS/RTS is used for PM
- *	purposes.
- * @baud_rate: The baud rate supported by the Host UART controller, this will
- *	be shared across with the chip via a HCI VS command from User-Space Init
- *	Mgr application.
- * @suspend:
- * @resume: legacy PM routines hooked to platform specific board file, so as
- *	to take chip-host interface specific action.
- * @chip_enable:
- * @chip_disable: Platform/Interface specific mux mode setting, GPIO
- *	configuring, Host side PM disabling etc.. can be done here.
- * @chip_asleep:
- * @chip_awake: Chip specific deep sleep states is communicated to Host
- *	specific board-xx.c to take actions such as cut UART clocks when chip
- *	asleep or run host faster when chip awake etc..
- *
- */
-struct ti_st_plat_data {
-	u32 nshutdown_gpio;
-	unsigned char dev_name[UART_DEV_NAME_LEN]; /* uart name */
-	u32 flow_cntrl; /* flow control flag */
-	u32 baud_rate;
-};
 
 #endif /* TI_WILINK_ST_H */
