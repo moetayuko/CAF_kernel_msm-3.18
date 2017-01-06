@@ -986,7 +986,7 @@ void ef4_mac_reconfigure(struct ef4_nic *efx)
 
 /* Push loopback/power/transmit disable settings to the PHY, and reconfigure
  * the MAC appropriately. All other PHY configuration changes are pushed
- * through phy_op->set_settings(), and pushed asynchronously to the MAC
+ * through phy_op->set_link_ksettings(), and pushed asynchronously to the MAC
  * through ef4_monitor().
  *
  * Callers must hold the mac_lock
@@ -3348,3 +3348,4 @@ MODULE_AUTHOR("Solarflare Communications and "
 MODULE_DESCRIPTION("Solarflare Falcon network driver");
 MODULE_LICENSE("GPL");
 MODULE_DEVICE_TABLE(pci, ef4_pci_table);
+MODULE_VERSION(EF4_DRIVER_VERSION);
