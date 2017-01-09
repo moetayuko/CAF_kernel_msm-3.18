@@ -622,13 +622,11 @@ static int transport_cmd_check_stop(struct se_cmd *cmd, bool remove_from_lists,
 		pr_debug("%s:%d CMD_T_STOP for ITT: 0x%08llx\n",
 			__func__, __LINE__, cmd->tag);
 
-		spin_unlock_irqrestore(&cmd->t_state_lock, flags);
-
 		complete_all(&cmd->t_transport_stop_comp);
-		return 1;
+	} else {
+		cmd->transport_state &= ~CMD_T_ACTIVE;
 	}
 
-	cmd->transport_state &= ~CMD_T_ACTIVE;
 	if (remove_from_lists) {
 		/*
 		 * Some fabric modules like tcm_loop can release
@@ -2532,7 +2530,7 @@ int transport_generic_free_cmd(struct se_cmd *cmd, int wait_for_tasks)
 	if (aborted) {
 		pr_debug("Detected CMD_T_ABORTED for ITT: %llu\n", cmd->tag);
 		wait_for_completion(&cmd->cmd_wait_comp);
-		cmd->se_tfo->release_cmd(cmd);
+		transport_put_cmd(cmd);
 		ret = 1;
 	}
 	return ret;
@@ -2695,7 +2693,8 @@ void target_wait_for_sess_cmds(struct se_session *se_sess)
 			" fabric state: %d\n", se_cmd, se_cmd->t_state,
 			se_cmd->se_tfo->get_cmd_state(se_cmd));
 
-		se_cmd->se_tfo->release_cmd(se_cmd);
+		WARN_ON_ONCE(!se_cmd->se_sess);
+		target_put_sess_cmd(se_cmd);
 	}
 
 	spin_lock_irqsave(&se_sess->sess_cmd_lock, flags);
