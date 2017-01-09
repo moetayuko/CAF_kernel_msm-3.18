@@ -927,7 +927,7 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("Internal BTSCO SampleRate", msm_btsco_enum[0],
 		     msm_btsco_rate_get, msm_btsco_rate_put),
 #ifdef CONFIG_HARDWARE_ID_RJIL_RUGGED
-	SOC_ENUM_EXT("Speaker HP Switch", msm_snd_enum[4],
+	SOC_ENUM_EXT("Speaker HP Switch", msm_snd_enum[3],
 			speaker_switch_get, speaker_switch_set),
 #endif
 
