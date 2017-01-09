@@ -174,7 +174,6 @@ void core_tmr_abort_task(
 		}
 
 		se_cmd->send_abort_response = false;
-		list_del_init(&se_cmd->se_cmd_list);
 		spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
 		while (!wait_for_completion_timeout(&se_cmd->complete, 180 * HZ))
