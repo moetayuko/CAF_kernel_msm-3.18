@@ -1154,6 +1154,8 @@ struct i915_psr {
 	bool psr2_support;
 	bool aux_frame_sync;
 	bool link_standby;
+	bool y_cord_support;
+	bool colorimetry_support;
 };
 
 enum intel_pch {
@@ -1809,6 +1811,7 @@ struct intel_pipe_crc {
 	enum intel_pipe_crc_source source;
 	int head, tail;
 	wait_queue_head_t wq;
+	int skipped;
 };
 
 struct i915_frontbuffer_tracking {
@@ -3101,10 +3104,10 @@ int i915_gem_throttle_ioctl(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv);
 int i915_gem_madvise_ioctl(struct drm_device *dev, void *data,
 			   struct drm_file *file_priv);
-int i915_gem_set_tiling(struct drm_device *dev, void *data,
-			struct drm_file *file_priv);
-int i915_gem_get_tiling(struct drm_device *dev, void *data,
-			struct drm_file *file_priv);
+int i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
+			      struct drm_file *file_priv);
+int i915_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
+			      struct drm_file *file_priv);
 void i915_gem_init_userptr(struct drm_i915_private *dev_priv);
 int i915_gem_userptr_ioctl(struct drm_device *dev, void *data,
 			   struct drm_file *file);
@@ -3360,11 +3363,6 @@ int i915_gem_object_attach_phys(struct drm_i915_gem_object *obj,
 int i915_gem_open(struct drm_device *dev, struct drm_file *file);
 void i915_gem_release(struct drm_device *dev, struct drm_file *file);
 
-u64 i915_gem_get_ggtt_size(struct drm_i915_private *dev_priv, u64 size,
-			   int tiling_mode);
-u64 i915_gem_get_ggtt_alignment(struct drm_i915_private *dev_priv, u64 size,
-				int tiling_mode, bool fenced);
-
 int i915_gem_object_set_cache_level(struct drm_i915_gem_object *obj,
 				    enum i915_cache_level cache_level);
 
@@ -3530,6 +3528,11 @@ static inline bool i915_gem_object_needs_bit17_swizzle(struct drm_i915_gem_objec
 	return dev_priv->mm.bit_6_swizzle_x == I915_BIT_6_SWIZZLE_9_10_17 &&
 		i915_gem_object_is_tiled(obj);
 }
+
+u32 i915_gem_fence_size(struct drm_i915_private *dev_priv, u32 size,
+			unsigned int tiling, unsigned int stride);
+u32 i915_gem_fence_alignment(struct drm_i915_private *dev_priv, u32 size,
+			     unsigned int tiling, unsigned int stride);
 
 /* i915_debugfs.c */
 #ifdef CONFIG_DEBUG_FS

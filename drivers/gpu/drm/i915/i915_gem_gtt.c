@@ -329,7 +329,7 @@ static int __setup_page_dma(struct drm_i915_private *dev_priv,
 		return -ENOMEM;
 
 	p->daddr = dma_map_page(kdev,
-				p->page, 0, 4096, PCI_DMA_BIDIRECTIONAL);
+				p->page, 0, PAGE_SIZE, PCI_DMA_BIDIRECTIONAL);
 
 	if (dma_mapping_error(kdev, p->daddr)) {
 		__free_page(p->page);
@@ -353,7 +353,7 @@ static void cleanup_page_dma(struct drm_i915_private *dev_priv,
 	if (WARN_ON(!p->page))
 		return;
 
-	dma_unmap_page(&pdev->dev, p->daddr, 4096, PCI_DMA_BIDIRECTIONAL);
+	dma_unmap_page(&pdev->dev, p->daddr, PAGE_SIZE, PCI_DMA_BIDIRECTIONAL);
 	__free_page(p->page);
 	memset(p, 0, sizeof(*p));
 }
@@ -626,10 +626,10 @@ static void gen8_initialize_pml4(struct i915_address_space *vm,
 }
 
 static void
-gen8_setup_page_directory(struct i915_hw_ppgtt *ppgtt,
-			  struct i915_page_directory_pointer *pdp,
-			  struct i915_page_directory *pd,
-			  int index)
+gen8_setup_pdpe(struct i915_hw_ppgtt *ppgtt,
+		struct i915_page_directory_pointer *pdp,
+		struct i915_page_directory *pd,
+		int index)
 {
 	gen8_ppgtt_pdpe_t *page_directorypo;
 
@@ -642,10 +642,10 @@ gen8_setup_page_directory(struct i915_hw_ppgtt *ppgtt,
 }
 
 static void
-gen8_setup_page_directory_pointer(struct i915_hw_ppgtt *ppgtt,
-				  struct i915_pml4 *pml4,
-				  struct i915_page_directory_pointer *pdp,
-				  int index)
+gen8_setup_pml4e(struct i915_hw_ppgtt *ppgtt,
+		 struct i915_pml4 *pml4,
+		 struct i915_page_directory_pointer *pdp,
+		 int index)
 {
 	gen8_ppgtt_pml4e_t *pagemap = kmap_px(pml4);
 
@@ -793,9 +793,6 @@ static bool gen8_ppgtt_clear_pdp(struct i915_address_space *vm,
 	struct i915_hw_ppgtt *ppgtt = i915_vm_to_ppgtt(vm);
 	struct i915_page_directory *pd;
 	uint64_t pdpe;
-	gen8_ppgtt_pdpe_t *pdpe_vaddr;
-	gen8_ppgtt_pdpe_t scratch_pdpe =
-		gen8_pdpe_encode(px_dma(vm->scratch_pd), I915_CACHE_LLC);
 
 	gen8_for_each_pdpe(pd, pdp, start, length, pdpe) {
 		if (WARN_ON(!pdp->page_directory[pdpe]))
@@ -803,11 +800,7 @@ static bool gen8_ppgtt_clear_pdp(struct i915_address_space *vm,
 
 		if (gen8_ppgtt_clear_pd(vm, pd, start, length)) {
 			__clear_bit(pdpe, pdp->used_pdpes);
-			if (USES_FULL_48BIT_PPGTT(dev_priv)) {
-				pdpe_vaddr = kmap_px(pdp);
-				pdpe_vaddr[pdpe] = scratch_pdpe;
-				kunmap_px(ppgtt, pdpe_vaddr);
-			}
+			gen8_setup_pdpe(ppgtt, pdp, vm->scratch_pd, pdpe);
 			free_pd(vm->i915, pd);
 		}
 	}
@@ -832,9 +825,6 @@ static void gen8_ppgtt_clear_pml4(struct i915_address_space *vm,
 	struct i915_hw_ppgtt *ppgtt = i915_vm_to_ppgtt(vm);
 	struct i915_page_directory_pointer *pdp;
 	uint64_t pml4e;
-	gen8_ppgtt_pml4e_t *pml4e_vaddr;
-	gen8_ppgtt_pml4e_t scratch_pml4e =
-		gen8_pml4e_encode(px_dma(vm->scratch_pdp), I915_CACHE_LLC);
 
 	GEM_BUG_ON(!USES_FULL_48BIT_PPGTT(vm->i915));
 
@@ -844,9 +834,7 @@ static void gen8_ppgtt_clear_pml4(struct i915_address_space *vm,
 
 		if (gen8_ppgtt_clear_pdp(vm, pdp, start, length)) {
 			__clear_bit(pml4e, pml4->used_pml4es);
-			pml4e_vaddr = kmap_px(pml4);
-			pml4e_vaddr[pml4e] = scratch_pml4e;
-			kunmap_px(ppgtt, pml4e_vaddr);
+			gen8_setup_pml4e(ppgtt, pml4, vm->scratch_pdp, pml4e);
 			free_pdp(vm->i915, pdp);
 		}
 	}
@@ -1366,7 +1354,7 @@ static int gen8_alloc_va_range_3lvl(struct i915_address_space *vm,
 
 		kunmap_px(ppgtt, page_directory);
 		__set_bit(pdpe, pdp->used_pdpes);
-		gen8_setup_page_directory(ppgtt, pdp, pd, pdpe);
+		gen8_setup_pdpe(ppgtt, pdp, pd, pdpe);
 	}
 
 	free_gen8_temp_bitmaps(new_page_dirs, new_page_tables);
@@ -1425,7 +1413,7 @@ static int gen8_alloc_va_range_4lvl(struct i915_address_space *vm,
 		if (ret)
 			goto err_out;
 
-		gen8_setup_page_directory_pointer(ppgtt, pml4, pdp, pml4e);
+		gen8_setup_pml4e(ppgtt, pml4, pdp, pml4e);
 	}
 
 	bitmap_or(pml4->used_pml4es, new_pdps, pml4->used_pml4es,
@@ -2723,11 +2711,11 @@ static void i915_gtt_color_adjust(const struct drm_mm_node *node,
 				  u64 *end)
 {
 	if (node->color != color)
-		*start += 4096;
+		*start += I915_GTT_PAGE_SIZE;
 
 	node = list_next_entry(node, node_list);
 	if (node->allocated && node->color != color)
-		*end -= 4096;
+		*end -= I915_GTT_PAGE_SIZE;
 }
 
 int i915_gem_init_ggtt(struct drm_i915_private *dev_priv)
@@ -2754,7 +2742,7 @@ int i915_gem_init_ggtt(struct drm_i915_private *dev_priv)
 	/* Reserve a mappable slot for our lockless error capture */
 	ret = drm_mm_insert_node_in_range_generic(&ggtt->base.mm,
 						  &ggtt->error_capture,
-						  4096, 0,
+						  PAGE_SIZE, 0,
 						  I915_COLOR_UNEVICTABLE,
 						  0, ggtt->mappable_end,
 						  0, 0);

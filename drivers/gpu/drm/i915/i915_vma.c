@@ -91,6 +91,7 @@ __i915_vma_create(struct drm_i915_gem_object *obj,
 	vma->vm = vm;
 	vma->obj = obj;
 	vma->size = obj->base.size;
+	vma->display_alignment = I915_GTT_MIN_ALIGNMENT;
 
 	if (view) {
 		vma->ggtt_view = *view;
@@ -110,6 +111,17 @@ __i915_vma_create(struct drm_i915_gem_object *obj,
 	}
 
 	if (i915_is_ggtt(vm)) {
+		GEM_BUG_ON(overflows_type(vma->size, u32));
+		vma->fence_size = i915_gem_fence_size(vm->i915, vma->size,
+						      i915_gem_object_get_tiling(obj),
+						      i915_gem_object_get_stride(obj));
+		GEM_BUG_ON(!IS_ALIGNED(vma->fence_size, I915_GTT_MIN_ALIGNMENT));
+
+		vma->fence_alignment = i915_gem_fence_alignment(vm->i915, vma->size,
+								i915_gem_object_get_tiling(obj),
+								i915_gem_object_get_stride(obj));
+		GEM_BUG_ON(!is_power_of_2(vma->fence_alignment));
+
 		vma->flags |= I915_VMA_GGTT;
 		list_add(&vma->obj_link, &obj->vma_list);
 	} else {
@@ -258,7 +270,8 @@ i915_vma_misplaced(struct i915_vma *vma, u64 size, u64 alignment, u64 flags)
 	if (vma->node.size < size)
 		return true;
 
-	if (alignment && vma->node.start & (alignment - 1))
+	GEM_BUG_ON(alignment && !is_power_of_2(alignment));
+	if (alignment && !IS_ALIGNED(vma->node.start, alignment))
 		return true;
 
 	if (flags & PIN_MAPPABLE && !i915_vma_is_map_and_fenceable(vma))
@@ -277,31 +290,24 @@ i915_vma_misplaced(struct i915_vma *vma, u64 size, u64 alignment, u64 flags)
 
 void __i915_vma_set_map_and_fenceable(struct i915_vma *vma)
 {
-	struct drm_i915_gem_object *obj = vma->obj;
-	struct drm_i915_private *dev_priv = to_i915(obj->base.dev);
 	bool mappable, fenceable;
-	u32 fence_size, fence_alignment;
 
-	fence_size = i915_gem_get_ggtt_size(dev_priv,
-					    vma->size,
-					    i915_gem_object_get_tiling(obj));
-	fence_alignment = i915_gem_get_ggtt_alignment(dev_priv,
-						      vma->size,
-						      i915_gem_object_get_tiling(obj),
-						      true);
-
-	fenceable = (vma->node.size == fence_size &&
-		     (vma->node.start & (fence_alignment - 1)) == 0);
-
-	mappable = (vma->node.start + fence_size <=
-		    dev_priv->ggtt.mappable_end);
+	GEM_BUG_ON(!i915_vma_is_ggtt(vma));
+	GEM_BUG_ON(!vma->fence_size);
 
 	/*
 	 * Explicitly disable for rotated VMA since the display does not
 	 * need the fence and the VMA is not accessible to other users.
 	 */
-	if (mappable && fenceable &&
-	    vma->ggtt_view.type != I915_GGTT_VIEW_ROTATED)
+	if (vma->ggtt_view.type == I915_GGTT_VIEW_ROTATED)
+		return;
+
+	fenceable = (vma->node.size >= vma->fence_size &&
+		     IS_ALIGNED(vma->node.start, vma->fence_alignment));
+
+	mappable = vma->node.start + vma->fence_size <= i915_vm_to_ggtt(vma->vm)->mappable_end;
+
+	if (mappable && fenceable)
 		vma->flags |= I915_VMA_CAN_FENCE;
 	else
 		vma->flags &= ~I915_VMA_CAN_FENCE;
@@ -368,22 +374,26 @@ i915_vma_insert(struct i915_vma *vma, u64 size, u64 alignment, u64 flags)
 	GEM_BUG_ON(drm_mm_node_allocated(&vma->node));
 
 	size = max(size, vma->size);
-	if (flags & PIN_MAPPABLE)
-		size = i915_gem_get_ggtt_size(dev_priv, size,
-					      i915_gem_object_get_tiling(obj));
+	alignment = max(alignment, vma->display_alignment);
+	if (flags & PIN_MAPPABLE) {
+		size = max_t(typeof(size), size, vma->fence_size);
+		alignment = max_t(typeof(alignment),
+				  alignment, vma->fence_alignment);
+	}
 
-	alignment = max(max(alignment, vma->display_alignment),
-			i915_gem_get_ggtt_alignment(dev_priv, size,
-						    i915_gem_object_get_tiling(obj),
-						    flags & PIN_MAPPABLE));
+	GEM_BUG_ON(!IS_ALIGNED(size, I915_GTT_PAGE_SIZE));
+	GEM_BUG_ON(!IS_ALIGNED(alignment, I915_GTT_MIN_ALIGNMENT));
+	GEM_BUG_ON(!is_power_of_2(alignment));
 
 	start = flags & PIN_OFFSET_BIAS ? flags & PIN_OFFSET_MASK : 0;
+	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE));
 
 	end = vma->vm->total;
 	if (flags & PIN_MAPPABLE)
 		end = min_t(u64, end, dev_priv->ggtt.mappable_end);
 	if (flags & PIN_ZONE_4G)
-		end = min_t(u64, end, (1ULL << 32) - PAGE_SIZE);
+		end = min_t(u64, end, (1ULL << 32) - I915_GTT_PAGE_SIZE);
+	GEM_BUG_ON(!IS_ALIGNED(end, I915_GTT_PAGE_SIZE));
 
 	/* If binding the object/GGTT view requires more space than the entire
 	 * aperture has, reject it early before evicting everything in a vain
@@ -403,7 +413,7 @@ i915_vma_insert(struct i915_vma *vma, u64 size, u64 alignment, u64 flags)
 
 	if (flags & PIN_OFFSET_FIXED) {
 		u64 offset = flags & PIN_OFFSET_MASK;
-		if (offset & (alignment - 1) ||
+		if (!IS_ALIGNED(offset, alignment) ||
 		    range_overflows(offset, size, end)) {
 			ret = -EINVAL;
 			goto err_unpin;
@@ -437,7 +447,7 @@ i915_vma_insert(struct i915_vma *vma, u64 size, u64 alignment, u64 flags)
 		 * with zero alignment, so where possible use the optimal
 		 * path.
 		 */
-		if (alignment <= 4096)
+		if (alignment <= I915_GTT_MIN_ALIGNMENT)
 			alignment = 0;
 
 search_free:
