@@ -514,13 +514,12 @@ static void remove_widget(struct snd_soc_component *comp,
 			    == SND_SOC_TPLG_TYPE_MIXER)
 				kfree(kcontrol->tlv.p);
 
-			snd_ctl_remove(card, kcontrol);
-
 			/* Private value is used as struct soc_mixer_control
 			 * for volume mixers or soc_bytes_ext for bytes
 			 * controls.
 			 */
 			kfree((void *)kcontrol->private_value);
+			snd_ctl_remove(card, kcontrol);
 		}
 		kfree(w->kcontrol_news);
 	}
@@ -1863,7 +1862,7 @@ static int soc_tplg_pcm_elems_load(struct soc_tplg *tplg,
 {
 	struct snd_soc_tplg_pcm *pcm, *_pcm;
 	int count = hdr->count;
-	int i, err;
+	int i;
 	bool abi_match;
 
 	if (tplg->pass != SOC_TPLG_PASS_PCM_DAI)
@@ -1897,7 +1896,7 @@ static int soc_tplg_pcm_elems_load(struct soc_tplg *tplg,
 			_pcm = pcm;
 		} else {
 			abi_match = false;
-			err = pcm_new_ver(tplg, pcm, &_pcm);
+			pcm_new_ver(tplg, pcm, &_pcm);
 		}
 
 		/* create the FE DAIs and DAI links */

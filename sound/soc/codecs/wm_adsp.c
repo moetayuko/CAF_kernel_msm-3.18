@@ -1551,7 +1551,7 @@ static int wm_adsp_load(struct wm_adsp *dsp)
 	const struct wmfw_region *region;
 	const struct wm_adsp_region *mem;
 	const char *region_name;
-	char *file, *text;
+	char *file, *text = NULL;
 	struct wm_adsp_buf *buf;
 	unsigned int reg;
 	int regions = 0;
@@ -1700,10 +1700,21 @@ static int wm_adsp_load(struct wm_adsp *dsp)
 			 regions, le32_to_cpu(region->len), offset,
 			 region_name);
 
+		if ((pos + le32_to_cpu(region->len) + sizeof(*region)) >
+		    firmware->size) {
+			adsp_err(dsp,
+				 "%s.%d: %s region len %d bytes exceeds file length %zu\n",
+				 file, regions, region_name,
+				 le32_to_cpu(region->len), firmware->size);
+			ret = -EINVAL;
+			goto out_fw;
+		}
+
 		if (text) {
 			memcpy(text, region->data, le32_to_cpu(region->len));
 			adsp_info(dsp, "%s: %s\n", file, text);
 			kfree(text);
+			text = NULL;
 		}
 
 		if (reg) {
@@ -1748,6 +1759,7 @@ out_fw:
 	regmap_async_complete(regmap);
 	wm_adsp_buf_free(&buf_list);
 	release_firmware(firmware);
+	kfree(text);
 out:
 	kfree(file);
 
@@ -2233,6 +2245,17 @@ static int wm_adsp_load_coeff(struct wm_adsp *dsp)
 		}
 
 		if (reg) {
+			if ((pos + le32_to_cpu(blk->len) + sizeof(*blk)) >
+			    firmware->size) {
+				adsp_err(dsp,
+					 "%s.%d: %s region len %d bytes exceeds file length %zu\n",
+					 file, blocks, region_name,
+					 le32_to_cpu(blk->len),
+					 firmware->size);
+				ret = -EINVAL;
+				goto out_fw;
+			}
+
 			buf = wm_adsp_buf_alloc(blk->data,
 						le32_to_cpu(blk->len),
 						&buf_list);
@@ -2500,6 +2523,43 @@ static void wm_adsp2_set_dspclk(struct wm_adsp *dsp, unsigned int freq)
 		adsp_err(dsp, "Failed to set clock rate: %d\n", ret);
 }
 
+int wm_adsp2_preloader_get(struct snd_kcontrol *kcontrol,
+			   struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct wm_adsp *dsp = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = dsp->preloaded;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wm_adsp2_preloader_get);
+
+int wm_adsp2_preloader_put(struct snd_kcontrol *kcontrol,
+			   struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct wm_adsp *dsp = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	char preload[32];
+
+	snprintf(preload, ARRAY_SIZE(preload), "DSP%d Preload", mc->shift);
+
+	dsp->preloaded = ucontrol->value.integer.value[0];
+
+	if (ucontrol->value.integer.value[0])
+		snd_soc_dapm_force_enable_pin(dapm, preload);
+	else
+		snd_soc_dapm_disable_pin(dapm, preload);
+
+	snd_soc_dapm_sync(dapm);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wm_adsp2_preloader_put);
+
 int wm_adsp2_early_event(struct snd_soc_dapm_widget *w,
 			 struct snd_kcontrol *kcontrol, int event,
 			 unsigned int freq)
@@ -2631,9 +2691,15 @@ EXPORT_SYMBOL_GPL(wm_adsp2_event);
 
 int wm_adsp2_codec_probe(struct wm_adsp *dsp, struct snd_soc_codec *codec)
 {
-	dsp->codec = codec;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	char preload[32];
+
+	snprintf(preload, ARRAY_SIZE(preload), "DSP%d Preload", dsp->num);
+	snd_soc_dapm_disable_pin(dapm, preload);
 
 	wm_adsp2_init_debugfs(dsp, codec);
+
+	dsp->codec = codec;
 
 	return snd_soc_add_codec_controls(codec,
 					  &wm_adsp_fw_controls[dsp->num - 1],

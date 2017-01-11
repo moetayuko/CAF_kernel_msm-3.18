@@ -3109,7 +3109,7 @@ static int rt5645_jack_detect(struct snd_soc_codec *codec, int jack_insert)
 	unsigned int val;
 
 	if (jack_insert) {
-		regmap_write(rt5645->regmap, RT5645_CHARGE_PUMP, 0x0006);
+		regmap_write(rt5645->regmap, RT5645_CHARGE_PUMP, 0x0e06);
 
 		/* for jack type detect */
 		snd_soc_dapm_force_enable_pin(dapm, "LDO2");
@@ -3832,6 +3832,9 @@ static int rt5645_i2c_probe(struct i2c_client *i2c,
 			break;
 		}
 	}
+
+	regmap_update_bits(rt5645->regmap, RT5645_ADDA_CLK1,
+		RT5645_I2S_PD1_MASK, RT5645_I2S_PD1_2);
 
 	if (rt5645->pdata.jd_invert) {
 		regmap_update_bits(rt5645->regmap, RT5645_IRQ_CTRL2,

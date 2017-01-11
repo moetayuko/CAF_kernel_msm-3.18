@@ -507,9 +507,6 @@ int snd_soc_params_to_bclk(struct snd_pcm_hw_params *parms);
 int snd_soc_set_runtime_hwparams(struct snd_pcm_substream *substream,
 	const struct snd_pcm_hardware *hw);
 
-int snd_soc_platform_trigger(struct snd_pcm_substream *substream,
-		int cmd, struct snd_soc_platform *platform);
-
 int soc_dai_hw_params(struct snd_pcm_substream *substream,
 		      struct snd_pcm_hw_params *params,
 		      struct snd_soc_dai *dai);
@@ -785,6 +782,10 @@ struct snd_soc_component_driver {
 	int (*suspend)(struct snd_soc_component *);
 	int (*resume)(struct snd_soc_component *);
 
+	/* pcm creation and destruction */
+	int (*pcm_new)(struct snd_soc_pcm_runtime *);
+	void (*pcm_free)(struct snd_pcm *);
+
 	/* DT */
 	int (*of_xlate_dai_name)(struct snd_soc_component *component,
 				 struct of_phandle_args *args,
@@ -813,6 +814,7 @@ struct snd_soc_component {
 	unsigned int suspended:1; /* is in suspend PM state */
 
 	struct list_head list;
+	struct list_head card_aux_list; /* for auxiliary bound components */
 	struct list_head card_list;
 
 	struct snd_soc_dai_driver *dai_drv;
@@ -858,6 +860,8 @@ struct snd_soc_component {
 	void (*remove)(struct snd_soc_component *);
 	int (*suspend)(struct snd_soc_component *);
 	int (*resume)(struct snd_soc_component *);
+	int (*pcm_new)(struct snd_soc_pcm_runtime *);
+	void (*pcm_free)(struct snd_pcm *);
 
 	/* machine specific init */
 	int (*init)(struct snd_soc_component *component);
@@ -940,20 +944,11 @@ struct snd_soc_platform_driver {
 	int (*pcm_new)(struct snd_soc_pcm_runtime *);
 	void (*pcm_free)(struct snd_pcm *);
 
-	/*
-	 * For platform caused delay reporting.
-	 * Optional.
-	 */
-	snd_pcm_sframes_t (*delay)(struct snd_pcm_substream *,
-		struct snd_soc_dai *);
-
 	/* platform stream pcm ops */
 	const struct snd_pcm_ops *ops;
 
 	/* platform stream compress ops */
 	const struct snd_compr_ops *compr_ops;
-
-	int (*bespoke_trigger)(struct snd_pcm_substream *, int);
 };
 
 struct snd_soc_dai_link_component {
@@ -1152,6 +1147,7 @@ struct snd_soc_card {
 	 */
 	struct snd_soc_aux_dev *aux_dev;
 	int num_aux_devs;
+	struct list_head aux_comp_list;
 
 	const struct snd_kcontrol_new *controls;
 	int num_controls;
@@ -1547,6 +1543,7 @@ static inline void snd_soc_initialize_card_lists(struct snd_soc_card *card)
 	INIT_LIST_HEAD(&card->widgets);
 	INIT_LIST_HEAD(&card->paths);
 	INIT_LIST_HEAD(&card->dapm_list);
+	INIT_LIST_HEAD(&card->aux_comp_list);
 	INIT_LIST_HEAD(&card->component_dev_list);
 }
 
