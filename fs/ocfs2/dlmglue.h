@@ -182,10 +182,10 @@ void ocfs2_set_locking_protocol(void);
  * Keep a list of processes who have interest in a lockres.
  * Note: this is now only uesed for check recursive cluster lock.
  */
-inline void ocfs2_add_holder(struct ocfs2_lock_res *lockres,
+void ocfs2_add_holder(struct ocfs2_lock_res *lockres,
 			     struct ocfs2_holder *oh);
-inline void ocfs2_remove_holder(struct ocfs2_lock_res *lockres,
+void ocfs2_remove_holder(struct ocfs2_lock_res *lockres,
 			     struct ocfs2_holder *oh);
-inline struct ocfs2_holder *ocfs2_is_locked_by_me(struct ocfs2_lock_res *lockres);
+struct ocfs2_holder *ocfs2_is_locked_by_me(struct ocfs2_lock_res *lockres);
 
 #endif	/* DLMGLUE_H */

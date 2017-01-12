@@ -750,7 +750,7 @@ void ocfs2_lock_res_free(struct ocfs2_lock_res *res)
 	res->l_flags = 0UL;
 }
 
-inline void ocfs2_add_holder(struct ocfs2_lock_res *lockres,
+void ocfs2_add_holder(struct ocfs2_lock_res *lockres,
 				   struct ocfs2_holder *oh)
 {
 	INIT_LIST_HEAD(&oh->oh_list);
@@ -761,7 +761,7 @@ inline void ocfs2_add_holder(struct ocfs2_lock_res *lockres,
 	spin_unlock(&lockres->l_lock);
 }
 
-inline void ocfs2_remove_holder(struct ocfs2_lock_res *lockres,
+void ocfs2_remove_holder(struct ocfs2_lock_res *lockres,
 				       struct ocfs2_holder *oh)
 {
 	spin_lock(&lockres->l_lock);
@@ -771,7 +771,7 @@ inline void ocfs2_remove_holder(struct ocfs2_lock_res *lockres,
 	put_pid(oh->oh_owner_pid);
 }
 
-inline struct ocfs2_holder *ocfs2_is_locked_by_me(struct ocfs2_lock_res *lockres)
+struct ocfs2_holder *ocfs2_is_locked_by_me(struct ocfs2_lock_res *lockres)
 {
 	struct ocfs2_holder *oh;
 	struct pid *pid;
