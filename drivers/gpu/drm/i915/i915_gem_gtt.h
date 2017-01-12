@@ -40,6 +40,9 @@
 #include "i915_gem_timeline.h"
 #include "i915_gem_request.h"
 
+#define I915_GTT_PAGE_SIZE 4096UL
+#define I915_GTT_MIN_ALIGNMENT I915_GTT_PAGE_SIZE
+
 #define I915_FENCE_REG_NONE -1
 #define I915_MAX_NUM_FENCES 32
 /* 32 fences + sign bit for FENCE_REG_NONE */
@@ -529,6 +532,16 @@ int __must_check i915_gem_gtt_prepare_pages(struct drm_i915_gem_object *obj,
 void i915_gem_gtt_finish_pages(struct drm_i915_gem_object *obj,
 			       struct sg_table *pages);
 
+int i915_gem_gtt_reserve(struct i915_address_space *vm,
+			 struct drm_mm_node *node,
+			 u64 size, u64 offset, unsigned long color,
+			 unsigned int flags);
+
+int i915_gem_gtt_insert(struct i915_address_space *vm,
+			struct drm_mm_node *node,
+			u64 size, u64 alignment, unsigned long color,
+			u64 start, u64 end, unsigned int flags);
+
 /* Flags used by pin/bind&friends. */
 #define PIN_NONBLOCK		BIT(0)
 #define PIN_MAPPABLE		BIT(1)
@@ -543,6 +556,6 @@ void i915_gem_gtt_finish_pages(struct drm_i915_gem_object *obj,
 #define PIN_HIGH		BIT(9)
 #define PIN_OFFSET_BIAS		BIT(10)
 #define PIN_OFFSET_FIXED	BIT(11)
-#define PIN_OFFSET_MASK		(~4095)
+#define PIN_OFFSET_MASK		(-I915_GTT_PAGE_SIZE)
 
 #endif
