@@ -104,12 +104,43 @@ static void mcip_probe_n_setup(void)
 	cpuinfo_arc700[0].extn.gfrc = mp.gfrc;
 }
 
+static void __init mcip_cpu_wait(int cpu)
+{
+	struct mcip_bcr mp;
+
+	READ_BCR(ARC_REG_MCIP_BCR, mp);
+
+	/*
+	 * self halt for waiting as Master will resume us using MCIP ICD assist
+	 * Note: if ICD is not configured, we are hosed, but panic here is
+	 *       not going to help as UART access might not even work
+	 */
+	if (mp.dbg)
+		asm volatile("flag 1	\n");
+}
+
+static void __init mcip_cpu_kick(int cpu, unsigned long pc)
+{
+	struct mcip_bcr mp;
+
+	READ_BCR(ARC_REG_MCIP_BCR, mp);
+
+	if (mp.dbg)
+		__mcip_cmd_data(CMD_DEBUG_RUN, 0, (1 << cpu));
+	else
+		panic("SMP boot issues: MCIP lacks ICD\n");
+}
+
 struct plat_smp_ops plat_smp_ops = {
 	.info		= smp_cpuinfo_buf,
 	.init_early_smp	= mcip_probe_n_setup,
 	.init_per_cpu	= mcip_setup_per_cpu,
 	.ipi_send	= mcip_ipi_send,
 	.ipi_clear	= mcip_ipi_clear,
+	.cpu_kick	= mcip_cpu_kick,
+#ifndef CONFIG_ARC_SMP_HALT_ON_RESET
+	.cpu_wait	= mcip_cpu_wait,
+#endif
 };
 
 #endif
