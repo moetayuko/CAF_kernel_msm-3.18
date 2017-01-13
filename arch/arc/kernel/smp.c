@@ -96,16 +96,25 @@ static void arc_default_smp_cpu_kick(int cpu, unsigned long pc)
 	wake_flag = cpu;
 }
 
+static void arc_default_smp_wait_to_boot(int cpu)
+{
+	while (wake_flag != cpu)
+		;
+
+	wake_flag = 0;
+}
+
 void arc_platform_smp_wait_to_boot(int cpu)
 {
 	/* for halt-on-reset, we've waited already */
 	if (IS_ENABLED(CONFIG_ARC_SMP_HALT_ON_RESET))
 		return;
 
-	while (wake_flag != cpu)
-		;
-
-	wake_flag = 0;
+	/* platform callback might fail */
+	if (plat_smp_ops.cpu_wait)
+		plat_smp_ops.cpu_wait(cpu);
+	else
+		arc_default_smp_wait_to_boot(cpu);
 }
 
 const char *arc_platform_smp_cpuinfo(void)
