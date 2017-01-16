@@ -159,8 +159,35 @@ describe_obj(struct seq_file *m, struct drm_i915_gem_object *obj)
 		seq_printf(m, " (%sgtt offset: %08llx, size: %08llx",
 			   i915_vma_is_ggtt(vma) ? "g" : "pp",
 			   vma->node.start, vma->node.size);
-		if (i915_vma_is_ggtt(vma))
-			seq_printf(m, ", type: %u", vma->ggtt_view.type);
+		if (i915_vma_is_ggtt(vma)) {
+			switch (vma->ggtt_view.type) {
+			case I915_GGTT_VIEW_NORMAL:
+				seq_puts(m, ", normal");
+				break;
+
+			case I915_GGTT_VIEW_PARTIAL:
+				seq_printf(m, ", partial [%08llx+%x]",
+					   vma->ggtt_view.partial.offset << PAGE_SHIFT,
+					   vma->ggtt_view.partial.size << PAGE_SHIFT);
+				break;
+
+			case I915_GGTT_VIEW_ROTATED:
+				seq_printf(m, ", rotated [(%ux%u, stride=%u, offset=%u), (%ux%u, stride=%u, offset=%u)]",
+					   vma->ggtt_view.rotated.plane[0].width,
+					   vma->ggtt_view.rotated.plane[0].height,
+					   vma->ggtt_view.rotated.plane[0].stride,
+					   vma->ggtt_view.rotated.plane[0].offset,
+					   vma->ggtt_view.rotated.plane[1].width,
+					   vma->ggtt_view.rotated.plane[1].height,
+					   vma->ggtt_view.rotated.plane[1].stride,
+					   vma->ggtt_view.rotated.plane[1].offset);
+				break;
+
+			default:
+				MISSING_CASE(vma->ggtt_view.type);
+				break;
+			}
+		}
 		if (vma->fence)
 			seq_printf(m, " , fence: %d%s",
 				   vma->fence->id,
@@ -2605,6 +2632,30 @@ static int i915_edp_psr_status(struct seq_file *m, void *data)
 			EDP_PSR_PERF_CNT_MASK;
 
 		seq_printf(m, "Performance_Counter: %u\n", psrperf);
+	}
+	if (dev_priv->psr.psr2_support) {
+		static const char * const live_status[] = {
+							"IDLE",
+							"CAPTURE",
+							"CAPTURE_FS",
+							"SLEEP",
+							"BUFON_FW",
+							"ML_UP",
+							"SU_STANDBY",
+							"FAST_SLEEP",
+							"DEEP_SLEEP",
+							"BUF_ON",
+							"TG_ON" };
+		u8 pos = (I915_READ(EDP_PSR2_STATUS_CTL) &
+			EDP_PSR2_STATUS_STATE_MASK) >>
+			EDP_PSR2_STATUS_STATE_SHIFT;
+
+		seq_printf(m, "PSR2_STATUS_EDP: %x\n",
+			I915_READ(EDP_PSR2_STATUS_CTL));
+
+		if (pos < ARRAY_SIZE(live_status))
+		seq_printf(m, "PSR2 live state %s\n",
+			live_status[pos]);
 	}
 	mutex_unlock(&dev_priv->psr.lock);
 
