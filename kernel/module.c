@@ -1145,7 +1145,7 @@ static size_t module_flags_taint(struct module *mod, char *buf)
 
 	for (i = 0; i < TAINT_FLAGS_COUNT; i++) {
 		if (taint_flags[i].module && test_bit(i, &mod->taints))
-			buf[l++] = taint_flags[i].true;
+			buf[l++] = taint_flags[i].c_true;
 	}
 
 	return l;
@@ -2812,6 +2812,8 @@ static int check_modinfo_livepatch(struct module *mod, struct load_info *info)
 	if (get_modinfo(info, "livepatch")) {
 		mod->klp = true;
 		add_taint_module(mod, TAINT_LIVEPATCH, LOCKDEP_STILL_OK);
+		pr_notice_once("%s: tainting kernel with TAINT_LIVEPATCH\n",
+			       mod->name);
 	}
 
 	return 0;
