@@ -15,7 +15,9 @@
 	BUILD_BUG_ON(sizeof(addrtype) != (high - low + 1) * sizeof(long));\
 	asm volatile(							\
 		"	lctlg	%1,%2,%0\n"				\
-		: : "Q" (*(addrtype *)(&array)), "i" (low), "i" (high));\
+		:							\
+		: "Q" (*(addrtype *)(&array)), "i" (low), "i" (high)	\
+		: "memory");						\
 }
 
 #define __ctl_store(array, low, high) {					\
@@ -60,7 +62,9 @@ union ctlreg0 {
 		unsigned long	   : 4;
 		unsigned long afp  : 1; /* AFP-register control */
 		unsigned long vx   : 1; /* Vector enablement control */
-		unsigned long	   : 17;
+		unsigned long	   : 7;
+		unsigned long sssm : 1; /* Service signal subclass mask */
+		unsigned long	   : 9;
 	};
 };
 
