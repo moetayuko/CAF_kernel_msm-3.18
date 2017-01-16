@@ -34,6 +34,7 @@ struct mcip_cmd {
 #define CMD_SEMA_CLAIM_AND_READ		0x11
 #define CMD_SEMA_RELEASE		0x12
 
+#define CMD_DEBUG_RUN			0x33
 #define CMD_DEBUG_SET_MASK		0x34
 #define CMD_DEBUG_SET_SELECT		0x36
 
