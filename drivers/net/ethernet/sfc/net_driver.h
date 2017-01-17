@@ -208,6 +208,12 @@ struct efx_tx_buffer {
  * @write_count: Current write pointer
  *	This is the number of buffers that have been added to the
  *	hardware ring.
+ * @packet_write_count: Completable write pointer
+ *	This is the write pointer of the last packet written.
+ *	Normally this will equal @write_count, but as option descriptors
+ *	don't produce completion events, they won't update this.
+ *	Filled in iff @efx->type->option_descriptors; only used for PIO.
+ *	Thus, this is written and used on EF10, and neither on farch.
  * @old_read_count: The value of read_count when last checked.
  *	This is here for performance reasons.  The xmit path will
  *	only get the up-to-date value of read_count if this
@@ -255,6 +261,7 @@ struct efx_tx_queue {
 	/* Members used only on the xmit path */
 	unsigned int insert_count ____cacheline_aligned_in_smp;
 	unsigned int write_count;
+	unsigned int packet_write_count;
 	unsigned int old_read_count;
 	unsigned int tso_bursts;
 	unsigned int tso_long_headers;
@@ -1220,6 +1227,7 @@ struct efx_mtd_partition {
  * @ptp_set_ts_config: Set hardware timestamp configuration.  The flags
  *	and tx_type will already have been validated but this operation
  *	must validate and update rx_filter.
+ * @get_phys_port_id: Get the underlying physical port id.
  * @set_mac_address: Set the MAC address of the device
  * @tso_versions: Returns mask of firmware-assisted TSO versions supported.
  *	If %NULL, then device does not support any TSO version.
@@ -1236,6 +1244,7 @@ struct efx_mtd_partition {
  * @rx_buffer_padding: Size of padding at end of RX packet
  * @can_rx_scatter: NIC is able to scatter packets to multiple buffers
  * @always_rx_scatter: NIC will always scatter packets to multiple buffers
+ * @option_descriptors: NIC supports TX option descriptors
  * @max_interrupt_mode: Highest capability interrupt mode supported
  *	from &enum efx_init_mode.
  * @timer_period_max: Maximum period of interrupt timer (in ticks)
@@ -1358,6 +1367,8 @@ struct efx_nic_type {
 	int (*sriov_configure)(struct efx_nic *efx, int num_vfs);
 	int (*vlan_rx_add_vid)(struct efx_nic *efx, __be16 proto, u16 vid);
 	int (*vlan_rx_kill_vid)(struct efx_nic *efx, __be16 proto, u16 vid);
+	int (*get_phys_port_id)(struct efx_nic *efx,
+				struct netdev_phys_item_id *ppid);
 	int (*sriov_init)(struct efx_nic *efx);
 	void (*sriov_fini)(struct efx_nic *efx);
 	bool (*sriov_wanted)(struct efx_nic *efx);
@@ -1372,8 +1383,6 @@ struct efx_nic_type {
 				   struct ifla_vf_info *ivi);
 	int (*sriov_set_vf_link_state)(struct efx_nic *efx, int vf_i,
 				       int link_state);
-	int (*sriov_get_phys_port_id)(struct efx_nic *efx,
-				      struct netdev_phys_item_id *ppid);
 	int (*vswitching_probe)(struct efx_nic *efx);
 	int (*vswitching_restore)(struct efx_nic *efx);
 	void (*vswitching_remove)(struct efx_nic *efx);
@@ -1394,6 +1403,7 @@ struct efx_nic_type {
 	unsigned int rx_buffer_padding;
 	bool can_rx_scatter;
 	bool always_rx_scatter;
+	bool option_descriptors;
 	unsigned int max_interrupt_mode;
 	unsigned int timer_period_max;
 	netdev_features_t offload_features;

@@ -197,11 +197,15 @@ static int efx_ef10_init_datapath_caps(struct efx_nic *efx)
 	nic_data->datapath_caps =
 		MCDI_DWORD(outbuf, GET_CAPABILITIES_OUT_FLAGS1);
 
-	if (outlen >= MC_CMD_GET_CAPABILITIES_V2_OUT_LEN)
+	if (outlen >= MC_CMD_GET_CAPABILITIES_V2_OUT_LEN) {
 		nic_data->datapath_caps2 = MCDI_DWORD(outbuf,
 				GET_CAPABILITIES_V2_OUT_FLAGS2);
-	else
+		nic_data->piobuf_size = MCDI_WORD(outbuf,
+				GET_CAPABILITIES_V2_OUT_SIZE_PIO_BUFF);
+	} else {
 		nic_data->datapath_caps2 = 0;
+		nic_data->piobuf_size = ER_DZ_TX_PIOBUF_SIZE;
+	}
 
 	/* record the DPCPU firmware IDs to determine VEB vswitching support.
 	 */
@@ -547,7 +551,6 @@ static DEVICE_ATTR(primary_flag, 0444, efx_ef10_show_primary_flag, NULL);
 static int efx_ef10_probe(struct efx_nic *efx)
 {
 	struct efx_ef10_nic_data *nic_data;
-	struct net_device *net_dev = efx->net_dev;
 	int i, rc;
 
 	/* We can have one VI for each 8K region.  However, until we
@@ -637,7 +640,6 @@ static int efx_ef10_probe(struct efx_nic *efx)
 	if (rc < 0)
 		goto fail5;
 	efx->port_num = rc;
-	net_dev->dev_port = rc;
 
 	rc = efx->type->get_mac_address(efx, efx->net_dev->perm_addr);
 	if (rc)
@@ -825,8 +827,8 @@ static int efx_ef10_link_piobufs(struct efx_nic *efx)
 			offset = ((efx->tx_channel_offset + efx->n_tx_channels -
 				   tx_queue->channel->channel - 1) *
 				  efx_piobuf_size);
-			index = offset / ER_DZ_TX_PIOBUF_SIZE;
-			offset = offset % ER_DZ_TX_PIOBUF_SIZE;
+			index = offset / nic_data->piobuf_size;
+			offset = offset % nic_data->piobuf_size;
 
 			/* When the host page size is 4K, the first
 			 * host page in the WC mapping may be within
@@ -1161,11 +1163,11 @@ static int efx_ef10_dimension_resources(struct efx_nic *efx)
 	 * functions of the controller.
 	 */
 	if (efx_piobuf_size != 0 &&
-	    ER_DZ_TX_PIOBUF_SIZE / efx_piobuf_size * EF10_TX_PIOBUF_COUNT >=
+	    nic_data->piobuf_size / efx_piobuf_size * EF10_TX_PIOBUF_COUNT >=
 	    efx->n_tx_channels) {
 		unsigned int n_piobufs =
 			DIV_ROUND_UP(efx->n_tx_channels,
-				     ER_DZ_TX_PIOBUF_SIZE / efx_piobuf_size);
+				     nic_data->piobuf_size / efx_piobuf_size);
 
 		rc = efx_ef10_alloc_piobufs(efx, n_piobufs);
 		if (rc)
@@ -2360,7 +2362,11 @@ static void efx_ef10_tx_write(struct efx_tx_queue *tx_queue)
 		/* Create TX descriptor ring entry */
 		if (buffer->flags & EFX_TX_BUF_OPTION) {
 			*txd = buffer->option;
+			if (EFX_QWORD_FIELD(*txd, ESF_DZ_TX_OPTION_TYPE) == 1)
+				/* PIO descriptor */
+				tx_queue->packet_write_count = tx_queue->write_count;
 		} else {
+			tx_queue->packet_write_count = tx_queue->write_count;
 			BUILD_BUG_ON(EFX_TX_BUF_CONT != 1);
 			EFX_POPULATE_QWORD_3(
 				*txd,
@@ -5540,6 +5546,20 @@ static int efx_ef10_ptp_set_ts_config(struct efx_nic *efx,
 	}
 }
 
+static int efx_ef10_get_phys_port_id(struct efx_nic *efx,
+				     struct netdev_phys_item_id *ppid)
+{
+	struct efx_ef10_nic_data *nic_data = efx->nic_data;
+
+	if (!is_valid_ether_addr(nic_data->port_id))
+		return -EOPNOTSUPP;
+
+	ppid->id_len = ETH_ALEN;
+	memcpy(ppid->id, nic_data->port_id, ppid->id_len);
+
+	return 0;
+}
+
 static int efx_ef10_vlan_rx_add_vid(struct efx_nic *efx, __be16 proto, u16 vid)
 {
 	if (proto != htons(ETH_P_8021Q))
@@ -5647,11 +5667,11 @@ const struct efx_nic_type efx_hunt_a0_vf_nic_type = {
 	.vswitching_probe = efx_ef10_vswitching_probe_vf,
 	.vswitching_restore = efx_ef10_vswitching_restore_vf,
 	.vswitching_remove = efx_ef10_vswitching_remove_vf,
-	.sriov_get_phys_port_id = efx_ef10_sriov_get_phys_port_id,
 #endif
 	.get_mac_address = efx_ef10_get_mac_address_vf,
 	.set_mac_address = efx_ef10_set_mac_address,
 
+	.get_phys_port_id = efx_ef10_get_phys_port_id,
 	.revision = EFX_REV_HUNT_A0,
 	.max_dma_mask = DMA_BIT_MASK(ESF_DZ_TX_KER_BUF_ADDR_WIDTH),
 	.rx_prefix_size = ES_DZ_RX_PREFIX_SIZE,
@@ -5776,6 +5796,7 @@ const struct efx_nic_type efx_hunt_a0_nic_type = {
 	.set_mac_address = efx_ef10_set_mac_address,
 	.tso_versions = efx_ef10_tso_versions,
 
+	.get_phys_port_id = efx_ef10_get_phys_port_id,
 	.revision = EFX_REV_HUNT_A0,
 	.max_dma_mask = DMA_BIT_MASK(ESF_DZ_TX_KER_BUF_ADDR_WIDTH),
 	.rx_prefix_size = ES_DZ_RX_PREFIX_SIZE,
@@ -5783,6 +5804,7 @@ const struct efx_nic_type efx_hunt_a0_nic_type = {
 	.rx_ts_offset = ES_DZ_RX_PREFIX_TSTAMP_OFST,
 	.can_rx_scatter = true,
 	.always_rx_scatter = true,
+	.option_descriptors = true,
 	.max_interrupt_mode = EFX_INT_MODE_MSIX,
 	.timer_period_max = 1 << ERF_DD_EVQ_IND_TIMER_VAL_WIDTH,
 	.offload_features = EF10_OFFLOAD_FEATURES,

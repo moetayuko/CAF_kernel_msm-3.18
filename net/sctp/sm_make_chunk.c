@@ -1536,7 +1536,7 @@ void sctp_chunk_assign_ssn(struct sctp_chunk *chunk)
 
 	/* All fragments will be on the same stream */
 	sid = ntohs(chunk->subh.data_hdr->stream);
-	stream = &chunk->asoc->ssnmap->out;
+	stream = chunk->asoc->stream;
 
 	/* Now assign the sequence number to the entire message.
 	 * All fragments must have the same stream sequence number.
@@ -1547,9 +1547,9 @@ void sctp_chunk_assign_ssn(struct sctp_chunk *chunk)
 			ssn = 0;
 		} else {
 			if (lchunk->chunk_hdr->flags & SCTP_DATA_LAST_FRAG)
-				ssn = sctp_ssn_next(stream, sid);
+				ssn = sctp_ssn_next(stream, out, sid);
 			else
-				ssn = sctp_ssn_peek(stream, sid);
+				ssn = sctp_ssn_peek(stream, out, sid);
 		}
 
 		lchunk->subh.data_hdr->ssn = htons(ssn);
@@ -2444,9 +2444,9 @@ int sctp_process_init(struct sctp_association *asoc, struct sctp_chunk *chunk,
 	if (!asoc->temp) {
 		int error;
 
-		asoc->ssnmap = sctp_ssnmap_new(asoc->c.sinit_max_instreams,
+		asoc->stream = sctp_stream_new(asoc->c.sinit_max_instreams,
 					       asoc->c.sinit_num_ostreams, gfp);
-		if (!asoc->ssnmap)
+		if (!asoc->stream)
 			goto clean_up;
 
 		error = sctp_assoc_set_id(asoc, gfp);
@@ -3210,7 +3210,6 @@ struct sctp_chunk *sctp_process_asconf(struct sctp_association *asoc,
 	union sctp_params param;
 	sctp_addiphdr_t		*hdr;
 	union sctp_addr_param	*addr_param;
-	sctp_addip_param_t	*asconf_param;
 	struct sctp_chunk	*asconf_ack;
 	__be16	err_code;
 	int	length = 0;
@@ -3230,7 +3229,6 @@ struct sctp_chunk *sctp_process_asconf(struct sctp_association *asoc,
 	 * asconf parameter.
 	 */
 	length = ntohs(addr_param->p.length);
-	asconf_param = (void *)addr_param + length;
 	chunk_len -= length;
 
 	/* create an ASCONF_ACK chunk.
