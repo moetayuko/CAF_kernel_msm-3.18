@@ -10,6 +10,7 @@
 
 #include <linux/smp.h>
 #include <linux/irq.h>
+#include <linux/irqchip/chained_irq.h>
 #include <linux/spinlock.h>
 #include <soc/arc/mcip.h>
 #include <asm/irqflags-arcv2.h>
@@ -101,11 +102,33 @@ static void mcip_probe_n_setup(void)
 		IS_AVAIL1(mp.gfrc, "GFRC"));
 
 	cpuinfo_arc700[0].extn.gfrc = mp.gfrc;
+}
 
-	if (mp.dbg) {
-		__mcip_cmd_data(CMD_DEBUG_SET_SELECT, 0, 0xf);
-		__mcip_cmd_data(CMD_DEBUG_SET_MASK, 0xf, 0xf);
-	}
+static void __init mcip_cpu_wait(int cpu)
+{
+	struct mcip_bcr mp;
+
+	READ_BCR(ARC_REG_MCIP_BCR, mp);
+
+	/*
+	 * self halt for waiting as Master will resume us using MCIP ICD assist
+	 * Note: if ICD is not configured, we are hosed, but panic here is
+	 *       not going to help as UART access might not even work
+	 */
+	if (mp.dbg)
+		asm volatile("flag 1	\n");
+}
+
+static void __init mcip_cpu_kick(int cpu, unsigned long pc)
+{
+	struct mcip_bcr mp;
+
+	READ_BCR(ARC_REG_MCIP_BCR, mp);
+
+	if (mp.dbg)
+		__mcip_cmd_data(CMD_DEBUG_RUN, 0, (1 << cpu));
+	else
+		panic("SMP boot issues: MCIP lacks ICD\n");
 }
 
 struct plat_smp_ops plat_smp_ops = {
@@ -114,6 +137,10 @@ struct plat_smp_ops plat_smp_ops = {
 	.init_per_cpu	= mcip_setup_per_cpu,
 	.ipi_send	= mcip_ipi_send,
 	.ipi_clear	= mcip_ipi_clear,
+	.cpu_kick	= mcip_cpu_kick,
+#ifndef CONFIG_ARC_SMP_HALT_ON_RESET
+	.cpu_wait	= mcip_cpu_wait,
+#endif
 };
 
 #endif
@@ -221,10 +248,13 @@ static irq_hw_number_t idu_first_hwirq;
 static void idu_cascade_isr(struct irq_desc *desc)
 {
 	struct irq_domain *idu_domain = irq_desc_get_handler_data(desc);
+	struct irq_chip *core_chip = irq_desc_get_chip(desc);
 	irq_hw_number_t core_hwirq = irqd_to_hwirq(irq_desc_get_irq_data(desc));
 	irq_hw_number_t idu_hwirq = core_hwirq - idu_first_hwirq;
 
+	chained_irq_enter(core_chip, desc);
 	generic_handle_irq(irq_find_mapping(idu_domain, idu_hwirq));
+	chained_irq_exit(core_chip, desc);
 }
 
 static int idu_irq_map(struct irq_domain *d, unsigned int virq, irq_hw_number_t hwirq)
