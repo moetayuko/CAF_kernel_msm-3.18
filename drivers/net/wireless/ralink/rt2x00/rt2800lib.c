@@ -4743,15 +4743,16 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 
 	rt2800_register_read(rt2x00dev, MAX_LEN_CFG, &reg);
 	rt2x00_set_field32(&reg, MAX_LEN_CFG_MAX_MPDU, AGGREGATION_SIZE);
-	if (rt2x00_rt_rev_gte(rt2x00dev, RT2872, REV_RT2872E) ||
-	    rt2x00_rt(rt2x00dev, RT2883) ||
-	    rt2x00_rt_rev_lt(rt2x00dev, RT3070, REV_RT3070E)) {
+	if (rt2x00_is_usb(rt2x00dev)) {
+		drv_data->max_psdu = 3;
+	} else if (rt2x00_rt_rev_gte(rt2x00dev, RT2872, REV_RT2872E) ||
+		   rt2x00_rt(rt2x00dev, RT2883) ||
+		   rt2x00_rt_rev_lt(rt2x00dev, RT3070, REV_RT3070E)) {
 		drv_data->max_psdu = 2;
-		rt2x00_set_field32(&reg, MAX_LEN_CFG_MAX_PSDU, 2);
 	} else {
 		drv_data->max_psdu = 1;
-		rt2x00_set_field32(&reg, MAX_LEN_CFG_MAX_PSDU, 1);
 	}
+	rt2x00_set_field32(&reg, MAX_LEN_CFG_MAX_PSDU, drv_data->max_psdu);
 	rt2x00_set_field32(&reg, MAX_LEN_CFG_MIN_PSDU, 10);
 	rt2x00_set_field32(&reg, MAX_LEN_CFG_MIN_MPDU, 10);
 	rt2800_register_write(rt2x00dev, MAX_LEN_CFG, reg);
@@ -4769,8 +4770,8 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 	rt2800_register_write(rt2x00dev, PBF_MAX_PCNT, 0x1f3fbf9f);
 
 	rt2800_register_read(rt2x00dev, TX_RTY_CFG, &reg);
-	rt2x00_set_field32(&reg, TX_RTY_CFG_SHORT_RTY_LIMIT, 15);
-	rt2x00_set_field32(&reg, TX_RTY_CFG_LONG_RTY_LIMIT, 31);
+	rt2x00_set_field32(&reg, TX_RTY_CFG_SHORT_RTY_LIMIT, 2);
+	rt2x00_set_field32(&reg, TX_RTY_CFG_LONG_RTY_LIMIT, 2);
 	rt2x00_set_field32(&reg, TX_RTY_CFG_LONG_RTY_THRE, 2000);
 	rt2x00_set_field32(&reg, TX_RTY_CFG_NON_AGG_RTY_MODE, 0);
 	rt2x00_set_field32(&reg, TX_RTY_CFG_AGG_RTY_MODE, 0);
@@ -4902,10 +4903,10 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 	rt2800_register_write(rt2x00dev, TXOP_HLDR_ET, reg);
 
 	rt2800_register_read(rt2x00dev, TX_RTS_CFG, &reg);
-	rt2x00_set_field32(&reg, TX_RTS_CFG_AUTO_RTS_RETRY_LIMIT, 32);
+	rt2x00_set_field32(&reg, TX_RTS_CFG_AUTO_RTS_RETRY_LIMIT, 7);
 	rt2x00_set_field32(&reg, TX_RTS_CFG_RTS_THRES,
 			   IEEE80211_MAX_RTS_THRESHOLD);
-	rt2x00_set_field32(&reg, TX_RTS_CFG_RTS_FBK_EN, 0);
+	rt2x00_set_field32(&reg, TX_RTS_CFG_RTS_FBK_EN, 1);
 	rt2800_register_write(rt2x00dev, TX_RTS_CFG, reg);
 
 	rt2800_register_write(rt2x00dev, EXP_ACK_TIME, 0x002400ca);
@@ -7512,6 +7513,13 @@ static int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	 * Disable powersaving as default.
 	 */
 	rt2x00dev->hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+
+	/*
+	 * Change default retry settings to values corresponding more closely
+	 * to rate[0].count setting of minstrel rate control algorithm.
+	 */
+	rt2x00dev->hw->wiphy->retry_short = 2;
+	rt2x00dev->hw->wiphy->retry_long = 2;
 
 	/*
 	 * Initialize all hw fields.
