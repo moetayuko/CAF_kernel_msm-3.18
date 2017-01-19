@@ -124,7 +124,7 @@ struct dsa_switch_tree {
 	/*
 	 * The switch and port to which the CPU is attached.
 	 */
-	s8			cpu_switch;
+	struct dsa_switch	*cpu_switch;
 	s8			cpu_port;
 
 	/*
@@ -169,7 +169,7 @@ struct dsa_switch {
 	/*
 	 * The switch operations.
 	 */
-	struct dsa_switch_ops	*ops;
+	const struct dsa_switch_ops	*ops;
 
 	/*
 	 * An array of which element [a] indicates which port on this
@@ -204,7 +204,7 @@ struct dsa_switch {
 
 static inline bool dsa_is_cpu_port(struct dsa_switch *ds, int p)
 {
-	return !!(ds->index == ds->dst->cpu_switch && p == ds->dst->cpu_port);
+	return !!(ds == ds->dst->cpu_switch && p == ds->dst->cpu_port);
 }
 
 static inline bool dsa_is_dsa_port(struct dsa_switch *ds, int p)
@@ -227,10 +227,10 @@ static inline u8 dsa_upstream_port(struct dsa_switch *ds)
 	 * Else return the (DSA) port number that connects to the
 	 * switch that is one hop closer to the cpu.
 	 */
-	if (dst->cpu_switch == ds->index)
+	if (dst->cpu_switch == ds)
 		return dst->cpu_port;
 	else
-		return ds->rtable[dst->cpu_switch];
+		return ds->rtable[dst->cpu_switch->index];
 }
 
 struct switchdev_trans;
@@ -240,8 +240,6 @@ struct switchdev_obj_port_mdb;
 struct switchdev_obj_port_vlan;
 
 struct dsa_switch_ops {
-	struct list_head	list;
-
 	/*
 	 * Probing and setup.
 	 */
@@ -390,8 +388,13 @@ struct dsa_switch_ops {
 				 int (*cb)(struct switchdev_obj *obj));
 };
 
-void register_switch_driver(struct dsa_switch_ops *type);
-void unregister_switch_driver(struct dsa_switch_ops *type);
+struct dsa_switch_driver {
+	struct list_head	list;
+	const struct dsa_switch_ops *ops;
+};
+
+void register_switch_driver(struct dsa_switch_driver *type);
+void unregister_switch_driver(struct dsa_switch_driver *type);
 struct mii_bus *dsa_host_dev_to_mii_bus(struct device *dev);
 
 static inline bool dsa_uses_tagged_protocol(struct dsa_switch_tree *dst)
