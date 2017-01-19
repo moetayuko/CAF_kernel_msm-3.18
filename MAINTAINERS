@@ -1690,6 +1690,7 @@ M:	Krzysztof Kozlowski <krzk@kernel.org>
 R:	Javier Martinez Canillas <javier@osg.samsung.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 L:	linux-samsung-soc@vger.kernel.org (moderated for non-subscribers)
+Q:	https://patchwork.kernel.org/project/linux-samsung-soc/list/
 S:	Maintained
 F:	arch/arm/boot/dts/s3c*
 F:	arch/arm/boot/dts/s5p*
@@ -2345,6 +2346,14 @@ L:	alsa-devel@alsa-project.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/sound/axentia,*
 F:	sound/soc/atmel/tse850-pcm5142.c
+
+AXENTIA ARM DEVICES
+M:	Peter Rosin <peda@axentia.se>
+L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
+S:	Maintained
+F:	Documentation/devicetree/bindings/arm/axentia.txt
+F:	arch/arm/boot/dts/at91-linea.dtsi
+F:	arch/arm/boot/dts/at91-tse850-3.dts
 
 AZ6007 DVB DRIVER
 M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
