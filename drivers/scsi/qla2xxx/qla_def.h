@@ -2247,7 +2247,7 @@ struct ct_fdmiv2_hba_attr {
 		uint32_t num_ports;
 		uint8_t fabric_name[WWN_SIZE];
 		uint8_t bios_name[32];
-		uint8_t vendor_indentifer[8];
+		uint8_t vendor_identifier[8];
 	} a;
 };
 
@@ -2422,7 +2422,7 @@ struct ct_sns_req {
 		} rsnn_nn;
 
 		struct {
-			uint8_t hba_indentifier[8];
+			uint8_t hba_identifier[8];
 		} ghat;
 
 		struct {
@@ -2732,7 +2732,7 @@ struct isp_operations {
 #define QLA_MSIX_FW_MODE(m)	(((m) & (BIT_7|BIT_8|BIT_9)) >> 7)
 #define QLA_MSIX_FW_MODE_1(m)	(QLA_MSIX_FW_MODE(m) == 1)
 
-#define QLA_MSIX_DEFAULT		0x00
+#define QLA_BASE_VECTORS	2 /* default + RSP */
 #define QLA_MSIX_RSP_Q			0x01
 #define QLA_ATIO_VECTOR		0x02
 #define QLA_MSIX_QPAIR_MULTIQ_RSP_Q	0x03
@@ -2754,7 +2754,6 @@ struct qla_msix_entry {
 	uint16_t entry;
 	char name[30];
 	void *handle;
-	struct irq_affinity_notify irq_notify;
 	int cpuid;
 };
 
