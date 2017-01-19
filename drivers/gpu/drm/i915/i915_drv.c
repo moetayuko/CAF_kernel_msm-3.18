@@ -1114,7 +1114,7 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 	/* Reveal our presence to userspace */
 	if (drm_dev_register(dev, 0) == 0) {
 		i915_debugfs_register(dev_priv);
-		i915_guc_register(dev_priv);
+		i915_guc_log_register(dev_priv);
 		i915_setup_sysfs(dev_priv);
 
 		/* Depends on sysfs having been initialized */
@@ -1158,7 +1158,7 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 	i915_perf_unregister(dev_priv);
 
 	i915_teardown_sysfs(dev_priv);
-	i915_guc_unregister(dev_priv);
+	i915_guc_log_unregister(dev_priv);
 	i915_debugfs_unregister(dev_priv);
 	drm_dev_unregister(&dev_priv->drm);
 
@@ -1471,7 +1471,7 @@ static int i915_drm_suspend_late(struct drm_device *dev, bool hibernation)
 
 	intel_display_set_init_power(dev_priv, false);
 
-	fw_csr = !IS_BROXTON(dev_priv) &&
+	fw_csr = !IS_GEN9_LP(dev_priv) &&
 		suspend_to_idle(dev_priv) && dev_priv->csr.dmc_payload;
 	/*
 	 * In case of firmware assisted context save/restore don't manually
@@ -1484,7 +1484,7 @@ static int i915_drm_suspend_late(struct drm_device *dev, bool hibernation)
 		intel_power_domains_suspend(dev_priv);
 
 	ret = 0;
-	if (IS_BROXTON(dev_priv))
+	if (IS_GEN9_LP(dev_priv))
 		bxt_enable_dc9(dev_priv);
 	else if (IS_HASWELL(dev_priv) || IS_BROADWELL(dev_priv))
 		hsw_enable_pc8(dev_priv);
@@ -1692,7 +1692,7 @@ static int i915_drm_resume_early(struct drm_device *dev)
 
 	intel_uncore_early_sanitize(dev_priv, true);
 
-	if (IS_BROXTON(dev_priv)) {
+	if (IS_GEN9_LP(dev_priv)) {
 		if (!dev_priv->suspended_to_idle)
 			gen9_sanitize_dc_state(dev_priv);
 		bxt_disable_dc9(dev_priv);
@@ -1702,7 +1702,7 @@ static int i915_drm_resume_early(struct drm_device *dev)
 
 	intel_uncore_sanitize(dev_priv);
 
-	if (IS_BROXTON(dev_priv) ||
+	if (IS_GEN9_LP(dev_priv) ||
 	    !(dev_priv->suspended_to_idle && dev_priv->csr.dmc_payload))
 		intel_power_domains_init_hw(dev_priv, true);
 
@@ -1728,25 +1728,9 @@ static int i915_resume_switcheroo(struct drm_device *dev)
 	return i915_drm_resume(dev);
 }
 
-static void disable_engines_irq(struct drm_i915_private *dev_priv)
-{
-	struct intel_engine_cs *engine;
-	enum intel_engine_id id;
-
-	/* Ensure irq handler finishes, and not run again. */
-	disable_irq(dev_priv->drm.irq);
-	for_each_engine(engine, dev_priv, id)
-		tasklet_kill(&engine->irq_tasklet);
-}
-
-static void enable_engines_irq(struct drm_i915_private *dev_priv)
-{
-	enable_irq(dev_priv->drm.irq);
-}
-
 /**
  * i915_reset - reset chip after a hang
- * @dev: drm device to reset
+ * @dev_priv: device private to reset
  *
  * Reset the chip.  Useful if a hang is detected. Marks the device as wedged
  * on failure.
@@ -1776,12 +1760,15 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	error->reset_count++;
 
 	pr_notice("drm/i915: Resetting chip after gpu hang\n");
-	i915_gem_reset_prepare(dev_priv);
+	disable_irq(dev_priv->drm.irq);
+	ret = i915_gem_reset_prepare(dev_priv);
+	if (ret) {
+		DRM_ERROR("GPU recovery failed\n");
+		intel_gpu_reset(dev_priv, ALL_ENGINES);
+		goto error;
+	}
 
-	disable_engines_irq(dev_priv);
 	ret = intel_gpu_reset(dev_priv, ALL_ENGINES);
-	enable_engines_irq(dev_priv);
-
 	if (ret) {
 		if (ret != -ENODEV)
 			DRM_ERROR("Failed to reset chip: %i\n", ret);
@@ -1816,6 +1803,7 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	i915_queue_hangcheck(dev_priv);
 
 wakeup:
+	enable_irq(dev_priv->drm.irq);
 	wake_up_bit(&error->flags, I915_RESET_IN_PROGRESS);
 	return;
 
@@ -2326,7 +2314,7 @@ static int intel_runtime_suspend(struct device *kdev)
 	intel_runtime_pm_disable_interrupts(dev_priv);
 
 	ret = 0;
-	if (IS_BROXTON(dev_priv)) {
+	if (IS_GEN9_LP(dev_priv)) {
 		bxt_display_core_uninit(dev_priv);
 		bxt_enable_dc9(dev_priv);
 	} else if (IS_HASWELL(dev_priv) || IS_BROADWELL(dev_priv)) {
@@ -2411,7 +2399,7 @@ static int intel_runtime_resume(struct device *kdev)
 	if (IS_GEN6(dev_priv))
 		intel_init_pch_refclk(dev_priv);
 
-	if (IS_BROXTON(dev_priv)) {
+	if (IS_GEN9_LP(dev_priv)) {
 		bxt_disable_dc9(dev_priv);
 		bxt_display_core_init(dev_priv, true);
 		if (dev_priv->csr.dmc_payload &&
@@ -2549,8 +2537,8 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_GEM_MMAP_GTT, i915_gem_mmap_gtt_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_SET_DOMAIN, i915_gem_set_domain_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_SW_FINISH, i915_gem_sw_finish_ioctl, DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(I915_GEM_SET_TILING, i915_gem_set_tiling, DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(I915_GEM_GET_TILING, i915_gem_get_tiling, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_SET_TILING, i915_gem_set_tiling_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_GET_TILING, i915_gem_get_tiling_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_GET_APERTURE, i915_gem_get_aperture_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GET_PIPE_FROM_CRTC_ID, intel_get_pipe_from_crtc_id, 0),
 	DRM_IOCTL_DEF_DRV(I915_GEM_MADVISE, i915_gem_madvise_ioctl, DRM_RENDER_ALLOW),

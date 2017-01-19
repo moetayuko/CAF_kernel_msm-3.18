@@ -2137,11 +2137,10 @@ intel_fill_fb_ggtt_view(struct i915_ggtt_view *view,
 			const struct drm_framebuffer *fb,
 			unsigned int rotation)
 {
+	view->type = I915_GGTT_VIEW_NORMAL;
 	if (drm_rotation_90_or_270(rotation)) {
-		*view = i915_ggtt_view_rotated;
-		view->params.rotated = to_intel_framebuffer(fb)->rot_info;
-	} else {
-		*view = i915_ggtt_view_normal;
+		view->type = I915_GGTT_VIEW_ROTATED;
+		view->rotated = to_intel_framebuffer(fb)->rot_info;
 	}
 }
 
@@ -2796,7 +2795,7 @@ intel_find_initial_plane_obj(struct intel_crtc *intel_crtc,
 	 * simplest solution is to just disable the primary plane now and
 	 * pretend the BIOS never had it enabled.
 	 */
-	to_intel_plane_state(plane_state)->base.visible = false;
+	plane_state->visible = false;
 	crtc_state->plane_mask &= ~(1 << drm_plane_index(primary));
 	intel_pre_disable_primary_noatomic(&intel_crtc->base);
 	intel_plane->disable_plane(primary, &intel_crtc->base);
@@ -3561,23 +3560,19 @@ void intel_prepare_reset(struct drm_i915_private *dev_priv)
 	state = drm_atomic_helper_duplicate_state(dev, ctx);
 	if (IS_ERR(state)) {
 		ret = PTR_ERR(state);
-		state = NULL;
 		DRM_ERROR("Duplicating state failed with %i\n", ret);
-		goto err;
+		return;
 	}
 
 	ret = drm_atomic_helper_disable_all(dev, ctx);
 	if (ret) {
 		DRM_ERROR("Suspending crtc's failed with %i\n", ret);
-		goto err;
+		drm_atomic_state_put(state);
+		return;
 	}
 
 	dev_priv->modeset_restore_state = state;
 	state->acquire_ctx = ctx;
-	return;
-
-err:
-	drm_atomic_state_put(state);
 }
 
 void intel_finish_reset(struct drm_i915_private *dev_priv)
@@ -6886,13 +6881,13 @@ static void intel_crtc_disable_noatomic(struct drm_crtc *crtc)
 	if (!intel_crtc->active)
 		return;
 
-	if (to_intel_plane_state(crtc->primary->state)->base.visible) {
+	if (crtc->primary->state->visible) {
 		WARN_ON(intel_crtc->flip_work);
 
 		intel_pre_disable_primary_noatomic(crtc);
 
 		intel_crtc_disable_planes(crtc, 1 << drm_plane_index(crtc->primary));
-		to_intel_plane_state(crtc->primary->state)->base.visible = false;
+		crtc->primary->state->visible = false;
 	}
 
 	state = drm_atomic_state_alloc(crtc->dev);
@@ -12466,7 +12461,7 @@ int intel_plane_atomic_calc_changes(struct drm_crtc_state *crtc_state,
 	}
 
 	was_visible = old_plane_state->base.visible;
-	visible = to_intel_plane_state(plane_state)->base.visible;
+	visible = plane_state->visible;
 
 	if (!was_crtc_enabled && WARN_ON(was_visible))
 		was_visible = false;
@@ -12482,7 +12477,7 @@ int intel_plane_atomic_calc_changes(struct drm_crtc_state *crtc_state,
 	 * only combine the results from all planes in the current place?
 	 */
 	if (!is_crtc_enabled)
-		to_intel_plane_state(plane_state)->base.visible = visible = false;
+		plane_state->visible = visible = false;
 
 	if (!was_visible && !visible)
 		return 0;
@@ -14740,6 +14735,7 @@ static const struct drm_crtc_funcs intel_crtc_funcs = {
 	.page_flip = intel_crtc_page_flip,
 	.atomic_duplicate_state = intel_crtc_duplicate_state,
 	.atomic_destroy_state = intel_crtc_destroy_state,
+	.set_crc_source = intel_crtc_set_crc_source,
 };
 
 /**
@@ -16843,7 +16839,7 @@ static void intel_sanitize_crtc(struct intel_crtc *crtc)
 		 * Temporarily change the plane mapping and disable everything
 		 * ...  */
 		plane = crtc->plane;
-		to_intel_plane_state(crtc->base.primary->state)->base.visible = true;
+		crtc->base.primary->state->visible = true;
 		crtc->plane = !plane;
 		intel_crtc_disable_noatomic(&crtc->base);
 		crtc->plane = plane;
@@ -17221,7 +17217,8 @@ void intel_display_resume(struct drm_device *dev)
 
 	if (ret)
 		DRM_ERROR("Restoring old state failed with %i\n", ret);
-	drm_atomic_state_put(state);
+	if (state)
+		drm_atomic_state_put(state);
 }
 
 void intel_modeset_gem_init(struct drm_device *dev)
