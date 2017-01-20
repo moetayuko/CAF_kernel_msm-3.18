@@ -3903,7 +3903,7 @@ static int _scsih_set_satl_pending(struct scsi_cmnd *scmd, bool pending)
 {
 	struct MPT3SAS_DEVICE *priv = scmd->device->hostdata;
 
-	if  (scmd->cmnd[0] != ATA_12 && scmd->cmnd[0] != ATA_16)
+	if (scmd->cmnd[0] != ATA_12 && scmd->cmnd[0] != ATA_16)
 		return 0;
 
 	if (pending)
@@ -4089,7 +4089,7 @@ scsih_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	 * since we're lockless at this point
 	 */
 	do {
-		if (sas_device_priv_data->ata_command_pending) {
+		if (test_bit(0, &sas_device_priv_data->ata_command_pending)) {
 			scmd->result = SAM_STAT_BUSY;
 			scmd->scsi_done(scmd);
 			return 0;
