@@ -51,6 +51,9 @@
 
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
+#define MLX5E_HW2SW_MTU(hwmtu) ((hwmtu) - (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
+#define MLX5E_SW2HW_MTU(swmtu) ((swmtu) + (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
+
 #define MLX5E_MAX_NUM_TC	8
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6
@@ -369,6 +372,7 @@ struct mlx5e_rq {
 
 	unsigned long          state;
 	int                    ix;
+	u16                    rx_headroom;
 
 	struct mlx5e_rx_am     am; /* Adaptive Moderation */
 	struct bpf_prog       *xdp_prog;
@@ -465,7 +469,6 @@ struct mlx5e_sq {
 	/* read only */
 	struct mlx5_wq_cyc         wq;
 	u32                        dma_fifo_mask;
-	void __iomem              *uar_map;
 	struct netdev_queue       *txq;
 	u32                        sqn;
 	u16                        bf_buf_size;
@@ -479,7 +482,7 @@ struct mlx5e_sq {
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
-	struct mlx5_uar            uar;
+	struct mlx5_sq_bfreg	   bfreg;
 	struct mlx5e_channel      *channel;
 	int                        tc;
 	u32                        rate_limit;
@@ -806,7 +809,7 @@ void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
 {
-	u16 ofst = MLX5_BF_OFFSET + sq->bf_offset;
+	u16 ofst = sq->bf_offset;
 
 	/* ensure wqe is visible to device before updating doorbell record */
 	dma_wmb();
@@ -818,9 +821,9 @@ static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 	 */
 	wmb();
 	if (bf_sz)
-		__iowrite64_copy(sq->uar_map + ofst, ctrl, bf_sz);
+		__iowrite64_copy(sq->bfreg.map + ofst, ctrl, bf_sz);
 	else
-		mlx5_write64((__be32 *)ctrl, sq->uar_map + ofst, NULL);
+		mlx5_write64((__be32 *)ctrl, sq->bfreg.map + ofst, NULL);
 	/* flush the write-combining mapped buffer */
 	wmb();
 
@@ -832,7 +835,7 @@ static inline void mlx5e_cq_arm(struct mlx5e_cq *cq)
 	struct mlx5_core_cq *mcq;
 
 	mcq = &cq->mcq;
-	mlx5_cq_arm(mcq, MLX5_CQ_DB_REQ_NOT, mcq->uar->map, NULL, cq->wq.cc);
+	mlx5_cq_arm(mcq, MLX5_CQ_DB_REQ_NOT, mcq->uar->map, cq->wq.cc);
 }
 
 static inline u32 mlx5e_get_wqe_mtt_offset(struct mlx5e_rq *rq, u16 wqe_ix)
