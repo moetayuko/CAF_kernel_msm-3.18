@@ -1004,12 +1004,6 @@ int emac_mac_up(struct emac_adapter *adpt)
 	writel((u32)~DIS_INT, adpt->base + EMAC_INT_STATUS);
 	writel(adpt->irq.mask, adpt->base + EMAC_INT_MASK);
 
-	/* Enable pause frames.  Without this feature, the EMAC has been shown
-	 * to receive (and drop) frames with FCS errors at gigabit connections.
-	 */
-	adpt->phydev->supported |= SUPPORTED_Pause | SUPPORTED_Asym_Pause;
-	adpt->phydev->advertising |= SUPPORTED_Pause | SUPPORTED_Asym_Pause;
-
 	adpt->phydev->irq = PHY_IGNORE_INTERRUPT;
 	phy_start(adpt->phydev);
 
@@ -1213,7 +1207,6 @@ void emac_mac_rx_process(struct emac_adapter *adpt, struct emac_rx_queue *rx_q,
 		emac_receive_skb(rx_q, skb, (u16)RRD_CVALN_TAG(&rrd),
 				 (bool)RRD_CVTAG(&rrd));
 
-		netdev->last_rx = jiffies;
 		(*num_pkts)++;
 	} while (*num_pkts < max_pkts);
 
