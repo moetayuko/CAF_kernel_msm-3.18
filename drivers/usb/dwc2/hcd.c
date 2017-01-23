@@ -273,11 +273,9 @@ static int dwc2_gahbcfg_init(struct dwc2_hsotg *hsotg)
 
 	case GHWCFG2_INT_DMA_ARCH:
 		dev_dbg(hsotg->dev, "Internal DMA Mode\n");
-		if (hsotg->params.ahbcfg != -1) {
-			ahbcfg &= GAHBCFG_CTRL_MASK;
-			ahbcfg |= hsotg->params.ahbcfg &
-				  ~GAHBCFG_CTRL_MASK;
-		}
+		ahbcfg &= ~GAHBCFG_HBSTLEN_MASK;
+		ahbcfg |= (hsotg->params.ahb_burst <<
+			   GAHBCFG_HBSTLEN_SHIFT);
 		break;
 
 	case GHWCFG2_SLAVE_ONLY_ARCH:
@@ -2150,7 +2148,7 @@ static int dwc2_hcd_endpoint_disable(struct dwc2_hsotg *hsotg,
 		}
 
 		spin_unlock_irqrestore(&hsotg->lock, flags);
-		usleep_range(20000, 40000);
+		msleep(20);
 		spin_lock_irqsave(&hsotg->lock, flags);
 		qh = ep->hcpriv;
 		if (!qh) {
@@ -2967,7 +2965,7 @@ static void dwc2_process_periodic_channels(struct dwc2_hsotg *hsotg)
 		qspcavail = (tx_status & TXSTS_QSPCAVAIL_MASK) >>
 			    TXSTS_QSPCAVAIL_SHIFT;
 		if (qspcavail == 0) {
-			no_queue_space = 1;
+			no_queue_space = true;
 			break;
 		}
 
@@ -2996,7 +2994,7 @@ static void dwc2_process_periodic_channels(struct dwc2_hsotg *hsotg)
 			    TXSTS_FSPCAVAIL_SHIFT;
 		status = dwc2_queue_transaction(hsotg, qh->channel, fspcavail);
 		if (status < 0) {
-			no_fifo_space = 1;
+			no_fifo_space = true;
 			break;
 		}
 
@@ -3240,7 +3238,7 @@ static void dwc2_conn_id_status_change(struct work_struct *work)
 				 "Waiting for Peripheral Mode, Mode=%s\n",
 				 dwc2_is_host_mode(hsotg) ? "Host" :
 				 "Peripheral");
-			usleep_range(20000, 40000);
+			msleep(20);
 			if (++count > 250)
 				break;
 		}
@@ -3261,7 +3259,7 @@ static void dwc2_conn_id_status_change(struct work_struct *work)
 			dev_info(hsotg->dev, "Waiting for Host Mode, Mode=%s\n",
 				 dwc2_is_host_mode(hsotg) ?
 				 "Host" : "Peripheral");
-			usleep_range(20000, 40000);
+			msleep(20);
 			if (++count > 250)
 				break;
 		}
@@ -3296,7 +3294,7 @@ static void dwc2_wakeup_detected(unsigned long data)
 		dwc2_readl(hsotg->regs + HPRT0));
 
 	dwc2_hcd_rem_wakeup(hsotg);
-	hsotg->bus_suspended = 0;
+	hsotg->bus_suspended = false;
 
 	/* Change to L0 state */
 	hsotg->lx_state = DWC2_L0;
@@ -3332,7 +3330,7 @@ static void dwc2_port_suspend(struct dwc2_hsotg *hsotg, u16 windex)
 	hprt0 |= HPRT0_SUSP;
 	dwc2_writel(hprt0, hsotg->regs + HPRT0);
 
-	hsotg->bus_suspended = 1;
+	hsotg->bus_suspended = true;
 
 	/*
 	 * If hibernation is supported, Phy clock will be suspended
@@ -3354,7 +3352,7 @@ static void dwc2_port_suspend(struct dwc2_hsotg *hsotg, u16 windex)
 
 		spin_unlock_irqrestore(&hsotg->lock, flags);
 
-		usleep_range(200000, 250000);
+		msleep(200);
 	} else {
 		spin_unlock_irqrestore(&hsotg->lock, flags);
 	}
@@ -3378,7 +3376,7 @@ static void dwc2_port_resume(struct dwc2_hsotg *hsotg)
 		pcgctl &= ~PCGCTL_STOPPCLK;
 		dwc2_writel(pcgctl, hsotg->regs + PCGCTL);
 		spin_unlock_irqrestore(&hsotg->lock, flags);
-		usleep_range(20000, 40000);
+		msleep(20);
 		spin_lock_irqsave(&hsotg->lock, flags);
 	}
 
@@ -3394,7 +3392,7 @@ static void dwc2_port_resume(struct dwc2_hsotg *hsotg)
 	hprt0 = dwc2_read_hprt0(hsotg);
 	hprt0 &= ~(HPRT0_RES | HPRT0_SUSP);
 	dwc2_writel(hprt0, hsotg->regs + HPRT0);
-	hsotg->bus_suspended = 0;
+	hsotg->bus_suspended = false;
 	spin_unlock_irqrestore(&hsotg->lock, flags);
 }
 
@@ -3691,7 +3689,7 @@ static int dwc2_hcd_hub_control(struct dwc2_hsotg *hsotg, u16 typereq,
 			}
 
 			/* Clear reset bit in 10ms (FS/LS) or 50ms (HS) */
-			usleep_range(50000, 70000);
+			msleep(50);
 			hprt0 &= ~HPRT0_RST;
 			dwc2_writel(hprt0, hsotg->regs + HPRT0);
 			hsotg->lx_state = DWC2_L0; /* Now back to On state */
@@ -5003,7 +5001,7 @@ int dwc2_hcd_init(struct dwc2_hsotg *hsotg, int irq)
 	    hsotg->dev->dma_mask == NULL) {
 		dev_warn(hsotg->dev,
 			 "dma_mask not set, disabling DMA\n");
-		hsotg->params.host_dma = 0;
+		hsotg->params.host_dma = false;
 		hsotg->params.dma_desc_enable = 0;
 	}
 
