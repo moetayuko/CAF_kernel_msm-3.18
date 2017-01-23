@@ -322,7 +322,7 @@ struct srpc_service {
 
 struct sfw_session {
 	struct list_head sn_list;    /* chain on fw_zombie_sessions */
-	lst_sid_t	 sn_id;      /* unique identifier */
+	struct lst_sid	 sn_id;      /* unique identifier */
 	unsigned int	 sn_timeout; /* # seconds' inactivity to expire */
 	int		 sn_timer_active;
 	unsigned int	 sn_features;
@@ -340,7 +340,7 @@ struct sfw_session {
 
 struct sfw_batch {
 	struct list_head bat_list;	/* chain on sn_batches */
-	lst_bid_t	 bat_id;	/* batch id */
+	struct lst_bid	 bat_id;	/* batch id */
 	int		 bat_error;	/* error code of batch */
 	struct sfw_session	*bat_session;	/* batch's session */
 	atomic_t	 bat_nactive;	/* # of active tests */
@@ -453,8 +453,8 @@ void srpc_abort_service(struct srpc_service *sv);
 int srpc_finish_service(struct srpc_service *sv);
 int srpc_service_add_buffers(struct srpc_service *sv, int nbuffer);
 void srpc_service_remove_buffers(struct srpc_service *sv, int nbuffer);
-void srpc_get_counters(srpc_counters_t *cnt);
-void srpc_set_counters(const srpc_counters_t *cnt);
+void srpc_get_counters(struct srpc_counters *cnt);
+void srpc_set_counters(const struct srpc_counters *cnt);
 
 extern struct cfs_wi_sched *lst_sched_serial;
 extern struct cfs_wi_sched **lst_sched_test;
