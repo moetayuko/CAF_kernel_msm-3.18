@@ -960,6 +960,18 @@ out:
 	return ret;
 }
 
+int target_get_device(struct se_device *dev)
+{
+	return config_item_get_unless_zero(&dev->dev_group.cg_item) != NULL;
+}
+EXPORT_SYMBOL(target_get_device);
+
+void target_put_device(struct se_device *dev)
+{
+	config_item_put(&dev->dev_group.cg_item);
+}
+EXPORT_SYMBOL(target_put_device);
+
 void target_free_device(struct se_device *dev)
 {
 	struct se_hba *hba = dev->se_hba;
