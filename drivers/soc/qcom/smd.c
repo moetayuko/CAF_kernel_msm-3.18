@@ -1,7 +1,7 @@
 /* drivers/soc/qcom/smd.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2015, 2017 The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -678,7 +678,7 @@ static void smd_channel_probe_now(struct remote_proc_info *r_info)
 							r_info->remote_pid, 0);
 
 	if (!shared) {
-		pr_err("%s: allocation table not initialized\n", __func__);
+		SMD_INFO("%s: allocation table not initialized\n", __func__);
 		return;
 	}
 
