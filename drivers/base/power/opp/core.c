@@ -328,32 +328,31 @@ unsigned long dev_pm_opp_get_max_transition_latency(struct device *dev)
 EXPORT_SYMBOL_GPL(dev_pm_opp_get_max_transition_latency);
 
 /**
- * dev_pm_opp_get_suspend_opp() - Get suspend opp
+ * dev_pm_opp_get_suspend_opp_freq() - Get frequency of suspend opp in Hz
  * @dev:	device for which we do this operation
  *
- * Return: This function returns pointer to the suspend opp if it is
- * defined and available, otherwise it returns NULL.
- *
- * Locking: This function must be called under rcu_read_lock(). opp is a rcu
- * protected pointer. The reason for the same is that the opp pointer which is
- * returned will remain valid for use with opp_get_{voltage, freq} only while
- * under the locked area. The pointer returned must be used prior to unlocking
- * with rcu_read_unlock() to maintain the integrity of the pointer.
+ * Return: This function returns the frequency of the OPP marked as suspend_opp
+ * if one is available, else returns 0;
  */
-struct dev_pm_opp *dev_pm_opp_get_suspend_opp(struct device *dev)
+unsigned long dev_pm_opp_get_suspend_opp_freq(struct device *dev)
 {
 	struct opp_table *opp_table;
+	unsigned long freq = 0;
 
-	opp_rcu_lockdep_assert();
+	rcu_read_lock();
 
 	opp_table = _find_opp_table(dev);
 	if (IS_ERR(opp_table) || !opp_table->suspend_opp ||
 	    !opp_table->suspend_opp->available)
-		return NULL;
+		goto unlock;
 
-	return opp_table->suspend_opp;
+	freq = dev_pm_opp_get_freq(opp_table->suspend_opp);
+
+unlock:
+	rcu_read_unlock();
+	return freq;
 }
-EXPORT_SYMBOL_GPL(dev_pm_opp_get_suspend_opp);
+EXPORT_SYMBOL_GPL(dev_pm_opp_get_suspend_opp_freq);
 
 /**
  * dev_pm_opp_get_opp_count() - Get number of opps available in the opp table
@@ -820,25 +819,11 @@ struct opp_device *_add_opp_dev(const struct device *dev,
 	return opp_dev;
 }
 
-/**
- * _add_opp_table() - Find OPP table or allocate a new one
- * @dev:	device for which we do this operation
- *
- * It tries to find an existing table first, if it couldn't find one, it
- * allocates a new OPP table and returns that.
- *
- * Return: valid opp_table pointer if success, else NULL.
- */
-static struct opp_table *_add_opp_table(struct device *dev)
+static struct opp_table *_allocate_opp_table(struct device *dev)
 {
 	struct opp_table *opp_table;
 	struct opp_device *opp_dev;
 	int ret;
-
-	/* Check for existing table for 'dev' first */
-	opp_table = _find_opp_table(dev);
-	if (!IS_ERR(opp_table))
-		return opp_table;
 
 	/*
 	 * Allocate a new OPP table. In the infrequent case where a new
@@ -876,6 +861,27 @@ static struct opp_table *_add_opp_table(struct device *dev)
 }
 
 /**
+ * _add_opp_table() - Find OPP table or allocate a new one
+ * @dev:	device for which we do this operation
+ *
+ * It tries to find an existing table first, if it couldn't find one, it
+ * allocates a new OPP table and returns that.
+ *
+ * Return: valid opp_table pointer if success, else NULL.
+ */
+struct opp_table *_add_opp_table(struct device *dev)
+{
+	struct opp_table *opp_table;
+
+	/* Check for existing table for 'dev' first */
+	opp_table = _find_opp_table(dev);
+	if (!IS_ERR(opp_table))
+		return opp_table;
+
+	return _allocate_opp_table(dev);
+}
+
+/**
  * _kfree_device_rcu() - Free opp_table RCU handler
  * @head:	RCU head
  */
@@ -887,30 +893,9 @@ static void _kfree_device_rcu(struct rcu_head *head)
 	kfree_rcu(opp_table, rcu_head);
 }
 
-/**
- * _remove_opp_table() - Removes a OPP table
- * @opp_table: OPP table to be removed.
- *
- * Removes/frees OPP table if it doesn't contain any OPPs.
- */
-static void _remove_opp_table(struct opp_table *opp_table)
+static void _free_opp_table(struct opp_table *opp_table)
 {
 	struct opp_device *opp_dev;
-
-	if (!list_empty(&opp_table->opp_list))
-		return;
-
-	if (opp_table->supported_hw)
-		return;
-
-	if (opp_table->prop_name)
-		return;
-
-	if (opp_table->regulators)
-		return;
-
-	if (opp_table->set_opp)
-		return;
 
 	/* Release clk */
 	if (!IS_ERR(opp_table->clk))
@@ -930,6 +915,37 @@ static void _remove_opp_table(struct opp_table *opp_table)
 }
 
 /**
+ * _remove_opp_table() - Removes a OPP table
+ * @opp_table: OPP table to be removed.
+ *
+ * Removes/frees OPP table if it doesn't contain any OPPs.
+ */
+static void _remove_opp_table(struct opp_table *opp_table)
+{
+	if (!list_empty(&opp_table->opp_list))
+		return;
+
+	if (opp_table->supported_hw)
+		return;
+
+	if (opp_table->prop_name)
+		return;
+
+	if (opp_table->regulators)
+		return;
+
+	if (opp_table->set_opp)
+		return;
+
+	_free_opp_table(opp_table);
+}
+
+void _opp_free(struct dev_pm_opp *opp)
+{
+	kfree(opp);
+}
+
+/**
  * _kfree_opp_rcu() - Free OPP RCU handler
  * @head:	RCU head
  */
@@ -944,7 +960,6 @@ static void _kfree_opp_rcu(struct rcu_head *head)
  * _opp_remove()  - Remove an OPP from a table definition
  * @opp_table:	points back to the opp_table struct this opp belongs to
  * @opp:	pointer to the OPP to remove
- * @notify:	OPP_EVENT_REMOVE notification should be sent or not
  *
  * This function removes an opp definition from the opp table.
  *
@@ -952,16 +967,13 @@ static void _kfree_opp_rcu(struct rcu_head *head)
  * It is assumed that the caller holds required mutex for an RCU updater
  * strategy.
  */
-void _opp_remove(struct opp_table *opp_table, struct dev_pm_opp *opp,
-		 bool notify)
+static void _opp_remove(struct opp_table *opp_table, struct dev_pm_opp *opp)
 {
 	/*
 	 * Notify the changes in the availability of the operable
 	 * frequency/voltage list.
 	 */
-	if (notify)
-		srcu_notifier_call_chain(&opp_table->srcu_head,
-					 OPP_EVENT_REMOVE, opp);
+	srcu_notifier_call_chain(&opp_table->srcu_head, OPP_EVENT_REMOVE, opp);
 	opp_debug_remove_one(opp);
 	list_del_rcu(&opp->node);
 	call_srcu(&opp_table->srcu_head.srcu, &opp->rcu_head, _kfree_opp_rcu);
@@ -1008,22 +1020,16 @@ void dev_pm_opp_remove(struct device *dev, unsigned long freq)
 		goto unlock;
 	}
 
-	_opp_remove(opp_table, opp, true);
+	_opp_remove(opp_table, opp);
 unlock:
 	mutex_unlock(&opp_table_lock);
 }
 EXPORT_SYMBOL_GPL(dev_pm_opp_remove);
 
-struct dev_pm_opp *_allocate_opp(struct device *dev,
-				 struct opp_table **opp_table)
+struct dev_pm_opp *_opp_allocate(struct opp_table *table)
 {
 	struct dev_pm_opp *opp;
 	int count, supply_size;
-	struct opp_table *table;
-
-	table = _add_opp_table(dev);
-	if (!table)
-		return NULL;
 
 	/* Allocate space for at least one supply */
 	count = table->regulator_count ? table->regulator_count : 1;
@@ -1031,16 +1037,12 @@ struct dev_pm_opp *_allocate_opp(struct device *dev,
 
 	/* allocate new OPP node and supplies structures */
 	opp = kzalloc(sizeof(*opp) + supply_size, GFP_KERNEL);
-	if (!opp) {
-		kfree(table);
+	if (!opp)
 		return NULL;
-	}
 
 	/* Put the supplies at the end of the OPP structure as an empty array */
 	opp->supplies = (struct dev_pm_opp_supply *)(opp + 1);
 	INIT_LIST_HEAD(&opp->node);
-
-	*opp_table = table;
 
 	return opp;
 }
@@ -1067,6 +1069,16 @@ static bool _opp_supported_by_regulators(struct dev_pm_opp *opp,
 	return true;
 }
 
+/*
+ * Returns:
+ * 0: On success. And appropriate error message for duplicate OPPs.
+ * -EBUSY: For OPP with same freq/volt and is available. The callers of
+ *  _opp_add() must return 0 if they receive -EBUSY from it. This is to make
+ *  sure we don't print error messages unnecessarily if different parts of
+ *  kernel try to initialize the OPP table.
+ * -EEXIST: For OPP with same freq but different volt or is unavailable. This
+ *  should be considered an error by the callers of _opp_add().
+ */
 int _opp_add(struct device *dev, struct dev_pm_opp *new_opp,
 	     struct opp_table *opp_table)
 {
@@ -1099,7 +1111,7 @@ int _opp_add(struct device *dev, struct dev_pm_opp *new_opp,
 
 		/* Should we compare voltages for all regulators here ? */
 		return opp->available &&
-		       new_opp->supplies[0].u_volt == opp->supplies[0].u_volt ? 0 : -EEXIST;
+		       new_opp->supplies[0].u_volt == opp->supplies[0].u_volt ? -EBUSY : -EEXIST;
 	}
 
 	new_opp->opp_table = opp_table;
@@ -1121,6 +1133,7 @@ int _opp_add(struct device *dev, struct dev_pm_opp *new_opp,
 
 /**
  * _opp_add_v1() - Allocate a OPP based on v1 bindings.
+ * @opp_table:	OPP table
  * @dev:	device for which we do this operation
  * @freq:	Frequency in Hz for this OPP
  * @u_volt:	Voltage in uVolts for this OPP
@@ -1146,22 +1159,18 @@ int _opp_add(struct device *dev, struct dev_pm_opp *new_opp,
  *		Duplicate OPPs (both freq and volt are same) and !opp->available
  * -ENOMEM	Memory allocation failure
  */
-int _opp_add_v1(struct device *dev, unsigned long freq, long u_volt,
-		bool dynamic)
+int _opp_add_v1(struct opp_table *opp_table, struct device *dev,
+		unsigned long freq, long u_volt, bool dynamic)
 {
-	struct opp_table *opp_table;
 	struct dev_pm_opp *new_opp;
 	unsigned long tol;
 	int ret;
 
-	/* Hold our table modification lock here */
-	mutex_lock(&opp_table_lock);
+	opp_rcu_lockdep_assert();
 
-	new_opp = _allocate_opp(dev, &opp_table);
-	if (!new_opp) {
-		ret = -ENOMEM;
-		goto unlock;
-	}
+	new_opp = _opp_allocate(opp_table);
+	if (!new_opp)
+		return -ENOMEM;
 
 	/* populate the opp table */
 	new_opp->rate = freq;
@@ -1173,10 +1182,12 @@ int _opp_add_v1(struct device *dev, unsigned long freq, long u_volt,
 	new_opp->dynamic = dynamic;
 
 	ret = _opp_add(dev, new_opp, opp_table);
-	if (ret)
+	if (ret) {
+		/* Don't return error for duplicate OPPs */
+		if (ret == -EBUSY)
+			ret = 0;
 		goto free_opp;
-
-	mutex_unlock(&opp_table_lock);
+	}
 
 	/*
 	 * Notify the changes in the availability of the operable
@@ -1186,9 +1197,8 @@ int _opp_add_v1(struct device *dev, unsigned long freq, long u_volt,
 	return 0;
 
 free_opp:
-	_opp_remove(opp_table, new_opp, false);
-unlock:
-	mutex_unlock(&opp_table_lock);
+	_opp_free(new_opp);
+
 	return ret;
 }
 
@@ -1706,7 +1716,25 @@ EXPORT_SYMBOL_GPL(dev_pm_opp_register_put_opp_helper);
  */
 int dev_pm_opp_add(struct device *dev, unsigned long freq, unsigned long u_volt)
 {
-	return _opp_add_v1(dev, freq, u_volt, true);
+	struct opp_table *opp_table;
+	int ret;
+
+	/* Hold our table modification lock here */
+	mutex_lock(&opp_table_lock);
+
+	opp_table = _add_opp_table(dev);
+	if (!opp_table) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	ret = _opp_add_v1(opp_table, dev, freq, u_volt, true);
+	if (ret)
+		_remove_opp_table(opp_table);
+
+unlock:
+	mutex_unlock(&opp_table_lock);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(dev_pm_opp_add);
 
@@ -1844,38 +1872,90 @@ int dev_pm_opp_disable(struct device *dev, unsigned long freq)
 EXPORT_SYMBOL_GPL(dev_pm_opp_disable);
 
 /**
- * dev_pm_opp_get_notifier() - find notifier_head of the device with opp
- * @dev:	device pointer used to lookup OPP table.
+ * dev_pm_opp_register_notifier() - Register OPP notifier for the device
+ * @dev:	Device for which notifier needs to be registered
+ * @nb:		Notifier block to be registered
  *
- * Return: pointer to  notifier head if found, otherwise -ENODEV or
- * -EINVAL based on type of error casted as pointer. value must be checked
- *  with IS_ERR to determine valid pointer or error result.
- *
- * Locking: This function must be called under rcu_read_lock(). opp_table is a
- * RCU protected pointer. The reason for the same is that the opp pointer which
- * is returned will remain valid for use with opp_get_{voltage, freq} only while
- * under the locked area. The pointer returned must be used prior to unlocking
- * with rcu_read_unlock() to maintain the integrity of the pointer.
+ * Return: 0 on success or a negative error value.
  */
-struct srcu_notifier_head *dev_pm_opp_get_notifier(struct device *dev)
+int dev_pm_opp_register_notifier(struct device *dev, struct notifier_block *nb)
 {
-	struct opp_table *opp_table = _find_opp_table(dev);
+	struct opp_table *opp_table;
+	int ret;
 
-	if (IS_ERR(opp_table))
-		return ERR_CAST(opp_table); /* matching type */
+	rcu_read_lock();
 
-	return &opp_table->srcu_head;
+	opp_table = _find_opp_table(dev);
+	if (IS_ERR(opp_table)) {
+		ret = PTR_ERR(opp_table);
+		goto unlock;
+	}
+
+	ret = srcu_notifier_chain_register(&opp_table->srcu_head, nb);
+
+unlock:
+	rcu_read_unlock();
+
+	return ret;
 }
-EXPORT_SYMBOL_GPL(dev_pm_opp_get_notifier);
+EXPORT_SYMBOL(dev_pm_opp_register_notifier);
+
+/**
+ * dev_pm_opp_unregister_notifier() - Unregister OPP notifier for the device
+ * @dev:	Device for which notifier needs to be unregistered
+ * @nb:		Notifier block to be unregistered
+ *
+ * Return: 0 on success or a negative error value.
+ */
+int dev_pm_opp_unregister_notifier(struct device *dev,
+				   struct notifier_block *nb)
+{
+	struct opp_table *opp_table;
+	int ret;
+
+	rcu_read_lock();
+
+	opp_table = _find_opp_table(dev);
+	if (IS_ERR(opp_table)) {
+		ret = PTR_ERR(opp_table);
+		goto unlock;
+	}
+
+	ret = srcu_notifier_chain_unregister(&opp_table->srcu_head, nb);
+
+unlock:
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(dev_pm_opp_unregister_notifier);
 
 /*
  * Free OPPs either created using static entries present in DT or even the
  * dynamically added entries based on remove_all param.
  */
-void _dev_pm_opp_remove_table(struct device *dev, bool remove_all)
+void _dev_pm_opp_remove_table(struct opp_table *opp_table, struct device *dev,
+			      bool remove_all)
+{
+	struct dev_pm_opp *opp, *tmp;
+
+	opp_rcu_lockdep_assert();
+
+	/* Find if opp_table manages a single device */
+	if (list_is_singular(&opp_table->dev_list)) {
+		/* Free static OPPs */
+		list_for_each_entry_safe(opp, tmp, &opp_table->opp_list, node) {
+			if (remove_all || !opp->dynamic)
+				_opp_remove(opp_table, opp);
+		}
+	} else {
+		_remove_opp_dev(_find_opp_dev(dev, opp_table), opp_table);
+	}
+}
+
+void _dev_pm_opp_find_and_remove_table(struct device *dev, bool remove_all)
 {
 	struct opp_table *opp_table;
-	struct dev_pm_opp *opp, *tmp;
 
 	/* Hold our table modification lock here */
 	mutex_lock(&opp_table_lock);
@@ -1893,16 +1973,7 @@ void _dev_pm_opp_remove_table(struct device *dev, bool remove_all)
 		goto unlock;
 	}
 
-	/* Find if opp_table manages a single device */
-	if (list_is_singular(&opp_table->dev_list)) {
-		/* Free static OPPs */
-		list_for_each_entry_safe(opp, tmp, &opp_table->opp_list, node) {
-			if (remove_all || !opp->dynamic)
-				_opp_remove(opp_table, opp, true);
-		}
-	} else {
-		_remove_opp_dev(_find_opp_dev(dev, opp_table), opp_table);
-	}
+	_dev_pm_opp_remove_table(opp_table, dev, remove_all);
 
 unlock:
 	mutex_unlock(&opp_table_lock);
@@ -1923,6 +1994,6 @@ unlock:
  */
 void dev_pm_opp_remove_table(struct device *dev)
 {
-	_dev_pm_opp_remove_table(dev, true);
+	_dev_pm_opp_find_and_remove_table(dev, true);
 }
 EXPORT_SYMBOL_GPL(dev_pm_opp_remove_table);
