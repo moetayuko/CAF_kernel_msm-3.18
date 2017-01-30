@@ -124,7 +124,7 @@ struct dsa_switch_tree {
 	/*
 	 * The switch and port to which the CPU is attached.
 	 */
-	s8			cpu_switch;
+	struct dsa_switch	*cpu_switch;
 	s8			cpu_port;
 
 	/*
@@ -140,10 +140,13 @@ struct dsa_switch_tree {
 };
 
 struct dsa_port {
+	struct dsa_switch	*ds;
+	unsigned int		index;
 	struct net_device	*netdev;
 	struct device_node	*dn;
 	unsigned int		ageing_time;
 	u8			stp_state;
+	struct net_device	*bridge_dev;
 };
 
 struct dsa_switch {
@@ -169,7 +172,7 @@ struct dsa_switch {
 	/*
 	 * The switch operations.
 	 */
-	struct dsa_switch_ops	*ops;
+	const struct dsa_switch_ops	*ops;
 
 	/*
 	 * An array of which element [a] indicates which port on this
@@ -177,14 +180,6 @@ struct dsa_switch {
 	 * for switch a. Can be NULL if there is only one switch chip.
 	 */
 	s8		rtable[DSA_MAX_SWITCHES];
-
-#ifdef CONFIG_NET_DSA_HWMON
-	/*
-	 * Hardware monitoring information
-	 */
-	char			hwmon_name[IFNAMSIZ + 8];
-	struct device		*hwmon_dev;
-#endif
 
 	/*
 	 * The lower device this switch uses to talk to the host
@@ -198,13 +193,16 @@ struct dsa_switch {
 	u32			cpu_port_mask;
 	u32			enabled_port_mask;
 	u32			phys_mii_mask;
-	struct dsa_port		ports[DSA_MAX_PORTS];
 	struct mii_bus		*slave_mii_bus;
+
+	/* Dynamically allocated ports, keep last */
+	size_t num_ports;
+	struct dsa_port ports[];
 };
 
 static inline bool dsa_is_cpu_port(struct dsa_switch *ds, int p)
 {
-	return !!(ds->index == ds->dst->cpu_switch && p == ds->dst->cpu_port);
+	return !!(ds == ds->dst->cpu_switch && p == ds->dst->cpu_port);
 }
 
 static inline bool dsa_is_dsa_port(struct dsa_switch *ds, int p)
@@ -227,10 +225,10 @@ static inline u8 dsa_upstream_port(struct dsa_switch *ds)
 	 * Else return the (DSA) port number that connects to the
 	 * switch that is one hop closer to the cpu.
 	 */
-	if (dst->cpu_switch == ds->index)
+	if (dst->cpu_switch == ds)
 		return dst->cpu_port;
 	else
-		return ds->rtable[dst->cpu_switch];
+		return ds->rtable[dst->cpu_switch->index];
 }
 
 struct switchdev_trans;
@@ -240,8 +238,6 @@ struct switchdev_obj_port_mdb;
 struct switchdev_obj_port_vlan;
 
 struct dsa_switch_ops {
-	struct list_head	list;
-
 	/*
 	 * Probing and setup.
 	 */
@@ -309,14 +305,6 @@ struct dsa_switch_ops {
 	int	(*get_eee)(struct dsa_switch *ds, int port,
 			   struct ethtool_eee *e);
 
-#ifdef CONFIG_NET_DSA_HWMON
-	/* Hardware monitoring */
-	int	(*get_temp)(struct dsa_switch *ds, int *temp);
-	int	(*get_temp_limit)(struct dsa_switch *ds, int *temp);
-	int	(*set_temp_limit)(struct dsa_switch *ds, int temp);
-	int	(*get_temp_alarm)(struct dsa_switch *ds, bool *alarm);
-#endif
-
 	/* EEPROM access */
 	int	(*get_eeprom_len)(struct dsa_switch *ds);
 	int	(*get_eeprom)(struct dsa_switch *ds,
@@ -337,7 +325,8 @@ struct dsa_switch_ops {
 	int	(*set_ageing_time)(struct dsa_switch *ds, unsigned int msecs);
 	int	(*port_bridge_join)(struct dsa_switch *ds, int port,
 				    struct net_device *bridge);
-	void	(*port_bridge_leave)(struct dsa_switch *ds, int port);
+	void	(*port_bridge_leave)(struct dsa_switch *ds, int port,
+				     struct net_device *bridge);
 	void	(*port_stp_state_set)(struct dsa_switch *ds, int port,
 				      u8 state);
 	void	(*port_fast_age)(struct dsa_switch *ds, int port);
@@ -390,8 +379,13 @@ struct dsa_switch_ops {
 				 int (*cb)(struct switchdev_obj *obj));
 };
 
-void register_switch_driver(struct dsa_switch_ops *type);
-void unregister_switch_driver(struct dsa_switch_ops *type);
+struct dsa_switch_driver {
+	struct list_head	list;
+	const struct dsa_switch_ops *ops;
+};
+
+void register_switch_driver(struct dsa_switch_driver *type);
+void unregister_switch_driver(struct dsa_switch_driver *type);
 struct mii_bus *dsa_host_dev_to_mii_bus(struct device *dev);
 
 static inline bool dsa_uses_tagged_protocol(struct dsa_switch_tree *dst)
@@ -399,8 +393,9 @@ static inline bool dsa_uses_tagged_protocol(struct dsa_switch_tree *dst)
 	return dst->rcv != NULL;
 }
 
+struct dsa_switch *dsa_switch_alloc(struct device *dev, size_t n);
 void dsa_unregister_switch(struct dsa_switch *ds);
-int dsa_register_switch(struct dsa_switch *ds, struct device_node *np);
+int dsa_register_switch(struct dsa_switch *ds, struct device *dev);
 #ifdef CONFIG_PM_SLEEP
 int dsa_switch_suspend(struct dsa_switch *ds);
 int dsa_switch_resume(struct dsa_switch *ds);
