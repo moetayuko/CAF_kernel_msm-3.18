@@ -182,7 +182,8 @@ static void kvmppc_fast_vcpu_kick_hv(struct kvm_vcpu *vcpu)
 		++vcpu->stat.halt_wakeup;
 	}
 
-	if (kvmppc_ipi_thread(vcpu->arch.thread_cpu))
+	cpu = READ_ONCE(vcpu->arch.thread_cpu);
+	if (cpu >= 0 && kvmppc_ipi_thread(cpu))
 		return;
 
 	/* CPU points to the first thread of the core */
@@ -773,12 +774,8 @@ int kvmppc_pseries_do_hcall(struct kvm_vcpu *vcpu)
 		}
 		tvcpu->arch.prodded = 1;
 		smp_mb();
-		if (vcpu->arch.ceded) {
-			if (swait_active(&vcpu->wq)) {
-				swake_up(&vcpu->wq);
-				vcpu->stat.halt_wakeup++;
-			}
-		}
+		if (tvcpu->arch.ceded)
+			kvmppc_fast_vcpu_kick_hv(tvcpu);
 		break;
 	case H_CONFER:
 		target = kvmppc_get_gpr(vcpu, 4);
@@ -2620,7 +2617,8 @@ static int kvmppc_vcore_check_block(struct kvmppc_vcore *vc)
 	int i;
 
 	for_each_runnable_thread(i, vcpu, vc) {
-		if (vcpu->arch.pending_exceptions || !vcpu->arch.ceded)
+		if (vcpu->arch.pending_exceptions || !vcpu->arch.ceded ||
+		    vcpu->arch.prodded)
 			return 1;
 	}
 
@@ -2806,7 +2804,7 @@ static int kvmppc_run_vcpu(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 			break;
 		n_ceded = 0;
 		for_each_runnable_thread(i, v, vc) {
-			if (!v->arch.pending_exceptions)
+			if (!v->arch.pending_exceptions && !v->arch.prodded)
 				n_ceded += v->arch.ceded;
 			else
 				v->arch.ceded = 0;
