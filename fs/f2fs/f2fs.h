@@ -128,11 +128,8 @@ enum {
 	CP_DISCARD,
 };
 
-#define DEF_BATCHED_TRIM_SECTIONS	2
-#define BATCHED_TRIM_SEGMENTS(sbi)	\
-		(SM_I(sbi)->trim_sections * (sbi)->segs_per_sec)
-#define BATCHED_TRIM_BLOCKS(sbi)	\
-		(BATCHED_TRIM_SEGMENTS(sbi) << (sbi)->log_blocks_per_seg)
+#define MAX_DISCARD_BLOCKS(sbi) (1 << (sbi)->log_blocks_per_seg)
+#define DISCARD_ISSUE_RATE	8
 #define DEF_CP_INTERVAL			60	/* 60 secs */
 #define DEF_IDLE_INTERVAL		5	/* 5 secs */
 
@@ -181,11 +178,30 @@ struct discard_entry {
 	int len;		/* # of consecutive blocks of the discard */
 };
 
-struct bio_entry {
-	struct list_head list;
-	struct bio *bio;
-	struct completion event;
-	int error;
+enum {
+	D_PREP,
+	D_SUBMIT,
+	D_DONE,
+};
+
+struct discard_cmd {
+	struct list_head list;		/* command list */
+	struct completion wait;		/* compleation */
+	block_t lstart;			/* logical start address */
+	block_t len;			/* length */
+	struct bio *bio;		/* bio */
+	int state;			/* state */
+};
+
+struct discard_cmd_control {
+	struct task_struct *f2fs_issue_discard;	/* discard thread */
+	struct list_head discard_entry_list;	/* 4KB discard entry list */
+	int nr_discards;			/* # of discards in the list */
+	struct list_head discard_cmd_list;	/* discard cmd list */
+	wait_queue_head_t discard_wait_queue;	/* waiting queue for wake-up */
+	struct mutex cmd_lock;
+	int max_discards;			/* max. discards to be issued */
+	atomic_t submit_discard;		/* # of issued discard */
 };
 
 /* for the list of fsync inodes, used only during recovery */
@@ -538,6 +554,9 @@ struct f2fs_nm_info {
 
 	/* for checkpoint */
 	char *nat_bitmap;		/* NAT bitmap pointer */
+#ifdef CONFIG_F2FS_CHECK_FS
+	char *nat_bitmap_mir;		/* NAT bitmap mirror */
+#endif
 	int bitmap_size;		/* bitmap size */
 };
 
@@ -628,15 +647,6 @@ struct f2fs_sm_info {
 	/* a threshold to reclaim prefree segments */
 	unsigned int rec_prefree_segments;
 
-	/* for small discard management */
-	struct list_head discard_list;		/* 4KB discard list */
-	struct list_head wait_list;		/* linked with issued discard bio */
-	int nr_discards;			/* # of discards in the list */
-	int max_discards;			/* max. discards to be issued */
-
-	/* for batched trimming */
-	unsigned int trim_sections;		/* # of sections to trim */
-
 	struct list_head sit_entry_set;	/* sit entry set list */
 
 	unsigned int ipu_policy;	/* in-place-update policy */
@@ -644,8 +654,10 @@ struct f2fs_sm_info {
 	unsigned int min_fsync_blocks;	/* threshold for fsync */
 
 	/* for flush command control */
-	struct flush_cmd_control *cmd_control_info;
+	struct flush_cmd_control *fcc_info;
 
+	/* for discard command control */
+	struct discard_cmd_control *dcc_info;
 };
 
 /*
@@ -783,6 +795,8 @@ struct f2fs_sb_info {
 	struct f2fs_bio_info read_io;			/* for read bios */
 	struct f2fs_bio_info write_io[NR_PAGE_TYPE];	/* for write bios */
 	struct mutex wio_mutex[NODE + 1];	/* bio ordering for NODE/DATA */
+	int write_io_size_bits;			/* Write IO size bits */
+	mempool_t *write_io_dummy;		/* Dummy pages */
 
 	/* for checkpoint */
 	struct f2fs_checkpoint *ckpt;		/* raw checkpoint pointer */
@@ -873,6 +887,8 @@ struct f2fs_sb_info {
 	atomic_t inline_xattr;			/* # of inline_xattr inodes */
 	atomic_t inline_inode;			/* # of inline_data inodes */
 	atomic_t inline_dir;			/* # of inline_dentry inodes */
+	atomic_t aw_cnt;			/* # of atomic writes */
+	atomic_t max_aw_cnt;			/* max # of atomic writes */
 	int bg_gc;				/* background gc calls */
 	unsigned int ndirty_inode[NR_INODE_TYPE];	/* # of dirty inodes */
 #endif
@@ -1624,6 +1640,7 @@ enum {
 	FI_UPDATE_WRITE,	/* inode has in-place-update data */
 	FI_NEED_IPU,		/* used for ipu per file */
 	FI_ATOMIC_FILE,		/* indicate atomic file */
+	FI_ATOMIC_COMMIT,	/* indicate the state of atomical committing */
 	FI_VOLATILE_FILE,	/* indicate volatile file */
 	FI_FIRST_BLOCK_WRITTEN,	/* indicate #0 data block was written */
 	FI_DROP_CACHE,		/* drop dirty page cache */
@@ -1631,6 +1648,7 @@ enum {
 	FI_INLINE_DOTS,		/* indicate inline dot dentries */
 	FI_DO_DEFRAG,		/* indicate defragment is running */
 	FI_DIRTY_FILE,		/* indicate regular/symlink has dirty pages */
+	FI_NO_PREALLOC,		/* indicate skipped preallocated blocks */
 };
 
 static inline void __mark_inode_dirty_flag(struct inode *inode,
@@ -1811,6 +1829,11 @@ static inline int f2fs_has_inline_dots(struct inode *inode)
 static inline bool f2fs_is_atomic_file(struct inode *inode)
 {
 	return is_inode_flag_set(inode, FI_ATOMIC_FILE);
+}
+
+static inline bool f2fs_is_commit_atomic_write(struct inode *inode)
+{
+	return is_inode_flag_set(inode, FI_ATOMIC_COMMIT);
 }
 
 static inline bool f2fs_is_volatile_file(struct inode *inode)
@@ -2098,12 +2121,13 @@ void destroy_flush_cmd_control(struct f2fs_sb_info *, bool);
 void invalidate_blocks(struct f2fs_sb_info *, block_t);
 bool is_checkpointed_data(struct f2fs_sb_info *, block_t);
 void refresh_sit_entry(struct f2fs_sb_info *, block_t, block_t);
-void f2fs_wait_all_discard_bio(struct f2fs_sb_info *);
+void f2fs_wait_discard_bio(struct f2fs_sb_info *, block_t);
 void clear_prefree_segments(struct f2fs_sb_info *, struct cp_control *);
 void release_discard_addrs(struct f2fs_sb_info *);
 int npages_for_summary_flush(struct f2fs_sb_info *, bool);
 void allocate_new_segments(struct f2fs_sb_info *);
 int f2fs_trim_fs(struct f2fs_sb_info *, struct fstrim_range *);
+bool exist_trim_candidates(struct f2fs_sb_info *, struct cp_control *);
 struct page *get_sum_page(struct f2fs_sb_info *, unsigned int);
 void update_meta_page(struct f2fs_sb_info *, void *, block_t);
 void write_meta_page(struct f2fs_sb_info *, struct page *);
@@ -2165,7 +2189,7 @@ void f2fs_submit_merged_bio_cond(struct f2fs_sb_info *, struct inode *,
 				struct page *, nid_t, enum page_type, int);
 void f2fs_flush_merged_bios(struct f2fs_sb_info *);
 int f2fs_submit_page_bio(struct f2fs_io_info *);
-void f2fs_submit_page_mbio(struct f2fs_io_info *);
+int f2fs_submit_page_mbio(struct f2fs_io_info *);
 struct block_device *f2fs_target_device(struct f2fs_sb_info *,
 				block_t, struct bio *);
 int f2fs_target_device_index(struct f2fs_sb_info *, block_t);
@@ -2223,8 +2247,9 @@ struct f2fs_stat_info {
 	unsigned int ndirty_dirs, ndirty_files, ndirty_all;
 	int nats, dirty_nats, sits, dirty_sits, free_nids, alloc_nids;
 	int total_count, utilization;
-	int bg_gc, nr_wb_cp_data, nr_wb_data;
+	int bg_gc, nr_wb_cp_data, nr_wb_data, nr_flush, nr_discard;
 	int inline_xattr, inline_inode, inline_dir, orphans;
+	int aw_cnt, max_aw_cnt;
 	unsigned int valid_count, valid_node_count, valid_inode_count, discard_blks;
 	unsigned int bimodal, avg_vblocks;
 	int util_free, util_valid, util_invalid;
@@ -2296,6 +2321,17 @@ static inline struct f2fs_stat_info *F2FS_STAT(struct f2fs_sb_info *sbi)
 		((sbi)->block_count[(curseg)->alloc_type]++)
 #define stat_inc_inplace_blocks(sbi)					\
 		(atomic_inc(&(sbi)->inplace_count))
+#define stat_inc_atomic_write(inode)					\
+		(atomic_inc(&F2FS_I_SB(inode)->aw_cnt));
+#define stat_dec_atomic_write(inode)					\
+		(atomic_dec(&F2FS_I_SB(inode)->aw_cnt));
+#define stat_update_max_atomic_write(inode)				\
+	do {								\
+		int cur = atomic_read(&F2FS_I_SB(inode)->aw_cnt);	\
+		int max = atomic_read(&F2FS_I_SB(inode)->max_aw_cnt);	\
+		if (cur > max)						\
+			atomic_set(&F2FS_I_SB(inode)->max_aw_cnt, cur);	\
+	} while (0)
 #define stat_inc_seg_count(sbi, type, gc_type)				\
 	do {								\
 		struct f2fs_stat_info *si = F2FS_STAT(sbi);		\
@@ -2349,6 +2385,9 @@ void f2fs_destroy_root_stats(void);
 #define stat_dec_inline_inode(inode)
 #define stat_inc_inline_dir(inode)
 #define stat_dec_inline_dir(inode)
+#define stat_inc_atomic_write(inode)
+#define stat_dec_atomic_write(inode)
+#define stat_update_max_atomic_write(inode)
 #define stat_inc_seg_type(sbi, curseg)
 #define stat_inc_block_count(sbi, curseg)
 #define stat_inc_inplace_blocks(sbi)
