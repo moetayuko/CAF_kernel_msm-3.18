@@ -1606,6 +1606,9 @@ static void mmc_blk_rw_cmd_abort(struct mmc_card *card, struct request *req)
 static void mmc_blk_rw_start_new(struct mmc_queue *mq, struct mmc_card *card,
 				 struct request *req)
 {
+	if (!req)
+		return;
+
 	if (mmc_card_removed(card)) {
 		req->rq_flags |= RQF_QUIET;
 		blk_end_request_all(req, -EIO);
