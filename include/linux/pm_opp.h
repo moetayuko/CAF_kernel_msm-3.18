@@ -88,7 +88,7 @@ int dev_pm_opp_get_opp_count(struct device *dev);
 unsigned long dev_pm_opp_get_max_clock_latency(struct device *dev);
 unsigned long dev_pm_opp_get_max_volt_latency(struct device *dev);
 unsigned long dev_pm_opp_get_max_transition_latency(struct device *dev);
-struct dev_pm_opp *dev_pm_opp_get_suspend_opp(struct device *dev);
+unsigned long dev_pm_opp_get_suspend_opp_freq(struct device *dev);
 
 struct dev_pm_opp *dev_pm_opp_find_freq_exact(struct device *dev,
 					      unsigned long freq,
@@ -108,7 +108,9 @@ int dev_pm_opp_enable(struct device *dev, unsigned long freq);
 
 int dev_pm_opp_disable(struct device *dev, unsigned long freq);
 
-struct srcu_notifier_head *dev_pm_opp_get_notifier(struct device *dev);
+int dev_pm_opp_register_notifier(struct device *dev, struct notifier_block *nb);
+int dev_pm_opp_unregister_notifier(struct device *dev, struct notifier_block *nb);
+
 int dev_pm_opp_set_supported_hw(struct device *dev, const u32 *versions,
 				unsigned int count);
 void dev_pm_opp_put_supported_hw(struct device *dev);
@@ -159,9 +161,9 @@ static inline unsigned long dev_pm_opp_get_max_transition_latency(struct device 
 	return 0;
 }
 
-static inline struct dev_pm_opp *dev_pm_opp_get_suspend_opp(struct device *dev)
+static inline unsigned long dev_pm_opp_get_suspend_opp_freq(struct device *dev)
 {
-	return NULL;
+	return 0;
 }
 
 static inline struct dev_pm_opp *dev_pm_opp_find_freq_exact(struct device *dev,
@@ -202,10 +204,14 @@ static inline int dev_pm_opp_disable(struct device *dev, unsigned long freq)
 	return 0;
 }
 
-static inline struct srcu_notifier_head *dev_pm_opp_get_notifier(
-							struct device *dev)
+static inline int dev_pm_opp_register_notifier(struct device *dev, struct notifier_block *nb)
 {
-	return ERR_PTR(-ENOTSUPP);
+	return -ENOTSUPP;
+}
+
+static inline int dev_pm_opp_unregister_notifier(struct device *dev, struct notifier_block *nb)
+{
+	return -ENOTSUPP;
 }
 
 static inline int dev_pm_opp_set_supported_hw(struct device *dev,
