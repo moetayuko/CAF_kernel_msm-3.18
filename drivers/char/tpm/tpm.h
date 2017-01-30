@@ -195,17 +195,6 @@ struct tpm_chip {
 
 #define to_tpm_chip(d) container_of(d, struct tpm_chip, dev)
 
-static inline int tpm_read_index(int base, int index)
-{
-	outb(index, base);
-	return inb(base+1) & 0xFF;
-}
-
-static inline void tpm_write_index(int base, int index, int value)
-{
-	outb(index, base);
-	outb(value & 0xFF, base+1);
-}
 struct tpm_input_header {
 	__be16	tag;
 	__be32	length;
@@ -529,6 +518,11 @@ static inline void tpm_add_ppi(struct tpm_chip *chip)
 {
 }
 #endif
+
+static inline inline u32 tpm2_rc_value(u32 rc)
+{
+	return (rc & BIT(7)) ? rc & 0xff : rc;
+}
 
 int tpm2_pcr_read(struct tpm_chip *chip, int pcr_idx, u8 *res_buf);
 int tpm2_pcr_extend(struct tpm_chip *chip, int pcr_idx, const u8 *hash);
