@@ -1973,7 +1973,7 @@ static int ath10k_pci_get_num_banks(struct ath10k *ar)
 		}
 		break;
 	case QCA9377_1_0_DEVICE_ID:
-		return 2;
+		return 4;
 	}
 
 	ath10k_warn(ar, "unknown number of banks, assuming 1\n");
@@ -2799,7 +2799,7 @@ static int ath10k_pci_napi_poll(struct napi_struct *ctx, int budget)
 	done = ath10k_htt_txrx_compl_task(ar, budget);
 
 	if (done < budget) {
-		napi_complete(ctx);
+		napi_complete_done(ctx, done);
 		/* In case of MSI, it is possible that interrupts are received
 		 * while NAPI poll is inprogress. So pending interrupts that are
 		 * received after processing all copy engine pipes by NAPI poll
@@ -3132,7 +3132,7 @@ int ath10k_pci_setup_resource(struct ath10k *ar)
 	setup_timer(&ar_pci->rx_post_retry, ath10k_pci_rx_replenish_retry,
 		    (unsigned long)ar);
 
-	if (QCA_REV_6174(ar))
+	if (QCA_REV_6174(ar) || QCA_REV_9377(ar))
 		ath10k_pci_override_ce_config(ar);
 
 	ret = ath10k_pci_alloc_pipes(ar);
