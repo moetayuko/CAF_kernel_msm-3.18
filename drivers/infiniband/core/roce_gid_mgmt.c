@@ -144,7 +144,7 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding_rcu(struct net_de
 static int is_eth_port_of_netdev(struct ib_device *ib_dev, u8 port,
 				 struct net_device *rdma_ndev, void *cookie)
 {
-	struct net_device *event_ndev = (struct net_device *)cookie;
+	struct net_device *event_ndev = cookie;
 	struct net_device *real_dev;
 	int res;
 
@@ -192,7 +192,7 @@ static int pass_all_filter(struct ib_device *ib_dev, u8 port,
 static int upper_device_filter(struct ib_device *ib_dev, u8 port,
 			       struct net_device *rdma_ndev, void *cookie)
 {
-	struct net_device *event_ndev = (struct net_device *)cookie;
+	struct net_device *event_ndev = cookie;
 	int res;
 
 	if (!rdma_ndev)
@@ -379,7 +379,7 @@ static void _add_netdev_ips(struct ib_device *ib_dev, u8 port,
 static void add_netdev_ips(struct ib_device *ib_dev, u8 port,
 			   struct net_device *rdma_ndev, void *cookie)
 {
-	struct net_device *event_ndev = (struct net_device *)cookie;
+	struct net_device *event_ndev = cookie;
 
 	enum_netdev_default_gids(ib_dev, port, event_ndev, rdma_ndev);
 	_add_netdev_ips(ib_dev, port, event_ndev);
@@ -388,7 +388,7 @@ static void add_netdev_ips(struct ib_device *ib_dev, u8 port,
 static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
 			   struct net_device *rdma_ndev, void *cookie)
 {
-	struct net_device *event_ndev = (struct net_device *)cookie;
+	struct net_device *event_ndev = cookie;
 
 	ib_cache_gid_del_all_netdev_gids(ib_dev, port, event_ndev);
 }
@@ -460,7 +460,7 @@ static void handle_netdev_upper(struct ib_device *ib_dev, u8 port,
 						      u8 port,
 						      struct net_device *ndev))
 {
-	struct net_device *ndev = (struct net_device *)cookie;
+	struct net_device *ndev = cookie;
 	struct upper_list *upper_iter;
 	struct upper_list *upper_temp;
 	LIST_HEAD(upper_list);
@@ -519,7 +519,7 @@ static void del_netdev_default_ips_join(struct ib_device *ib_dev, u8 port,
 static void del_netdev_default_ips(struct ib_device *ib_dev, u8 port,
 				   struct net_device *rdma_ndev, void *cookie)
 {
-	struct net_device *event_ndev = (struct net_device *)cookie;
+	struct net_device *event_ndev = cookie;
 
 	bond_delete_netdev_default_gids(ib_dev, port, event_ndev, rdma_ndev);
 }
