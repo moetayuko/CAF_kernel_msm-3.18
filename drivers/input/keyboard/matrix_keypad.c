@@ -2,7 +2,7 @@
  *  GPIO driven matrix keyboard driver
  *
  *  Copyright (c) 2008 Marek Vasut <marek.vasut@gmail.com>
- *  Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2012,2017, The Linux Foundation. All rights reserved.
  *
  *  Based on corgikbd.c
  *
@@ -27,9 +27,11 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/of_platform.h>
+#include <linux/pinctrl/consumer.h>
 
 struct matrix_keypad {
 	const struct matrix_keypad_platform_data *pdata;
+	struct pinctrl *key_pinctrl;
 	struct input_dev *input_dev;
 	unsigned int row_shift;
 
@@ -262,6 +264,10 @@ static void matrix_keypad_disable_wakeup(struct matrix_keypad *keypad)
 		}
 	} else {
 		for (i = 0; i < pdata->num_row_gpios; i++) {
+			if (pdata->product_id == 1) {
+				if (i != 0)
+					continue;
+			}
 			if (test_and_clear_bit(i, keypad->disabled_gpios)) {
 				gpio = pdata->row_gpios[i];
 				disable_irq_wake(gpio_to_irq(gpio));
@@ -269,12 +275,47 @@ static void matrix_keypad_disable_wakeup(struct matrix_keypad *keypad)
 		}
 	}
 }
+static int gpio_keys_pinctrl_configure(struct matrix_keypad *keypad,
+		bool active)
+{
+	struct pinctrl_state *set_state;
+	int retval;
 
+	if (active) {
+		set_state =
+			pinctrl_lookup_state(keypad->key_pinctrl,
+					"tlmm_gpio_key_active");
+		if (IS_ERR(set_state))
+			pr_err("cannot get ts pinctrl active state\n");
+	} else {
+		set_state =
+			pinctrl_lookup_state(keypad->key_pinctrl,
+					"tlmm_gpio_key_suspend");
+		if (IS_ERR(set_state))
+			pr_err("cannot get gpiokey pinctrl sleep state\n");
+	}
+	retval = pinctrl_select_state(keypad->key_pinctrl, set_state);
+	if (retval)
+		pr_err("cannot set ts pinctrl active state\n");
+
+	return 0;
+}
 static int matrix_keypad_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct matrix_keypad *keypad = platform_get_drvdata(pdev);
 
+	const struct matrix_keypad_platform_data *pdata = keypad->pdata;
+	 if (pdata->product_id == 1) {
+		int ret;
+		if (keypad->key_pinctrl) {
+			ret = gpio_keys_pinctrl_configure(keypad, false);
+			if (ret) {
+				dev_err(dev, "failed to put the pin in suspend state\n");
+				return ret;
+			}
+		}
+	}
 	matrix_keypad_stop(keypad->input_dev);
 
 	if (device_may_wakeup(&pdev->dev))
@@ -287,6 +328,18 @@ static int matrix_keypad_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct matrix_keypad *keypad = platform_get_drvdata(pdev);
+
+	const struct matrix_keypad_platform_data *pdata = keypad->pdata;
+	if (pdata->product_id == 1) {
+		int err = 0;
+		if (keypad->key_pinctrl) {
+			err = gpio_keys_pinctrl_configure(keypad, true);
+			if (err) {
+				dev_err(dev, "failed to put the pin in resume state\n");
+				return err;
+			}
+		}
+	}
 
 	if (device_may_wakeup(&pdev->dev))
 		matrix_keypad_disable_wakeup(keypad);
@@ -329,6 +382,12 @@ static int matrix_keypad_init_gpio(struct platform_device *pdev,
 		}
 
 		gpio_direction_input(pdata->row_gpios[i]);
+		if (pdata->product_id == 1) {
+			if (0 == i)
+				continue;
+			__set_bit(i, keypad->disabled_gpios);
+		}
+
 	}
 
 	if (pdata->clustered_irq > 0) {
@@ -436,6 +495,9 @@ matrix_keypad_parse_dt(struct device *dev)
 	of_property_read_u32(np, "col-scan-delay-us",
 						&pdata->col_scan_delay_us);
 
+	of_property_read_u32(np, "qcom,product-id",
+			&pdata->product_id);
+
 	gpios = devm_kzalloc(dev,
 			     sizeof(unsigned int) *
 				(pdata->num_row_gpios + pdata->num_col_gpios),
@@ -505,6 +567,23 @@ static int matrix_keypad_probe(struct platform_device *pdev)
 	input_dev->dev.parent	= &pdev->dev;
 	input_dev->open		= matrix_keypad_start;
 	input_dev->close	= matrix_keypad_stop;
+	/* Get pinctrl if target uses pinctrl */
+	if (pdata->product_id == 1) {
+		keypad->key_pinctrl = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(keypad->key_pinctrl)) {
+			if (PTR_ERR(keypad->key_pinctrl) == -EPROBE_DEFER)
+				return -EPROBE_DEFER;
+
+			pr_err("Target does not use pinctrl\n");
+			keypad->key_pinctrl = NULL;
+		}
+
+		if (keypad->key_pinctrl) {
+			err = gpio_keys_pinctrl_configure(keypad, true);
+			if (err)
+				dev_err(&pdev->dev, "cannot set ts pinctrl active state\n");
+		}
+	}
 
 	err = matrix_keypad_build_keymap(pdata->keymap_data, NULL,
 					 pdata->num_row_gpios,
