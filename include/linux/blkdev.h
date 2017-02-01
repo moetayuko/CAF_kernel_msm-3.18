@@ -128,8 +128,6 @@ typedef __u32 __bitwise req_flags_t;
 #define RQF_NOMERGE_FLAGS \
 	(RQF_STARTED | RQF_SOFTBARRIER | RQF_FLUSH_SEQ | RQF_SPECIAL_PAYLOAD)
 
-#define BLK_MAX_CDB	16
-
 /*
  * Try to put the fields that are referenced together in the same cacheline.
  *
@@ -154,6 +152,7 @@ struct request {
 
 	/* the following two fields are internal, NEVER access directly */
 	unsigned int __data_len;	/* total data len */
+	int tag;
 	sector_t __sector;		/* sector cursor */
 
 	struct bio *bio;
@@ -220,22 +219,13 @@ struct request {
 
 	unsigned short ioprio;
 
+	int internal_tag;
+
 	void *special;		/* opaque pointer available for LLD use */
 
-	int tag;
 	int errors;
 
-	/*
-	 * when request is used as a packet command carrier
-	 */
-	unsigned char __cmd[BLK_MAX_CDB];
-	unsigned char *cmd;
-	unsigned short cmd_len;
-
 	unsigned int extra_len;	/* length of alignment and padding */
-	unsigned int sense_len;
-	unsigned int resid_len;	/* residual count */
-	void *sense;
 
 	unsigned long deadline;
 	struct list_head timeout_list;
@@ -271,6 +261,8 @@ typedef void (softirq_done_fn)(struct request *);
 typedef int (dma_drain_needed_fn)(struct request *);
 typedef int (lld_busy_fn) (struct request_queue *q);
 typedef int (bsg_job_fn) (struct bsg_job *);
+typedef int (init_rq_fn)(struct request_queue *, struct request *, gfp_t);
+typedef void (exit_rq_fn)(struct request_queue *, struct request *);
 
 enum blk_eh_timer_return {
 	BLK_EH_NOT_HANDLED,
@@ -406,8 +398,10 @@ struct request_queue {
 	rq_timed_out_fn		*rq_timed_out_fn;
 	dma_drain_needed_fn	*dma_drain_needed;
 	lld_busy_fn		*lld_busy_fn;
+	init_rq_fn		*init_rq_fn;
+	exit_rq_fn		*exit_rq_fn;
 
-	struct blk_mq_ops	*mq_ops;
+	const struct blk_mq_ops	*mq_ops;
 
 	unsigned int		*mq_map;
 
@@ -569,7 +563,15 @@ struct request_queue {
 	struct list_head	tag_set_list;
 	struct bio_set		*bio_split;
 
+#ifdef CONFIG_DEBUG_FS
+	struct dentry		*debugfs_dir;
+	struct dentry		*mq_debugfs_dir;
+#endif
+
 	bool			mq_sysfs_init_done;
+
+	size_t			cmd_size;
+	void			*rq_alloc_data;
 };
 
 #define QUEUE_FLAG_QUEUED	1	/* uses generic tag queueing */
@@ -600,6 +602,7 @@ struct request_queue {
 #define QUEUE_FLAG_FLUSH_NQ    25	/* flush not queueuable */
 #define QUEUE_FLAG_DAX         26	/* device supports DAX */
 #define QUEUE_FLAG_STATS       27	/* track rq completion times */
+#define QUEUE_FLAG_RESTART     28	/* queue needs restart at completion */
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -910,7 +913,6 @@ extern void blk_rq_init(struct request_queue *q, struct request *rq);
 extern void blk_put_request(struct request *);
 extern void __blk_put_request(struct request_queue *, struct request *);
 extern struct request *blk_get_request(struct request_queue *, int, gfp_t);
-extern void blk_rq_set_block_pc(struct request *);
 extern void blk_requeue_request(struct request_queue *, struct request *);
 extern int blk_lld_busy(struct request_queue *q);
 extern int blk_rq_prep_clone(struct request *rq, struct request *rq_src,
@@ -1129,8 +1131,7 @@ extern void blk_unprep_request(struct request *);
 extern struct request_queue *blk_init_queue_node(request_fn_proc *rfn,
 					spinlock_t *lock, int node_id);
 extern struct request_queue *blk_init_queue(request_fn_proc *, spinlock_t *);
-extern struct request_queue *blk_init_allocated_queue(struct request_queue *,
-						      request_fn_proc *, spinlock_t *);
+extern int blk_init_allocated_queue(struct request_queue *);
 extern void blk_cleanup_queue(struct request_queue *);
 extern void blk_queue_make_request(struct request_queue *, make_request_fn *);
 extern void blk_queue_bounce_limit(struct request_queue *, u64);
@@ -1620,6 +1621,25 @@ static inline bool bvec_gap_to_prev(struct request_queue *q,
 	return __bvec_gap_to_prev(q, bprv, offset);
 }
 
+/*
+ * Check if the two bvecs from two bios can be merged to one segment.
+ * If yes, no need to check gap between the two bios since the 1st bio
+ * and the 1st bvec in the 2nd bio can be handled in one segment.
+ */
+static inline bool bios_segs_mergeable(struct request_queue *q,
+		struct bio *prev, struct bio_vec *prev_last_bv,
+		struct bio_vec *next_first_bv)
+{
+	if (!BIOVEC_PHYS_MERGEABLE(prev_last_bv, next_first_bv))
+		return false;
+	if (!BIOVEC_SEG_BOUNDARY(q, prev_last_bv, next_first_bv))
+		return false;
+	if (prev->bi_seg_back_size + next_first_bv->bv_len >
+			queue_max_segment_size(q))
+		return false;
+	return true;
+}
+
 static inline bool bio_will_gap(struct request_queue *q, struct bio *prev,
 			 struct bio *next)
 {
@@ -1629,7 +1649,8 @@ static inline bool bio_will_gap(struct request_queue *q, struct bio *prev,
 		bio_get_last_bvec(prev, &pb);
 		bio_get_first_bvec(next, &nb);
 
-		return __bvec_gap_to_prev(q, &pb, nb.bv_offset);
+		if (!bios_segs_mergeable(q, prev, &pb, &nb))
+			return __bvec_gap_to_prev(q, &pb, nb.bv_offset);
 	}
 
 	return false;
