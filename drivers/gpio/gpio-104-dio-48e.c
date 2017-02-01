@@ -48,7 +48,6 @@ MODULE_PARM_DESC(irq, "ACCES 104-DIO-48E interrupt line numbers");
  * @control:	Control registers state
  * @lock:	synchronization lock to prevent I/O race conditions
  * @base:	base port address of the GPIO device
- * @irq:	Interrupt line number
  * @irq_mask:	I/O bits affected by interrupts
  */
 struct dio48e_gpio {
@@ -58,7 +57,6 @@ struct dio48e_gpio {
 	unsigned char control[2];
 	spinlock_t lock;
 	unsigned base;
-	unsigned irq;
 	unsigned char irq_mask;
 };
 
@@ -204,6 +202,44 @@ static void dio48e_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 	spin_unlock_irqrestore(&dio48egpio->lock, flags);
 }
 
+static void dio48e_gpio_set_multiple(struct gpio_chip *chip,
+	unsigned long *mask, unsigned long *bits)
+{
+	struct dio48e_gpio *const dio48egpio = gpiochip_get_data(chip);
+	unsigned int i;
+	const unsigned int gpio_reg_size = 8;
+	unsigned int port;
+	unsigned int out_port;
+	unsigned int bitmask;
+	unsigned long flags;
+
+	/* set bits are evaluated a gpio register size at a time */
+	for (i = 0; i < chip->ngpio; i += gpio_reg_size) {
+		/* no more set bits in this mask word; skip to the next word */
+		if (!mask[BIT_WORD(i)]) {
+			i = (BIT_WORD(i) + 1) * BITS_PER_LONG - gpio_reg_size;
+			continue;
+		}
+
+		port = i / gpio_reg_size;
+		out_port = (port > 2) ? port + 1 : port;
+		bitmask = mask[BIT_WORD(i)] & bits[BIT_WORD(i)];
+
+		spin_lock_irqsave(&dio48egpio->lock, flags);
+
+		/* update output state data and set device gpio register */
+		dio48egpio->out_state[port] &= ~mask[BIT_WORD(i)];
+		dio48egpio->out_state[port] |= bitmask;
+		outb(dio48egpio->out_state[port], dio48egpio->base + out_port);
+
+		spin_unlock_irqrestore(&dio48egpio->lock, flags);
+
+		/* prepare for next gpio register set */
+		mask[BIT_WORD(i)] >>= gpio_reg_size;
+		bits[BIT_WORD(i)] >>= gpio_reg_size;
+	}
+}
+
 static void dio48e_irq_ack(struct irq_data *data)
 {
 }
@@ -328,14 +364,14 @@ static int dio48e_probe(struct device *dev, unsigned int id)
 	dio48egpio->chip.direction_output = dio48e_gpio_direction_output;
 	dio48egpio->chip.get = dio48e_gpio_get;
 	dio48egpio->chip.set = dio48e_gpio_set;
+	dio48egpio->chip.set_multiple = dio48e_gpio_set_multiple;
 	dio48egpio->base = base[id];
-	dio48egpio->irq = irq[id];
 
 	spin_lock_init(&dio48egpio->lock);
 
 	dev_set_drvdata(dev, dio48egpio);
 
-	err = gpiochip_add_data(&dio48egpio->chip, dio48egpio);
+	err = devm_gpiochip_add_data(dev, &dio48egpio->chip, dio48egpio);
 	if (err) {
 		dev_err(dev, "GPIO registering failed (%d)\n", err);
 		return err;
@@ -360,28 +396,15 @@ static int dio48e_probe(struct device *dev, unsigned int id)
 		handle_edge_irq, IRQ_TYPE_NONE);
 	if (err) {
 		dev_err(dev, "Could not add irqchip (%d)\n", err);
-		goto err_gpiochip_remove;
+		return err;
 	}
 
-	err = request_irq(irq[id], dio48e_irq_handler, 0, name, dio48egpio);
+	err = devm_request_irq(dev, irq[id], dio48e_irq_handler, 0, name,
+		dio48egpio);
 	if (err) {
 		dev_err(dev, "IRQ handler registering failed (%d)\n", err);
-		goto err_gpiochip_remove;
+		return err;
 	}
-
-	return 0;
-
-err_gpiochip_remove:
-	gpiochip_remove(&dio48egpio->chip);
-	return err;
-}
-
-static int dio48e_remove(struct device *dev, unsigned int id)
-{
-	struct dio48e_gpio *const dio48egpio = dev_get_drvdata(dev);
-
-	free_irq(dio48egpio->irq, dio48egpio);
-	gpiochip_remove(&dio48egpio->chip);
 
 	return 0;
 }
@@ -391,7 +414,6 @@ static struct isa_driver dio48e_driver = {
 	.driver = {
 		.name = "104-dio-48e"
 	},
-	.remove = dio48e_remove
 };
 module_isa_driver(dio48e_driver, num_dio48e);
 
