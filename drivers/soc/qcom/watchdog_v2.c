@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -370,7 +370,7 @@ static ssize_t wdog_suspend_set(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(suspend, S_IWUSR | S_IRUSR, NULL, wdog_suspend_set);
+static DEVICE_ATTR(suspend, S_IWUSR, NULL, wdog_suspend_set);
 
 static ssize_t wdog_resume_set(struct device *dev,
 				struct device_attribute *attr,
@@ -394,7 +394,7 @@ static ssize_t wdog_resume_set(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(resume, S_IWUSR | S_IRUSR, NULL, wdog_resume_set);
+static DEVICE_ATTR(resume, S_IWUSR, NULL, wdog_resume_set);
 
 static void pet_watchdog(struct msm_watchdog_data *wdog_dd)
 {
