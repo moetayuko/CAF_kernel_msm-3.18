@@ -241,6 +241,13 @@ struct se_session *transport_init_session(enum target_prot_op sup_prot_ops)
 	spin_lock_init(&se_sess->sess_cmd_lock);
 	se_sess->sup_prot_ops = sup_prot_ops;
 
+	se_sess->tmf_wq = alloc_workqueue("tmf-%p", WQ_UNBOUND, 1, se_sess);
+	if (!se_sess->tmf_wq) {
+		pr_err("%s: workqueue allocation failed\n", __func__);
+		kfree(se_sess);
+		return ERR_PTR(-ENOMEM);
+	}
+
 	return se_sess;
 }
 EXPORT_SYMBOL(transport_init_session);
@@ -507,6 +514,8 @@ void transport_free_session(struct se_session *se_sess)
 		se_sess->se_node_acl = NULL;
 		target_put_nacl(se_nacl);
 	}
+	if (se_sess->tmf_wq)
+		destroy_workqueue(se_sess->tmf_wq);
 	if (se_sess->sess_cmd_map) {
 		percpu_ida_destroy(&se_sess->sess_tag_pool);
 		kvfree(se_sess->sess_cmd_map);
@@ -3129,7 +3138,7 @@ int transport_generic_handle_tmr(
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
 
 	INIT_WORK(&cmd->work, target_tmr_work);
-	queue_work(cmd->se_dev->tmr_wq, &cmd->work);
+	queue_work(cmd->se_sess->tmf_wq, &cmd->work);
 	return 0;
 }
 EXPORT_SYMBOL(transport_generic_handle_tmr);
