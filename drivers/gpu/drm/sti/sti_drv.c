@@ -261,7 +261,6 @@ static void sti_output_poll_changed(struct drm_device *ddev)
 	}
 
 	private->fbdev = drm_fbdev_cma_init(ddev, 32,
-					    ddev->mode_config.num_crtc,
 					    ddev->mode_config.num_connector);
 	if (IS_ERR(private->fbdev))
 		private->fbdev = NULL;

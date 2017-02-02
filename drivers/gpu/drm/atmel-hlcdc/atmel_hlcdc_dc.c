@@ -435,7 +435,6 @@ static void atmel_hlcdc_fb_output_poll_changed(struct drm_device *dev)
 		drm_fbdev_cma_hotplug_event(dc->fbdev);
 	} else {
 		dc->fbdev = drm_fbdev_cma_init(dev, 24,
-				dev->mode_config.num_crtc,
 				dev->mode_config.num_connector);
 		if (IS_ERR(dc->fbdev))
 			dc->fbdev = NULL;
