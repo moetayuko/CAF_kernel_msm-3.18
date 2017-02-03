@@ -1439,10 +1439,13 @@ static int read_latency_timer(struct usb_serial_port *port)
 			     FTDI_SIO_GET_LATENCY_TIMER_REQUEST_TYPE,
 			     0, priv->interface,
 			     buf, 1, WDR_TIMEOUT);
-	if (rv < 0)
+	if (rv < 1) {
 		dev_err(&port->dev, "Unable to read latency timer: %i\n", rv);
-	else
+		if (rv >= 0)
+			rv = -EIO;
+	} else {
 		priv->latency = buf[0];
+	}
 
 	kfree(buf);
 
@@ -1531,7 +1534,7 @@ check_and_exit:
 }
 
 static int get_lsr_info(struct usb_serial_port *port,
-			struct serial_struct __user *retinfo)
+			unsigned int __user *retinfo)
 {
 	struct ftdi_private *priv = usb_get_serial_port_data(port);
 	unsigned int result = 0;
@@ -1801,8 +1804,6 @@ static int ftdi_sio_port_probe(struct usb_serial_port *port)
 		return -ENOMEM;
 
 	mutex_init(&priv->cfg_lock);
-
-	priv->flags = ASYNC_LOW_LATENCY;
 
 	if (quirk && quirk->port_probe)
 		quirk->port_probe(priv);
@@ -2428,8 +2429,12 @@ static int ftdi_get_modem_status(struct usb_serial_port *port,
 			FTDI_SIO_GET_MODEM_STATUS_REQUEST_TYPE,
 			0, priv->interface,
 			buf, len, WDR_TIMEOUT);
-	if (ret < 0) {
+
+	/* NOTE: We allow short responses and handle that below. */
+	if (ret < 1) {
 		dev_err(&port->dev, "failed to get modem status: %d\n", ret);
+		if (ret >= 0)
+			ret = -EIO;
 		ret = usb_translate_errors(ret);
 		goto out;
 	}
@@ -2480,20 +2485,15 @@ static int ftdi_ioctl(struct tty_struct *tty,
 					unsigned int cmd, unsigned long arg)
 {
 	struct usb_serial_port *port = tty->driver_data;
+	void __user *argp = (void __user *)arg;
 
-	/* Based on code from acm.c and others */
 	switch (cmd) {
-
-	case TIOCGSERIAL: /* gets serial port data */
-		return get_serial_info(port,
-					(struct serial_struct __user *) arg);
-
-	case TIOCSSERIAL: /* sets serial port data */
-		return set_serial_info(tty, port,
-					(struct serial_struct __user *) arg);
+	case TIOCGSERIAL:
+		return get_serial_info(port, argp);
+	case TIOCSSERIAL:
+		return set_serial_info(tty, port, argp);
 	case TIOCSERGETLSR:
-		return get_lsr_info(port, (struct serial_struct __user *)arg);
-		break;
+		return get_lsr_info(port, argp);
 	default:
 		break;
 	}
