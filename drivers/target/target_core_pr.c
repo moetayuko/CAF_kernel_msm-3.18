@@ -204,6 +204,7 @@ static void __target_scsi2_release(struct se_device *dev)
 
 	dev->dev_reservation_flags &=
 		~(DRF_SPC2_RESERVATIONS | DRF_SPC2_RESERVATIONS_WITH_ISID);
+	dev->reserved_by = NULL;
 	dev->dev_reserved_node_acl = NULL;
 	dev->dev_res_bin_isid = 0;
 }
@@ -302,6 +303,7 @@ target_scsi2_reservation_reserve(struct se_cmd *cmd)
 		goto out_unlock;
 	}
 
+	dev->reserved_by = sess;
 	dev->dev_reserved_node_acl = sess->se_node_acl;
 	dev->dev_reservation_flags |= DRF_SPC2_RESERVATIONS;
 	if (sess->sess_bin_isid != 0) {

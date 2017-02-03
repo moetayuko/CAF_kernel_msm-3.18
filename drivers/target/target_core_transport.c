@@ -505,6 +505,19 @@ EXPORT_SYMBOL(transport_deregister_session_configfs);
 void transport_free_session(struct se_session *se_sess)
 {
 	struct se_node_acl *se_nacl = se_sess->se_node_acl;
+	struct se_device *dev;
+
+	/* Release SCSI-2 reservations upon nexus loss. */
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, g_dev_node) {
+		if (dev->reserved_by != se_sess)
+			continue;
+		pr_debug("Releasing SPC-2 reservation from %s due to I_T nexus loss (session %p)\n",
+			 config_item_name(&dev->dev_group.cg_item), se_sess);
+		target_scsi2_release(dev);
+	}
+	mutex_unlock(&g_device_mutex);
+
 	/*
 	 * Drop the se_node_acl->nacl_kref obtained from within
 	 * core_tpg_get_initiator_node_acl().
