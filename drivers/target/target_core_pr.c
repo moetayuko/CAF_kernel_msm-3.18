@@ -94,6 +94,13 @@ static int is_reservation_holder(
 	return 0;
 }
 
+/*
+ * Returns 0 if executing a command is allowed and TCM_RESERVATION_CONFLICT
+ * if executing a command is not allowed due to an SPC-2 reservation.
+ *
+ * See also the following table in SPC-5: "SPC-4 commands that are allowed in
+ * the presence of various reservations".
+ */
 static sense_reason_t
 target_scsi2_reservation_check(struct se_cmd *cmd)
 {
@@ -102,9 +109,23 @@ target_scsi2_reservation_check(struct se_cmd *cmd)
 
 	switch (cmd->t_task_cdb[0]) {
 	case INQUIRY:
+	case LOG_SENSE:
+	case PERSISTENT_RESERVE_IN:
+	case REPORT_LUNS:
+	case REQUEST_SENSE:
+	case TEST_UNIT_READY:
+	case RECEIVE_COPY_RESULTS:
 	case RELEASE:
 	case RELEASE_10:
 		return 0;
+	case MAINTENANCE_IN:
+		switch (cmd->t_task_cdb[1]) {
+		case MI_REPORT_SUPPORTED_OPERATION_CODES:
+		case MI_REPORT_TARGET_PGS:
+			return 0;
+		default:
+			break;
+		}
 	default:
 		break;
 	}
