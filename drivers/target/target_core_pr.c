@@ -198,6 +198,24 @@ static int target_check_scsi2_reservation_conflict(struct se_cmd *cmd)
 	return 0;
 }
 
+static void __target_scsi2_release(struct se_device *dev)
+{
+	lockdep_assert_held(&dev->dev_reservation_lock);
+
+	dev->dev_reservation_flags &=
+		~(DRF_SPC2_RESERVATIONS | DRF_SPC2_RESERVATIONS_WITH_ISID);
+	dev->dev_reserved_node_acl = NULL;
+	dev->dev_res_bin_isid = 0;
+}
+
+/* Release a SCSI-2 reservation. */
+void target_scsi2_release(struct se_device *dev)
+{
+	spin_lock(&dev->dev_reservation_lock);
+	__target_scsi2_release(dev);
+	spin_unlock(&dev->dev_reservation_lock);
+}
+
 sense_reason_t
 target_scsi2_reservation_release(struct se_cmd *cmd)
 {
@@ -224,12 +242,8 @@ target_scsi2_reservation_release(struct se_cmd *cmd)
 	if (dev->dev_res_bin_isid != sess->sess_bin_isid)
 		goto out_unlock;
 
-	dev->dev_reserved_node_acl = NULL;
-	dev->dev_reservation_flags &= ~DRF_SPC2_RESERVATIONS;
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS_WITH_ISID) {
-		dev->dev_res_bin_isid = 0;
-		dev->dev_reservation_flags &= ~DRF_SPC2_RESERVATIONS_WITH_ISID;
-	}
+	__target_scsi2_release(dev);
+
 	tpg = sess->se_tpg;
 	pr_debug("SCSI-2 Released reservation for %s LUN: %llu ->"
 		" MAPPED LUN: %llu for %s\n",
