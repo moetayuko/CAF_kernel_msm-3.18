@@ -34,8 +34,7 @@
 #include <linux/acpi.h>
 #include <linux/cdev.h>
 #include <linux/highmem.h>
-
-#include "tpm_eventlog.h"
+#include <crypto/hash_info.h>
 
 enum tpm_const {
 	TPM_MINOR = 224,	/* officially assigned */
@@ -97,6 +96,7 @@ enum tpm2_return_codes {
 };
 
 enum tpm2_algorithms {
+	TPM2_ALG_ERROR		= 0x0000,
 	TPM2_ALG_SHA1		= 0x0004,
 	TPM2_ALG_KEYEDHASH	= 0x0008,
 	TPM2_ALG_SHA256		= 0x000B,
@@ -127,6 +127,7 @@ enum tpm2_permanent_handles {
 };
 
 enum tpm2_capabilities {
+	TPM2_CAP_PCRS		= 5,
 	TPM2_CAP_TPM_PROPERTIES = 6,
 };
 
@@ -146,6 +147,11 @@ enum tpm_chip_flags {
 	TPM_CHIP_FLAG_IRQ		= BIT(2),
 	TPM_CHIP_FLAG_VIRTUAL		= BIT(3),
 	TPM_CHIP_FLAG_HAVE_TIMEOUTS	= BIT(4),
+};
+
+struct tpm_bios_log {
+	void *bios_event_log;
+	void *bios_event_log_end;
 };
 
 struct tpm_chip_seqops {
@@ -187,6 +193,8 @@ struct tpm_chip {
 
 	const struct attribute_group *groups[3];
 	unsigned int groups_cnt;
+
+	u16 active_banks[7];
 #ifdef CONFIG_ACPI
 	acpi_handle acpi_dev_handle;
 	char ppi_version[TPM_PPI_VERSION_LEN + 1];
@@ -195,17 +203,6 @@ struct tpm_chip {
 
 #define to_tpm_chip(d) container_of(d, struct tpm_chip, dev)
 
-static inline int tpm_read_index(int base, int index)
-{
-	outb(index, base);
-	return inb(base+1) & 0xFF;
-}
-
-static inline void tpm_write_index(int base, int index, int value)
-{
-	outb(index, base);
-	outb(value & 0xFF, base+1);
-}
 struct tpm_input_header {
 	__be16	tag;
 	__be32	length;
@@ -387,6 +384,11 @@ struct tpm_cmd_t {
 	tpm_cmd_params	params;
 } __packed;
 
+struct tpm2_digest {
+	u16 alg_id;
+	u8 digest[SHA512_DIGEST_SIZE];
+} __packed;
+
 /* A string buffer type for constructing TPM commands. This is based on the
  * ideas of string buffer code in security/keys/trusted.h but is heap based
  * in order to keep the stack usage minimal.
@@ -530,8 +532,14 @@ static inline void tpm_add_ppi(struct tpm_chip *chip)
 }
 #endif
 
+static inline inline u32 tpm2_rc_value(u32 rc)
+{
+	return (rc & BIT(7)) ? rc & 0xff : rc;
+}
+
 int tpm2_pcr_read(struct tpm_chip *chip, int pcr_idx, u8 *res_buf);
-int tpm2_pcr_extend(struct tpm_chip *chip, int pcr_idx, const u8 *hash);
+int tpm2_pcr_extend(struct tpm_chip *chip, int pcr_idx, u32 count,
+		    struct tpm2_digest *digests);
 int tpm2_get_random(struct tpm_chip *chip, u8 *out, size_t max);
 int tpm2_seal_trusted(struct tpm_chip *chip,
 		      struct trusted_key_payload *payload,
@@ -546,4 +554,5 @@ int tpm2_auto_startup(struct tpm_chip *chip);
 void tpm2_shutdown(struct tpm_chip *chip, u16 shutdown_type);
 unsigned long tpm2_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal);
 int tpm2_probe(struct tpm_chip *chip);
+ssize_t tpm2_get_pcr_allocation(struct tpm_chip *chip);
 #endif
