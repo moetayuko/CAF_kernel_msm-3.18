@@ -759,8 +759,6 @@ struct se_device {
 #define DF_READ_ONLY				0x00000020
 	/* Physical device queue depth */
 	u32			queue_depth;
-	/* Used for SPC-2 reservations enforce of ISIDs */
-	u64			dev_res_bin_isid;
 	/* Pointer to transport specific device structure */
 	u32			dev_index;
 	u64			creation_time;
@@ -776,16 +774,12 @@ struct se_device {
 	spinlock_t		delayed_cmd_lock;
 	spinlock_t		execute_task_lock;
 	spinlock_t		dev_reservation_lock;
-	unsigned int		dev_reservation_flags;
-#define DRF_SPC2_RESERVATIONS			0x00000001
-#define DRF_SPC2_RESERVATIONS_WITH_ISID		0x00000002
 	spinlock_t		se_port_lock;
 	spinlock_t		se_tmr_lock;
 	spinlock_t		qf_cmd_lock;
 	struct semaphore	caw_sem;
 	/* Used for legacy SPC-2 reservations */
 	struct se_session	*reserved_by;
-	struct se_node_acl	*dev_reserved_node_acl;
 	/* Used for ALUA Logical Unit Group membership */
 	struct t10_alua_lu_gp_member *dev_alua_lu_gp_mem;
 	/* Used for SPC-3 Persistent Reservations */
