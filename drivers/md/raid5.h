@@ -481,48 +481,51 @@ static inline struct bio *r5_next_bio(struct bio *bio, sector_t sector)
 		return NULL;
 }
 
-/*
- * We maintain a biased count of active stripes in the bottom 16 bits of
- * bi_phys_segments, and a count of processed stripes in the upper 16 bits
- */
+struct raid5_bio_data {
+	atomic_t active_stripes;
+	atomic_t processed_stripes;
+};
+
+static inline struct raid5_bio_data *raid5_get_bio_data(struct bio *bio)
+{
+	return md_get_per_bio_data(bio);
+}
+
 static inline int raid5_bi_processed_stripes(struct bio *bio)
 {
-	atomic_t *segments = (atomic_t *)&bio->bi_phys_segments;
+	struct raid5_bio_data *data= raid5_get_bio_data(bio);
 
-	return (atomic_read(segments) >> 16) & 0xffff;
+	return atomic_read(&data->processed_stripes);
 }
 
 static inline int raid5_dec_bi_active_stripes(struct bio *bio)
 {
-	atomic_t *segments = (atomic_t *)&bio->bi_phys_segments;
+	struct raid5_bio_data *data= raid5_get_bio_data(bio);
 
-	return atomic_sub_return(1, segments) & 0xffff;
+	return atomic_sub_return(1, &data->active_stripes);
 }
 
 static inline void raid5_inc_bi_active_stripes(struct bio *bio)
 {
-	atomic_t *segments = (atomic_t *)&bio->bi_phys_segments;
+	struct raid5_bio_data *data= raid5_get_bio_data(bio);
 
-	atomic_inc(segments);
+	atomic_inc(&data->active_stripes);
 }
 
 static inline void raid5_set_bi_processed_stripes(struct bio *bio,
 	unsigned int cnt)
 {
-	atomic_t *segments = (atomic_t *)&bio->bi_phys_segments;
-	int old, new;
+	struct raid5_bio_data *data= raid5_get_bio_data(bio);
 
-	do {
-		old = atomic_read(segments);
-		new = (old & 0xffff) | (cnt << 16);
-	} while (atomic_cmpxchg(segments, old, new) != old);
+	atomic_set(&data->processed_stripes, cnt);
 }
 
 static inline void raid5_set_bi_stripes(struct bio *bio, unsigned int cnt)
 {
-	atomic_t *segments = (atomic_t *)&bio->bi_phys_segments;
+	struct raid5_bio_data *data= raid5_get_bio_data(bio);
 
-	atomic_set(segments, cnt);
+	atomic_set(&data->active_stripes, cnt);
+	atomic_set(&data->processed_stripes, 0);
 }
 
 /* NOTE NR_STRIPE_HASH_LOCKS must remain below 64.
