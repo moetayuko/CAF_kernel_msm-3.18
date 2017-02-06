@@ -127,18 +127,13 @@ static const struct drm_bridge_funcs tfp410_bridge_funcs = {
 
 static int tfp410_get_connector_ddc(struct tfp410 *dvi)
 {
-	struct device_node *ep = NULL, *connector_node = NULL;
-	struct device_node *ddc_phandle = NULL;
+	struct device_node *connector_node, *ddc_phandle;
 	int ret = 0;
 
 	/* port@1 is the connector node */
-	ep = of_graph_get_endpoint_by_regs(dvi->dev->of_node, 1, -1);
-	if (!ep)
-		goto fail;
-
-	connector_node = of_graph_get_remote_port_parent(ep);
+	connector_node = of_graph_get_remote_node(dvi->dev->of_node, 1, -1);
 	if (!connector_node)
-		goto fail;
+		return -ENODEV;
 
 	ddc_phandle = of_parse_phandle(connector_node, "ddc-i2c-bus", 0);
 	if (!ddc_phandle)
@@ -150,10 +145,10 @@ static int tfp410_get_connector_ddc(struct tfp410 *dvi)
 	else
 		ret = -EPROBE_DEFER;
 
-fail:
-	of_node_put(ep);
-	of_node_put(connector_node);
 	of_node_put(ddc_phandle);
+
+fail:
+	of_node_put(connector_node);
 	return ret;
 }
 

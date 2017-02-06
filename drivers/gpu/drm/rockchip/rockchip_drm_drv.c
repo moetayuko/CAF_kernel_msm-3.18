@@ -367,19 +367,13 @@ static void rockchip_add_endpoints(struct device *dev,
 				   struct component_match **match,
 				   struct device_node *port)
 {
-	struct device_node *ep, *remote;
+	struct device_node *remote;
+	int i;
 
-	for_each_child_of_node(port, ep) {
-		remote = of_graph_get_remote_port_parent(ep);
-		if (!remote || !of_device_is_available(remote)) {
-			of_node_put(remote);
+	for (i = 0; i < 3; i++) {
+		remote = of_graph_get_remote_node(port, 0, i);
+		if (!remote)
 			continue;
-		} else if (!of_device_is_available(remote->parent)) {
-			dev_warn(dev, "parent device of %s is not available\n",
-				 remote->full_name);
-			of_node_put(remote);
-			continue;
-		}
 
 		drm_of_component_match_add(dev, match, compare_of, remote);
 		of_node_put(remote);
@@ -458,7 +452,7 @@ static int rockchip_drm_platform_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		rockchip_add_endpoints(dev, &match, port);
+		rockchip_add_endpoints(dev, &match, port->parent);
 		of_node_put(port);
 	}
 
