@@ -7255,13 +7255,8 @@ static int raid5_run(struct mddev *mddev)
 		mddev->queue->limits.discard_alignment = stripe;
 		mddev->queue->limits.discard_granularity = stripe;
 
-		/*
-		 * We use 16-bit counter of active stripes in bi_phys_segments
-		 * (minus one for over-loaded initialization)
-		 */
-		blk_queue_max_hw_sectors(mddev->queue, 0xfffe * STRIPE_SECTORS);
-		blk_queue_max_discard_sectors(mddev->queue,
-					      0xfffe * STRIPE_SECTORS);
+		blk_queue_max_hw_sectors(mddev->queue, BLK_DEF_MAX_SECTORS);
+		blk_queue_max_discard_sectors(mddev->queue, UINT_MAX);
 
 		/*
 		 * unaligned part of discard request will be ignored, so can't
