@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -69,8 +69,9 @@
 		#size-cells = <2>;
 
 		qsecom_mem: qsecom_region {
-			linux,contiguous-region;
-			reg = <0 0 0 0x600000>;
+			linux,reserve-contiguous-region;
+			linux,memory-limit = <0x15400000>;
+			reg = <0 0 0 0x800000>;
 			label = "qseecom_mem";
                 };
 	};
