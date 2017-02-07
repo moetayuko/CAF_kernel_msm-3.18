@@ -225,9 +225,6 @@ fail_unlock:
 fail:
 
 	if (ret) {
-
-		drm_fb_helper_release_fbi(helper);
-
 		if (fb) {
 			drm_framebuffer_unregister_private(fb);
 			drm_framebuffer_remove(fb);
@@ -306,7 +303,6 @@ void omap_fbdev_free(struct drm_device *dev)
 	DBG();
 
 	drm_fb_helper_unregister_fbi(helper);
-	drm_fb_helper_release_fbi(helper);
 
 	drm_fb_helper_fini(helper);
 

@@ -462,7 +462,6 @@ nouveau_fbcon_destroy(struct drm_device *dev, struct nouveau_fbdev *fbcon)
 	struct nouveau_framebuffer *nouveau_fb = &fbcon->nouveau_fb;
 
 	drm_fb_helper_unregister_fbi(&fbcon->helper);
-	drm_fb_helper_release_fbi(&fbcon->helper);
 
 	if (nouveau_fb->nvbo) {
 		nouveau_bo_unmap(nouveau_fb->nvbo);

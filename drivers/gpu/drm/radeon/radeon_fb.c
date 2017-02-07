@@ -248,7 +248,7 @@ static int radeonfb_create(struct drm_fb_helper *helper,
 	info = drm_fb_helper_alloc_fbi(helper);
 	if (IS_ERR(info)) {
 		ret = PTR_ERR(info);
-		goto out_unref;
+		goto out;
 	}
 
 	info->par = rfbdev;
@@ -257,7 +257,7 @@ static int radeonfb_create(struct drm_fb_helper *helper,
 	ret = radeon_framebuffer_init(rdev->ddev, &rfbdev->rfb, &mode_cmd, gobj);
 	if (ret) {
 		DRM_ERROR("failed to initialize framebuffer %d\n", ret);
-		goto out_destroy_fbi;
+		goto out;
 	}
 
 	fb = &rfbdev->rfb.base;
@@ -290,7 +290,7 @@ static int radeonfb_create(struct drm_fb_helper *helper,
 
 	if (info->screen_base == NULL) {
 		ret = -ENOSPC;
-		goto out_destroy_fbi;
+		goto out;
 	}
 
 	DRM_INFO("fb mappable at 0x%lX\n",  info->fix.smem_start);
@@ -302,9 +302,7 @@ static int radeonfb_create(struct drm_fb_helper *helper,
 	vga_switcheroo_client_fb_set(rdev->ddev->pdev, info);
 	return 0;
 
-out_destroy_fbi:
-	drm_fb_helper_release_fbi(helper);
-out_unref:
+out:
 	if (rbo) {
 
 	}
@@ -328,7 +326,6 @@ static int radeon_fbdev_destroy(struct drm_device *dev, struct radeon_fbdev *rfb
 	struct radeon_framebuffer *rfb = &rfbdev->rfb;
 
 	drm_fb_helper_unregister_fbi(&rfbdev->helper);
-	drm_fb_helper_release_fbi(&rfbdev->helper);
 
 	if (rfb->obj) {
 		radeonfb_destroy_pinned_object(rfb->obj);
