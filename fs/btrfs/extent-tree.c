@@ -7789,8 +7789,8 @@ loop:
 	}
 	up_read(&space_info->groups_sem);
 
-	if ((loop == LOOP_CACHING_NOWAIT) && have_caching_bg
-		&& !orig_have_caching_bg)
+	if ((loop == LOOP_CACHING_NOWAIT) && have_caching_bg &&
+	    !orig_have_caching_bg)
 		orig_have_caching_bg = true;
 
 	if (!ins->objectid && loop >= LOOP_CACHING_WAIT && have_caching_bg)
