@@ -1027,7 +1027,6 @@ static int ade_drm_init(struct drm_device *dev)
 			       IRQF_SHARED, dev->driver->name, acrtc);
 	if (ret)
 		return ret;
-	dev->driver->get_vblank_counter = drm_vblank_no_hw_counter;
 	dev->driver->enable_vblank = ade_enable_vblank;
 	dev->driver->disable_vblank = ade_disable_vblank;
 

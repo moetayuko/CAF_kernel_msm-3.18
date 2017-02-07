@@ -588,7 +588,6 @@ static struct drm_driver tilcdc_driver = {
 	.unload             = tilcdc_unload,
 	.lastclose          = tilcdc_lastclose,
 	.irq_handler        = tilcdc_irq,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank      = tilcdc_enable_vblank,
 	.disable_vblank     = tilcdc_disable_vblank,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,
