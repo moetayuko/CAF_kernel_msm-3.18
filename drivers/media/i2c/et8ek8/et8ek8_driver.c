@@ -1109,7 +1109,7 @@ static int et8ek8_g_priv_mem(struct v4l2_subdev *subdev)
 			if (!(status & 0x08))
 				break;
 			usleep_range(1000, 2000);
-		};
+		}
 
 		if (i == 1000)
 			return -EIO;
@@ -1259,7 +1259,6 @@ et8ek8_registered(struct v4l2_subdev *subdev)
 {
 	struct et8ek8_sensor *sensor = to_et8ek8_sensor(subdev);
 	struct i2c_client *client = v4l2_get_subdevdata(subdev);
-	struct v4l2_mbus_framefmt *format;
 	int rval;
 
 	dev_dbg(&client->dev, "registered!");
@@ -1280,8 +1279,8 @@ et8ek8_registered(struct v4l2_subdev *subdev)
 		goto err_file;
 	}
 
-	format = __et8ek8_get_pad_format(sensor, NULL, 0,
-					 V4L2_SUBDEV_FORMAT_ACTIVE);
+	__et8ek8_get_pad_format(sensor, NULL, 0, V4L2_SUBDEV_FORMAT_ACTIVE);
+
 	return 0;
 
 err_file:
