@@ -19,6 +19,7 @@
 #include <linux/platform_device.h>
 #include "emac-mac.h"
 #include "emac-phy.h"
+#include "emac-sgmii.h"
 
 /* EMAC base register offsets */
 #define EMAC_DMA_MAS_CTRL                                     0x001400
@@ -166,10 +167,6 @@ enum emac_clk_id {
 
 #define EMAC_MAX_SETUP_LNK_CYCLE                                   100
 
-/* Wake On Lan */
-#define EMAC_WOL_PHY                     0x00000001 /* PHY Status Change */
-#define EMAC_WOL_MAGIC                   0x00000002 /* Magic Packet */
-
 struct emac_stats {
 	/* rx */
 	u64 rx_ok;              /* good packets */
@@ -291,7 +288,7 @@ struct emac_adapter {
 	void __iomem			*base;
 	void __iomem			*csr;
 
-	struct emac_phy			phy;
+	struct emac_sgmii		phy;
 	struct emac_stats		stats;
 
 	struct emac_irq			irq;
@@ -308,6 +305,13 @@ struct emac_adapter {
 	unsigned int			tpd_size; /* in quad words */
 
 	unsigned int			rxbuf_size;
+
+	/* Flow control / pause frames support. If automatic=True, do whatever
+	 * the PHY does. Otherwise, use tx_flow_control and rx_flow_control.
+	 */
+	bool				automatic;
+	bool				tx_flow_control;
+	bool				rx_flow_control;
 
 	/* Ring parameter */
 	u8				tpd_burst;
@@ -330,6 +334,8 @@ struct emac_adapter {
 
 int emac_reinit_locked(struct emac_adapter *adpt);
 void emac_reg_update32(void __iomem *addr, u32 mask, u32 val);
-irqreturn_t emac_isr(int irq, void *data);
+
+void emac_set_ethtool_ops(struct net_device *netdev);
+void emac_update_hw_stats(struct emac_adapter *adpt);
 
 #endif /* _EMAC_H_ */
