@@ -1217,6 +1217,7 @@ void transport_init_se_cmd(
 	init_completion(&cmd->cmd_wait_comp);
 	spin_lock_init(&cmd->t_state_lock);
 	kref_init(&cmd->cmd_kref);
+	atomic_set(&cmd->tgt_ref, 1);
 	cmd->transport_state = CMD_T_DEV_ACTIVE;
 
 	cmd->se_tfo = tfo;
@@ -2554,6 +2555,7 @@ int target_get_sess_cmd(struct se_cmd *se_cmd, bool ack_kref)
 		if (!kref_get_unless_zero(&se_cmd->cmd_kref))
 			return -EINVAL;
 
+		atomic_inc(&se_cmd->tgt_ref);
 		se_cmd->se_cmd_flags |= SCF_ACK_KREF;
 	}
 
@@ -2590,6 +2592,8 @@ static void target_release_cmd_kref(struct kref *kref)
 	unsigned long flags;
 	bool fabric_stop;
 
+	WARN_ON_ONCE(atomic_read(&se_cmd->tgt_ref) != 0);
+
 	if (se_sess) {
 		spin_lock_irqsave(&se_sess->sess_cmd_lock, flags);
 
@@ -2614,15 +2618,29 @@ static void target_release_cmd_kref(struct kref *kref)
 }
 
 /**
+ * __target_put_sess_cmd - drop a reference obtained by kref_get_unless_zero()
+ */
+int __target_put_sess_cmd(struct se_cmd *se_cmd)
+{
+	return kref_put(&se_cmd->cmd_kref, target_release_cmd_kref);
+}
+
+/**
  * target_put_sess_cmd - decrease the command reference count
- * @se_cmd:	command to drop a reference from
+ * @se_cmd: Drop a reference obtained by target_get_sess_cmd().
  *
  * Returns 1 if and only if this target_put_sess_cmd() call caused the
  * refcount to drop to zero. Returns zero otherwise.
  */
 int target_put_sess_cmd(struct se_cmd *se_cmd)
 {
-	return kref_put(&se_cmd->cmd_kref, target_release_cmd_kref);
+	long ref = atomic_dec_return(&se_cmd->tgt_ref);
+
+	WARN_ON_ONCE(ref < 0);
+	if (ref == 0)
+		complete(&se_cmd->complete);
+
+	return __target_put_sess_cmd(se_cmd);
 }
 EXPORT_SYMBOL(target_put_sess_cmd);
 
@@ -2680,7 +2698,7 @@ void target_wait_for_sess_cmds(struct se_session *se_sess)
 		tas = (se_cmd->transport_state & CMD_T_TAS);
 		spin_unlock_irqrestore(&se_cmd->t_state_lock, flags);
 
-		if (!target_put_sess_cmd(se_cmd)) {
+		if (!__target_put_sess_cmd(se_cmd)) {
 			if (tas)
 				target_put_sess_cmd(se_cmd);
 		}

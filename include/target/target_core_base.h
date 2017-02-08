@@ -495,7 +495,9 @@ struct se_cmd {
 #define CMD_T_FABRIC_STOP	(1 << 11)
 	spinlock_t		t_state_lock;
 	struct kref		cmd_kref;
+	atomic_t		tgt_ref;
 	struct completion	t_transport_stop_comp;
+	struct completion	complete;
 
 	struct work_struct	work;
 

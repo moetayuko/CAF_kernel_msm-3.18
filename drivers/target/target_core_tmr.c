@@ -188,7 +188,7 @@ void core_tmr_abort_task(
 		if (!tmr->tmr_dev &&
 		    transport_lookup_tmr_lun(tmr->task_cmd,
 					     se_cmd->orig_fe_lun) < 0) {
-			target_put_sess_cmd(se_cmd);
+			__target_put_sess_cmd(se_cmd);
 			continue;
 		}
 
@@ -199,7 +199,7 @@ void core_tmr_abort_task(
 		transport_wait_for_tasks(se_cmd);
 
 		transport_cmd_finish_abort(se_cmd, true);
-		target_put_sess_cmd(se_cmd);
+		__target_put_sess_cmd(se_cmd);
 
 		printk("ABORT_TASK: Sending TMR_FUNCTION_COMPLETE for"
 				" ref_tag: %llu\n", ref_tag);
@@ -299,7 +299,7 @@ static void core_tmr_drain_tmr_list(
 		transport_wait_for_tasks(cmd);
 
 		transport_cmd_finish_abort(cmd, 1);
-		target_put_sess_cmd(cmd);
+		__target_put_sess_cmd(cmd);
 	}
 }
 
@@ -398,7 +398,7 @@ static void core_tmr_drain_state_list(
 		transport_wait_for_tasks(cmd);
 
 		core_tmr_handle_tas_abort(cmd, tas);
-		target_put_sess_cmd(cmd);
+		__target_put_sess_cmd(cmd);
 	}
 }
 
