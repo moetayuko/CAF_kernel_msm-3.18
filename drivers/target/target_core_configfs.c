@@ -393,10 +393,6 @@ static int target_fabric_tf_ops_check(const struct target_core_fabric_ops *tfo)
 		pr_err("Missing tfo->write_pending()\n");
 		return -EINVAL;
 	}
-	if (!tfo->write_pending_status) {
-		pr_err("Missing tfo->write_pending_status()\n");
-		return -EINVAL;
-	}
 	if (!tfo->set_default_node_attributes) {
 		pr_err("Missing tfo->set_default_node_attributes()\n");
 		return -EINVAL;
@@ -1342,15 +1338,14 @@ static ssize_t target_core_dev_pr_show_spc3_res(struct se_device *dev,
 static ssize_t target_core_dev_pr_show_spc2_res(struct se_device *dev,
 		char *page)
 {
-	struct se_node_acl *se_nacl;
+	struct se_session *sess = dev->reserved_by;
 	ssize_t len;
 
-	se_nacl = dev->dev_reserved_node_acl;
-	if (se_nacl) {
+	if (sess) {
 		len = sprintf(page,
 			      "SPC-2 Reservation: %s Initiator: %s\n",
-			      se_nacl->se_tpg->se_tpg_tfo->get_fabric_name(),
-			      se_nacl->initiatorname);
+			      sess->se_tpg->se_tpg_tfo->get_fabric_name(),
+			      sess->se_node_acl->initiatorname);
 	} else {
 		len = sprintf(page, "No SPC-2 Reservation holder\n");
 	}
@@ -1366,7 +1361,7 @@ static ssize_t target_pr_res_holder_show(struct config_item *item, char *page)
 		return sprintf(page, "Passthrough\n");
 
 	spin_lock(&dev->dev_reservation_lock);
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS)
+	if (dev->reserved_by)
 		ret = target_core_dev_pr_show_spc2_res(dev, page);
 	else
 		ret = target_core_dev_pr_show_spc3_res(dev, page);
@@ -1504,7 +1499,7 @@ static ssize_t target_pr_res_type_show(struct config_item *item, char *page)
 
 	if (dev->transport->transport_flags & TRANSPORT_FLAG_PASSTHROUGH)
 		return sprintf(page, "SPC_PASSTHROUGH\n");
-	else if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS)
+	else if (dev->reserved_by)
 		return sprintf(page, "SPC2_RESERVATIONS\n");
 	else
 		return sprintf(page, "SPC3_PERSISTENT_RESERVATIONS\n");
@@ -1575,7 +1570,7 @@ static ssize_t target_pr_res_aptpl_metadata_store(struct config_item *item,
 
 	if (dev->transport->transport_flags & TRANSPORT_FLAG_PASSTHROUGH)
 		return count;
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS)
+	if (dev->reserved_by)
 		return count;
 
 	if (dev->export_count) {

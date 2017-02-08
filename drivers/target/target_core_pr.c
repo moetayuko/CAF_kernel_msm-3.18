@@ -94,6 +94,13 @@ static int is_reservation_holder(
 	return 0;
 }
 
+/*
+ * Returns 0 if executing a command is allowed and TCM_RESERVATION_CONFLICT
+ * if executing a command is not allowed due to an SPC-2 reservation.
+ *
+ * See also the following table in SPC-5: "SPC-4 commands that are allowed in
+ * the presence of various reservations".
+ */
 static sense_reason_t
 target_scsi2_reservation_check(struct se_cmd *cmd)
 {
@@ -102,23 +109,29 @@ target_scsi2_reservation_check(struct se_cmd *cmd)
 
 	switch (cmd->t_task_cdb[0]) {
 	case INQUIRY:
+	case LOG_SENSE:
+	case PERSISTENT_RESERVE_IN:
+	case REPORT_LUNS:
+	case REQUEST_SENSE:
+	case TEST_UNIT_READY:
+	case RECEIVE_COPY_RESULTS:
 	case RELEASE:
 	case RELEASE_10:
 		return 0;
+	case MAINTENANCE_IN:
+		switch (cmd->t_task_cdb[1]) {
+		case MI_REPORT_SUPPORTED_OPERATION_CODES:
+		case MI_REPORT_TARGET_PGS:
+			return 0;
+		default:
+			break;
+		}
 	default:
 		break;
 	}
 
-	if (!dev->dev_reserved_node_acl || !sess)
-		return 0;
-
-	if (dev->dev_reserved_node_acl != sess->se_node_acl)
+	if (dev->reserved_by && sess && dev->reserved_by != sess)
 		return TCM_RESERVATION_CONFLICT;
-
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS_WITH_ISID) {
-		if (dev->dev_res_bin_isid != sess->sess_bin_isid)
-			return TCM_RESERVATION_CONFLICT;
-	}
 
 	return 0;
 }
@@ -198,6 +211,21 @@ static int target_check_scsi2_reservation_conflict(struct se_cmd *cmd)
 	return 0;
 }
 
+static void __target_scsi2_release(struct se_device *dev)
+{
+	lockdep_assert_held(&dev->dev_reservation_lock);
+
+	dev->reserved_by = NULL;
+}
+
+/* Release a SCSI-2 reservation. */
+void target_scsi2_release(struct se_device *dev)
+{
+	spin_lock(&dev->dev_reservation_lock);
+	__target_scsi2_release(dev);
+	spin_unlock(&dev->dev_reservation_lock);
+}
+
 sense_reason_t
 target_scsi2_reservation_release(struct se_cmd *cmd)
 {
@@ -215,21 +243,11 @@ target_scsi2_reservation_release(struct se_cmd *cmd)
 		return TCM_RESERVATION_CONFLICT;
 
 	spin_lock(&dev->dev_reservation_lock);
-	if (!dev->dev_reserved_node_acl || !sess)
+	if (dev->reserved_by && sess && dev->reserved_by != sess)
 		goto out_unlock;
 
-	if (dev->dev_reserved_node_acl != sess->se_node_acl)
-		goto out_unlock;
+	__target_scsi2_release(dev);
 
-	if (dev->dev_res_bin_isid != sess->sess_bin_isid)
-		goto out_unlock;
-
-	dev->dev_reserved_node_acl = NULL;
-	dev->dev_reservation_flags &= ~DRF_SPC2_RESERVATIONS;
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS_WITH_ISID) {
-		dev->dev_res_bin_isid = 0;
-		dev->dev_reservation_flags &= ~DRF_SPC2_RESERVATIONS_WITH_ISID;
-	}
 	tpg = sess->se_tpg;
 	pr_debug("SCSI-2 Released reservation for %s LUN: %llu ->"
 		" MAPPED LUN: %llu for %s\n",
@@ -273,13 +291,12 @@ target_scsi2_reservation_reserve(struct se_cmd *cmd)
 
 	tpg = sess->se_tpg;
 	spin_lock(&dev->dev_reservation_lock);
-	if (dev->dev_reserved_node_acl &&
-	   (dev->dev_reserved_node_acl != sess->se_node_acl)) {
-		pr_err("SCSI-2 RESERVATION CONFLIFT for %s fabric\n",
+	if (dev->reserved_by && dev->reserved_by != sess) {
+		pr_err("SCSI-2 RESERVATION CONFLICT for %s fabric\n",
 			tpg->se_tpg_tfo->get_fabric_name());
 		pr_err("Original reserver LUN: %llu %s\n",
 			cmd->se_lun->unpacked_lun,
-			dev->dev_reserved_node_acl->initiatorname);
+			dev->reserved_by->se_node_acl->initiatorname);
 		pr_err("Current attempt - LUN: %llu -> MAPPED LUN: %llu"
 			" from %s \n", cmd->se_lun->unpacked_lun,
 			cmd->orig_fe_lun,
@@ -288,12 +305,7 @@ target_scsi2_reservation_reserve(struct se_cmd *cmd)
 		goto out_unlock;
 	}
 
-	dev->dev_reserved_node_acl = sess->se_node_acl;
-	dev->dev_reservation_flags |= DRF_SPC2_RESERVATIONS;
-	if (sess->sess_bin_isid != 0) {
-		dev->dev_res_bin_isid = sess->sess_bin_isid;
-		dev->dev_reservation_flags |= DRF_SPC2_RESERVATIONS_WITH_ISID;
-	}
+	dev->reserved_by = sess;
 	pr_debug("SCSI-2 Reserved %s LUN: %llu -> MAPPED LUN: %llu"
 		" for %s\n", tpg->se_tpg_tfo->get_fabric_name(),
 		cmd->se_lun->unpacked_lun, cmd->orig_fe_lun,
@@ -1010,7 +1022,7 @@ int core_scsi3_check_aptpl_registration(
 	struct se_node_acl *nacl,
 	u64 mapped_lun)
 {
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS)
+	if (dev->reserved_by)
 		return 0;
 
 	return __core_scsi3_check_aptpl_registration(dev, tpg, lun,
@@ -3585,7 +3597,7 @@ target_scsi3_emulate_pr_out(struct se_cmd *cmd)
 	 * initiator or service action and shall terminate with a RESERVATION
 	 * CONFLICT status.
 	 */
-	if (cmd->se_dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS) {
+	if (cmd->se_dev->reserved_by) {
 		pr_err("Received PERSISTENT_RESERVE CDB while legacy"
 			" SPC-2 reservation is held, returning"
 			" RESERVATION_CONFLICT\n");
@@ -4106,7 +4118,7 @@ target_scsi3_emulate_pr_in(struct se_cmd *cmd)
 	 * initiator or service action and shall terminate with a RESERVATION
 	 * CONFLICT status.
 	 */
-	if (cmd->se_dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS) {
+	if (cmd->se_dev->reserved_by) {
 		pr_err("Received PERSISTENT_RESERVE CDB while legacy"
 			" SPC-2 reservation is held, returning"
 			" RESERVATION_CONFLICT\n");
@@ -4151,7 +4163,7 @@ target_check_reservation(struct se_cmd *cmd)
 		return 0;
 
 	spin_lock(&dev->dev_reservation_lock);
-	if (dev->dev_reservation_flags & DRF_SPC2_RESERVATIONS)
+	if (dev->reserved_by)
 		ret = target_scsi2_reservation_check(cmd);
 	else
 		ret = target_scsi3_pr_reservation_check(cmd);
