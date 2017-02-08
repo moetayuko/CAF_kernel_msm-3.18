@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1150,11 +1150,12 @@ static void pmic_arb_handle_stuck_irqs(struct spmi_pmic_arb_dev *pmic_arb)
 }
 
 static int
-spmi_pmic_arb_get_property(struct platform_device *pdev, char *pname, u32 *prop)
+spmi_pmic_arb_get_property(struct platform_device *pdev, char *pname,
+					 u32 *prop, bool prop_required)
 {
 	int ret = of_property_read_u32(pdev->dev.of_node, pname, prop);
 
-	if (ret)
+	if (prop_required && ret)
 		dev_err(&pdev->dev, "missing property: %s\n", pname);
 	else
 		pr_debug("%s = 0x%x\n", pname, *prop);
@@ -1251,14 +1252,14 @@ static int pmic_arb_version_specific_init(struct spmi_pmic_arb_dev *pmic_arb,
 	version = readl_relaxed(pmic_arb->base + PMIC_ARB_VERSION);
 
 	if (version < PMIC_ARB_V2_MIN) {
-		dev_err(&pdev->dev, "PMIC Arb Version-1 0x%x\n", version);
+		dev_info(&pdev->dev, "PMIC Arb Version-1 0x%x\n", version);
 		pmic_arb->rdbase	 = pmic_arb->base;
 		pmic_arb->wrbase	 = pmic_arb->base;
 		pmic_arb->dbg.rdbase_phy = pmic_arb->dbg.base_phy;
 		pmic_arb->dbg.wrbase_phy = pmic_arb->dbg.base_phy;
 		pmic_arb->ver		 = &spmi_pmic_arb_v1;
 	} else {
-		dev_err(&pdev->dev, "PMIC Arb Version-2 0x%x\n", version);
+		dev_info(&pdev->dev, "PMIC Arb Version-2 0x%x\n", version);
 		ret = pmic_arb_chnl_tbl_create(pmic_arb);
 		if (ret)
 			return ret;
@@ -1302,7 +1303,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = spmi_pmic_arb_get_property(pdev, "qcom,pmic-arb-max-peripherals",
-					&prop);
+								&prop, false);
 	if (ret)
 		prop = PMIC_ARB_PERIPHS_CHNL_DEFAULT;
 	pmic_arb->max_peripherals = prop;
@@ -1331,17 +1332,17 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	}
 
 	/* Get properties from the device tree */
-	ret = spmi_pmic_arb_get_property(pdev, "cell-index", &cell_index);
+	ret = spmi_pmic_arb_get_property(pdev, "cell-index", &cell_index, true);
 	if (ret)
 		return -ENODEV;
 
-	ret = spmi_pmic_arb_get_property(pdev, "qcom,pmic-arb-ee", &prop);
+	ret = spmi_pmic_arb_get_property(pdev, "qcom,pmic-arb-ee", &prop, true);
 	if (ret)
 		return -ENODEV;
 	pmic_arb->ee = (u8)prop;
 
 	ret = spmi_pmic_arb_get_property(pdev, "qcom,pmic-arb-channel",
-					&prop);
+						&prop, true);
 	if (ret)
 		return -ENODEV;
 	pmic_arb->channel = (u8)prop;
@@ -1361,7 +1362,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	}
 
 	ret = spmi_pmic_arb_get_property(pdev,
-			"qcom,pmic-arb-max-periph-interrupts", &prop);
+		"qcom,pmic-arb-max-periph-interrupts", &prop, false);
 	if (ret)
 		prop = PMIC_ARB_PERIPHS_INTR_DEFAULT;
 
