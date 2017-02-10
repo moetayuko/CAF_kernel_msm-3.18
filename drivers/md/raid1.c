@@ -102,6 +102,12 @@ static void r1bio_pool_free(void *r1_bio, void *data)
 #define CLUSTER_RESYNC_WINDOW_SECTORS (CLUSTER_RESYNC_WINDOW >> 9)
 #define NEXT_NORMALIO_DISTANCE (3 * RESYNC_WINDOW_SECTORS)
 
+/* raid1 has a reference count attached to the bio */
+static inline unsigned int *raid1_get_bio_data(struct bio *bio)
+{
+	return md_get_per_bio_data(bio);
+}
+
 static void * r1buf_pool_alloc(gfp_t gfp_flags, void *data)
 {
 	struct pool_info *pi = data;
@@ -246,15 +252,15 @@ static void call_bio_endio(struct r1bio *r1_bio)
 	sector_t start_next_window = r1_bio->start_next_window;
 	sector_t bi_sector = bio->bi_iter.bi_sector;
 
-	if (bio->bi_phys_segments) {
+	if (*raid1_get_bio_data(bio)) {
 		unsigned long flags;
 		spin_lock_irqsave(&conf->device_lock, flags);
-		bio->bi_phys_segments--;
-		done = (bio->bi_phys_segments == 0);
+		(*raid1_get_bio_data(bio))--;
+		done = (*raid1_get_bio_data(bio) == 0);
 		spin_unlock_irqrestore(&conf->device_lock, flags);
 		/*
 		 * make_request() might be waiting for
-		 * bi_phys_segments to decrease
+		 * bio reference count to decrease
 		 */
 		wake_up(&conf->wait_barrier);
 	} else
@@ -1138,10 +1144,10 @@ read_again:
 				   - bio->bi_iter.bi_sector);
 		r1_bio->sectors = max_sectors;
 		spin_lock_irq(&conf->device_lock);
-		if (bio->bi_phys_segments == 0)
-			bio->bi_phys_segments = 2;
+		if (*raid1_get_bio_data(bio) == 0)
+			*raid1_get_bio_data(bio) = 2;
 		else
-			bio->bi_phys_segments++;
+			(*raid1_get_bio_data(bio))++;
 		spin_unlock_irq(&conf->device_lock);
 
 		/*
@@ -1312,13 +1318,13 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 		start_next_window = wait_barrier(conf, bio);
 		/*
 		 * We must make sure the multi r1bios of bio have
-		 * the same value of bi_phys_segments
+		 * the same value of reference count
 		 */
-		if (bio->bi_phys_segments && old &&
+		if (*raid1_get_bio_data(bio) && old &&
 		    old != start_next_window)
 			/* Wait for the former r1bio(s) to complete */
 			wait_event(conf->wait_barrier,
-				   bio->bi_phys_segments == 1);
+				   *raid1_get_bio_data(bio) == 1);
 		goto retry_write;
 	}
 
@@ -1328,10 +1334,10 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 		 */
 		r1_bio->sectors = max_sectors;
 		spin_lock_irq(&conf->device_lock);
-		if (bio->bi_phys_segments == 0)
-			bio->bi_phys_segments = 2;
+		if (*raid1_get_bio_data(bio) == 0)
+			*raid1_get_bio_data(bio) = 2;
 		else
-			bio->bi_phys_segments++;
+			(*raid1_get_bio_data(bio))++;
 		spin_unlock_irq(&conf->device_lock);
 	}
 	sectors_handled = r1_bio->sector + max_sectors - bio->bi_iter.bi_sector;
@@ -1425,7 +1431,7 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 	if (sectors_handled < bio_sectors(bio)) {
 		r1_bio_write_done(r1_bio);
 		/* We need another r1_bio.  It has already been counted
-		 * in bio->bi_phys_segments
+		 * in bio reference count
 		 */
 		r1_bio = mempool_alloc(conf->r1bio_pool, GFP_NOIO);
 		r1_bio->master_bio = bio;
@@ -1463,11 +1469,11 @@ static void raid1_make_request(struct mddev *mddev, struct bio *bio)
 	/*
 	 * We might need to issue multiple reads to different devices if there
 	 * are bad blocks around, so we keep track of the number of reads in
-	 * bio->bi_phys_segments.  If this is 0, there is only one r1_bio and
+	 * bio reference count.  If this is 0, there is only one r1_bio and
 	 * no locking will be needed when requests complete.  If it is
 	 * non-zero, then it is the number of not-completed requests.
 	 */
-	bio->bi_phys_segments = 0;
+	*raid1_get_bio_data(bio) = 0;
 	bio_clear_flag(bio, BIO_SEG_VALID);
 
 	if (bio_data_dir(bio) == READ)
@@ -2435,10 +2441,10 @@ read_more:
 					       - mbio->bi_iter.bi_sector);
 			r1_bio->sectors = max_sectors;
 			spin_lock_irq(&conf->device_lock);
-			if (mbio->bi_phys_segments == 0)
-				mbio->bi_phys_segments = 2;
+			if (*raid1_get_bio_data(mbio) == 0)
+				*raid1_get_bio_data(mbio) = 2;
 			else
-				mbio->bi_phys_segments++;
+				(*raid1_get_bio_data(mbio))++;
 			spin_unlock_irq(&conf->device_lock);
 			trace_block_bio_remap(bdev_get_queue(bio->bi_bdev),
 					      bio, bio_dev, bio_sector);
@@ -3286,6 +3292,7 @@ static struct md_personality raid1_personality =
 	.quiesce	= raid1_quiesce,
 	.takeover	= raid1_takeover,
 	.congested	= raid1_congested,
+	.per_bio_data_size = sizeof(unsigned int),
 };
 
 static int __init raid_init(void)
