@@ -3130,6 +3130,16 @@ transport_send_check_condition_and_sense(struct se_cmd *cmd,
 }
 EXPORT_SYMBOL(transport_send_check_condition_and_sense);
 
+int target_send_busy(struct se_cmd *cmd)
+{
+	WARN_ON_ONCE(cmd->se_cmd_flags & SCF_SCSI_TMR_CDB);
+
+	cmd->scsi_status = SAM_STAT_BUSY;
+	trace_target_cmd_complete(cmd);
+	return cmd->se_tfo->queue_status(cmd);
+}
+EXPORT_SYMBOL(target_send_busy);
+
 static int __transport_check_aborted_status(struct se_cmd *cmd, int send_status)
 	__releases(&cmd->t_state_lock)
 	__acquires(&cmd->t_state_lock)
