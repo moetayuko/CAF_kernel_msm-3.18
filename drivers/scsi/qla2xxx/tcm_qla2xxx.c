@@ -397,21 +397,14 @@ static int tcm_qla2xxx_write_pending(struct se_cmd *se_cmd)
 static int tcm_qla2xxx_write_pending_status(struct se_cmd *se_cmd)
 {
 	unsigned long flags;
-	/*
-	 * Check for WRITE_PENDING status to determine if we need to wait for
-	 * CTIO aborts to be posted via hardware in tcm_qla2xxx_handle_data().
-	 */
+	bool wp;
+
 	spin_lock_irqsave(&se_cmd->t_state_lock, flags);
-	if (se_cmd->t_state == TRANSPORT_WRITE_PENDING ||
-	    se_cmd->t_state == TRANSPORT_COMPLETE_QF_WP) {
-		spin_unlock_irqrestore(&se_cmd->t_state_lock, flags);
-		wait_for_completion_timeout(&se_cmd->t_transport_stop_comp,
-						50);
-		return 0;
-	}
+	wp = se_cmd->t_state == TRANSPORT_WRITE_PENDING ||
+		se_cmd->t_state == TRANSPORT_COMPLETE_QF_WP;
 	spin_unlock_irqrestore(&se_cmd->t_state_lock, flags);
 
-	return 0;
+	return wp;
 }
 
 static void tcm_qla2xxx_set_default_node_attrs(struct se_node_acl *nacl)
@@ -502,15 +495,6 @@ static void tcm_qla2xxx_handle_data_work(struct work_struct *work)
 
 	cmd->vha->tgt_counters.qla_core_ret_ctio++;
 	if (!cmd->write_data_transferred) {
-		/*
-		 * Check if se_cmd has already been aborted via LUN_RESET, and
-		 * waiting upon completion in tcm_qla2xxx_write_pending_status()
-		 */
-		if (cmd->se_cmd.transport_state & CMD_T_ABORTED) {
-			complete(&cmd->se_cmd.t_transport_stop_comp);
-			return;
-		}
-
 		switch (cmd->dif_err_code) {
 		case DIF_ERR_GRD:
 			cmd->se_cmd.pi_err =
