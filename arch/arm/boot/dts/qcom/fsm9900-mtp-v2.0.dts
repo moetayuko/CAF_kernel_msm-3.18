@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,10 +31,10 @@
 	/*LDO01 */
         qcom,pma8084@1 {
 		pma8084_l01: regulator@4000 {
-			regulator-min-microvolt = <1340000>;
-			regulator-max-microvolt = <1340000>;
+			regulator-min-microvolt = <1350000>;
+			regulator-max-microvolt = <1350000>;
 			qcom,enable-time = <500>;
-			com,pull-down-enable = <1>;
+			qcom,pull-down-enable = <1>;
 			regulator-always-on;
 			status = "okay";
 		};
