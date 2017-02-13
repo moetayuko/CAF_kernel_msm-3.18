@@ -302,7 +302,7 @@ u8 r8712_append_mpdu_unit(struct xmit_buf *pxmitbuf,
 	int last_txcmdsz = 0;
 	int padding_sz = 0;
 
-	/* 802.3->802.11 convertor */
+	/* 802.3->802.11 converter */
 	r8712_xmitframe_coalesce(padapter, pxmitframe->pkt, pxmitframe);
 	/* free skb struct */
 	r8712_xmit_complete(padapter, pxmitframe);
@@ -573,7 +573,7 @@ static void update_txdesc(struct xmit_frame *pxmitframe, uint *pmem, int sz)
 		}
 	} else if (pxmitframe->frame_tag == MGNT_FRAMETAG) {
 		/* offset 4 */
-		ptxdesc->txdw1 |= (0x05) & 0x1f;/*CAM_ID(MAC_ID), default=5;*/
+		ptxdesc->txdw1 |= cpu_to_le32((0x05) & 0x1f);/*CAM_ID(MAC_ID), default=5;*/
 		qsel = (uint)(pattrib->qsel & 0x0000001f);
 		ptxdesc->txdw1 |= cpu_to_le32((qsel << QSEL_SHT) & 0x00001f00);
 		ptxdesc->txdw1 |= cpu_to_le32(BIT(16));/* Non-QoS */
