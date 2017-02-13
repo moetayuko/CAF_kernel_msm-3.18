@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -357,9 +357,9 @@ static struct qpnp_voltage_range nldo2_ranges[] = {
 };
 
 static struct qpnp_voltage_range nldo3_ranges[] = {
-	VOLTAGE_RANGE(0,  375000,  375000, 1537500, 1537500, 12500),
 	VOLTAGE_RANGE(1,  375000,       0,       0, 1537500, 12500),
 	VOLTAGE_RANGE(2,  750000,       0,       0, 1537500, 12500),
+	VOLTAGE_RANGE(0,  375000,  375000, 1537500, 1537500, 12500),
 };
 
 static struct qpnp_voltage_range ln_ldo_ranges[] = {
@@ -391,8 +391,8 @@ static struct qpnp_voltage_range boost_byp_ranges[] = {
 };
 
 static struct qpnp_voltage_range ult_lo_smps_ranges[] = {
-	VOLTAGE_RANGE(0,  375000,  375000, 1562500, 1562500, 12500),
 	VOLTAGE_RANGE(1,  750000,       0,       0, 1525000, 25000),
+	VOLTAGE_RANGE(0,  375000,  375000, 1562500, 1562500, 12500),
 };
 
 static struct qpnp_voltage_range ult_ho_smps_ranges[] = {
@@ -741,7 +741,7 @@ static int qpnp_regulator_select_voltage(struct qpnp_regulator *vreg,
 {
 	struct qpnp_voltage_range *range;
 	int uV = min_uV;
-	int lim_min_uV, lim_max_uV, i, range_id, range_max_uV;
+	int lim_min_uV, lim_max_uV, i, range_id, range_max_uV, range_min_uV;
 
 	/* Check if request voltage is outside of physically settable range. */
 	lim_min_uV = vreg->set_points->range[0].set_point_min_uV;
@@ -760,8 +760,10 @@ static int qpnp_regulator_select_voltage(struct qpnp_regulator *vreg,
 
 	/* Find the range which uV is inside of. */
 	for (i = vreg->set_points->count - 1; i > 0; i--) {
-		range_max_uV = vreg->set_points->range[i - 1].set_point_max_uV;
-		if (uV > range_max_uV && range_max_uV > 0)
+		range_min_uV = vreg->set_points->range[i].set_point_min_uV;
+		range_max_uV = vreg->set_points->range[i].set_point_max_uV;
+		if (uV >= range_min_uV && uV <= range_max_uV
+			&& range_max_uV > 0)
 			break;
 	}
 
