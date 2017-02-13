@@ -450,6 +450,7 @@ struct mddev {
 	void (*sync_super)(struct mddev *mddev, struct md_rdev *rdev);
 	struct md_cluster_info		*cluster_info;
 	unsigned int			good_device_nr;	/* good device num within cluster raid */
+	mempool_t			*per_bio_pool;
 };
 
 enum recovery_flags {
@@ -540,7 +541,24 @@ struct md_personality
 	/* congested implements bdi.congested_fn().
 	 * Will not be called while array is 'suspended' */
 	int (*congested)(struct mddev *mddev, int bits);
+	size_t per_bio_data_size;
 };
+
+struct md_per_bio_data {
+	bio_end_io_t *orig_endio;
+	void *orig_private;
+	struct mddev *mddev;
+};
+
+#define MD_PER_BIO_DATA_SIZE(per) (sizeof(struct md_per_bio_data) + \
+	roundup(per->per_bio_data_size, __alignof__(struct md_per_bio_data)))
+
+static inline void *md_get_per_bio_data(struct bio *bio)
+{
+	return ((struct md_per_bio_data *)bio->bi_private) + 1;
+}
+
+extern void md_bio_attach_data(struct mddev *mddev, struct bio *bio);
 
 struct md_sysfs_entry {
 	struct attribute attr;
@@ -710,4 +728,6 @@ static inline void mddev_clear_unsupported_flags(struct mddev *mddev,
 {
 	mddev->flags &= ~unsupported_flags;
 }
+
+extern void md_writesame_setup(struct mddev *mddev, struct bio *bio);
 #endif /* _MD_MD_H */

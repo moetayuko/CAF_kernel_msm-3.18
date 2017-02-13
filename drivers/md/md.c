@@ -248,6 +248,47 @@ static DEFINE_SPINLOCK(all_mddevs_lock);
 		_tmp = _tmp->next;})					\
 		)
 
+#define MD_MEMPOOL_SIZE (32)
+static mempool_t *md_alloc_per_bio_pool(struct md_personality *per)
+{
+	mempool_t *p;
+
+	if (!per->per_bio_data_size)
+		return NULL;
+	p = mempool_create_kmalloc_pool(MD_MEMPOOL_SIZE,
+				MD_PER_BIO_DATA_SIZE(per));
+	if (p)
+		return p;
+	return ERR_PTR(-ENOMEM);
+}
+
+static void md_bio_end_io(struct bio *bio)
+{
+	struct md_per_bio_data *data = bio->bi_private;
+
+	bio->bi_private = data->orig_private;
+	bio->bi_end_io = data->orig_endio;
+	bio_endio(bio);
+
+	mempool_free(data, data->mddev->per_bio_pool);
+}
+
+void md_bio_attach_data(struct mddev *mddev, struct bio *bio)
+{
+	struct md_per_bio_data *data;
+
+	if (!mddev->per_bio_pool)
+		return;
+	data = mempool_alloc(mddev->per_bio_pool, GFP_NOIO);
+	data->orig_endio = bio->bi_end_io;
+	data->orig_private = bio->bi_private;
+	data->mddev = mddev;
+
+	bio->bi_private = data;
+	bio->bi_end_io = md_bio_end_io;
+}
+EXPORT_SYMBOL(md_bio_attach_data);
+
 /* Rather than calling directly into the personality make_request function,
  * IO requests come here first so that we can check if the device is
  * being suspended pending a reconfiguration.
@@ -274,6 +315,8 @@ static blk_qc_t md_make_request(struct request_queue *q, struct bio *bio)
 		bio_endio(bio);
 		return BLK_QC_T_NONE;
 	}
+	md_bio_attach_data(mddev, bio);
+
 	smp_rmb(); /* Ensure implications of  'active' are visible */
 	rcu_read_lock();
 	if (mddev->suspended) {
@@ -311,6 +354,48 @@ static blk_qc_t md_make_request(struct request_queue *q, struct bio *bio)
 
 	return BLK_QC_T_NONE;
 }
+
+struct md_writesame_data {
+	bio_end_io_t *orig_endio;
+	void *orig_private;
+	struct mddev *mddev;
+};
+
+static void md_writesame_endio(struct bio *bio)
+{
+	struct md_writesame_data *data = bio->bi_private;
+
+	if (bio->bi_error == -EREMOTEIO &&
+	    !bdev_get_queue(bio->bi_bdev)->limits.max_write_same_sectors)
+		data->mddev->queue->limits.max_write_same_sectors = 0;
+
+	bio->bi_private = data->orig_private;
+	bio->bi_end_io = data->orig_endio;
+	bio_endio(bio);
+
+	kfree(data);
+}
+
+void md_writesame_setup(struct mddev *mddev, struct bio *bio)
+{
+	struct md_writesame_data *data;
+
+	/*
+	 * this failure means we ignore a chance to handle writesame failure,
+	 * which isn't critcal, we can handle the failure if new writesame IO
+	 * comes
+	 */
+	data = kmalloc(sizeof(*data), GFP_NOIO | __GFP_NORETRY);
+	if (!data)
+		return;
+	data->orig_endio = bio->bi_end_io;
+	data->orig_private = bio->bi_private;
+	data->mddev = mddev;
+
+	bio->bi_private = data;
+	bio->bi_end_io = md_writesame_endio;
+}
+EXPORT_SYMBOL_GPL(md_writesame_setup);
 
 /* mddev_suspend makes sure no new requests are submitted
  * to the device, and that any requests that have been submitted
@@ -3471,6 +3556,7 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 	long level;
 	void *priv, *oldpriv;
 	struct md_rdev *rdev;
+	mempool_t *new_pool;
 
 	if (slen == 0 || slen >= sizeof(clevel))
 		return -EINVAL;
@@ -3538,7 +3624,15 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 		rv = len;
 		goto out_unlock;
 	}
+	new_pool = md_alloc_per_bio_pool(pers);
+	if (IS_ERR(new_pool)) {
+		module_put(pers->owner);
+		rv = -EINVAL;
+		goto out_unlock;
+	}
+
 	if (!pers->takeover) {
+		mempool_destroy(new_pool);
 		module_put(pers->owner);
 		pr_warn("md: %s: %s does not support personality takeover\n",
 			mdname(mddev), clevel);
@@ -3554,6 +3648,7 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 	 */
 	priv = pers->takeover(mddev);
 	if (IS_ERR(priv)) {
+		mempool_destroy(new_pool);
 		mddev->new_level = mddev->level;
 		mddev->new_layout = mddev->layout;
 		mddev->new_chunk_sectors = mddev->chunk_sectors;
@@ -3617,6 +3712,9 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 	}
 
 	module_put(oldpers->owner);
+
+	mempool_destroy(mddev->per_bio_pool);
+	mddev->per_bio_pool = new_pool;
 
 	rdev_for_each(rdev, mddev) {
 		if (rdev->raid_disk < 0)
@@ -5167,6 +5265,7 @@ int md_run(struct mddev *mddev)
 	int err;
 	struct md_rdev *rdev;
 	struct md_personality *pers;
+	mempool_t *new_pool;
 
 	if (list_empty(&mddev->disks))
 		/* cannot run an array with no devices.. */
@@ -5257,6 +5356,13 @@ int md_run(struct mddev *mddev)
 		return -EINVAL;
 	}
 
+	new_pool = md_alloc_per_bio_pool(pers);
+	if (IS_ERR(new_pool)) {
+		module_put(pers->owner);
+		return -EINVAL;
+	}
+	mddev->per_bio_pool = new_pool;
+
 	if (pers->sync_request) {
 		/* Warn if this is a potentially silly
 		 * configuration.
@@ -5322,6 +5428,8 @@ int md_run(struct mddev *mddev)
 
 	}
 	if (err) {
+		mempool_destroy(new_pool);
+		mddev->per_bio_pool = NULL;
 		mddev_detach(mddev);
 		if (mddev->private)
 			pers->free(mddev, mddev->private);
@@ -5577,6 +5685,8 @@ static void __md_stop(struct mddev *mddev)
 	mddev->pers = NULL;
 	spin_unlock(&mddev->lock);
 	pers->free(mddev, mddev->private);
+	mempool_destroy(mddev->per_bio_pool);
+	mddev->per_bio_pool = NULL;
 	mddev->private = NULL;
 	if (pers->sync_request && mddev->to_remove == NULL)
 		mddev->to_remove = &md_redundancy_group;
@@ -8980,7 +9090,14 @@ static __exit void md_exit(void)
 
 	for_each_mddev(mddev, tmp) {
 		export_array(mddev);
+		mddev->ctime = 0;
 		mddev->hold_active = 0;
+		/*
+		 * for_each_mddev() will call mddev_put() at the end of each
+		 * iteration.  As the mddev is now fully clear, this will
+		 * schedule the mddev for destruction by a workqueue, and the
+		 * destroy_workqueue() below will wait for that to complete.
+		 */
 	}
 	destroy_workqueue(md_misc_wq);
 	destroy_workqueue(md_wq);
