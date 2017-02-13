@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -147,7 +147,7 @@ static void *map_ipc_buffers(struct danipc_drvr *drv)
 	resource_size_t res_start = drv->res_start[IPC_BUFS_RES];
 	resource_size_t res_len = drv->res_len[IPC_BUFS_RES];
 
-	ipc_buffers = ioremap_nocache(res_start, res_len);
+	ipc_buffers = ioremap_cache(res_start, res_len);
 
 	if (ipc_buffers) {
 		memset(ipc_buffers, 0, res_len);
@@ -238,7 +238,7 @@ static void remap_fifo_mem(const int cpuid, const unsigned prio,
 		map[prio].size  = desc->sz;
 		map[other_prio].paddr = desc->phy_addr;
 		map[other_prio].size  = desc->sz;
-		map[prio].vaddr = ioremap_nocache(start_addr, desc->sz);
+		map[prio].vaddr = ioremap_cache(start_addr, desc->sz);
 		map[other_prio].vaddr = map[prio].vaddr;
 	} else if (ipc_shared_mem_sizes[cpuid]) {
 		map_size = ipc_shared_mem_sizes[cpuid];
@@ -248,7 +248,7 @@ static void remap_fifo_mem(const int cpuid, const unsigned prio,
 		map[prio].size = map_size;
 		map[other_prio].paddr = start_addr;
 		map[other_prio].size = map_size;
-		map[prio].vaddr = ioremap_nocache(start_addr, 2 * map_size);
+		map[prio].vaddr = ioremap_cache(start_addr, 2 * map_size);
 		map[other_prio].vaddr = map[prio].vaddr;
 	} else {
 		map_size = FIFO_MAP_SIZE;
@@ -256,7 +256,7 @@ static void remap_fifo_mem(const int cpuid, const unsigned prio,
 		start_addr = ((paddr + map_mask) & ~map_mask) - 2 * map_size;
 		map[prio].paddr = start_addr;
 		map[prio].size = map_size;
-		map[prio].vaddr = ioremap_nocache(start_addr, 2 * map_size);
+		map[prio].vaddr = ioremap_cache(start_addr, 2 * map_size);
 	}
 
 	if (!map[prio].vaddr) {
@@ -377,6 +377,7 @@ static int danipc_cdev_recv(struct danipc_cdev *cdev, uint8_t hwfifo)
 			continue;
 		}
 		hdr = buf_vaddr(buf);
+		ipc_msg_hdr_cache_invalid(hdr);
 
 		/* TODO: invalid cache here */
 
@@ -390,6 +391,7 @@ static int danipc_cdev_recv(struct danipc_cdev *cdev, uint8_t hwfifo)
 			cdev->status.rx++;
 			cdev->status.rx_bytes += hdr->msg_len;
 			shm_bufpool_put_buf(&pq->recvq, buf);
+			ipc_msg_payload_cache_invalid(hdr);
 			if (pq->recvq.count > pq->status.recvq_hi)
 				pq->status.recvq_hi = pq->recvq.count;
 			n++;

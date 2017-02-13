@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -25,6 +25,7 @@
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
 #include <linux/debugfs.h>
+#include <asm/cacheflush.h>
 
 #include "ipc_api.h"
 
@@ -45,8 +46,8 @@ int send_pkt(struct sk_buff *skb)
 	struct danipc_pkt_histo *histo = &intf->pproc[pair->prio].pkt_hist;
 	int			 rc    = NETDEV_TX_OK;
 
-	netdev_dbg(skb->dev, "%s: pair={dst=0x%x src=0x%x}\n", __func__,
-		   pair->dst, pair->src);
+	netdev_dbg(skb->dev, "%s: pair={dst=0x%x src=0x%x}, len=%u\n", __func__,
+		   pair->dst, pair->src, skb->len);
 
 	if (DANIPC_IS_AGENT_DISCOVERED(pair->dst, intf->drvr->dst_aid)) {
 		msg = ipc_msg_alloc(pair->src,
@@ -162,7 +163,6 @@ read_ipc_message(char *const packet, char *buf,
 
 	data_len = min(rest_len, data_len);
 	memcpy(buf, data_ptr, data_len);
-
 	ipc_buf_free(packet, cpuid, prio);
 }
 
@@ -266,7 +266,8 @@ static inline int check_errors(struct packet_proc_info *pproc, char *packet)
 	}
 
 	/* Destination AID should for a CPU ID/FIFO index we know about */
-	if (ipc_get_node(first_hdr->dest_aid) != pproc->intf->rx_fifo_idx) {
+	if (unlikely(ipc_get_node(first_hdr->dest_aid) !=
+		pproc->intf->rx_fifo_idx)) {
 		pproc->pkt_hist.stats->rx_dropped++;
 		pproc->pkt_hist.stats->rx_errors++;
 		pproc->pkt_hist.rx_err_dest_aid++;
@@ -274,7 +275,7 @@ static inline int check_errors(struct packet_proc_info *pproc, char *packet)
 		return 1;
 	}
 
-	if (first_hdr->next != NULL) {
+	if (unlikely(first_hdr->next != NULL)) {
 		pproc->pkt_hist.stats->rx_dropped++;
 		pproc->pkt_hist.stats->rx_errors++;
 		pproc->pkt_hist.rx_err_chained_buf++;
@@ -303,12 +304,16 @@ uint32_t danipc_recv(struct packet_proc_info *pproc)
 		ipc_data = ipc_trns_fifo_buf_read(prio, intf->rx_fifo_idx);
 
 		if (ipc_data) {
+			ipc_msg_hdr_cache_invalid(
+				(struct ipc_msg_hdr *)ipc_data);
 			if (check_errors(pproc, ipc_data)) {
 				drop_ipc_message(
 					ipc_data, prio,
 					intf->rx_fifo_idx);
 			} else {
 				/* IPC_msg_handler(ipc_data); */
+				ipc_msg_payload_cache_invalid(
+					(struct ipc_msg_hdr *)ipc_data);
 				handle_incoming_packet(pproc, ipc_data);
 			}
 		} else {

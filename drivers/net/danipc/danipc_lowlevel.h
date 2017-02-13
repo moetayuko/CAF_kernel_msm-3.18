@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -24,6 +24,7 @@
 #include <linux/irqflags.h>
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
+#include <asm/cacheflush.h>
 
 #define IPC_DUMMY_ADDR		  0
 #define PLATFORM_MAX_NUM_OF_NODES 16
@@ -176,6 +177,22 @@ static inline bool valid_cpu_id(int cpuid)
 	if (cpuid < 0 || cpuid >= PLATFORM_MAX_NUM_OF_NODES)
 		return false;
 	return true;
+}
+
+static inline void ipc_msg_payload_cache_invalid(struct ipc_msg_hdr *hdr)
+{
+	dmac_inv_range((char *)(hdr + 1),
+		       (char *)(hdr + 1) + hdr->msg_len);
+}
+
+static inline void ipc_msg_hdr_cache_invalid(struct ipc_msg_hdr *hdr)
+{
+	dmac_inv_range(hdr, hdr + 1);
+}
+
+static inline void ipc_msg_cache_flush(struct ipc_msg_hdr *hdr)
+{
+	dmac_flush_range(hdr, (char *)(hdr + 1) + hdr->msg_len);
 }
 
 #endif /* __DANIPC_LOWLEVEL_H__ */
