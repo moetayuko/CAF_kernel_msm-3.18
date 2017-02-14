@@ -1033,7 +1033,7 @@ struct page *new_node_page(struct dnode_of_data *dn,
 				unsigned int ofs, struct page *ipage)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(dn->inode);
-	struct node_info old_ni, new_ni;
+	struct node_info new_ni;
 	struct page *page;
 	int err;
 
@@ -1049,12 +1049,11 @@ struct page *new_node_page(struct dnode_of_data *dn,
 		goto fail;
 	}
 
-	get_node_info(sbi, dn->nid, &old_ni);
-
-	/* Reinitialize old_ni with new node page */
-	f2fs_bug_on(sbi, old_ni.blk_addr != NULL_ADDR);
-	new_ni = old_ni;
+	new_ni.nid = dn->nid;
 	new_ni.ino = dn->inode->i_ino;
+	new_ni.blk_addr = NULL_ADDR;
+	new_ni.flag = 0;
+	new_ni.version = 0;
 	set_node_addr(sbi, &new_ni, NEW_ADDR, false);
 
 	f2fs_wait_on_page_writeback(page, NODE, true);
