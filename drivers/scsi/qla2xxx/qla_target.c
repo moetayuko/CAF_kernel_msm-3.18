@@ -2128,7 +2128,6 @@ void qlt_xmit_tm_rsp(struct qla_tgt_mgmt_cmd *mcmd)
 			"RESET-TMR online/active/old-count/new-count = %d/%d/%d/%d.\n",
 			vha->flags.online, qla2x00_reset_active(vha),
 			mcmd->reset_count, ha->chip_reset);
-		ha->tgt.tgt_ops->free_mcmd(mcmd);
 		spin_unlock_irqrestore(&ha->hardware_lock, flags);
 		return;
 	}
@@ -2157,15 +2156,6 @@ void qlt_xmit_tm_rsp(struct qla_tgt_mgmt_cmd *mcmd)
 			qlt_24xx_send_task_mgmt_ctio(vha, mcmd,
 			    mcmd->fc_tm_rsp);
 	}
-	/*
-	 * Make the callback for ->free_mcmd() to queue_work() and invoke
-	 * target_put_sess_cmd() to drop cmd_kref to 1.  The final
-	 * target_put_sess_cmd() call will be made from TFO->check_stop_free()
-	 * -> tcm_qla2xxx_check_stop_free() to release the TMR associated se_cmd
-	 * descriptor after TFO->queue_tm_rsp() -> tcm_qla2xxx_queue_tm_rsp() ->
-	 * qlt_xmit_tm_rsp() returns here..
-	 */
-	ha->tgt.tgt_ops->free_mcmd(mcmd);
 	spin_unlock_irqrestore(&ha->hardware_lock, flags);
 }
 EXPORT_SYMBOL(qlt_xmit_tm_rsp);

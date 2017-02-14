@@ -257,25 +257,6 @@ static u32 tcm_qla2xxx_tpg_get_inst_index(struct se_portal_group *se_tpg)
 	return tpg->lport_tpgt;
 }
 
-static void tcm_qla2xxx_complete_mcmd(struct work_struct *work)
-{
-	struct qla_tgt_mgmt_cmd *mcmd = container_of(work,
-			struct qla_tgt_mgmt_cmd, free_work);
-
-	transport_generic_free_cmd(&mcmd->se_cmd, 0);
-}
-
-/*
- * Called from qla_target_template->free_mcmd(), and will call
- * tcm_qla2xxx_release_cmd() via normal struct target_core_fabric_ops
- * release callback.  qla_hw_data->hardware_lock is expected to be held
- */
-static void tcm_qla2xxx_free_mcmd(struct qla_tgt_mgmt_cmd *mcmd)
-{
-	INIT_WORK(&mcmd->free_work, tcm_qla2xxx_complete_mcmd);
-	queue_work(tcm_qla2xxx_free_wq, &mcmd->free_work);
-}
-
 static void tcm_qla2xxx_complete_free(struct work_struct *work)
 {
 	struct qla_tgt_cmd *cmd = container_of(work, struct qla_tgt_cmd, work);
@@ -749,6 +730,8 @@ static void tcm_qla2xxx_queue_tm_rsp(struct se_cmd *se_cmd)
 	 * CTIO response packet.
 	 */
 	qlt_xmit_tm_rsp(mcmd);
+
+	transport_generic_free_cmd(&mcmd->se_cmd, 0);
 }
 
 #define DATA_WORK_NOT_FREE(_cmd) (_cmd->data_work && !_cmd->data_work_free)
@@ -1628,7 +1611,6 @@ static struct qla_tgt_func_tmpl tcm_qla2xxx_template = {
 	.handle_data		= tcm_qla2xxx_handle_data,
 	.handle_tmr		= tcm_qla2xxx_handle_tmr,
 	.free_cmd		= tcm_qla2xxx_free_cmd,
-	.free_mcmd		= tcm_qla2xxx_free_mcmd,
 	.free_session		= tcm_qla2xxx_free_session,
 	.update_sess		= tcm_qla2xxx_update_sess,
 	.check_initiator_node_acl = tcm_qla2xxx_check_initiator_node_acl,
