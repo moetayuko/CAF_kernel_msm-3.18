@@ -2487,8 +2487,6 @@ struct drm_i915_private {
 		int	irq;
 	} lpe_audio;
 
-	I915_SELFTEST_DECLARE(struct fault_attr vm_fault);
-
 	/*
 	 * NOTE: This is the dri1/ums dungeon, don't add stuff here. Your patch
 	 * will be rejected. Instead look for a better place.
