@@ -1566,21 +1566,21 @@ static void raid1_make_request(struct mddev *mddev, struct bio *bio)
 	sector_t sectors;
 
 	/* if bio exceeds barrier unit boundary, split it */
-	do {
-		sectors = align_to_barrier_unit_end(
-				bio->bi_iter.bi_sector, bio_sectors(bio));
-		if (sectors < bio_sectors(bio)) {
-			split = bio_split(bio, sectors, GFP_NOIO, fs_bio_set);
-			bio_chain(split, bio);
-		} else {
-			split = bio;
-		}
+	sectors = align_to_barrier_unit_end(
+			bio->bi_iter.bi_sector, bio_sectors(bio));
+	if (sectors < bio_sectors(bio)) {
+		split = bio_split(bio, sectors, GFP_NOIO, fs_bio_set);
+		bio_chain(split, bio);
+	} else {
+		split = bio;
+	}
 
-		if (bio_data_dir(split) == READ)
-			raid1_read_request(mddev, split);
-		else
-			raid1_write_request(mddev, split);
-	} while (split != bio);
+	if (bio_data_dir(split) == READ)
+		raid1_read_request(mddev, split);
+	else
+		raid1_write_request(mddev, split);
+	if (split != bio)
+		generic_make_request(bio);
 }
 
 static void raid1_status(struct seq_file *seq, struct mddev *mddev)

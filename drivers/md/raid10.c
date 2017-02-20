@@ -1551,28 +1551,27 @@ static void raid10_make_request(struct mddev *mddev, struct bio *bio)
 		return;
 	}
 
-	do {
+	/*
+	 * If this request crosses a chunk boundary, we need to split
+	 * it.
+	 */
+	if (unlikely((bio->bi_iter.bi_sector & chunk_mask) +
+		     bio_sectors(bio) > chunk_sects
+		     && (conf->geo.near_copies < conf->geo.raid_disks
+			 || conf->prev.near_copies <
+			 conf->prev.raid_disks))) {
+		split = bio_split(bio, chunk_sects -
+				  (bio->bi_iter.bi_sector &
+				   (chunk_sects - 1)),
+				  GFP_NOIO, fs_bio_set);
+		bio_chain(split, bio);
+	} else {
+		split = bio;
+	}
 
-		/*
-		 * If this request crosses a chunk boundary, we need to split
-		 * it.
-		 */
-		if (unlikely((bio->bi_iter.bi_sector & chunk_mask) +
-			     bio_sectors(bio) > chunk_sects
-			     && (conf->geo.near_copies < conf->geo.raid_disks
-				 || conf->prev.near_copies <
-				 conf->prev.raid_disks))) {
-			split = bio_split(bio, chunk_sects -
-					  (bio->bi_iter.bi_sector &
-					   (chunk_sects - 1)),
-					  GFP_NOIO, fs_bio_set);
-			bio_chain(split, bio);
-		} else {
-			split = bio;
-		}
-
-		__make_request(mddev, split);
-	} while (split != bio);
+	__make_request(mddev, split);
+	if (split != bio)
+		generic_make_request(bio);
 
 	/* In case raid10d snuck in to freeze_array */
 	wake_up(&conf->wait_barrier);
