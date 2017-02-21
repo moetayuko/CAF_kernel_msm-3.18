@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015,2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -721,7 +721,7 @@ static int msm_ipc_router_smd_driver_register(
 			return ret;
 		}
 	} else {
-		IPC_RTR_ERR("%s Already driver registered %s\n",
+		D("%s Already driver registered %s\n",
 					__func__, smd_xprtp->ch_name);
 	}
 	return 0;
