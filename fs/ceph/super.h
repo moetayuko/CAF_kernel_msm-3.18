@@ -45,8 +45,8 @@
 #define ceph_test_mount_opt(fsc, opt) \
 	(!!((fsc)->mount_options->flags & CEPH_MOUNT_OPT_##opt))
 
-#define CEPH_RSIZE_DEFAULT             0           /* max read size */
-#define CEPH_RASIZE_DEFAULT            (8192*1024) /* readahead */
+#define CEPH_RSIZE_DEFAULT              (64*1024*1024) /* max read size */
+#define CEPH_RASIZE_DEFAULT             (8192*1024)    /* max readahead */
 #define CEPH_MAX_READDIR_DEFAULT        1024
 #define CEPH_MAX_READDIR_BYTES_DEFAULT  (512*1024)
 #define CEPH_SNAPDIRNAME_DEFAULT        ".snap"
@@ -602,7 +602,7 @@ static inline int __ceph_caps_wanted(struct ceph_inode_info *ci)
 }
 
 /* what the mds thinks we want */
-extern int __ceph_caps_mds_wanted(struct ceph_inode_info *ci);
+extern int __ceph_caps_mds_wanted(struct ceph_inode_info *ci, bool check);
 
 extern void ceph_caps_init(struct ceph_mds_client *mdsc);
 extern void ceph_caps_finalize(struct ceph_mds_client *mdsc);
@@ -764,8 +764,7 @@ extern void ceph_fill_file_time(struct inode *inode, int issued,
 				u64 time_warp_seq, struct timespec *ctime,
 				struct timespec *mtime, struct timespec *atime);
 extern int ceph_fill_trace(struct super_block *sb,
-			   struct ceph_mds_request *req,
-			   struct ceph_mds_session *session);
+			   struct ceph_mds_request *req);
 extern int ceph_readdir_prepopulate(struct ceph_mds_request *req,
 				    struct ceph_mds_session *session);
 
@@ -904,6 +903,7 @@ extern void ceph_flush_dirty_caps(struct ceph_mds_client *mdsc);
 extern int ceph_encode_inode_release(void **p, struct inode *inode,
 				     int mds, int drop, int unless, int force);
 extern int ceph_encode_dentry_release(void **p, struct dentry *dn,
+				      struct inode *dir,
 				      int mds, int drop, int unless);
 
 extern int ceph_get_caps(struct ceph_inode_info *ci, int need, int want,

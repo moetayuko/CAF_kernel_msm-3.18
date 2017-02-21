@@ -391,6 +391,7 @@ static int start_read(struct inode *inode, struct list_head *page_list, int max)
 			nr_pages = i;
 			if (nr_pages > 0) {
 				len = nr_pages << PAGE_SHIFT;
+				osd_req_op_extent_update(req, 0, len);
 				break;
 			}
 			goto out_pages;
@@ -771,7 +772,7 @@ static int ceph_writepages_start(struct address_space *mapping,
 	     wbc->sync_mode == WB_SYNC_NONE ? "NONE" :
 	     (wbc->sync_mode == WB_SYNC_ALL ? "ALL" : "HOLD"));
 
-	if (ACCESS_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
+	if (READ_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
 		if (ci->i_wrbuffer_ref > 0) {
 			pr_warn_ratelimited(
 				"writepage_start %p %lld forced umount\n",
@@ -1194,7 +1195,7 @@ static int ceph_update_writeable_page(struct file *file,
 	int r;
 	struct ceph_snap_context *snapc, *oldest;
 
-	if (ACCESS_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
+	if (READ_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
 		dout(" page %p forced umount\n", page);
 		unlock_page(page);
 		return -EIO;
