@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "cd3efb10_3161e472",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2867,
+      "author": {
+        "id": 1122323
+      },
+      "writtenOn": "2017-02-23T20:47:20Z",
+      "side": 1,
+      "message": "I wonder if here we should have \ncpu_utilization \u003d add_capacity_margin(cpu_utilization);\n\nThe boosted_cpu_util fn doesn\u0027t include any headroom in case no boost is in place (although one might consider the boost to be headroom) and this might lead to more frequency changes than necessary.",
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
