@@ -175,10 +175,9 @@ void core_tmr_abort_task(
 		printk("ABORT_TASK: Found referenced %s task_tag: %llu\n",
 			se_cmd->se_tfo->get_fabric_name(), ref_tag);
 
-		if (!__target_check_io_state(se_cmd, se_sess, 0)) {
-			spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
-			goto out;
-		}
+		if (!__target_check_io_state(se_cmd, se_sess, 0))
+			continue;
+
 		list_del_init(&se_cmd->se_cmd_list);
 		spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
@@ -195,7 +194,6 @@ void core_tmr_abort_task(
 	}
 	spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
-out:
 	printk("ABORT_TASK: Sending TMR_TASK_DOES_NOT_EXIST for ref_tag: %lld\n",
 			tmr->ref_task_tag);
 	tmr->response = TMR_TASK_DOES_NOT_EXIST;
@@ -217,13 +215,8 @@ static void core_tmr_drain_tmr_list(
 	 * LUN_RESET tmr..
 	 */
 	spin_lock_irqsave(&dev->se_tmr_lock, flags);
+	list_del_init(&tmr->tmr_list);
 	list_for_each_entry_safe(tmr_p, tmr_pp, &dev->dev_tmr_list, tmr_list) {
-		/*
-		 * Allow the received TMR to return with FUNCTION_COMPLETE.
-		 */
-		if (tmr_p == tmr)
-			continue;
-
 		cmd = tmr_p->task_cmd;
 		if (!cmd) {
 			pr_err("Unable to locate struct se_cmd for TMR\n");
