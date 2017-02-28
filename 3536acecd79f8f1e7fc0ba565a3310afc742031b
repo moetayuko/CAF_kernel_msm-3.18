@@ -2,6 +2,29 @@
   "comments": [
     {
       "key": {
+        "uuid": "6b7e6cd3_1da46bf3",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2859,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-02-28T06:21:15Z",
+      "side": 1,
+      "message": "I got a bit confused how this patch removes jumpiness:\n\nThe jumpiness was reverted in the following patch:\n\nhttps://android.googlesource.com/kernel/msm/+/47ced19a176ea10e2fc44669d101797368d44051%5E%21/#F0\n\nPreviously, before this revert it was doing a:\n\nif (!use_util_est())\n  cpu_utilization \u003d capacity_max;\n\nThis was causing jumpiness and above patch from Chris reverts this behavior, as per my understanding of our earlier discussions.\n\nHowever, even after this revert, it appears the code is still buggy (different problem), I mean if cpu_utilization \u003d capacity_max, then how can  (sum_capacity_reqs(cpu_utilization, scr) \u003c capacity_curr) ever be true? So we essentially always end up exiting this function in the tick path (?).\n\nI think Andres\u0027s fix is the right one, however maybe the commit message can be differently worded, like \"fix cpu_utilization for PELT in tick path\"\n\nAm I right or did I get this completely wrong? Thanks.",
+      "range": {
+        "startLine": 2853,
+        "startChar": 0,
+        "endLine": 2859,
+        "endChar": 9
+      },
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "cd3efb10_3161e472",
         "filename": "kernel/sched/core.c",
         "patchSetId": 1
@@ -49,6 +72,24 @@
       "side": 1,
       "message": "Just to make this clear to any other readers. The margin added in sum_capacity_reqs matches the logic of OPP selection to decide if we will change the capacity. What was slightly confusing is that we behave differently for PELT and WALT.\n\nThis is what happens for PELT (ignore the early exit for now)\n\nin sched_freq_tick_pelt:\n  cpu_util \u003d boosted_cpu_util\n  call set_cfs_cpu_capacity with boosted_cpu_util only.\n  in set_cfs_cpu_capacity:\n    set scr-\u003ecfs to boosted_cpu_util\n    call update_cpu_capacity\n      in update_cpu_capacity:\n        required_cap \u003d ((cpu_util_boosted + rt)*margin + dl)\n\n\nso, the margin is applied immediately before OPP selection.\n\nFor WALT the sequence is slightly different. WALT counts all utilization rather than tracking class util separately.\n\nin sched_freq_tick_walt:\n  cpu_util \u003d utilization_of_all_classes\n  add the margin to cpu util\n  call set_cfs_cpu_capacity with cpu_util*margin\n  in set_cfs_cpu_capacity:\n    set scr-\u003ecfs to cpu_util*margin\n    call update_cpu_capacity\n    in update_cpu_capacity:\n      required_cap \u003d ((cpu_util*margin)*margin)\n\n\nYou can see that the WALT tick-time OPP selection has a double margin applied, to all classes. (PELT only applies margin to DL but since we don\u0027t track separately for WALT there is little alternative.\n\nNote that WALT was never using the boosted_cpu_util for OPP biasing, but we likely didn\u0027t notice because of the double boost. Using boosted cpu util should be the right thing to do according to the design of schedtune.\n\nAlso note that we never downsize capacity at sched tick, for either pelt or\nwalt although we do whenever a task is moved between cgroups or migrated or sleeps/wakes up.",
       "parentUuid": "822a81ba_40d7a28c",
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "06a283aa_5e023b3f",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2867,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-02-28T06:21:15Z",
+      "side": 1,
+      "message": "This patch is also exactly what we do in the marlin kernel (using the boosted_cpu_util). However I find the whole approach of adding an extra headroom a bit hackish.\n\nI agree there should be headroom incase there\u0027s no boost, however in case there is a boost, then is the extra headroom justifiable? Perhaps there should be min(boost_margin, capacity_margin) and then use that value?",
+      "parentUuid": "03d38a15_2e809149",
       "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
