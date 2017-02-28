@@ -25,6 +25,30 @@
     },
     {
       "key": {
+        "uuid": "a5d7d0f0_193f8861",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2859,
+      "author": {
+        "id": 1122323
+      },
+      "writtenOn": "2017-02-28T11:21:13Z",
+      "side": 1,
+      "message": "So, the history of the jumpy OPP selection :)\n\nInitially comparing PELT and WALT for OPP selection, we knew that the PELT cpu util signal was lagging the WALT signal dramatically, so we used max_capacity here in an attempt to gain the required responsiveness. This wasn\u0027t good enough (energy) so util_est was added which attempts instead to track recent maximums and uses that which was much better and avoided the need to go to higher OPPs so often.\n\nSince we were using util_est (for PELT) when comparing WALT and PELT as a load/util tracking solution for task placement and OPP selection, the path without util_est enabled didn\u0027t get the tuning effort that util_est did. We kept the max_capacity selection for utilisation from the previous experiment as we intended util_est to be used. Systems not using util_est would at least have good responsiveness.\n\nSince WALT was the preferred option for products, I did not include util_est in ACK, as I felt it would be an additional obstacle to upstream scheduler backports.\n\nAs part of the EAS 1.2 stack, I also removed util_est from this kernel in order to have a better chance of the 1.2 stack going cleanly onto relevant ACK branches. This restored the max_capacity behaviour, which I did not notice at the time. There might well be a bug in there at least in terms of optimal OPP selection.\n\nHowever, there are some fixes to PELT in the 1.2 stack which mean that cpu_util is actually an appropriate metric to use even without util_est, so we can do much better by linking to that instead of max. Incorporating the boosting is also important as this is the primary role of schedtune groups here - to add extra capacity so that future demand can be satisfied without latency.\n\nTo be clear, I do think this is the right thing to do.",
+      "parentUuid": "6b7e6cd3_1da46bf3",
+      "range": {
+        "startLine": 2853,
+        "startChar": 0,
+        "endLine": 2859,
+        "endChar": 9
+      },
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "cd3efb10_3161e472",
         "filename": "kernel/sched/core.c",
         "patchSetId": 1
@@ -90,6 +114,24 @@
       "side": 1,
       "message": "This patch is also exactly what we do in the marlin kernel (using the boosted_cpu_util). However I find the whole approach of adding an extra headroom a bit hackish.\n\nI agree there should be headroom incase there\u0027s no boost, however in case there is a boost, then is the extra headroom justifiable? Perhaps there should be min(boost_margin, capacity_margin) and then use that value?",
       "parentUuid": "03d38a15_2e809149",
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "068845d7_23388443",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2867,
+      "author": {
+        "id": 1122323
+      },
+      "writtenOn": "2017-02-28T11:21:13Z",
+      "side": 1,
+      "message": "Logically it seems sensible, someone should try it out and see how the OPP selections change.. I would imagine we would choose a slightly lower one, but I couldn\u0027t predict if that lowering would be enough to damage the jankiness.",
+      "parentUuid": "06a283aa_5e023b3f",
       "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
