@@ -445,7 +445,7 @@ evo_wait(void *evoc, int nr)
 				break;
 		) < 0) {
 			mutex_unlock(&dmac->lock);
-			printk(KERN_ERR "nouveau: evo channel stalled\n");
+			pr_err("nouveau: evo channel stalled\n");
 			return NULL;
 		}
 
@@ -469,12 +469,12 @@ evo_kick(u32 *push, void *evoc)
 #else
 #define evo_mthd(p,m,s) do {                                                   \
 	const u32 _m = (m), _s = (s);                                          \
-	printk(KERN_ERR "%04x %d %s\n", _m, _s, __func__);                     \
+	pr_err("%04x %d %s\n", _m, _s, __func__);                              \
 	*((p)++) = ((_s << 18) | _m);                                          \
 } while(0)
 #define evo_data(p,d) do {                                                     \
 	const u32 _d = (d);                                                    \
-	printk(KERN_ERR "\t%08x\n", _d);                                       \
+	pr_err("\t%08x\n", _d);                                                \
 	*((p)++) = _d;                                                         \
 } while(0)
 #endif
