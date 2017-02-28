@@ -135,6 +135,29 @@
       "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "9faae919_3b388217",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2873,
+      "author": {
+        "id": 1119068
+      },
+      "writtenOn": "2017-02-28T17:32:06Z",
+      "side": 1,
+      "message": "This seems to be \"conceptually broken\" since we introduce a misalignment between the wakeup path and the periodic tick.\n\nIn the wakeup path we always use the boosted_cpu_util() every time we poke schedfreq for OPPs updates. Thus a task scheduled\non a CPU always gets (at the beginning) the expected boost.\n\nHere instead, once the task is already running on a CPU and every time a tick update occurs, we completely disregard the boost value on that CPU. This could imply that an originally boosted (at wakeup time) task is then missing the boost margin benefits in subsequent updates.\n\nIMO, here as well we should better s/cpu_util/boosted_cpu_util/, which is actually what we already do when PELT is in use.\n\nCould such a fix remove the need to have a \"fixed\" minimum frequency on touch boost events?... To be better investigated once we have this fixed.",
+      "range": {
+        "startLine": 2873,
+        "startChar": 33,
+        "endLine": 2873,
+        "endChar": 41
+      },
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
