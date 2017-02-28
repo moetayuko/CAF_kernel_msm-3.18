@@ -1,6 +1,0 @@
-Compatible		Vendor / Chip
-==========		=============
-capella,cm32181		CM32181: Ambient Light Sensor
-capella,cm3232		CM3232: Ambient Light Sensor
-isil,isl29028		Intersil ISL29028 Ambient Light and Proximity Sensor
-taos,tsl2550		Ambient Light Sensor with SMBUS/Two Wire Serial Interface

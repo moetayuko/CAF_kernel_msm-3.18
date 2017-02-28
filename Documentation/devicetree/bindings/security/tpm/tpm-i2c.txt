@@ -2,14 +2,7 @@
 
 Required properties:
 
-- compatible     : One of the following:
-	"atmel,at97sc3204t"
-	"infineon,slb9635tt"
-	"infineon,slb9645tt"
-	"nuvoton,npct501"
-	"nuvoton,npct650", "nuvoton,npct601"
-	"nuvoton,npct601"
-	"winbond,wpct301"
+- compatible     : 'manufacturer,model', eg. nuvoton,npct650
 - label          : human readable string describing the device, eg. "tpm"
 - linux,sml-base : 64-bit base address of the reserved memory allocated for
                    the firmware event log
