@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "5961c618_096810fe",
+        "filename": "kernel/sched/fair.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 5576,
+      "author": {
+        "id": 1119068
+      },
+      "writtenOn": "2017-02-28T17:21:24Z",
+      "side": 1,
+      "message": "When \u0027i\u0027 is the prev_cpu of task \u0027p\u0027, here we are (potentially) double accounting the task utilization.\n\nIn certain unlucky cases, e.g. a medium/big task which was running alone on a CPU which becomes IDLE after its completion and thus its bloked utilization never updated until the next taks\u0027s wakeup, this could produce a jumping of the task between different CPUs.\n\nThus, here we should probably discount the blocked utilization due to the task \u0027p\u0027, when \u0027i\u0027 is the prev_cpu of that task.\nThis is accomplished using by s/cpu_util/cpu_util_wake/ which is defined right after this function.\n\nThis approach is also more aligned with current EAS mainline code, which uses something functionally similar, as it can be\nseen from here:\nhttp://www.linux-arm.org/git?p\u003dlinux-power.git;a\u003dblob;f\u003dkernel/sched/fair.c;h\u003d489f6d3e6d80bf16df159fda25c2bcd11de184fc;hb\u003d20ab5631c366a28b5c7e598107337ac622c41e31#l6193",
+      "range": {
+        "startLine": 5576,
+        "startChar": 14,
+        "endLine": 5576,
+        "endChar": 25
+      },
+      "revId": "a0c6a4272c3968c0ff50d3fed65f5865b72d777b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
