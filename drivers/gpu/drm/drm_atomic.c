@@ -1454,18 +1454,18 @@ drm_atomic_add_affected_connectors(struct drm_atomic_state *state,
 	 * Changed connectors are already in @state, so only need to look at the
 	 * current configuration.
 	 */
-	drm_connector_list_iter_get(state->dev, &conn_iter);
+	drm_connector_list_iter_begin(state->dev, &conn_iter);
 	drm_for_each_connector_iter(connector, &conn_iter) {
 		if (connector->state->crtc != crtc)
 			continue;
 
 		conn_state = drm_atomic_get_connector_state(state, connector);
 		if (IS_ERR(conn_state)) {
-			drm_connector_list_iter_put(&conn_iter);
+			drm_connector_list_iter_end(&conn_iter);
 			return PTR_ERR(conn_state);
 		}
 	}
-	drm_connector_list_iter_put(&conn_iter);
+	drm_connector_list_iter_end(&conn_iter);
 
 	return 0;
 }
@@ -1731,10 +1731,10 @@ void drm_state_dump(struct drm_device *dev, struct drm_printer *p)
 	list_for_each_entry(crtc, &config->crtc_list, head)
 		drm_atomic_crtc_print_state(p, crtc->state);
 
-	drm_connector_list_iter_get(dev, &conn_iter);
+	drm_connector_list_iter_begin(dev, &conn_iter);
 	drm_for_each_connector_iter(connector, &conn_iter)
 		drm_atomic_connector_print_state(p, connector->state);
-	drm_connector_list_iter_put(&conn_iter);
+	drm_connector_list_iter_end(&conn_iter);
 }
 EXPORT_SYMBOL(drm_state_dump);
 
