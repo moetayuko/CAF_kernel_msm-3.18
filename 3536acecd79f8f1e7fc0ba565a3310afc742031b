@@ -49,6 +49,30 @@
     },
     {
       "key": {
+        "uuid": "0a9fd30b_63dd86aa",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2859,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-03-01T00:25:16Z",
+      "side": 1,
+      "message": "Thanks for elaborating on the history :)",
+      "parentUuid": "a5d7d0f0_193f8861",
+      "range": {
+        "startLine": 2853,
+        "startChar": 0,
+        "endLine": 2859,
+        "endChar": 9
+      },
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
         "uuid": "cd3efb10_3161e472",
         "filename": "kernel/sched/core.c",
         "patchSetId": 1
@@ -132,6 +156,24 @@
       "side": 1,
       "message": "Logically it seems sensible, someone should try it out and see how the OPP selections change.. I would imagine we would choose a slightly lower one, but I couldn\u0027t predict if that lowering would be enough to damage the jankiness.",
       "parentUuid": "06a283aa_5e023b3f",
+      "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "5c9eb48d_cc3f7ae4",
+        "filename": "kernel/sched/core.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 2867,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-03-01T00:25:16Z",
+      "side": 1,
+      "message": "It looks there is some jank damage (see last email) even without choosing an even lower one. We should probably trace and see how the utilization is changing based on boosted_cpu_util.",
+      "parentUuid": "068845d7_23388443",
       "revId": "3536acecd79f8f1e7fc0ba565a3310afc742031b",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
