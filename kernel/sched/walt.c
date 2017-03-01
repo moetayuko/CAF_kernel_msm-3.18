@@ -45,6 +45,7 @@ unsigned int sysctl_sched_walt_init_task_load_pct = 15;
 /* 1 -> use PELT based load stats, 0 -> use window-based load stats */
 unsigned int __read_mostly walt_disabled = 0;
 
+
 static unsigned int max_possible_efficiency = 1024;
 static unsigned int min_possible_efficiency = 1024;
 
@@ -1092,6 +1093,12 @@ static int register_sched_callback(void)
 		ret = cpufreq_register_notifier(&notifier_trans_block,
 						CPUFREQ_TRANSITION_NOTIFIER);
 
+	/*
+	 * reuse this runtime initialisation to set/clear walt_disabled
+	 * flag according to the configuration before we start using
+	 * the signals
+	 */
+	walt_disabled = sched_feat(CALC_WALT) || !(sysctl_sched_use_walt_cpu_util || sysctl_sched_use_walt_task_util);
 	return 0;
 }
 
@@ -1122,4 +1129,13 @@ void walt_init_new_task_load(struct task_struct *p)
 	p->ravg.demand = init_load_windows;
 	for (i = 0; i < RAVG_HIST_SIZE_MAX; ++i)
 		p->ravg.sum_history[i] = init_load_windows;
+}
+
+/* set walt_disabled based upon value of sysctls */
+int walt_handle_util(struct ctl_table *table, int write,
+			 void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	walt_disabled = sched_feat(CALC_WALT) || !(sysctl_sched_use_walt_cpu_util || sysctl_sched_use_walt_task_util);
+	return ret;
 }

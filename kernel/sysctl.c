@@ -318,14 +318,14 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_use_walt_cpu_util,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= walt_handle_util,
 	},
 	{
 		.procname	= "sched_use_walt_task_util",
 		.data		= &sysctl_sched_use_walt_task_util,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= walt_handle_util,
 	},
 	{
 		.procname	= "sched_walt_init_task_load_pct",

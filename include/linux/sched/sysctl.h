@@ -48,6 +48,10 @@ extern unsigned int sysctl_sched_use_walt_task_util;
 extern unsigned int sysctl_sched_walt_init_task_load_pct;
 extern unsigned int sysctl_sched_walt_cpu_high_irqload;
 #endif
+#ifdef CONFIG_SCHED_WALT
+int walt_handle_util(struct ctl_table *, int,
+			 void __user *, size_t *, loff_t *);
+#endif
 
 enum sched_tunable_scaling {
 	SCHED_TUNABLESCALING_NONE,
@@ -84,7 +88,6 @@ static inline unsigned int get_sysctl_timer_migration(void)
 	return 1;
 }
 #endif
-
 /*
  *  control realtime throttling:
  *

@@ -86,3 +86,10 @@ SCHED_FEAT(NUMA_RESIST_LOWER, false)
  * decisions optimizing for energy efficiency.
  */
 SCHED_FEAT(ENERGY_AWARE, true)
+
+#ifdef CONFIG_SCHED_WALT
+/*
+ * WALT Signal Calculation. Always calculate WALT signals even if not in use.
+ */
+SCHED_FEAT(CALC_WALT, true)
+#endif
