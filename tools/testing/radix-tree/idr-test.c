@@ -153,6 +153,30 @@ void idr_nowait_test(void)
 	idr_destroy(&idr);
 }
 
+void idr_get_next_test(void)
+{
+	unsigned long i;
+	int nextid;
+	DEFINE_IDR(idr);
+
+	int indices[] = {4, 7, 9, 15, 65, 128, 1000, 99999, 0};
+
+	for(i = 0; indices[i]; i++) {
+		struct item *item = item_create(indices[i], 0);
+		assert(idr_alloc(&idr, item, indices[i], indices[i+1],
+				 GFP_KERNEL) == indices[i]);
+	}
+
+	for(i = 0, nextid = 0; indices[i]; i++) {
+		idr_get_next(&idr, &nextid);
+		assert(nextid == indices[i]);
+		nextid++;
+	}
+
+	idr_for_each(&idr, item_idr_free, &idr);
+	idr_destroy(&idr);
+}
+
 void idr_checks(void)
 {
 	unsigned long i;
@@ -202,6 +226,7 @@ void idr_checks(void)
 	idr_alloc_test();
 	idr_null_test();
 	idr_nowait_test();
+	idr_get_next_test();
 }
 
 /*
@@ -362,6 +387,24 @@ void ida_check_random(void)
 		goto repeat;
 }
 
+void ida_simple_get_remove_test(void)
+{
+	DEFINE_IDA(ida);
+	unsigned long i;
+
+	for (i = 0; i < 10000; i++) {
+		assert(ida_simple_get(&ida, 0, 20000, GFP_KERNEL) == i);
+	}
+	assert(ida_simple_get(&ida, 5, 30, GFP_KERNEL) < 0);
+
+	for (i = 0; i < 10000; i++) {
+		ida_simple_remove(&ida, i);
+	}
+	assert(ida_is_empty(&ida));
+
+	ida_destroy(&ida);
+}
+
 void ida_checks(void)
 {
 	DEFINE_IDA(ida);
@@ -428,6 +471,7 @@ void ida_checks(void)
 	ida_check_max();
 	ida_check_conv();
 	ida_check_random();
+	ida_simple_get_remove_test();
 
 	radix_tree_cpu_dead(1);
 }
