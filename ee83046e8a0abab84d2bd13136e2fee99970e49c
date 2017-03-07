@@ -22,6 +22,30 @@
       "revId": "ee83046e8a0abab84d2bd13136e2fee99970e49c",
       "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "e3255134_62e69be2",
+        "filename": "drivers/platform/msm/ipa/ipa_v2/ipa_rt.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 751,
+      "author": {
+        "id": 1092708
+      },
+      "writtenOn": "2017-03-07T18:12:18Z",
+      "side": 1,
+      "message": "Yeah, you are right, the additional kfree is obsolete.",
+      "parentUuid": "6cc6c873_2c2d9c8d",
+      "range": {
+        "startLine": 751,
+        "startChar": 8,
+        "endLine": 751,
+        "endChar": 22
+      },
+      "revId": "ee83046e8a0abab84d2bd13136e2fee99970e49c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
     }
   ]
 }
