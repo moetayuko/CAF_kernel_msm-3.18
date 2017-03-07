@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6cc6c873_2c2d9c8d",
+        "filename": "drivers/platform/msm/ipa/ipa_v2/ipa_rt.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 751,
+      "author": {
+        "id": 1021676
+      },
+      "writtenOn": "2017-03-07T16:41:59Z",
+      "side": 1,
+      "message": "this should stay fail_send_cmd1 since fail_send_cmd2 is kfree(cmd2) and follows the patterns in lines 734, 766, 772, etc.",
+      "range": {
+        "startLine": 751,
+        "startChar": 8,
+        "endLine": 751,
+        "endChar": 22
+      },
+      "revId": "ee83046e8a0abab84d2bd13136e2fee99970e49c",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
