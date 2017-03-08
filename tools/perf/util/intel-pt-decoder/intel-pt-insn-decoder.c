@@ -31,13 +31,15 @@
 #error Instruction buffer size too small
 #endif
 
-/* Based on branch_type() from perf_event_intel_lbr.c */
+/* Based on branch_type() from arch/x86/events/intel/lbr.c */
 static void intel_pt_insn_decoder(struct insn *insn,
 				  struct intel_pt_insn *intel_pt_insn)
 {
 	enum intel_pt_insn_op op = INTEL_PT_OP_OTHER;
 	enum intel_pt_insn_branch branch = INTEL_PT_BR_NO_BRANCH;
 	int ext;
+
+	intel_pt_insn->rel = 0;
 
 	if (insn_is_avx(insn)) {
 		intel_pt_insn->op = INTEL_PT_OP_OTHER;
