@@ -27,7 +27,7 @@
 /* drm_irq.c */
 extern unsigned int drm_timestamp_monotonic;
 
-/* drm_fops.c */
+/* drm_file.c */
 extern struct mutex drm_global_mutex;
 void drm_lastclose(struct drm_device *dev);
 
