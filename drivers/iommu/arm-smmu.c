@@ -947,9 +947,13 @@ static void arm_smmu_destroy_domain_context(struct iommu_domain *domain)
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
 	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
-	int irq;
+	int irq, ret;
 
 	if (!smmu || domain->type == IOMMU_DOMAIN_IDENTITY)
+		return;
+
+	ret = pm_runtime_get_sync(smmu->dev);
+	if (ret)
 		return;
 
 	/*
@@ -966,6 +970,8 @@ static void arm_smmu_destroy_domain_context(struct iommu_domain *domain)
 
 	free_io_pgtable_ops(smmu_domain->pgtbl_ops);
 	__arm_smmu_free_bitmap(smmu->context_map, cfg->cbndx);
+
+	pm_runtime_put_sync(smmu->dev);
 }
 
 static struct iommu_domain *arm_smmu_domain_alloc(unsigned type)
@@ -1281,12 +1287,18 @@ static int arm_smmu_map(struct iommu_domain *domain, unsigned long iova,
 static size_t arm_smmu_unmap(struct iommu_domain *domain, unsigned long iova,
 			     size_t size)
 {
-	struct io_pgtable_ops *ops = to_smmu_domain(domain)->pgtbl_ops;
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops = smmu_domain->pgtbl_ops;
+	size_t ret;
 
 	if (!ops)
 		return 0;
 
-	return ops->unmap(ops, iova, size);
+	pm_runtime_get_sync(smmu_domain->smmu->dev);
+	ret = ops->unmap(ops, iova, size);
+	pm_runtime_put_sync(smmu_domain->smmu->dev);
+
+	return ret;
 }
 
 static phys_addr_t arm_smmu_iova_to_phys_hard(struct iommu_domain *domain,
@@ -1433,11 +1445,19 @@ static int arm_smmu_add_device(struct device *dev)
 	while (i--)
 		cfg->smendx[i] = INVALID_SMENDX;
 
-	ret = arm_smmu_master_alloc_smes(dev);
+	ret = pm_runtime_get_sync(smmu->dev);
 	if (ret)
 		goto out_cfg_free;
 
+	ret = arm_smmu_master_alloc_smes(dev);
+	if (ret) {
+		pm_runtime_put_sync(smmu->dev);
+		goto out_cfg_free;
+	}
+
 	iommu_device_link(&smmu->iommu, dev);
+
+	pm_runtime_put_sync(smmu->dev);
 
 	return 0;
 
@@ -1453,7 +1473,7 @@ static void arm_smmu_remove_device(struct device *dev)
 	struct iommu_fwspec *fwspec = dev->iommu_fwspec;
 	struct arm_smmu_master_cfg *cfg;
 	struct arm_smmu_device *smmu;
-
+	int ret;
 
 	if (!fwspec || fwspec->ops != &arm_smmu_ops)
 		return;
@@ -1461,8 +1481,21 @@ static void arm_smmu_remove_device(struct device *dev)
 	cfg  = fwspec->iommu_priv;
 	smmu = cfg->smmu;
 
+	/*
+	 * The device link between the master device and
+	 * smmu is already purged at this point.
+	 * So enable the power to smmu explicitly.
+	 */
+
+	ret = pm_runtime_get_sync(smmu->dev);
+	if (ret)
+		return;
+
 	iommu_device_unlink(&smmu->iommu, dev);
 	arm_smmu_master_free_smes(fwspec);
+
+	pm_runtime_put_sync(smmu->dev);
+
 	iommu_group_remove_device(dev);
 	kfree(fwspec->iommu_priv);
 	iommu_fwspec_free(dev);
@@ -2164,6 +2197,13 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
+	platform_set_drvdata(pdev, smmu);
+	pm_runtime_enable(dev);
+
+	err = pm_runtime_get_sync(dev);
+	if (err)
+		return err;
+
 	err = arm_smmu_device_cfg_probe(smmu);
 	if (err)
 		return err;
@@ -2205,9 +2245,9 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 		return err;
 	}
 
-	platform_set_drvdata(pdev, smmu);
 	arm_smmu_device_reset(smmu);
 	arm_smmu_test_smr_masks(smmu);
+	pm_runtime_put_sync(dev);
 
 	/*
 	 * For ACPI and generic DT bindings, an SMMU will be probed before
@@ -2246,6 +2286,8 @@ static int arm_smmu_device_remove(struct platform_device *pdev)
 
 	/* Turn the thing off */
 	writel(sCR0_CLIENTPD, ARM_SMMU_GR0_NS(smmu) + ARM_SMMU_GR0_sCR0);
+	pm_runtime_force_suspend(smmu->dev);
+
 	return 0;
 }
 
