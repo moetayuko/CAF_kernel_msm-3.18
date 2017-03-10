@@ -89,6 +89,9 @@
 #define VOP_WIN_GET_YRGBADDR(vop, win) \
 		vop_readl(vop, win->base + win->phy->yrgb_mst.offset)
 
+#define VOP_WIN_TO_INDEX(vop_win) \
+	((vop_win) - (vop_win)->vop->win)
+
 #define to_vop(x) container_of(x, struct vop, crtc)
 #define to_vop_win(x) container_of(x, struct vop_win, base)
 
@@ -107,6 +110,8 @@ struct vop {
 	struct device *dev;
 	struct drm_device *drm_dev;
 	bool is_enabled;
+
+	unsigned int win_enabled;
 
 	struct completion dsp_hold_completion;
 
@@ -562,6 +567,27 @@ err_put_pm_runtime:
 	return ret;
 }
 
+void rockchip_drm_set_win_enabled(struct drm_crtc *crtc, bool enabled)
+{
+	struct vop *vop = to_vop(crtc);
+	int i;
+
+	spin_lock(&vop->reg_lock);
+
+	for (i = 0; i < vop->data->win_size; i++) {
+		struct vop_win *vop_win = &vop->win[i];
+		const struct vop_win_data *win = vop_win->data;
+
+		VOP_WIN_SET(vop, win, enable,
+			    enabled && (vop->win_enabled & BIT(i)));
+	}
+
+	vop_cfg_done(vop);
+
+	spin_unlock(&vop->reg_lock);
+}
+EXPORT_SYMBOL(rockchip_drm_set_win_enabled);
+
 static void vop_crtc_disable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -581,6 +607,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 
 		spin_lock(&vop->reg_lock);
 		VOP_WIN_SET(vop, win, enable, 0);
+		vop->win_enabled &= ~BIT(i);
 		spin_unlock(&vop->reg_lock);
 	}
 
@@ -700,6 +727,7 @@ static void vop_plane_atomic_disable(struct drm_plane *plane,
 	spin_lock(&vop->reg_lock);
 
 	VOP_WIN_SET(vop, win, enable, 0);
+	vop->win_enabled &= ~BIT(VOP_WIN_TO_INDEX(vop_win));
 
 	spin_unlock(&vop->reg_lock);
 }
@@ -807,6 +835,8 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	}
 
 	VOP_WIN_SET(vop, win, enable, 1);
+	vop->win_enabled |= BIT(VOP_WIN_TO_INDEX(vop_win));
+
 	spin_unlock(&vop->reg_lock);
 }
 
@@ -1453,6 +1483,7 @@ static int vop_initial(struct vop *vop)
 		const struct vop_win_data *win = &vop_data->win[i];
 
 		VOP_WIN_SET(vop, win, enable, 0);
+		vop->win_enabled &= ~BIT(i);
 	}
 
 	vop_cfg_done(vop);
