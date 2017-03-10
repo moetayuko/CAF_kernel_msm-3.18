@@ -1006,6 +1006,12 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	if (s->output_mode == ROCKCHIP_OUT_MODE_AAAA &&
 	    !(vop_data->feature & VOP_FEATURE_OUTPUT_RGB10))
 		s->output_mode = ROCKCHIP_OUT_MODE_P888;
+
+	if (s->output_mode == ROCKCHIP_OUT_MODE_AAAA && s->output_bpc == 8)
+		VOP_CTRL_SET(vop, pre_dither_down, 1);
+	else
+		VOP_CTRL_SET(vop, pre_dither_down, 0);
+
 	VOP_CTRL_SET(vop, out_mode, s->output_mode);
 
 	VOP_CTRL_SET(vop, htotal_pw, (htotal << 16) | hsync_len);
