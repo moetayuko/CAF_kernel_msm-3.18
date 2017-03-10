@@ -83,7 +83,7 @@ static void analogix_dp_psr_set(struct drm_encoder *encoder, bool enabled)
 	int vact_end;
 	int ret;
 
-	if (!analogix_dp_psr_supported(dp->dev))
+	if (!analogix_dp_psr_enabled(dp->dev))
 		return;
 
 	dev_dbg(dp->dev, "%s PSR...\n", enabled ? "enable" : "disable");
