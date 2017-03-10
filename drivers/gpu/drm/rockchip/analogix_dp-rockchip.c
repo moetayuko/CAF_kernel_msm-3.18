@@ -179,6 +179,13 @@ static int rockchip_dp_get_modes(struct analogix_dp_plat_data *plat_data,
 	return 0;
 }
 
+static void rockchip_dp_cleanup(struct analogix_dp_plat_data *plat_data)
+{
+	struct rockchip_dp_device *dp = to_dp(plat_data);
+
+	rockchip_drm_psr_unregister(&dp->encoder);
+}
+
 static bool
 rockchip_dp_drm_encoder_mode_fixup(struct drm_encoder *encoder,
 				   const struct drm_display_mode *mode,
@@ -381,6 +388,7 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 	dp->plat_data.power_on = rockchip_dp_poweron;
 	dp->plat_data.power_off = rockchip_dp_powerdown;
 	dp->plat_data.get_modes = rockchip_dp_get_modes;
+	dp->plat_data.cleanup = rockchip_dp_cleanup;
 
 	rockchip_drm_psr_register(&dp->encoder, analogix_dp_psr_set);
 
@@ -391,8 +399,6 @@ static void rockchip_dp_unbind(struct device *dev, struct device *master,
 			       void *data)
 {
 	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
-
-	rockchip_drm_psr_unregister(&dp->encoder);
 
 	analogix_dp_unbind(dev, master, data);
 	clk_disable_unprepare(dp->pclk);
