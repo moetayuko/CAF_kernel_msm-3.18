@@ -33,6 +33,8 @@ struct background_tracker *btracker_create(unsigned max_work)
 {
 	struct background_tracker *b = kmalloc(sizeof(*b), GFP_KERNEL);
 
+	if (!b)
+		goto err;
 	b->max_work = max_work;
 	atomic_set(&b->pending_promotes, 0);
 	atomic_set(&b->pending_writebacks, 0);
@@ -44,12 +46,15 @@ struct background_tracker *btracker_create(unsigned max_work)
 	b->pending = RB_ROOT;
 	b->work_cache = KMEM_CACHE(bt_work, 0);
 	if (!b->work_cache) {
-		DMERR("couldn't create mempool for background work items");
 		kfree(b);
-		b = NULL;
+		goto err;
 	}
 
 	return b;
+err:
+	DMERR("couldn't create mempool for background work items");
+	return NULL;
+
 }
 EXPORT_SYMBOL_GPL(btracker_create);
 
