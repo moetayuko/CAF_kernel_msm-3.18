@@ -206,6 +206,7 @@
 	Definition: List of phandle and GPIO specifier pairs. Should contain
 			- "perst-gpios"	PCIe endpoint reset signal line
 			- "wake-gpios"	PCIe endpoint wake signal line
+			- "clkoe-gpios"	PCIe external clk output enable line
 
 * Example for ipq/apq8064
 	pcie@1b500000 {
