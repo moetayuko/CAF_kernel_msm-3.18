@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "db8531e1_2a4454ec",
+        "filename": "kernel/sched/fair.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 5883,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-03-14T15:28:28Z",
+      "side": 1,
+      "message": "Hi Chris, shouldn\u0027t we also decay the load before removing for the decisions?",
+      "range": {
+        "startLine": 5881,
+        "startChar": 0,
+        "endLine": 5883,
+        "endChar": 69
+      },
+      "revId": "ef6728ad373c18724820ca69469d561cf73c9ef2",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
