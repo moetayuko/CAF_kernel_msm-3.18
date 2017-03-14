@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "2b2a2af2_54cad4e4",
+        "filename": "include/trace/events/sched.h",
+        "patchSetId": 1
+      },
+      "lineNbr": 627,
+      "author": {
+        "id": 1124848
+      },
+      "writtenOn": "2017-03-14T15:24:22Z",
+      "side": 1,
+      "message": "Since PELT is always calculated, can we just have:\nutil_avg , and util_avg_pelt? That way, we save one entry.\n\nThen if WALT is enabled, you could overwrite util_avg.\n\nIf you feel this is confusing, then the current patch is fine.",
+      "range": {
+        "startLine": 624,
+        "startChar": 37,
+        "endLine": 627,
+        "endChar": 41
+      },
+      "revId": "571c326826c27d8cec74da1841a3e61220cfa135",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
