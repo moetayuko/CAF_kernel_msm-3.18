@@ -325,8 +325,8 @@ static void cros_ec_sensors_register(struct cros_ec_dev *ec)
 
 	resp = (struct ec_response_motion_sense *)msg->data;
 	sensor_num = resp->dump.sensor_count;
-	/* Allocate 2 extra sensors in case lid angle or FIFO are needed */
-	sensor_cells = kzalloc(sizeof(struct mfd_cell) * (sensor_num + 2),
+	/* Allocate one extra sensor in case FIFO are needed */
+	sensor_cells = kzalloc(sizeof(struct mfd_cell) * (sensor_num + 1),
 			       GFP_KERNEL);
 	if (sensor_cells == NULL) {
 		dev_err(ec->dev, "failed to allocate mfd cells for sensors\n");
@@ -386,16 +386,8 @@ static void cros_ec_sensors_register(struct cros_ec_dev *ec)
 		sensor_type[resp->info.type]++;
 		id++;
 	}
-	if (sensor_type[MOTIONSENSE_TYPE_ACCEL] >= 2) {
-		sensor_platforms[id].sensor_num = sensor_num;
-
-		sensor_cells[id].name = "cros-ec-angle";
-		sensor_cells[id].id = 0;
-		sensor_cells[id].platform_data = &sensor_platforms[id];
-		sensor_cells[id].pdata_size =
-			sizeof(struct cros_ec_sensor_platform);
-		id++;
-	}
+	if (sensor_type[MOTIONSENSE_TYPE_ACCEL] >= 2)
+		ec->has_kb_wake_angle = true;
 	if (cros_ec_check_features(ec, EC_FEATURE_MOTION_SENSE_FIFO)) {
 		sensor_cells[id].name = "cros-ec-ring";
 		id++;
@@ -548,12 +540,6 @@ static int ec_device_probe(struct platform_device *pdev)
 		goto set_named_failed;
 	}
 
-	retval = device_add(&ec->class_dev);
-	if (retval) {
-		dev_err(dev, "device_register failed => %d\n", retval);
-		goto dev_reg_failed;
-	}
-
 	/* check whether this EC instance has the PD charge manager */
 	if (cros_ec_check_features(ec, EC_FEATURE_USB_PD))
 		cros_ec_usb_pd_charger_register(ec);
@@ -573,6 +559,11 @@ static int ec_device_probe(struct platform_device *pdev)
 	/* Take control of the lightbar from the EC. */
 	lb_manual_suspend_ctrl(ec, 1);
 
+	/* We can now add the sysfs class, we know which parameter to show */
+	retval = device_add(&ec->class_dev);
+	if (retval)
+		dev_err(dev, "device_register failed => %d\n", retval);
+
 	if (cros_ec_debugfs_init(ec))
 		dev_warn(dev, "failed to create debugfs directory\n");
 
@@ -580,7 +571,6 @@ static int ec_device_probe(struct platform_device *pdev)
 
 	return 0;
 
-dev_reg_failed:
 set_named_failed:
 	dev_set_drvdata(dev, NULL);
 	cdev_del(&ec->cdev);
