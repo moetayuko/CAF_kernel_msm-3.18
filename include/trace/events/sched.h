@@ -594,6 +594,57 @@ TRACE_EVENT(sched_wake_idle_without_ipi,
 
 	TP_printk("cpu=%d", __entry->cpu)
 );
+
+/*
+ * Tracepoint for task_group load tracking:
+ */
+#ifdef CONFIG_SMP
+#ifdef CREATE_TRACE_POINTS
+static inline
+int __trace_sched_path(struct cfs_rq *cfs_rq, char *path, int len)
+{
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	int l = path ? len : 0;
+
+	if (task_group_is_autogroup(cfs_rq->tg))
+		return autogroup_path(cfs_rq->tg, path, l) + 1;
+	else
+		return cgroup_path(cfs_rq->tg->css.cgroup, path, l) + 1;
+#else
+	if (path)
+		strcpy(path, "(null)");
+
+	return strlen("(null)");
+#endif
+}
+#endif /* CREATE_TRACE_POINTS */
+
+#ifdef CONFIG_FAIR_GROUP_SCHED
+TRACE_EVENT(sched_load_tg,
+
+	TP_PROTO(struct cfs_rq *cfs_rq),
+
+	TP_ARGS(cfs_rq),
+
+	TP_STRUCT__entry(
+		__field(	int,	cpu				)
+		__dynamic_array(char,	path,
+				__trace_sched_path(cfs_rq, NULL, 0)	)
+		__field(	long,	load				)
+	),
+
+	TP_fast_assign(
+		__entry->cpu	= cfs_rq->rq->cpu;
+		__trace_sched_path(cfs_rq, __get_dynamic_array(path),
+				   __get_dynamic_array_len(path));
+		__entry->load	= atomic_long_read(&cfs_rq->tg->load_avg);
+	),
+
+	TP_printk("cpu=%d path=%s load=%ld", __entry->cpu, __get_str(path),
+		  __entry->load)
+);
+#endif /* CONFIG_FAIR_GROUP_SCHED */
+#endif /* CONFIG_SMP */
 #endif /* _TRACE_SCHED_H */
 
 /* This part must be outside protection */
