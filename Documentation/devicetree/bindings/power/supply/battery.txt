@@ -1,0 +1,39 @@
+Battery Characteristics
+
+The devicetree battery node provides static battery characteristics.
+In smart batteries, these are typically stored in non-volatile memory
+on a fuel gauge chip. The battery node should be used where there is
+no appropriate non-volatile memory, or it is unprogrammed/incorrect.
+
+Required Properties:
+ - compatible: Must be "simple-battery"
+
+Optional Properties:
+ - voltage-min-design-microvolt: drained battery voltage
+ - energy-full-design-microwatt-hours: battery design energy
+ - charge-full-design-microamp-hours: battery design capacity
+
+Batteries must be referenced by chargers and/or fuel-gauges
+using a phandle. The phandle's property should be named
+"monitored-battery".
+
+Example:
+
+	bat: battery {
+		compatible = "simple-battery";
+		voltage-min-design-microvolt = <3200000>;
+		energy-full-design-microwatt-hours = <5290000>;
+		charge-full-design-microamp-hours = <1430000>;
+	};
+
+	charger: charger@11 {
+		....
+		monitored-battery = <&bat>;
+		...
+	};
+
+	fuel_gauge: fuel-gauge@22 {
+		....
+		monitored-battery = <&bat>;
+		...
+	};
