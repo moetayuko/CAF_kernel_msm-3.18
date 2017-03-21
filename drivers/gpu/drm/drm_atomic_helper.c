@@ -2437,7 +2437,8 @@ commit:
  * that they are connected to.
  *
  * This is used for example in suspend/resume to disable all currently active
- * functions when suspending.
+ * functions when suspending. If you just want to shut down everything at e.g.
+ * driver unload, look at drm_atomic_helper_shutdown().
  *
  * Note that if callers haven't already acquired all modeset locks this might
  * return -EDEADLK, which must be handled by calling drm_modeset_backoff().
@@ -2446,7 +2447,8 @@ commit:
  * 0 on success or a negative error code on failure.
  *
  * See also:
- * drm_atomic_helper_suspend(), drm_atomic_helper_resume()
+ * drm_atomic_helper_suspend(), drm_atomic_helper_resume() and
+ * drm_atomic_helper_shutdown().
  */
 int drm_atomic_helper_disable_all(struct drm_device *dev,
 				  struct drm_modeset_acquire_ctx *ctx)
@@ -2509,6 +2511,42 @@ free:
 }
 
 EXPORT_SYMBOL(drm_atomic_helper_disable_all);
+
+/**
+ * drm_atomic_helper_shutdown - shutdown all CRTC
+ * @dev: DRM device
+ *
+ * This shuts down all CRTC, which is useful for driver unloading. Shutdown on
+ * suspend should instead be handled with drm_atomic_helper_suspend(), since
+ * that also takes a snapshot of the modeset state to be restored on resume.
+ *
+ * This is just a convenience wrapper around drm_atomic_helper_disable_all(),
+ * and it is the atomic version of drm_crtc_force_disable_all().
+ */
+void drm_atomic_helper_shutdown(struct drm_device *dev)
+{
+	struct drm_modeset_acquire_ctx ctx;
+	int ret;
+
+	drm_modeset_acquire_init(&ctx, 0);
+	while (1) {
+		ret = drm_modeset_lock_all_ctx(dev, &ctx);
+		if (!ret)
+			ret = drm_atomic_helper_disable_all(dev, &ctx);
+
+		if (ret != -EDEADLK)
+			break;
+
+		drm_modeset_backoff(&ctx);
+	}
+
+	if (ret)
+		DRM_ERROR("Disabling all crtc's during unload failed with %i\n", ret);
+
+	drm_modeset_drop_locks(&ctx);
+	drm_modeset_acquire_fini(&ctx);
+}
+EXPORT_SYMBOL(drm_atomic_helper_shutdown);
 
 /**
  * drm_atomic_helper_suspend - subsystem-level suspend helper
