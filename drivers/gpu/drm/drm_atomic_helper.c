@@ -2853,6 +2853,7 @@ static int page_flip_common(
  * @fb: DRM framebuffer
  * @event: optional DRM event to signal upon completion
  * @flags: flip flags for non-vblank sync'ed updates
+ * @ctx: lock acquisition context
  *
  * Provides a default &drm_crtc_funcs.page_flip implementation
  * using the atomic driver interface.
@@ -2866,7 +2867,8 @@ static int page_flip_common(
 int drm_atomic_helper_page_flip(struct drm_crtc *crtc,
 				struct drm_framebuffer *fb,
 				struct drm_pending_vblank_event *event,
-				uint32_t flags)
+				uint32_t flags,
+				struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_plane *plane = crtc->primary;
 	struct drm_atomic_state *state;
@@ -2914,6 +2916,7 @@ EXPORT_SYMBOL(drm_atomic_helper_page_flip);
  * @event: optional DRM event to signal upon completion
  * @flags: flip flags for non-vblank sync'ed updates
  * @target: specifying the target vblank period when the flip to take effect
+ * @ctx: lock acquisition context
  *
  * Provides a default &drm_crtc_funcs.page_flip_target implementation.
  * Similar to drm_atomic_helper_page_flip() with extra parameter to specify
@@ -2927,7 +2930,8 @@ int drm_atomic_helper_page_flip_target(
 				struct drm_framebuffer *fb,
 				struct drm_pending_vblank_event *event,
 				uint32_t flags,
-				uint32_t target)
+				uint32_t target,
+				struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_plane *plane = crtc->primary;
 	struct drm_atomic_state *state;

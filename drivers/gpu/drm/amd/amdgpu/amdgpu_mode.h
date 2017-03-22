@@ -595,7 +595,8 @@ int amdgpu_crtc_set_config(struct drm_mode_set *set);
 int amdgpu_crtc_page_flip_target(struct drm_crtc *crtc,
 				 struct drm_framebuffer *fb,
 				 struct drm_pending_vblank_event *event,
-				 uint32_t page_flip_flags, uint32_t target);
+				 uint32_t page_flip_flags, uint32_t target,
+				 struct drm_modeset_acquire_ctx *ctx);
 extern const struct drm_mode_config_funcs amdgpu_mode_funcs;
 
 #endif
