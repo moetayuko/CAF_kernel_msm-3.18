@@ -1031,7 +1031,8 @@ nv04_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 }
 
 int
-nouveau_crtc_set_config(struct drm_mode_set *set)
+nouveau_crtc_set_config(struct drm_mode_set *set,
+			struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_device *dev;
 	struct nouveau_drm *drm;
@@ -1048,7 +1049,7 @@ nouveau_crtc_set_config(struct drm_mode_set *set)
 	if (ret < 0 && ret != -EACCES)
 		return ret;
 
-	ret = drm_crtc_helper_set_config(set);
+	ret = drm_crtc_helper_set_config(set, ctx);
 
 	drm = nouveau_drm(dev);
 
