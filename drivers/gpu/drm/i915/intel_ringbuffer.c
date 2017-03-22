@@ -49,13 +49,7 @@ static int __intel_ring_space(int head, int tail, int size)
 
 void intel_ring_update_space(struct intel_ring *ring)
 {
-	if (ring->last_retired_head != -1) {
-		ring->head = ring->last_retired_head;
-		ring->last_retired_head = -1;
-	}
-
-	ring->space = __intel_ring_space(ring->head & HEAD_ADDR,
-					 ring->tail, ring->size);
+	ring->space = __intel_ring_space(ring->head, ring->tail, ring->size);
 }
 
 static int
@@ -618,12 +612,8 @@ static void reset_ring_common(struct intel_engine_cs *engine,
 		}
 
 		/* If the rq hung, jump to its breadcrumb and skip the batch */
-		if (request->fence.error == -EIO) {
-			struct intel_ring *ring = request->ring;
-
-			ring->head = request->postfix;
-			ring->last_retired_head = -1;
-		}
+		if (request->fence.error == -EIO)
+			request->ring->head = request->postfix;
 	} else {
 		engine->legacy_active_context = NULL;
 	}
@@ -1392,7 +1382,6 @@ intel_engine_create_ring(struct intel_engine_cs *engine, int size)
 	if (IS_I830(engine->i915) || IS_I845G(engine->i915))
 		ring->effective_size -= 2 * CACHELINE_BYTES;
 
-	ring->last_retired_head = -1;
 	intel_ring_update_space(ring);
 
 	vma = intel_ring_create_vma(engine->i915, size);
@@ -1445,6 +1434,7 @@ static int intel_ring_context_pin(struct intel_engine_cs *engine,
 
 	if (ce->pin_count++)
 		return 0;
+	GEM_BUG_ON(!ce->pin_count); /* no overflow please! */
 
 	if (ce->state) {
 		ret = context_pin(ctx);
@@ -1570,10 +1560,8 @@ void intel_legacy_submission_resume(struct drm_i915_private *dev_priv)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 
-	for_each_engine(engine, dev_priv, id) {
+	for_each_engine(engine, dev_priv, id)
 		engine->buffer->head = engine->buffer->tail;
-		engine->buffer->last_retired_head = -1;
-	}
 }
 
 static int ring_request_alloc(struct drm_i915_gem_request *request)
@@ -2050,6 +2038,16 @@ static void intel_ring_init_irq(struct drm_i915_private *dev_priv,
 	}
 }
 
+static void i9xx_set_default_submission(struct intel_engine_cs *engine)
+{
+	engine->submit_request = i9xx_submit_request;
+}
+
+static void gen6_bsd_set_default_submission(struct intel_engine_cs *engine)
+{
+	engine->submit_request = gen6_bsd_submit_request;
+}
+
 static void intel_ring_default_vfuncs(struct drm_i915_private *dev_priv,
 				      struct intel_engine_cs *engine)
 {
@@ -2080,7 +2078,8 @@ static void intel_ring_default_vfuncs(struct drm_i915_private *dev_priv,
 				engine->emit_breadcrumb_sz++;
 		}
 	}
-	engine->submit_request = i9xx_submit_request;
+
+	engine->set_default_submission = i9xx_set_default_submission;
 
 	if (INTEL_GEN(dev_priv) >= 8)
 		engine->emit_bb_start = gen8_emit_bb_start;
@@ -2165,7 +2164,7 @@ int intel_init_bsd_ring_buffer(struct intel_engine_cs *engine)
 	if (INTEL_GEN(dev_priv) >= 6) {
 		/* gen6 bsd needs a special wa for tail updates */
 		if (IS_GEN6(dev_priv))
-			engine->submit_request = gen6_bsd_submit_request;
+			engine->set_default_submission = gen6_bsd_set_default_submission;
 		engine->emit_flush = gen6_bsd_ring_flush;
 		if (INTEL_GEN(dev_priv) < 8)
 			engine->irq_enable_mask = GT_BSD_USER_INTERRUPT;

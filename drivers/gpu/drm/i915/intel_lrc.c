@@ -399,9 +399,20 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
 {
 	struct drm_i915_gem_request *last;
 	struct execlist_port *port = engine->execlist_port;
-	unsigned long flags;
 	struct rb_node *rb;
 	bool submit = false;
+
+	/* After execlist_first is updated, the tasklet will be rescheduled.
+	 *
+	 * If we are currently running (inside the tasklet) and a third
+	 * party queues a request and so updates engine->execlist_first under
+	 * the spinlock (which we have elided), it will atomically set the
+	 * TASKLET_SCHED flag causing the us to be re-executed and pick up
+	 * the change in state (the update to TASKLET_SCHED incurs a memory
+	 * barrier making this cross-cpu checking safe).
+	 */
+	if (!READ_ONCE(engine->execlist_first))
+		return;
 
 	last = port->request;
 	if (last)
@@ -436,7 +447,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
 	 * and context switches) submission.
 	 */
 
-	spin_lock_irqsave(&engine->timeline->lock, flags);
+	spin_lock_irq(&engine->timeline->lock);
 	rb = engine->execlist_first;
 	while (rb) {
 		struct drm_i915_gem_request *cursor =
@@ -488,7 +499,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
 		i915_gem_request_assign(&port->request, last);
 		engine->execlist_first = rb;
 	}
-	spin_unlock_irqrestore(&engine->timeline->lock, flags);
+	spin_unlock_irq(&engine->timeline->lock);
 
 	if (submit)
 		execlists_submit_ports(engine);
@@ -518,13 +529,18 @@ static void intel_lrc_irq_handler(unsigned long data)
 
 	intel_uncore_forcewake_get(dev_priv, engine->fw_domains);
 
-	while (test_and_clear_bit(ENGINE_IRQ_EXECLIST, &engine->irq_posted)) {
+	/* Prefer doing test_and_clear_bit() as a two stage operation to avoid
+	 * imposing the cost of a locked atomic transaction when submitting a
+	 * new request (outside of the context-switch interrupt).
+	 */
+	while (test_bit(ENGINE_IRQ_EXECLIST, &engine->irq_posted)) {
 		u32 __iomem *csb_mmio =
 			dev_priv->regs + i915_mmio_reg_offset(RING_CONTEXT_STATUS_PTR(engine));
 		u32 __iomem *buf =
 			dev_priv->regs + i915_mmio_reg_offset(RING_CONTEXT_STATUS_BUF_LO(engine, 0));
 		unsigned int csb, head, tail;
 
+		clear_bit(ENGINE_IRQ_EXECLIST, &engine->irq_posted);
 		csb = readl(csb_mmio);
 		head = GEN8_CSB_READ_PTR(csb);
 		tail = GEN8_CSB_WRITE_PTR(csb);
@@ -742,6 +758,7 @@ static int execlists_context_pin(struct intel_engine_cs *engine,
 
 	if (ce->pin_count++)
 		return 0;
+	GEM_BUG_ON(!ce->pin_count); /* no overflow please! */
 
 	if (!ce->state) {
 		ret = execlists_context_deferred_alloc(ctx, engine);
@@ -1160,7 +1177,7 @@ static int gen8_init_common_ring(struct intel_engine_cs *engine)
 
 	/* After a GPU reset, we may have requests to replay */
 	clear_bit(ENGINE_IRQ_EXECLIST, &engine->irq_posted);
-	if (!execlists_elsp_idle(engine)) {
+	if (!i915.enable_guc_submission && !execlists_elsp_idle(engine)) {
 		DRM_DEBUG_DRIVER("Restarting %s from requests [0x%x, 0x%x]\n",
 				 engine->name,
 				 port_seqno(&engine->execlist_port[0]),
@@ -1242,11 +1259,7 @@ static void reset_common_ring(struct intel_engine_cs *engine,
 	ce->lrc_reg_state[CTX_RING_HEAD+1] = request->postfix;
 
 	request->ring->head = request->postfix;
-	request->ring->last_retired_head = -1;
 	intel_ring_update_space(request->ring);
-
-	if (i915.enable_guc_submission)
-		return;
 
 	/* Catch up with any missed context-switch interrupts */
 	if (request->ctx != port[0].request->ctx) {
@@ -1561,15 +1574,11 @@ void intel_logical_ring_cleanup(struct intel_engine_cs *engine)
 	kfree(engine);
 }
 
-void intel_execlists_enable_submission(struct drm_i915_private *dev_priv)
+static void execlists_set_default_submission(struct intel_engine_cs *engine)
 {
-	struct intel_engine_cs *engine;
-	enum intel_engine_id id;
-
-	for_each_engine(engine, dev_priv, id) {
-		engine->submit_request = execlists_submit_request;
-		engine->schedule = execlists_schedule;
-	}
+	engine->submit_request = execlists_submit_request;
+	engine->schedule = execlists_schedule;
+	engine->irq_tasklet.func = intel_lrc_irq_handler;
 }
 
 static void
@@ -1587,8 +1596,8 @@ logical_ring_default_vfuncs(struct intel_engine_cs *engine)
 	engine->emit_flush = gen8_emit_flush;
 	engine->emit_breadcrumb = gen8_emit_breadcrumb;
 	engine->emit_breadcrumb_sz = gen8_emit_breadcrumb_sz;
-	engine->submit_request = execlists_submit_request;
-	engine->schedule = execlists_schedule;
+
+	engine->set_default_submission = execlists_set_default_submission;
 
 	engine->irq_enable = gen8_logical_ring_enable_irq;
 	engine->irq_disable = gen8_logical_ring_disable_irq;
@@ -2036,7 +2045,6 @@ void intel_lr_context_resume(struct drm_i915_private *dev_priv)
 			i915_gem_object_unpin_map(ce->state->obj);
 
 			ce->ring->head = ce->ring->tail = 0;
-			ce->ring->last_retired_head = -1;
 			intel_ring_update_space(ce->ring);
 		}
 	}

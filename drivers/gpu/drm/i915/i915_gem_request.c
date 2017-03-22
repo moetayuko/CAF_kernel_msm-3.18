@@ -295,7 +295,7 @@ static void i915_gem_request_retire(struct drm_i915_gem_request *request)
 	 * completion order.
 	 */
 	list_del(&request->ring_link);
-	request->ring->last_retired_head = request->postfix;
+	request->ring->head = request->postfix;
 	if (!--request->i915->gt.active_requests) {
 		GEM_BUG_ON(!request->i915->gt.awake);
 		mod_delayed_work(request->i915->wq,
@@ -1012,7 +1012,7 @@ bool __i915_spin_request(const struct drm_i915_gem_request *req,
 
 static bool __i915_wait_request_check_and_reset(struct drm_i915_gem_request *request)
 {
-	if (likely(!i915_reset_in_progress(&request->i915->gpu_error)))
+	if (likely(!i915_reset_handoff(&request->i915->gpu_error)))
 		return false;
 
 	__set_current_state(TASK_RUNNING);

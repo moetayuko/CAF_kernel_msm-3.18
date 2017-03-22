@@ -149,16 +149,6 @@ struct intel_ring {
 	int space;
 	int size;
 	int effective_size;
-
-	/** We track the position of the requests in the ring buffer, and
-	 * when each is retired we increment last_retired_head as the GPU
-	 * must have finished processing the request and so we know we
-	 * can advance the ringbuffer up to that position.
-	 *
-	 * last_retired_head is set to -1 after the value is consumed so
-	 * we can detect new retirements.
-	 */
-	u32 last_retired_head;
 };
 
 struct i915_gem_context;
@@ -272,6 +262,8 @@ struct intel_engine_cs {
 	int		(*init_hw)(struct intel_engine_cs *engine);
 	void		(*reset_hw)(struct intel_engine_cs *engine,
 				    struct drm_i915_gem_request *req);
+
+	void		(*set_default_submission)(struct intel_engine_cs *engine);
 
 	int		(*context_pin)(struct intel_engine_cs *engine,
 				       struct i915_gem_context *ctx);
@@ -465,7 +457,11 @@ static inline void
 intel_write_status_page(struct intel_engine_cs *engine,
 			int reg, u32 value)
 {
+	mb();
+	clflush(&engine->status_page.page_addr[reg]);
 	engine->status_page.page_addr[reg] = value;
+	clflush(&engine->status_page.page_addr[reg]);
+	mb();
 }
 
 /*
@@ -671,5 +667,7 @@ static inline u32 *gen8_emit_pipe_control(u32 *batch, u32 flags, u32 offset)
 
 bool intel_engine_is_idle(struct intel_engine_cs *engine);
 bool intel_engines_are_idle(struct drm_i915_private *dev_priv);
+
+void intel_engines_reset_default_submission(struct drm_i915_private *i915);
 
 #endif /* _INTEL_RINGBUFFER_H_ */
