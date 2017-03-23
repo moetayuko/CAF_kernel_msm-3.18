@@ -397,6 +397,9 @@ struct intel_plane_state {
 		int x, y;
 	} aux;
 
+	/* plane control register */
+	u32 ctl;
+
 	/*
 	 * scaler_id
 	 *    = -1 : not using a scaler
