@@ -1540,7 +1540,7 @@ static int s3cmci_probe_pdata(struct s3cmci_host *host)
 	if (pdata->no_detect)
 		mmc->caps |= MMC_CAP_NEEDS_POLL;
 
-	if (pdata->wprotect_invert);
+	if (pdata->wprotect_invert)
 		mmc->caps2 |= MMC_CAP2_RO_ACTIVE_HIGH;
 
 	if (pdata->detect_invert)
