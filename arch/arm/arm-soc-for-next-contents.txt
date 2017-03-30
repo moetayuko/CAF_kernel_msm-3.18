@@ -1,0 +1,70 @@
+fixes
+	<no branch> (351b7c490700747d1dba1b0a10fbfe3448d11c35)
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.11/fixes-rc4
+
+next/fixes-non-critical
+	oxnas/soc
+		https://github.com/OXNAS/linux tags/oxnas-arm-soc-for-4.12
+	mvebu/soc
+		git://git.infradead.org/linux-mvebu tags/mvebu-soc-4.12-1
+	patch
+		ARM: w90x900: let clk_disable() return immediately if clk is NULL
+		ARM: mmp: let clk_disable() return immediately if clk is NULL
+
+next/cleanup
+
+next/soc
+	gemeni/multiplatform
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik tags/gemini-multiplat-dt
+	davinci/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.12/soc
+	omap/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.12/soc-v2-signed
+	gemini/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik tags/gemini-multiplat-2
+
+next/arm64
+	renesas/arm64-defconfig
+		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-defconfig-for-v4.12
+	patch
+		MAINTAINERS: Broadcom Vulcan is now Cavium ThunderX2
+	amlogic/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-defconfig
+	mvebu/defconfig64
+		git://git.infradead.org/linux-mvebu tags/mvebu-defconfig64-4.12-1
+
+next/dt
+	gemini/dts
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik tags/gemini-dts-base
+	shared/dt-symlinks
+		Merge branch 'shared/dt-symlinks' into next/dt
+	patch
+		ARM: dts: Adjust moxart IRQ controller and flags
+	renesas/dt
+		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-dt-for-v4.12
+	renesas/dt-bindings
+		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-dt-bindings-for-v4.12
+
+next/dt64
+	shared/dt-symlinks
+		Merge branch 'shared/dt-symlinks' into next/dt64
+	renesas/dt64
+		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-arm64-dt-for-v4.12
+
+next/defconfig
+	patch
+		ARM: configs: stm32: Set CPU_V7M_NUM_IRQ to max value
+	davinci/defconfig
+		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.12/defconfig
+
+next/drivers
+	drivers/reset
+		git://git.pengutronix.de/git/pza/linux tags/reset-for-4.12-1
+	renesas/drivers
+		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-drivers-for-v4.12
+	amlogic/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-drivers
+
+next/tee
+	tee/initial-merge
+		git://git.linaro.org:/people/jens.wiklander/linux-tee tags/tee-drv-for-4.12
