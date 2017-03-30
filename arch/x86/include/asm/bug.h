@@ -23,7 +23,6 @@
 #define LEN_UD0		2
 
 #ifdef CONFIG_GENERIC_BUG
-#define HAVE_ARCH_BUG
 
 #ifdef CONFIG_X86_32
 # define __BUG_REL(val)	".long " __stringify(val)
@@ -64,15 +63,20 @@ do {									\
 
 #endif /* CONFIG_DEBUG_BUGVERBOSE */
 
+#else
+
+#define _BUG_FLAGS(ins, flags)  asm volatile(ins)
+
+#endif /* CONFIG_GENERIC_BUG */
+
+#define HAVE_ARCH_BUG
 #define BUG()							\
 do {								\
 	_BUG_FLAGS(ASM_UD2, 0);					\
 	unreachable();						\
 } while (0)
 
-#define __WARN_TAINT(taint)	_BUG_FLAGS(ASM_UD0, BUGFLAG_TAINT(taint))
-
-#endif /* CONFIG_GENERIC_BUG */
+#define __WARN_FLAGS(flags)	_BUG_FLAGS(ASM_UD0, BUGFLAG_WARNING|(flags))
 
 #include <asm-generic/bug.h>
 
