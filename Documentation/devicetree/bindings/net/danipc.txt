@@ -22,6 +22,7 @@ Required properties:
 		"qdsp6_2_ipc" - QDSP6 2 IPC region
 		"qdsp6_3_ipc" - QDSP6 3 IPC region
 		"apps_ipc_pcap" - APPS IPC region for PCAP
+		"apps_hex_ipc_log" - APPS IPC region for Hexagon binary logging
 - reg:		location and size of APPS IPC buffers
 		location and size of IPC global agent table
 		location and size of APPS IPC interrupt enable MUX
@@ -71,7 +72,8 @@ Examples:
 			"phycpu3_ipc", "phydsp0_ipc", "phydsp1_ipc",
 			"phydsp2_ipc", "apps_ipc_data",
 			"qdsp6_0_ipc", "qdsp6_1_ipc", "qdsp6_2_ipc",
-			"qdsp6_3_ipc", "apps_ipc_pcap" ;
+			"qdsp6_3_ipc", "apps_ipc_pcap",
+			"apps_hex_ipc_log";
 		reg = <0xfe803c00 0x400>, /* mem_map */
 			<0x19d00000 0x80000>, /* agent_table */
 			<0xfd4a3500 0x100>, /* apps_ipc_intr_en */
@@ -87,8 +89,9 @@ Examples:
 			<0xfd492000 0x100>, /* qdsp6_1_ipc */
 			<0xfd496000 0x100>, /* qdsp6_2_ipc */
 			<0xfd494000 0x100>, /* qdsp6_3_ipc */
-			<0xfd487000 0x100>; /* apps_ipc_pcap */
-		interrupts = <0 202 0>, <0 203 0>;
+			<0xfd487000 0x100>, /* apps_ipc_pcap */
+			<0xfd488000 0x100>; /* apps_hex_ipc_log */
+		interrupts = <0 202 0>, <0 203 0>, <0 204 0>, <0 205 0>;
 	};
 
 	qcom,danipc@22000000 {

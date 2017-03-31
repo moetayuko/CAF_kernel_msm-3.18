@@ -297,7 +297,7 @@ uint32_t danipc_recv(struct packet_proc_info *pproc)
 {
 	struct danipc_if	*intf = pproc->intf;
 	unsigned	ix;
-	uint8_t	prio = pproc - intf->pproc;
+	uint32_t	prio = pproc - intf->pproc;
 	char		*ipc_data;
 
 	for (ix = 0; ix < pproc->rxbound; ix++) {
@@ -350,7 +350,7 @@ uint32_t danipc_recv_concurrent(struct packet_proc_info *pproc)
 	(!((p) && ((DANIPC_IF_MYPRIO(p) - 1) & get_rxsched_state())))
 	struct danipc_if	*intf = pproc->intf;
 	unsigned	ix;
-	uint8_t	prio = pproc - intf->pproc;
+	uint32_t	prio = pproc - intf->pproc;
 	char		*ipc_data;
 
 	for (ix = 0; (ix < pproc->rxbound) &&
@@ -422,6 +422,7 @@ void danipc_proc_parallel_rcv(unsigned long data)
 	struct packet_proc_info *pproc = (struct packet_proc_info *)data;
 	struct danipc_if	*intf = pproc->intf;
 	uint8_t cnt;
+	uint32_t	prio = pproc - intf->pproc;
 
 	/* Process all messages. */
 	cnt = danipc_recv(pproc);
@@ -433,9 +434,9 @@ void danipc_proc_parallel_rcv(unsigned long data)
 		danipc_tasklet_sched(&pproc->rx_work);
 	} else {
 		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx);
+		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
 		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx);
+		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
 	}
 }
 
@@ -444,6 +445,7 @@ void danipc_proc_concurrent_rcv(unsigned long data)
 	struct packet_proc_info *pproc = (struct packet_proc_info *)data;
 	struct danipc_if	*intf = pproc->intf;
 	uint8_t cnt;
+	uint32_t	prio = pproc - intf->pproc;
 
 	/* Process all messages. */
 	cnt = danipc_recv_concurrent(pproc);
@@ -457,9 +459,9 @@ void danipc_proc_concurrent_rcv(unsigned long data)
 		danipc_conc_tasklet_sched(&pproc->rx_work);
 	} else {
 		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx);
+		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
 		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx);
+		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
 	}
 }
 
@@ -491,6 +493,7 @@ void danipc_proc_wq_rcv(struct work_struct *work)
 						      rx_work);
 	struct danipc_if	*intf = pproc->intf;
 	uint8_t cnt;
+	uint32_t	prio = pproc - intf->pproc;
 
 	/* Process all messages. */
 	cnt = danipc_recv(pproc);
@@ -502,9 +505,9 @@ void danipc_proc_wq_rcv(struct work_struct *work)
 		danipc_wq_sched(&pproc->rx_work);
 	} else {
 		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx);
+		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
 		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx);
+		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
 	}
 }
 
@@ -1016,6 +1019,87 @@ danipc_write_ae_threshold(struct file *filp, const char __user *ubuf,
 	return cnt;
 }
 
+static ssize_t
+danipc_recv_pkt(struct file *filp, const char __user *ubuf,
+		size_t cnt, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct dbgfs_hdlr *dbgfshdlr = (struct dbgfs_hdlr *)m->private;
+	struct danipc_if *intf = (struct danipc_if *)dbgfshdlr->data;
+	struct net_device *dev = intf->dev;
+	char buf[64];
+	int buf_size;
+	int ret;
+	u8 fifo;
+	char *tok;
+	char *end;
+	int input[6];
+	int i;
+	char *ipc_buf;
+	struct ipc_msg_hdr *hdr;
+
+	if (*ppos)
+		return -EINVAL;
+
+	buf_size = min(cnt, (sizeof(buf) - 1));
+	memset(buf, '\0', sizeof(buf));
+	if (strncpy_from_user(buf, ubuf, buf_size) < 0)
+		return -EFAULT;
+
+	tok = buf;
+	end = buf;
+	i = 0;
+
+	/* input[0] = interface index
+	 * input[1] = src aid
+	 * input[2] = dest aid
+	 * input[3] = priority
+	 * input[4] = size of message
+	 * input[5] = burst
+	 */
+	while (tok != NULL && i < sizeof(input)/sizeof(int)) {
+		strsep(&end, " ");
+		ret = kstrtou32(tok, 0, input + i);
+
+		if (ret != 0) {
+			netdev_warn(dev, "%s: Error(%d) parsing input \"%s\"\n",
+				    __func__, ret, tok);
+			return ret;
+		}
+
+		tok = end;
+		i++;
+	}
+
+	if (i != sizeof(input)/sizeof(int))
+		return 0;
+
+	fifo = intf->rx_fifo_idx;
+	i = 0;
+
+	while (i < input[5]) {
+		i++;
+		ipc_buf = ipc_trns_fifo_buf_alloc(fifo, input[3]);
+
+		if (ipc_buf == NULL)
+			continue;
+
+		hdr = (struct ipc_msg_hdr *)ipc_buf;
+		hdr->next = NULL;
+		hdr->msg_len = input[4];
+		hdr->src_aid = input[1];
+		hdr->dest_aid = input[2];
+
+		ipc_trns_fifo_buf_send(ipc_buf, fifo, input[3]);
+	}
+
+	return cnt;
+}
+
+static void danipc_recv_pkt_disp(struct seq_file *s)
+{
+}
+
 static struct danipc_dbgfs netdev_dbgfs[] = {
 	DBGFS_NODE("fifo_info", 0444, danipc_dump_fifo_info, NULL),
 	DBGFS_NODE("fifo_stats", 0444, danipc_dump_fifo_stats, NULL),
@@ -1029,6 +1113,7 @@ static struct danipc_dbgfs netdev_dbgfs[] = {
 	DBGFS_NODE("irq_enable", 0444, danipc_dump_irq_enable, NULL),
 	DBGFS_NODE("irq_mask", 0444, danipc_dump_irq_mask, NULL),
 	DBGFS_NODE("data_irq_status", 0444, danipc_dump_irq_status, NULL),
+	DBGFS_NODE("recv_pkt", 0644, danipc_recv_pkt_disp, danipc_recv_pkt),
 
 	DBGFS_NODE_LAST
 };

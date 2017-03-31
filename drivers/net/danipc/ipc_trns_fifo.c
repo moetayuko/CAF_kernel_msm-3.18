@@ -31,6 +31,7 @@
 #include "ipc_api.h"
 
 #include "danipc_lowlevel.h"
+#include "danipc_k.h"
 
 /* -----------------------------------------------------------
  * MACRO (define) section
@@ -39,6 +40,7 @@
 uint32_t		ipc_regs_phys[PLATFORM_MAX_NUM_OF_NODES];
 unsigned		ipc_regs_len[PLATFORM_MAX_NUM_OF_NODES];
 uint32_t		ipc_shared_mem_sizes[PLATFORM_MAX_NUM_OF_NODES];
+uint32_t		ipc_fifo_proc_map[PLATFORM_MAX_NUM_OF_NODES];
 
 /* Remapped addresses from ipc_regs_phys */
 uintptr_t		ipc_regs[PLATFORM_MAX_NUM_OF_NODES];
@@ -53,24 +55,43 @@ uintptr_t		ipc_regs[PLATFORM_MAX_NUM_OF_NODES];
  * Transport layer API used to move messages in M-FIFO to B-FIFO
  *
  */
-void ipc_trns_fifo_move_m_to_b(uint8_t cpuid)
+void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo)
 {
 	uint32_t	bufs[IPC_FIFO_BUF_NUM_HIGH];
 	int		num_bufs;
 	int		buf;
 	uint32_t	buff_addr;
-	uint32_t	m_fifo_addr[] = {TCSR_IPC_FIFO_RD_IN_HIGH_ADDR(cpuid),
-		TCSR_IPC_FIFO_RD_IN_LOW_ADDR(cpuid)};
-	uint32_t	b_fifo_addr[] = {IPC_FIFO_WR_OUT_HIGH_ADDR(cpuid),
-		IPC_FIFO_WR_OUT_LOW_ADDR(cpuid)};
-	int		fifo;
+	uint32_t	m_fifo_addr[] = {0, 0};
+	uint32_t	b_fifo_addr[] = {0, 0};
+	int		fifo_idx;
+	struct danipc_if *intf = NULL;
 
-	for (fifo = 0; fifo < sizeof(b_fifo_addr)/sizeof(uint32_t); fifo++) {
+	if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_NETDEV)
+		intf = (struct danipc_if *)(fifo->owner);
+	else
+		return;
+
+	if (intf->pproc[ipc_trns_prio_1].rxproc_type != rx_proc_default) {
+		m_fifo_addr[0] = TCSR_IPC_FIFO_RD_IN_HIGH_ADDR(fifo->node_id);
+		b_fifo_addr[0] = IPC_FIFO_WR_OUT_HIGH_ADDR(fifo->node_id);
+	}
+
+	if (intf->pproc[ipc_trns_prio_0].rxproc_type != rx_proc_default) {
+		m_fifo_addr[1] = TCSR_IPC_FIFO_RD_IN_LOW_ADDR(fifo->node_id);
+		b_fifo_addr[1] = IPC_FIFO_WR_OUT_LOW_ADDR(fifo->node_id);
+	}
+
+	for (fifo_idx = 0; fifo_idx < sizeof(b_fifo_addr)/sizeof(uint32_t);
+	     fifo_idx++) {
+		if (m_fifo_addr[0] == 0)
+			continue;
+
 		num_bufs = 0;
 
 		for (buf = 0; buf < IPC_FIFO_BUF_NUM_HIGH; buf++) {
 			buff_addr =
-				__raw_readl_no_log((void *)m_fifo_addr[fifo]);
+				__raw_readl_no_log((void *)
+						    m_fifo_addr[fifo_idx]);
 
 			if (buff_addr != 0) {
 				bufs[num_bufs] =  buff_addr;
@@ -81,7 +102,7 @@ void ipc_trns_fifo_move_m_to_b(uint8_t cpuid)
 		for (buf = 0; buf < num_bufs; buf++)
 			__raw_writel_no_log(
 				bufs[buf],
-				(void *)b_fifo_addr[fifo]);
+				(void *)b_fifo_addr[fifo_idx]);
 	}
 }
 
@@ -236,24 +257,34 @@ int32_t ipc_trns_fifo2eth_buf_send(char *ptr, uint8_t cpuid,
  * Output:		None
  * -----------------------------------------------------------
  */
-void ipc_trns_fifo_buf_init(uint8_t cpuid, uint8_t ifidx)
+void ipc_trns_fifo_buf_init(struct danipc_fifo *fifo)
 {
 	uint32_t fifo_addr;
 	unsigned ix;
-	uint32_t buf_addr = virt_to_ipc(cpuid, ipc_trns_prio_1,
-					&ipc_buffers[ifidx*IPC_BUF_SIZE]);
+	uint32_t buf_addr = virt_to_ipc(fifo->node_id, ipc_trns_prio_1,
+					&ipc_buffers[fifo->idx*IPC_BUF_SIZE]);
+	struct danipc_if *intf = NULL;
 
-	fifo_addr = IPC_FIFO_WR_OUT_HIGH_ADDR(cpuid);
+	if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_NETDEV)
+		intf = (struct danipc_if *)fifo->owner;
 
-	for (ix = 0; ix < IPC_FIFO_BUF_NUM_HIGH;
-			ix++, buf_addr += IPC_BUF_SIZE_MAX)
-		__raw_writel_no_log(buf_addr, (void *)fifo_addr);
+	if (intf == NULL ||
+	    intf->pproc[ipc_trns_prio_1].rxproc_type != rx_proc_default) {
+		fifo_addr = IPC_FIFO_WR_OUT_HIGH_ADDR(fifo->node_id);
 
-	fifo_addr = IPC_FIFO_WR_OUT_LOW_ADDR(cpuid);
+		for (ix = 0; ix < IPC_FIFO_BUF_NUM_HIGH;
+				ix++, buf_addr += IPC_BUF_SIZE_MAX)
+			__raw_writel_no_log(buf_addr, (void *)fifo_addr);
+	}
 
-	for (ix = 0; ix < IPC_FIFO_BUF_NUM_LOW;
-			ix++, buf_addr += IPC_BUF_SIZE_MAX)
-		__raw_writel_no_log(buf_addr, (void *)fifo_addr);
+	if (intf == NULL ||
+	    intf->pproc[ipc_trns_prio_0].rxproc_type != rx_proc_default) {
+		fifo_addr = IPC_FIFO_WR_OUT_LOW_ADDR(fifo->node_id);
+
+		for (ix = 0; ix < IPC_FIFO_BUF_NUM_LOW;
+				ix++, buf_addr += IPC_BUF_SIZE_MAX)
+			__raw_writel_no_log(buf_addr, (void *)fifo_addr);
+	}
 }
 
 void ipc_trns_fifo_buf_drain(uint8_t cpuid)
