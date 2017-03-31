@@ -37,6 +37,17 @@ static const char *i915_fence_get_driver_name(struct dma_fence *fence)
 
 static const char *i915_fence_get_timeline_name(struct dma_fence *fence)
 {
+	/* The timeline struct (as part of the ppgtt underneath a context)
+	 * may be freed when the request is no longer in use by the GPU.
+	 * We could extend the life of a context to beyond that of all
+	 * fences, possibly keeping the hw resource around indefinitely,
+	 * or we just give them a false name. Since
+	 * dma_fence_ops.get_timeline_name is a debug feature, the occasional
+	 * lie seems justifiable.
+	 */
+	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags))
+		return "signaled";
+
 	return to_request(fence)->timeline->common->name;
 }
 
@@ -295,7 +306,7 @@ static void i915_gem_request_retire(struct drm_i915_gem_request *request)
 	 * completion order.
 	 */
 	list_del(&request->ring_link);
-	request->ring->last_retired_head = request->postfix;
+	request->ring->head = request->postfix;
 	if (!--request->i915->gt.active_requests) {
 		GEM_BUG_ON(!request->i915->gt.awake);
 		mod_delayed_work(request->i915->wq,
