@@ -1,19 +1,17 @@
 /*
- * Copyright 2013 Maxime Ripard
- *
- * Maxime Ripard <maxime.ripard@free-electrons.com>
+ * Copyright (c) 2016 Icenowy Zheng <icenowy@aosc.xyz>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
  * whole.
  *
- *  a) This library is free software; you can redistribute it and/or
+ *  a) This file is free software; you can redistribute it and/or
  *     modify it under the terms of the GNU General Public License as
  *     published by the Free Software Foundation; either version 2 of the
  *     License, or (at your option) any later version.
  *
- *     This library is distributed in the hope that it will be useful,
+ *     This file is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
@@ -42,89 +40,20 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "skeleton.dtsi"
+#ifndef _DT_BINDINGS_CLK_SUN8I_R_CCU_H_
+#define _DT_BINDINGS_CLK_SUN8I_R_CCU_H_
 
-#include "sun5i.dtsi"
+#define CLK_AR100		0
 
-#include <dt-bindings/dma/sun4i-a10.h>
+#define CLK_APB0_PIO		3
+#define CLK_APB0_IR		4
+#define CLK_APB0_TIMER		5
+#define CLK_APB0_RSB		6
+#define CLK_APB0_UART		7
+/* 8 is reserved for CLK_APB0_W1 on A31 */
+#define CLK_APB0_I2C		9
+#define CLK_APB0_TWD		10
 
-/ {
-	interrupt-parent = <&intc>;
+#define CLK_IR			11
 
-	aliases {
-		ethernet0 = &emac;
-	};
-
-	chosen {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges;
-
-		framebuffer@2 {
-			compatible = "allwinner,simple-framebuffer",
-				     "simple-framebuffer";
-			allwinner,pipeline = "de_be0-lcd0-hdmi";
-			clocks = <&ccu CLK_AHB_LCD>, <&ccu CLK_AHB_HDMI>,
-				 <&ccu CLK_AHB_DE_BE>, <&ccu CLK_DRAM_DE_BE>,
-				 <&ccu CLK_DE_BE>, <&ccu CLK_HDMI>;
-			status = "disabled";
-		};
-	};
-
-	soc@01c00000 {
-		pwm: pwm@01c20e00 {
-			compatible = "allwinner,sun5i-a10s-pwm";
-			reg = <0x01c20e00 0xc>;
-			clocks = <&ccu CLK_HOSC>;
-			#pwm-cells = <3>;
-			status = "disabled";
-		};
-	};
-};
-
-&ccu {
-	compatible = "allwinner,sun5i-a10s-ccu";
-};
-
-&pio {
-	compatible = "allwinner,sun5i-a10s-pinctrl";
-
-	uart0_pins_a: uart0@0 {
-		pins = "PB19", "PB20";
-		function = "uart0";
-	};
-
-	uart2_pins_b: uart2@1 {
-		pins = "PC18", "PC19";
-		function = "uart2";
-	};
-
-	emac_pins_b: emac0@1 {
-		pins = "PA0", "PA1", "PA2",
-				"PA3", "PA4", "PA5", "PA6",
-				"PA7", "PA8", "PA9", "PA10",
-				"PA11", "PA12", "PA13", "PA14",
-				"PA15", "PA16";
-		function = "emac";
-	};
-
-	mmc1_pins_a: mmc1@0 {
-		pins = "PG3", "PG4", "PG5",
-				 "PG6", "PG7", "PG8";
-		function = "mmc1";
-		drive-strength = <30>;
-	};
-
-	spi2_pins_b: spi2@1 {
-		pins = "PB12", "PB13", "PB14";
-		function = "spi2";
-	};
-
-	spi2_cs0_pins_b: spi2_cs0@1 {
-		pins = "PB11";
-		function = "spi2";
-	};
-};
-
-&sram_a {
-};
+#endif /* _DT_BINDINGS_CLK_SUN8I_R_CCU_H_ */
