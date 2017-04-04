@@ -127,6 +127,36 @@ enum tpm2_capabilities {
 	TPM2_CAP_TPM_PROPERTIES = 6,
 };
 
+enum tpm2_properties {
+	TPM2_PT_NONE			= 0,
+	TPM2_PT_GROUP			= 0x100,
+	TPM2_PT_FIXED			= TPM2_PT_GROUP,
+	TPM2_PT_VAR			= TPM2_PT_GROUP * 2,
+	TPM2_PT_PERMANENT		= TPM2_PT_VAR + 0,
+	TPM2_PT_STARTUP_CLEAR		= TPM2_PT_VAR + 1,
+	TPM2_PT_LOCKOUT_COUNTER		= TPM2_PT_VAR + 14,
+	TPM2_PT_MAX_AUTH_FAIL		= TPM2_PT_VAR + 15,
+	TPM2_PT_LOCKOUT_INTERVAL	= TPM2_PT_VAR + 16,
+	TPM2_PT_LOCKOUT_RECOVERY	= TPM2_PT_VAR + 17,
+};
+
+enum tpm2_attr_permanent {
+	TPM2_ATTR_OWNER_AUTH_SET	= BIT(0),
+	TPM2_ATTR_ENDORSEMENT_AUTH_SET	= BIT(1),
+	TPM2_ATTR_LOCKOUT_AUTH_SET	= BIT(2),
+	TPM2_ATTR_DISABLE_CLEAR		= BIT(8),
+	TPM2_ATTR_IN_LOCKOUT		= BIT(9),
+	TPM2_ATTR_TPM_GENERATED_EPS	= BIT(10),
+};
+
+enum tpm2_attr_startup_clear {
+	TPM2_ATTR_PH_ENABLE		= BIT(0),
+	TPM2_ATTR_SH_ENABLE		= BIT(1),
+	TPM2_ATTR_EH_ENABLE		= BIT(2),
+	TPM2_ATTR_PH_ENABLE_NV		= BIT(3),
+	TPM2_ATTR_ORDERLY		= BIT(31),
+};
+
 enum tpm2_startup_types {
 	TPM2_SU_CLEAR	= 0x0000,
 	TPM2_SU_STATE	= 0x0001,
@@ -161,6 +191,9 @@ struct tpm_chip {
 	int dev_num;		/* /dev/tpm# */
 	unsigned long is_open;	/* only one allowed */
 
+	int needs_resume;
+	struct mutex resume_mutex;
+
 	struct mutex tpm_mutex;	/* tpm is processing */
 
 	unsigned long timeout_a; /* jiffies */
@@ -179,6 +212,8 @@ struct tpm_chip {
 	acpi_handle acpi_dev_handle;
 	char ppi_version[TPM_PPI_VERSION_LEN + 1];
 #endif /* CONFIG_ACPI */
+
+	struct notifier_block shutdown_nb;
 };
 
 #define to_tpm_chip(d) container_of(d, struct tpm_chip, dev)
@@ -509,6 +544,8 @@ void tpm_chip_unregister(struct tpm_chip *chip);
 void tpm_sysfs_add_device(struct tpm_chip *chip);
 
 int tpm_pcr_read_dev(struct tpm_chip *chip, int pcr_idx, u8 *res_buf);
+
+void tpm_resume_if_needed(struct tpm_chip *chip);
 
 #ifdef CONFIG_ACPI
 extern void tpm_add_ppi(struct tpm_chip *chip);
