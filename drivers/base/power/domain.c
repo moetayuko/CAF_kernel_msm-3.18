@@ -64,6 +64,45 @@ static struct generic_pm_domain *genpd_lookup_dev(struct device *dev)
 	return genpd;
 }
 
+int pm_genpd_register_notifier(struct device *dev, struct notifier_block *nb)
+{
+	struct pm_domain_data *pdd;
+	int ret = -EINVAL;
+
+	spin_lock_irq(&dev->power.lock);
+	if (dev->power.subsys_data) {
+		pdd = dev->power.subsys_data->domain_data;
+		ret = blocking_notifier_chain_register(&pdd->notify_chain_head,
+						       nb);
+	}
+	spin_unlock_irq(&dev->power.lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pm_genpd_register_notifier);
+
+void pm_genpd_unregister_notifier(struct device *dev, struct notifier_block *nb)
+{
+	struct pm_domain_data *pdd;
+
+	spin_lock_irq(&dev->power.lock);
+	if (dev->power.subsys_data) {
+		pdd = dev->power.subsys_data->domain_data;
+		blocking_notifier_chain_unregister(&pdd->notify_chain_head, nb);
+	}
+	spin_unlock_irq(&dev->power.lock);
+}
+EXPORT_SYMBOL_GPL(pm_genpd_unregister_notifier);
+
+static void pm_genpd_notifier_call(unsigned long event,
+				   struct generic_pm_domain *genpd)
+{
+	struct pm_domain_data *pdd;
+
+	list_for_each_entry(pdd, &genpd->dev_list, list_node)
+		blocking_notifier_call_chain(&pdd->notify_chain_head,
+					     event, pdd->dev);
+}
+
 /*
  * This should only be used where we are certain that the pm_domain
  * attached to the device is a genpd domain.
@@ -107,13 +146,20 @@ static int genpd_power_on(struct generic_pm_domain *genpd, bool timed)
 	unsigned int state_idx = genpd->state_idx;
 	ktime_t time_start;
 	s64 elapsed_ns;
-	int ret;
+	int ret = 0;
+
+	pm_genpd_notifier_call(PM_GENPD_POWER_ON_PREPARE, genpd);
 
 	if (!genpd->power_on)
-		return 0;
+		goto out_notify_post;
 
-	if (!timed)
-		return genpd->power_on(genpd);
+	if (!timed) {
+		ret = genpd->power_on(genpd);
+		if (ret)
+			return ret;
+
+		goto out_notify_post;
+	}
 
 	time_start = ktime_get();
 	ret = genpd->power_on(genpd);
@@ -122,12 +168,15 @@ static int genpd_power_on(struct generic_pm_domain *genpd, bool timed)
 
 	elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 	if (elapsed_ns <= genpd->states[state_idx].power_on_latency_ns)
-		return ret;
+		goto out_notify_post;
 
 	genpd->states[state_idx].power_on_latency_ns = elapsed_ns;
 	genpd->max_off_time_changed = true;
 	pr_debug("%s: Power-%s latency exceeded, new value %lld ns\n",
 		 genpd->name, "on", elapsed_ns);
+
+out_notify_post:
+	pm_genpd_notifier_call(PM_GENPD_POST_POWER_ON, genpd);
 
 	return ret;
 }
@@ -137,13 +186,20 @@ static int genpd_power_off(struct generic_pm_domain *genpd, bool timed)
 	unsigned int state_idx = genpd->state_idx;
 	ktime_t time_start;
 	s64 elapsed_ns;
-	int ret;
+	int ret = 0;
+
+	pm_genpd_notifier_call(PM_GENPD_POWER_OFF_PREPARE, genpd);
 
 	if (!genpd->power_off)
-		return 0;
+		goto out_notify_post;
 
-	if (!timed)
-		return genpd->power_off(genpd);
+	if (!timed) {
+		ret = genpd->power_off(genpd);
+		if (ret)
+			return ret;
+
+		goto out_notify_post;
+	}
 
 	time_start = ktime_get();
 	ret = genpd->power_off(genpd);
@@ -152,12 +208,15 @@ static int genpd_power_off(struct generic_pm_domain *genpd, bool timed)
 
 	elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 	if (elapsed_ns <= genpd->states[state_idx].power_off_latency_ns)
-		return ret;
+		goto out_notify_post;
 
 	genpd->states[state_idx].power_off_latency_ns = elapsed_ns;
 	genpd->max_off_time_changed = true;
 	pr_debug("%s: Power-%s latency exceeded, new value %lld ns\n",
 		 genpd->name, "off", elapsed_ns);
+
+out_notify_post:
+	pm_genpd_notifier_call(PM_GENPD_POST_POWER_OFF, genpd);
 
 	return ret;
 }
@@ -1085,6 +1144,7 @@ static int genpd_add_device(struct generic_pm_domain *genpd, struct device *dev,
 	genpd->device_count++;
 	genpd->max_off_time_changed = true;
 
+	BLOCKING_INIT_NOTIFIER_HEAD(&gpd_data->base.notify_chain_head);
 	list_add_tail(&gpd_data->base.list_node, &genpd->dev_list);
 
  out:
