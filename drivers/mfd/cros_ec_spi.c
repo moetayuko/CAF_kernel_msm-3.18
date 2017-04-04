@@ -45,8 +45,11 @@
  * on the other end and need to transfer ~256 bytes, then we need:
  *  10 us/bit * ~10 bits/byte * ~256 bytes = ~25ms
  *
- * We'll wait 4 times that to handle clock stretching and other
- * paranoia.
+ * We'll wait 8 times that to handle clock stretching and other
+ * paranoia.  Note that some battery gas gauge ICs claim to have a
+ * clock stretch of 144ms in rare situations.  That's incentive for
+ * not directly passing i2c through, but it's too late for that for
+ * existing hardware.
  *
  * It's pretty unlikely that we'll really see a 249 byte tunnel in
  * anything other than testing.  If this was more common we might
@@ -54,7 +57,7 @@
  * wait loop.  The 'flash write' command would be another candidate
  * for this, clocking in at 2-3ms.
  */
-#define EC_MSG_DEADLINE_MS		100
+#define EC_MSG_DEADLINE_MS		200
 
 /*
   * Time between raising the SPI chip select (for the end of a
@@ -728,7 +731,17 @@ static struct spi_driver cros_ec_driver_spi = {
 	.id_table	= cros_ec_spi_id,
 };
 
-module_spi_driver(cros_ec_driver_spi);
+static int __init cros_ec_init(void)
+{
+	return spi_register_driver(&cros_ec_driver_spi);
+}
+subsys_initcall(cros_ec_init);
+
+static void __exit cros_ec_exit(void)
+{
+	spi_unregister_driver(&cros_ec_driver_spi);
+}
+module_exit(cros_ec_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("ChromeOS EC multi function device (SPI)");
