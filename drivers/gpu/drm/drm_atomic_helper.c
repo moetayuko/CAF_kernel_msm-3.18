@@ -491,6 +491,9 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 	int i, ret;
 
 	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
+		bool has_connectors =
+			!!new_crtc_state->connector_mask;
+
 		if (!drm_mode_equal(&old_crtc_state->mode, &new_crtc_state->mode)) {
 			DRM_DEBUG_ATOMIC("[CRTC:%d:%s] mode changed\n",
 					 crtc->base.id, crtc->name);
@@ -517,6 +520,13 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 			DRM_DEBUG_ATOMIC("[CRTC:%d:%s] active changed\n",
 					 crtc->base.id, crtc->name);
 			new_crtc_state->active_changed = true;
+		}
+
+		if (new_crtc_state->enable != has_connectors) {
+			DRM_DEBUG_ATOMIC("[CRTC:%d:%s] enabled/connectors mismatch\n",
+					 crtc->base.id, crtc->name);
+
+			return -EINVAL;
 		}
 	}
 
@@ -551,9 +561,6 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 	 * crtc only changed its mode but has the same set of connectors.
 	 */
 	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
-		bool has_connectors =
-			!!new_crtc_state->connector_mask;
-
 		if (!drm_atomic_crtc_needs_modeset(new_crtc_state))
 			continue;
 
@@ -569,13 +576,6 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 		ret = drm_atomic_add_affected_planes(state, crtc);
 		if (ret != 0)
 			return ret;
-
-		if (new_crtc_state->enable != has_connectors) {
-			DRM_DEBUG_ATOMIC("[CRTC:%d:%s] enabled/connectors mismatch\n",
-					 crtc->base.id, crtc->name);
-
-			return -EINVAL;
-		}
 	}
 
 	return mode_fixup(state);
