@@ -55,7 +55,8 @@ static inline int arch_memcpy_from_pmem(void *dst, const void *src, size_t n)
  * @size:	number of bytes to write back
  *
  * Write back a cache range using the CLWB (cache line write back)
- * instruction.
+ * instruction. Note that @size is internally rounded up to be cache
+ * line size aligned.
  */
 static inline void arch_wb_cache_pmem(void *addr, size_t size)
 {
@@ -67,15 +68,6 @@ static inline void arch_wb_cache_pmem(void *addr, size_t size)
 	for (p = (void *)((unsigned long)addr & ~clflush_mask);
 	     p < vend; p += x86_clflush_size)
 		clwb(p);
-}
-
-/*
- * copy_from_iter_nocache() on x86 only uses non-temporal stores for iovec
- * iterators, so for other types (bvec & kvec) we must do a cache write-back.
- */
-static inline bool __iter_needs_pmem_wb(struct iov_iter *i)
-{
-	return iter_is_iovec(i) == false;
 }
 
 /**
@@ -94,7 +86,34 @@ static inline size_t arch_copy_from_iter_pmem(void *addr, size_t bytes,
 	/* TODO: skip the write-back by always using non-temporal stores */
 	len = copy_from_iter_nocache(addr, bytes, i);
 
-	if (__iter_needs_pmem_wb(i))
+	/*
+	 * In the iovec case on x86_64 copy_from_iter_nocache() uses
+	 * non-temporal stores for the bulk of the transfer, but we need
+	 * to manually flush if the transfer is unaligned. In the
+	 * non-iovec case the entire destination needs to be flushed.
+	 */
+	if (iter_is_iovec(i)) {
+		unsigned long dest = (unsigned long) addr;
+
+		/*
+		 * If the destination is not 8-byte aligned then
+		 * __copy_user_nocache (on x86_64) uses cached copies
+		 */
+		if (dest & 8) {
+			arch_wb_cache_pmem(addr, 1);
+			dest = ALIGN(dest, 8);
+		}
+
+		/*
+		 * If the remaining transfer length, after accounting
+		 * for destination alignment, is not 4-byte aligned
+		 * then __copy_user_nocache() falls back to cached
+		 * copies for the trailing bytes in the final cacheline
+		 * of the transfer.
+		 */
+		if ((bytes - (dest - (unsigned long) addr)) & 4)
+			arch_wb_cache_pmem(addr + bytes - 1, 1);
+	} else
 		arch_wb_cache_pmem(addr, bytes);
 
 	return len;
