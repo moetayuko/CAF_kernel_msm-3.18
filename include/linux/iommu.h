@@ -32,10 +32,13 @@
 #define IOMMU_NOEXEC	(1 << 3)
 #define IOMMU_MMIO	(1 << 4) /* e.g. things like MSI doorbells */
 /*
- * This is to make the IOMMU API setup privileged
- * mapppings accessible by the master only at higher
- * privileged execution level and inaccessible at
- * less privileged levels.
+ * Where the bus hardware includes a privilege level as part of its access type
+ * markings, and certain devices are capable of issuing transactions marked as
+ * either 'supervisor' or 'user', the IOMMU_PRIV flag requests that the other
+ * given permission flags only apply to accesses at the higher privilege level,
+ * and that unprivileged transactions should have as little access as possible.
+ * This would usually imply the same permissions as kernel mappings on the CPU,
+ * if the IOMMU page table format is equivalent.
  */
 #define IOMMU_PRIV	(1 << 5)
 
@@ -125,9 +128,16 @@ enum iommu_attr {
 };
 
 /* These are the possible reserved region types */
-#define IOMMU_RESV_DIRECT	(1 << 0)
-#define IOMMU_RESV_RESERVED	(1 << 1)
-#define IOMMU_RESV_MSI		(1 << 2)
+enum iommu_resv_type {
+	/* Memory regions which must be mapped 1:1 at all times */
+	IOMMU_RESV_DIRECT,
+	/* Arbitrary "never map this or give it to a device" address ranges */
+	IOMMU_RESV_RESERVED,
+	/* Hardware MSI region (untranslated) */
+	IOMMU_RESV_MSI,
+	/* Software-managed MSI translation window */
+	IOMMU_RESV_SW_MSI,
+};
 
 /**
  * struct iommu_resv_region - descriptor for a reserved memory region
@@ -142,7 +152,7 @@ struct iommu_resv_region {
 	phys_addr_t		start;
 	size_t			length;
 	int			prot;
-	int			type;
+	enum iommu_resv_type	type;
 };
 
 #ifdef CONFIG_IOMMU_API
@@ -288,7 +298,8 @@ extern void iommu_get_resv_regions(struct device *dev, struct list_head *list);
 extern void iommu_put_resv_regions(struct device *dev, struct list_head *list);
 extern int iommu_request_dm_for_dev(struct device *dev);
 extern struct iommu_resv_region *
-iommu_alloc_resv_region(phys_addr_t start, size_t length, int prot, int type);
+iommu_alloc_resv_region(phys_addr_t start, size_t length, int prot,
+			enum iommu_resv_type type);
 extern int iommu_get_group_resv_regions(struct iommu_group *group,
 					struct list_head *head);
 
