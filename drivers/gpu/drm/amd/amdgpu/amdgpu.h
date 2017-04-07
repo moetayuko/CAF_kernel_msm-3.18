@@ -604,8 +604,6 @@ struct amdgpu_sa_manager {
 	uint32_t		align;
 };
 
-struct amdgpu_sa_bo;
-
 /* sub-allocation buffer */
 struct amdgpu_sa_bo {
 	struct list_head		olist;
@@ -712,9 +710,9 @@ int amdgpu_gart_table_vram_pin(struct amdgpu_device *adev);
 void amdgpu_gart_table_vram_unpin(struct amdgpu_device *adev);
 int amdgpu_gart_init(struct amdgpu_device *adev);
 void amdgpu_gart_fini(struct amdgpu_device *adev);
-void amdgpu_gart_unbind(struct amdgpu_device *adev, unsigned offset,
+void amdgpu_gart_unbind(struct amdgpu_device *adev, uint64_t offset,
 			int pages);
-int amdgpu_gart_bind(struct amdgpu_device *adev, unsigned offset,
+int amdgpu_gart_bind(struct amdgpu_device *adev, uint64_t offset,
 		     int pages, struct page **pagelist,
 		     dma_addr_t *dma_addr, uint32_t flags);
 
@@ -1675,6 +1673,7 @@ struct amdgpu_uvd {
 	struct amdgpu_bo	*vcpu_bo;
 	void			*cpu_addr;
 	uint64_t		gpu_addr;
+	unsigned		fw_version;
 	atomic_t		handles[AMDGPU_MAX_UVD_HANDLES];
 	struct drm_file		*filp[AMDGPU_MAX_UVD_HANDLES];
 	struct delayed_work	idle_work;
@@ -2314,6 +2313,8 @@ bool amdgpu_ttm_bo_is_amdgpu_bo(struct ttm_buffer_object *bo);
 int amdgpu_ttm_tt_set_userptr(struct ttm_tt *ttm, uint64_t addr,
 				     uint32_t flags);
 bool amdgpu_ttm_tt_has_userptr(struct ttm_tt *ttm);
+bool amdgpu_ttm_tt_affect_userptr(struct ttm_tt *ttm, unsigned long start,
+				  unsigned long end);
 bool amdgpu_ttm_tt_is_readonly(struct ttm_tt *ttm);
 uint32_t amdgpu_ttm_tt_pte_flags(struct amdgpu_device *adev, struct ttm_tt *ttm,
 				 struct ttm_mem_reg *mem);

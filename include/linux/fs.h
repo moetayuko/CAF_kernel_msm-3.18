@@ -710,6 +710,31 @@ enum inode_i_mutex_lock_class
 	I_MUTEX_PARENT2,
 };
 
+static inline void inode_lock(struct inode *inode)
+{
+	mutex_lock(&inode->i_mutex);
+}
+
+static inline void inode_unlock(struct inode *inode)
+{
+	mutex_unlock(&inode->i_mutex);
+}
+
+static inline int inode_trylock(struct inode *inode)
+{
+	return mutex_trylock(&inode->i_mutex);
+}
+
+static inline int inode_is_locked(struct inode *inode)
+{
+	return mutex_is_locked(&inode->i_mutex);
+}
+
+static inline void inode_lock_nested(struct inode *inode, unsigned subclass)
+{
+	mutex_lock_nested(&inode->i_mutex, subclass);
+}
+
 void lock_two_nondirectories(struct inode *, struct inode*);
 void unlock_two_nondirectories(struct inode *, struct inode*);
 
@@ -1205,6 +1230,16 @@ static inline void show_fd_locks(struct seq_file *f,
 static inline struct inode *file_inode(const struct file *f)
 {
 	return f->f_inode;
+}
+
+static inline struct dentry *file_dentry(const struct file *file)
+{
+	struct dentry *dentry = file->f_path.dentry;
+
+	if (unlikely(dentry->d_flags & DCACHE_OP_REAL))
+		return dentry->d_op->d_real(dentry, file_inode(file));
+	else
+		return dentry;
 }
 
 static inline int locks_lock_file_wait(struct file *filp, struct file_lock *fl)
@@ -2217,7 +2252,7 @@ extern long do_sys_open(int dfd, const char __user *filename, int flags,
 extern struct file *file_open_name(struct filename *, int, umode_t);
 extern struct file *filp_open(const char *, int, umode_t);
 extern struct file *file_open_root(struct dentry *, struct vfsmount *,
-				   const char *, int);
+				   const char *, int, umode_t);
 extern struct file * dentry_open(const struct path *, int, const struct cred *);
 extern int filp_close(struct file *, fl_owner_t id);
 
@@ -3019,8 +3054,8 @@ static inline bool dir_emit_dots(struct file *file, struct dir_context *ctx)
 }
 static inline bool dir_relax(struct inode *inode)
 {
-	mutex_unlock(&inode->i_mutex);
-	mutex_lock(&inode->i_mutex);
+	inode_unlock(inode);
+	inode_lock(inode);
 	return !IS_DEADDIR(inode);
 }
 

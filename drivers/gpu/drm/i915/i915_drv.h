@@ -2614,6 +2614,7 @@ struct drm_i915_cmd_table {
 #define INTEL_PCH_SPT_DEVICE_ID_TYPE		0xA100
 #define INTEL_PCH_SPT_LP_DEVICE_ID_TYPE		0x9D00
 #define INTEL_PCH_P2X_DEVICE_ID_TYPE		0x7100
+#define INTEL_PCH_QEMU_DEVICE_ID_TYPE		0x2900 /* qemu q35 has 2918 */
 
 #define INTEL_PCH_TYPE(dev) (__I915__(dev)->pch_type)
 #define HAS_PCH_SPT(dev) (INTEL_PCH_TYPE(dev) == PCH_SPT)
@@ -3311,6 +3312,9 @@ static inline bool intel_gmbus_is_forced_bit(struct i2c_adapter *adapter)
 	return container_of(adapter, struct intel_gmbus, adapter)->force_bit;
 }
 extern void intel_i2c_reset(struct drm_device *dev);
+
+/* intel_bios.c */
+bool intel_bios_is_port_present(struct drm_i915_private *dev_priv, enum port port);
 
 /* intel_opregion.c */
 #ifdef CONFIG_ACPI

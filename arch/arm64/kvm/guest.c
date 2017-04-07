@@ -28,7 +28,6 @@
 #include <asm/cputype.h>
 #include <asm/uaccess.h>
 #include <asm/kvm.h>
-#include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_coproc.h>
 
@@ -186,7 +185,7 @@ static int get_timer_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 	u64 val;
 
 	val = kvm_arm_timer_get_reg(vcpu, reg->id);
-	return copy_to_user(uaddr, &val, KVM_REG_SIZE(reg->id));
+	return copy_to_user(uaddr, &val, KVM_REG_SIZE(reg->id)) ? -EFAULT : 0;
 }
 
 /**

@@ -62,6 +62,7 @@
 #include <asm/memblock.h>
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
+#include <asm/mmu_context.h>
 
 phys_addr_t __fdt_pointer __initdata;
 
@@ -174,7 +175,6 @@ static void __init smp_build_mpidr_hash(void)
 	 */
 	if (mpidr_hash_size() > 4 * num_possible_cpus())
 		pr_warn("Large number of MPIDR hash buckets detected\n");
-	__flush_dcache_area(&mpidr_hash, sizeof(struct mpidr_hash));
 }
 
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
@@ -312,6 +312,12 @@ void __init setup_arch(char **cmdline_p)
 	 * (Report possible System Errors once we can report this occurred)
 	 */
 	local_async_enable();
+
+	/*
+	 * TTBR0 is only used for the identity mapping at this stage. Make it
+	 * point to zero page to avoid speculatively fetching new entries.
+	 */
+	cpu_uninstall_idmap();
 
 	efi_init();
 	arm64_memblock_init();

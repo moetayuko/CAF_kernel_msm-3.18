@@ -48,9 +48,6 @@
 #error TEXT_OFFSET must be less than 2MB
 #endif
 
-#define KERNEL_START	_text
-#define KERNEL_END	_end
-
 /*
  * Kernel startup entry point.
  * ---------------------------
@@ -389,7 +386,7 @@ __create_page_tables:
 	 * Map the kernel image (starting with PHYS_OFFSET).
 	 */
 	mov	x0, x26				// swapper_pg_dir
-	mov	x5, #PAGE_OFFSET
+	ldr	x5, =KIMAGE_VADDR
 	create_pgd_entry x0, x5, x3, x6
 	ldr	x6, =KERNEL_END			// __va(KERNEL_END)
 	mov	x3, x24				// phys offset
@@ -415,14 +412,14 @@ ENDPROC(__create_page_tables)
  */
 	.set	initial_sp, init_thread_union + THREAD_START_SP
 __mmap_switched:
-	adr_l	x6, __bss_start
-	adr_l	x7, __bss_stop
+	// Clear BSS
+	adr_l	x0, __bss_start
+	mov	x1, xzr
+	adr_l	x2, __bss_stop
+	sub	x2, x2, x0
+	bl	__pi_memset
+	dsb	ishst				// Make zero page visible to PTW
 
-1:	cmp	x6, x7
-	b.hs	2f
-	str	xzr, [x6], #8			// Clear BSS
-	b	1b
-2:
 	adr_l	sp, initial_sp, x4
 	str_l	x21, __fdt_pointer, x5		// Save FDT pointer
 	str_l	x24, memstart_addr, x6		// Save PHYS_OFFSET
@@ -512,9 +509,14 @@ CPU_LE(	movk	x0, #0x30d0, lsl #16	)	// Clear EE and E0E on LE systems
 #endif
 
 	/* EL2 debug */
+	mrs	x0, id_aa64dfr0_el1		// Check ID_AA64DFR0_EL1 PMUVer
+	sbfx	x0, x0, #8, #4
+	cmp	x0, #1
+	b.lt	4f				// Skip if no PMU present
 	mrs	x0, pmcr_el0			// Disable debug access traps
 	ubfx	x0, x0, #11, #5			// to EL2 and allow access to
 	msr	mdcr_el2, x0			// all PMU counters from EL1
+4:
 
 	/* Stage-2 translation */
 	msr	vttbr_el2, xzr
@@ -622,7 +624,7 @@ ENDPROC(__secondary_switched)
  * If it isn't, park the CPU
  */
 	.section	".idmap.text", "ax"
-__enable_mmu:
+ENTRY(__enable_mmu)
 	mrs	x1, ID_AA64MMFR0_EL1
 	ubfx	x2, x1, #ID_AA64MMFR0_TGRAN_SHIFT, 4
 	cmp	x2, #ID_AA64MMFR0_TGRAN_SUPPORTED
