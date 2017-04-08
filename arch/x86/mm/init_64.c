@@ -703,6 +703,7 @@ int arch_add_memory(int nid, u64 start, u64 size, enum memory_type type)
 	case MEMORY_NORMAL:
 		break;
 	case MEMORY_DEVICE_PERSISTENT:
+	case MEMORY_DEVICE_UNADDRESSABLE:
 		for_device = true;
 		break;
 	default:
@@ -713,7 +714,17 @@ int arch_add_memory(int nid, u64 start, u64 size, enum memory_type type)
 	zone = pgdat->node_zones +
 		zone_for_memory(nid, start, size, ZONE_NORMAL, for_device);
 
-	init_memory_mapping(start, start + size);
+	/*
+	 * We get un-addressable memory when some one is adding a ZONE_DEVICE
+	 * to have struct page for a device memory which is not accessible by
+	 * the CPU so it is pointless to have a linear kernel mapping of such
+	 * memory.
+	 *
+	 * Core mm should make sure it never set a pte pointing to such fake
+	 * physical range.
+	 */
+	if (type != MEMORY_DEVICE_UNADDRESSABLE)
+		init_memory_mapping(start, start + size);
 
 	ret = __add_pages(nid, zone, start_pfn, nr_pages);
 	WARN_ON_ONCE(ret);
@@ -1069,6 +1080,7 @@ int __ref arch_remove_memory(u64 start, u64 size, enum memory_type type)
 	switch (type) {
 	case MEMORY_NORMAL:
 	case MEMORY_DEVICE_PERSISTENT:
+	case MEMORY_DEVICE_UNADDRESSABLE:
 		break;
 	default:
 		pr_err("hotplug unsupported memory type %d\n", type);
@@ -1082,7 +1094,9 @@ int __ref arch_remove_memory(u64 start, u64 size, enum memory_type type)
 	zone = page_zone(page);
 	ret = __remove_pages(zone, start_pfn, nr_pages);
 	WARN_ON_ONCE(ret);
-	kernel_physical_mapping_remove(start, start + size);
+
+	if (type != MEMORY_DEVICE_UNADDRESSABLE)
+		kernel_physical_mapping_remove(start, start + size);
 
 	return ret;
 }
