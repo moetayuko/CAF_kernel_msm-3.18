@@ -315,6 +315,15 @@ config HMM_MIRROR
 	  page tables (at PAGE_SIZE granularity), and must be able to recover from
 	  the resulting potential page faults.
 
+config HMM_DEVMEM
+	bool "HMM device memory helpers (to leverage ZONE_DEVICE)"
+	depends on MMU && 64BIT
+	select HMM
+	help
+	  HMM devmem is a set of helper routines to leverage the ZONE_DEVICE
+	  feature. This is just to avoid having device drivers to replicating a lot
+	  of boiler plate code.
+
 config PHYS_ADDR_T_64BIT
 	def_bool 64BIT || ARCH_PHYS_ADDR_T_64BIT
 
