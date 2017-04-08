@@ -13,6 +13,26 @@ struct mem_section;
 struct memory_block;
 struct resource;
 
+/*
+ * When hotplugging memory with arch_add_memory(), we want more information on
+ * the type of memory we are hotplugging, because depending on the type of
+ * architecture, the code might want to take different paths.
+ *
+ * MEMORY_NORMAL:
+ * Your regular system memory. Default common case.
+ *
+ * MEMORY_DEVICE_PERSISTENT:
+ * Persistent device memory (pmem): struct page might be allocated in different
+ * memory and architecture might want to perform special actions. It is similar
+ * to regular memory, in that the CPU can access it transparently. However,
+ * it is likely to have different bandwidth and latency than regular memory.
+ * See Documentation/nvdimm/nvdimm.txt for more information.
+ */
+enum memory_type {
+	MEMORY_NORMAL = 0,
+	MEMORY_DEVICE_PERSISTENT,
+};
+
 #ifdef CONFIG_MEMORY_HOTPLUG
 
 /*
@@ -104,7 +124,7 @@ extern bool memhp_auto_online;
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
 extern bool is_pageblock_removable_nolock(struct page *page);
-extern int arch_remove_memory(u64 start, u64 size);
+extern int arch_remove_memory(u64 start, u64 size, enum memory_type type);
 extern int __remove_pages(struct zone *zone, unsigned long start_pfn,
 	unsigned long nr_pages);
 #endif /* CONFIG_MEMORY_HOTREMOVE */
@@ -276,7 +296,7 @@ extern int add_memory(int nid, u64 start, u64 size);
 extern int add_memory_resource(int nid, struct resource *resource, bool online);
 extern int zone_for_memory(int nid, u64 start, u64 size, int zone_default,
 		bool for_device);
-extern int arch_add_memory(int nid, u64 start, u64 size, bool for_device);
+extern int arch_add_memory(int nid, u64 start, u64 size, enum memory_type type);
 extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages);
 extern bool is_memblock_offlined(struct memory_block *mem);
 extern void remove_memory(int nid, u64 start, u64 size);

@@ -823,23 +823,56 @@ void __init mem_init(void)
 }
 
 #ifdef CONFIG_MEMORY_HOTPLUG
-int arch_add_memory(int nid, u64 start, u64 size, bool for_device)
+int arch_add_memory(int nid, u64 start, u64 size, enum memory_type type)
 {
 	struct pglist_data *pgdata = NODE_DATA(nid);
-	struct zone *zone = pgdata->node_zones +
-		zone_for_memory(nid, start, size, ZONE_HIGHMEM, for_device);
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
+	bool for_device = false;
+	struct zone *zone;
+
+	/*
+	 * Each memory_type needs special handling, so error out on an
+	 * unsupported type. In particular, MEMORY_DEVICE_UNADDRESSABLE
+	 * is not supported on this architecture.
+	 */
+	switch (type) {
+	case MEMORY_NORMAL:
+		break;
+	case MEMORY_DEVICE_PERSISTENT:
+		for_device = true;
+		break;
+	default:
+		pr_err("hotplug unsupported memory type %d\n", type);
+		return -EINVAL;
+	}
+
+	zone = pgdata->node_zones +
+		zone_for_memory(nid, start, size, ZONE_HIGHMEM, for_device);
 
 	return __add_pages(nid, zone, start_pfn, nr_pages);
 }
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
-int arch_remove_memory(u64 start, u64 size)
+int arch_remove_memory(u64 start, u64 size, enum memory_type type)
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 	struct zone *zone;
+
+	/*
+	 * Each memory_type needs special handling, so error out on an
+	 * unsupported type. In particular, MEMORY_DEVICE_UNADDRESSABLE
+	 * is not supported on this architecture.
+	 */
+	switch (type) {
+	case MEMORY_NORMAL:
+	case MEMORY_DEVICE_PERSISTENT:
+		break;
+	default:
+		pr_err("hotplug unsupported memory type %d\n", type);
+		return -EINVAL;
+	}
 
 	zone = page_zone(pfn_to_page(start_pfn));
 	return __remove_pages(zone, start_pfn, nr_pages);

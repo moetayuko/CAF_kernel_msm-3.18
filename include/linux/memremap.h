@@ -41,12 +41,14 @@ static inline struct vmem_altmap *to_vmem_altmap(unsigned long memmap_start)
  * @res: physical address range covered by @ref
  * @ref: reference count that pins the devm_memremap_pages() mapping
  * @dev: host device of the mapping for debug
+ * @type: memory type see MEMORY_* in memory_hotplug.h
  */
 struct dev_pagemap {
 	struct vmem_altmap *altmap;
 	const struct resource *res;
 	struct percpu_ref *ref;
 	struct device *dev;
+	enum memory_type type;
 };
 
 #ifdef CONFIG_ZONE_DEVICE
