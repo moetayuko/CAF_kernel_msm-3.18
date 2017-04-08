@@ -35,19 +35,62 @@ static inline struct vmem_altmap *to_vmem_altmap(unsigned long memmap_start)
 }
 #endif
 
+/*
+ * For MEMORY_DEVICE_UNADDRESSABLE we use ZONE_DEVICE and extend it with two
+ * callbacks:
+ *   page_fault()
+ *   page_free()
+ *
+ * Additional notes about MEMORY_DEVICE_UNADDRESSABLE may be found in
+ * include/linux/hmm.h and Documentation/vm/hmm.txt. There is also a brief
+ * explanation in include/linux/memory_hotplug.h.
+ *
+ * The page_fault() callback must migrate page back, from device memory to
+ * system memory, so that the CPU can access it. This might fail for various
+ * reasons (device issues,  device have been unplugged, ...). When such error
+ * conditions happen, the page_fault() callback must return VM_FAULT_SIGBUS and
+ * set the CPU page table entry to "poisoned".
+ *
+ * Note that because memory cgroup charges are transferred to the device memory,
+ * this should never fail due to memory restrictions. However, allocation
+ * of a regular system page might still fail because we are out of memory. If
+ * that happens, the page_fault() callback must return VM_FAULT_OOM.
+ *
+ * The page_fault() callback can also try to migrate back multiple pages in one
+ * chunk, as an optimization. It must, however, prioritize the faulting address
+ * over all the others.
+ *
+ *
+ * The page_free() callback is called once the page refcount reaches 1
+ * (ZONE_DEVICE pages never reach 0 refcount unless there is a refcount bug.
+ * This allows the device driver to implement its own memory management.)
+ */
+typedef int (*dev_page_fault_t)(struct vm_area_struct *vma,
+				unsigned long addr,
+				struct page *page,
+				unsigned int flags,
+				pmd_t *pmdp);
+typedef void (*dev_page_free_t)(struct page *page, void *data);
+
 /**
  * struct dev_pagemap - metadata for ZONE_DEVICE mappings
+ * @page_fault: callback when CPU fault on an unaddressable device page
+ * @page_free: free page callback when page refcount reaches 1
  * @altmap: pre-allocated/reserved memory for vmemmap allocations
  * @res: physical address range covered by @ref
  * @ref: reference count that pins the devm_memremap_pages() mapping
  * @dev: host device of the mapping for debug
- * @type: memory type see MEMORY_* in memory_hotplug.h
+ * @data: private data pointer for page_free()
+ * @type: memory type: see MEMORY_* in memory_hotplug.h
  */
 struct dev_pagemap {
+	dev_page_fault_t page_fault;
+	dev_page_free_t page_free;
 	struct vmem_altmap *altmap;
 	const struct resource *res;
 	struct percpu_ref *ref;
 	struct device *dev;
+	void *data;
 	enum memory_type type;
 };
 
@@ -55,6 +98,13 @@ struct dev_pagemap {
 void *devm_memremap_pages(struct device *dev, struct resource *res,
 		struct percpu_ref *ref, struct vmem_altmap *altmap);
 struct dev_pagemap *find_dev_pagemap(resource_size_t phys);
+
+static inline bool is_device_unaddressable_page(const struct page *page)
+{
+	/* See MEMORY_DEVICE_UNADDRESSABLE in include/linux/memory_hotplug.h */
+	return ((page_zonenum(page) == ZONE_DEVICE) &&
+		(page->pgmap->type == MEMORY_DEVICE_UNADDRESSABLE));
+}
 #else
 static inline void *devm_memremap_pages(struct device *dev,
 		struct resource *res, struct percpu_ref *ref,
@@ -72,6 +122,11 @@ static inline void *devm_memremap_pages(struct device *dev,
 static inline struct dev_pagemap *find_dev_pagemap(resource_size_t phys)
 {
 	return NULL;
+}
+
+static inline bool is_device_unaddressable_page(const struct page *page)
+{
+	return false;
 }
 #endif
 

@@ -700,6 +700,15 @@ config ZONE_DEVICE
 
 	  If FS_DAX is enabled, then say Y.
 
+config DEVICE_UNADDRESSABLE
+	bool "Unaddressable device memory (GPU memory, ...)"
+	depends on ZONE_DEVICE
+
+	help
+	  Allows creation of struct pages to represent unaddressable device memory;
+	  i.e., memory that is only accessible from the device (or group of
+	  devices).
+
 config FRAME_VECTOR
 	bool
 

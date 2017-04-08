@@ -27,10 +27,20 @@ struct resource;
  * to regular memory, in that the CPU can access it transparently. However,
  * it is likely to have different bandwidth and latency than regular memory.
  * See Documentation/nvdimm/nvdimm.txt for more information.
+ *
+ * MEMORY_DEVICE_UNADDRESSABLE:
+ * Device memory that is not directly addressable by the CPU: CPU can neither
+ * read nor write _UNADDRESSABLE memory. In this case, we do still have struct
+ * pages backing the device memory. Doing so simplifies the implementation, but
+ * it is important to remember that there are certain points at which the struct
+ * page must be treated as an opaque object, rather than a "normal" struct page.
+ * A more complete discussion of unaddressable memory may be found in
+ * include/linux/hmm.h and Documentation/vm/hmm.txt.
  */
 enum memory_type {
 	MEMORY_NORMAL = 0,
 	MEMORY_DEVICE_PERSISTENT,
+	MEMORY_DEVICE_UNADDRESSABLE,
 };
 
 #ifdef CONFIG_MEMORY_HOTPLUG
