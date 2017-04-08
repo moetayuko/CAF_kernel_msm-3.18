@@ -289,6 +289,20 @@ config MIGRATION
 config ARCH_ENABLE_HUGEPAGE_MIGRATION
 	bool
 
+config HMM
+	bool
+	depends on MMU && 64BIT
+	help
+	  HMM provides a set of helpers to share a virtual address
+	  space between CPU and a device, so that the device can access any valid
+	  address of the process (while still obeying memory protection). HMM also
+	  provides helpers to migrate process memory to device memory, and back.
+	  Each set of functionality (address space mirroring, and migration to and
+	  from device memory) can be used independently of the other.
+
+	  This is primarily useful for devices like GPU, for GPGPU compute workload,
+	  with APIs such as OpenCL or CUDA. See Documentation/vm/hmm.txt.
+
 config PHYS_ADDR_T_64BIT
 	def_bool 64BIT || ARCH_PHYS_ADDR_T_64BIT
 
