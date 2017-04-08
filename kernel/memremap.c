@@ -190,6 +190,12 @@ EXPORT_SYMBOL(get_zone_device_page);
 
 void put_zone_device_page(struct page *page)
 {
+	/*
+	 * ZONE_DEVICE page refcount should never reach 0 and never be freed
+	 * to kernel memory allocator.
+	 */
+	page_ref_dec(page);
+
 	put_dev_pagemap(page->pgmap);
 }
 EXPORT_SYMBOL(put_zone_device_page);
