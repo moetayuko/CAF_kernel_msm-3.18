@@ -897,7 +897,7 @@ static int hmm_devmem_pages_create(struct hmm_devmem *devmem)
 	ret = arch_add_memory(nid, align_start, align_size,
 			      devmem->pagemap.type);
 	mem_hotplug_done();
-	if (!ret)
+	if (ret)
 		goto error_add_memory;
 
 	for (pfn = devmem->pfn_first; pfn < devmem->pfn_last; pfn++) {
