@@ -2478,6 +2478,7 @@ static void migrate_vma_insert_page(struct migrate_vma *migrate,
 	struct mem_cgroup *memcg;
 	spinlock_t *ptl;
 	pgd_t *pgdp;
+	p4d_t *p4dp;
 	pud_t *pudp;
 	pmd_t *pmdp;
 	pte_t *ptep;
@@ -2488,7 +2489,10 @@ static void migrate_vma_insert_page(struct migrate_vma *migrate,
 		goto abort;
 
 	pgdp = pgd_offset(mm, addr);
-	pudp = pud_alloc(mm, pgdp, addr);
+	p4dp = p4d_alloc(mm, pgdp, addr);
+	if (!p4dp)
+		goto abort;
+	pudp = pud_alloc(mm, p4dp, addr);
 	if (!pudp)
 		goto abort;
 	pmdp = pmd_alloc(mm, pudp, addr);
