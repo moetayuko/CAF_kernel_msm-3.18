@@ -890,6 +890,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_MIPS_VZ 137
 #define KVM_CAP_MIPS_TE 138
 #define KVM_CAP_MIPS_64BIT 139
+#define KVM_CAP_ARM_USER_IRQ 140
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
@@ -1360,5 +1361,12 @@ struct kvm_assigned_msix_entry {
 
 #define KVM_X2APIC_API_USE_32BIT_IDS            (1ULL << 0)
 #define KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK  (1ULL << 1)
+
+/* Available with KVM_CAP_ARM_USER_IRQ */
+
+/* Bits for run->s.regs.device_irq_level */
+#define KVM_ARM_DEV_EL1_VTIMER		(1 << 0)
+#define KVM_ARM_DEV_EL1_PTIMER		(1 << 1)
+#define KVM_ARM_DEV_PMU			(1 << 2)
 
 #endif /* __LINUX_KVM_H */
