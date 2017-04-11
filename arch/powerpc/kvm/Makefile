@@ -17,7 +17,6 @@ CFLAGS_emulate.o  := -I.
 CFLAGS_emulate_loadstore.o  := -I.
 
 common-objs-y += powerpc.o emulate_loadstore.o
-common-objs-$(CONFIG_PPC_FPU) += fpu.o
 obj-$(CONFIG_KVM_EXIT_TIMING) += timing.o
 obj-$(CONFIG_KVM_BOOK3S_HANDLER) += book3s_exports.o
 
