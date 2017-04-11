@@ -132,6 +132,9 @@ extern void kvmppc_core_vcpu_put(struct kvm_vcpu *vcpu);
 extern int kvmppc_core_prepare_to_enter(struct kvm_vcpu *vcpu);
 extern int kvmppc_core_pending_dec(struct kvm_vcpu *vcpu);
 extern void kvmppc_core_queue_program(struct kvm_vcpu *vcpu, ulong flags);
+extern void kvmppc_core_queue_fpunavail(struct kvm_vcpu *vcpu);
+extern void kvmppc_core_queue_vec_unavail(struct kvm_vcpu *vcpu);
+extern void kvmppc_core_queue_vsx_unavail(struct kvm_vcpu *vcpu);
 extern void kvmppc_core_queue_dec(struct kvm_vcpu *vcpu);
 extern void kvmppc_core_dequeue_dec(struct kvm_vcpu *vcpu);
 extern void kvmppc_core_queue_external(struct kvm_vcpu *vcpu,
@@ -164,13 +167,19 @@ extern long kvmppc_prepare_vrma(struct kvm *kvm,
 extern void kvmppc_map_vrma(struct kvm_vcpu *vcpu,
 			struct kvm_memory_slot *memslot, unsigned long porder);
 extern int kvmppc_pseries_do_hcall(struct kvm_vcpu *vcpu);
+extern long kvm_spapr_tce_attach_iommu_group(struct kvm *kvm, int tablefd,
+		struct iommu_group *grp);
+extern void kvm_spapr_tce_release_iommu_group(struct kvm *kvm,
+		struct iommu_group *grp);
 
 extern long kvm_vm_ioctl_create_spapr_tce(struct kvm *kvm,
 				struct kvm_create_spapr_tce_64 *args);
 extern struct kvmppc_spapr_tce_table *kvmppc_find_table(
-		struct kvm_vcpu *vcpu, unsigned long liobn);
-extern long kvmppc_ioba_validate(struct kvmppc_spapr_tce_table *stt,
-		unsigned long ioba, unsigned long npages);
+		struct kvm *kvm, unsigned long liobn);
+#define kvmppc_ioba_validate(stt, ioba, npages)                         \
+		(iommu_tce_check_ioba((stt)->page_shift, (stt)->offset, \
+				(stt)->size, (ioba), (npages)) ?        \
+				H_PARAMETER : H_SUCCESS)
 extern long kvmppc_tce_validate(struct kvmppc_spapr_tce_table *tt,
 		unsigned long tce);
 extern long kvmppc_gpa_to_ua(struct kvm *kvm, unsigned long gpa,
