@@ -50,7 +50,7 @@
 #include <asm/sections.h>
 #include <asm/kdebug.h>
 #include <asm/numa.h>
-#include <asm/cacheflush.h>
+#include <asm/set_memory.h>
 #include <asm/init.h>
 #include <asm/uv/uv.h>
 #include <asm/setup.h>
@@ -686,16 +686,45 @@ static void  update_end_of_memory_vars(u64 start, u64 size)
  * Memory is added always to NORMAL zone. This means you will never get
  * additional DMA/DMA32 memory.
  */
-int arch_add_memory(int nid, u64 start, u64 size, bool for_device)
+int arch_add_memory(int nid, u64 start, u64 size, enum memory_type type)
 {
 	struct pglist_data *pgdat = NODE_DATA(nid);
-	struct zone *zone = pgdat->node_zones +
-		zone_for_memory(nid, start, size, ZONE_NORMAL, for_device);
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
+	bool for_device = false;
+	struct zone *zone;
 	int ret;
 
-	init_memory_mapping(start, start + size);
+	/*
+	 * Each memory_type needs special handling, so error out on an
+	 * unsupported type.
+	 */
+	switch (type) {
+	case MEMORY_NORMAL:
+		break;
+	case MEMORY_DEVICE_PERSISTENT:
+	case MEMORY_DEVICE_UNADDRESSABLE:
+		for_device = true;
+		break;
+	default:
+		pr_err("hotplug unsupported memory type %d\n", type);
+		return -EINVAL;
+	}
+
+	zone = pgdat->node_zones +
+		zone_for_memory(nid, start, size, ZONE_NORMAL, for_device);
+
+	/*
+	 * We get un-addressable memory when some one is adding a ZONE_DEVICE
+	 * to have struct page for a device memory which is not accessible by
+	 * the CPU so it is pointless to have a linear kernel mapping of such
+	 * memory.
+	 *
+	 * Core mm should make sure it never set a pte pointing to such fake
+	 * physical range.
+	 */
+	if (type != MEMORY_DEVICE_UNADDRESSABLE)
+		init_memory_mapping(start, start + size);
 
 	ret = __add_pages(nid, zone, start_pfn, nr_pages);
 	WARN_ON_ONCE(ret);
@@ -1035,7 +1064,7 @@ kernel_physical_mapping_remove(unsigned long start, unsigned long end)
 	remove_pagetable(start, end, true);
 }
 
-int __ref arch_remove_memory(u64 start, u64 size)
+int __ref arch_remove_memory(u64 start, u64 size, enum memory_type type)
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
@@ -1044,6 +1073,20 @@ int __ref arch_remove_memory(u64 start, u64 size)
 	struct zone *zone;
 	int ret;
 
+	/*
+	 * Each memory_type needs special handling, so error out on an
+	 * unsupported type.
+	 */
+	switch (type) {
+	case MEMORY_NORMAL:
+	case MEMORY_DEVICE_PERSISTENT:
+	case MEMORY_DEVICE_UNADDRESSABLE:
+		break;
+	default:
+		pr_err("hotplug unsupported memory type %d\n", type);
+		return -EINVAL;
+	}
+
 	/* With altmap the first mapped page is offset from @start */
 	altmap = to_vmem_altmap((unsigned long) page);
 	if (altmap)
@@ -1051,7 +1094,9 @@ int __ref arch_remove_memory(u64 start, u64 size)
 	zone = page_zone(page);
 	ret = __remove_pages(zone, start_pfn, nr_pages);
 	WARN_ON_ONCE(ret);
-	kernel_physical_mapping_remove(start, start + size);
+
+	if (type != MEMORY_DEVICE_UNADDRESSABLE)
+		kernel_physical_mapping_remove(start, start + size);
 
 	return ret;
 }
