@@ -332,7 +332,8 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
 			inode->i_ino == F2FS_META_INO(sbi))
 		return 0;
 
-	if (!is_inode_flag_set(inode, FI_DIRTY_INODE))
+	if (!is_inode_flag_set(inode, FI_DIRTY_INODE) ||
+			is_inode_flag_set(inode, FI_NEW_INODE))
 		return 0;
 
 	/*
