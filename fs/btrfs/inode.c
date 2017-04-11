@@ -8027,7 +8027,6 @@ struct btrfs_retry_complete {
 static void btrfs_retry_endio_nocsum(struct bio *bio)
 {
 	struct btrfs_retry_complete *done = bio->bi_private;
-	struct inode *inode;
 	struct bio_vec *bvec;
 	int i;
 
@@ -8035,12 +8034,12 @@ static void btrfs_retry_endio_nocsum(struct bio *bio)
 		goto end;
 
 	ASSERT(bio->bi_vcnt == 1);
-	inode = bio->bi_io_vec->bv_page->mapping->host;
-	ASSERT(bio->bi_io_vec->bv_len == btrfs_inode_sectorsize(inode));
+	ASSERT(bio->bi_io_vec->bv_len == btrfs_inode_sectorsize(done->inode));
 
 	done->uptodate = 1;
 	bio_for_each_segment_all(bvec, bio, i)
-	clean_io_failure(BTRFS_I(done->inode), done->start, bvec->bv_page, 0);
+		clean_io_failure(BTRFS_I(done->inode), done->start,
+				 bvec->bv_page, 0);
 end:
 	complete(&done->done);
 	bio_put(bio);
@@ -8090,8 +8089,10 @@ next_block_or_try_again:
 
 		start += sectorsize;
 
-		if (nr_sectors--) {
+		nr_sectors--;
+		if (nr_sectors) {
 			pgoff += sectorsize;
+			ASSERT(pgoff < PAGE_SIZE);
 			goto next_block_or_try_again;
 		}
 	}
@@ -8103,9 +8104,7 @@ static void btrfs_retry_endio(struct bio *bio)
 {
 	struct btrfs_retry_complete *done = bio->bi_private;
 	struct btrfs_io_bio *io_bio = btrfs_io_bio(bio);
-	struct inode *inode;
 	struct bio_vec *bvec;
-	u64 start;
 	int uptodate;
 	int ret;
 	int i;
@@ -8115,11 +8114,8 @@ static void btrfs_retry_endio(struct bio *bio)
 
 	uptodate = 1;
 
-	start = done->start;
-
 	ASSERT(bio->bi_vcnt == 1);
-	inode = bio->bi_io_vec->bv_page->mapping->host;
-	ASSERT(bio->bi_io_vec->bv_len == btrfs_inode_sectorsize(inode));
+	ASSERT(bio->bi_io_vec->bv_len == btrfs_inode_sectorsize(done->inode));
 
 	bio_for_each_segment_all(bvec, bio, i) {
 		ret = __readpage_endio_check(done->inode, io_bio, i,
@@ -8197,8 +8193,10 @@ next:
 
 		ASSERT(nr_sectors);
 
-		if (--nr_sectors) {
+		nr_sectors--;
+		if (nr_sectors) {
 			pgoff += sectorsize;
+			ASSERT(pgoff < PAGE_SIZE);
 			goto next_block;
 		}
 	}
