@@ -1,3 +1,5 @@
+.. _usb-hostside-api:
+
 ===========================
 The Linux-USB Host Side API
 ===========================
@@ -102,6 +104,8 @@ disconnect testing (while the device is active) with each different host
 controller driver, to make sure drivers don't have bugs of their own as
 well as to make sure they aren't relying on some HCD-specific behavior.
 
+.. _usb_chapter9:
+
 USB-Standard Types
 ==================
 
@@ -111,6 +115,8 @@ USB, and in APIs including this host side API, gadget APIs, and usbfs.
 
 .. kernel-doc:: include/linux/usb/ch9.h
    :internal:
+
+.. _usb_header:
 
 Host-Side Data Types and Macros
 ===============================
@@ -209,7 +215,7 @@ library that wraps it. Such libraries include
 `libusb <http://libusb.sourceforge.net>`__ for C/C++, and
 `jUSB <http://jUSB.sourceforge.net>`__ for Java.
 
-    **Note**
+.. note::
 
     This particular documentation is incomplete, especially with respect
     to the asynchronous mode. As of kernel 2.5.66 the code and this
@@ -319,9 +325,7 @@ files. For information about the current format of this file, see the
 sources.
 
 This file, in combination with the poll() system call, can also be used
-to detect when devices are added or removed:
-
-::
+to detect when devices are added or removed::
 
     int fd;
     struct pollfd pfd;
@@ -329,11 +333,11 @@ to detect when devices are added or removed:
     fd = open("/proc/bus/usb/devices", O_RDONLY);
     pfd = { fd, POLLIN, 0 };
     for (;;) {
-        /* The first time through, this call will return immediately. */
-        poll(&pfd, 1, -1);
+	/* The first time through, this call will return immediately. */
+	poll(&pfd, 1, -1);
 
-        /* To see what's changed, compare the file's previous and current
-           contents or scan the filesystem.  (Scanning is more precise.) */
+	/* To see what's changed, compare the file's previous and current
+	   contents or scan the filesystem.  (Scanning is more precise.) */
     }
 
 Note that this behavior is intended to be used for informational and
@@ -407,9 +411,7 @@ The ioctl() Requests
 --------------------
 
 To use these ioctls, you need to include the following headers in your
-userspace program:
-
-::
+userspace program::
 
     #include <linux/usb.h>
     #include <linux/usbdevice_fs.h>
@@ -422,8 +424,8 @@ header.
 Unless noted otherwise, the ioctl requests described here will update
 the modification time on the usbfs file to which they are applied
 (unless they fail). A return of zero indicates success; otherwise, a
-standard USB error code is returned. (These are documented in
-``Documentation/usb/error-codes.txt`` in your kernel sources.)
+standard USB error code is returned (These are documented in
+:ref:`usb-error-codes`).
 
 Each of these files multiplexes access to several I/O streams, one per
 endpoint. Each device has one control endpoint (endpoint zero) which
@@ -458,14 +460,12 @@ USBDEVFS_CLAIMINTERFACE
 
 USBDEVFS_CONNECTINFO
     Says whether the device is lowspeed. The ioctl parameter points to a
-    structure like this:
+    structure like this::
 
-    ::
-
-        struct usbdevfs_connectinfo {
-                unsigned int   devnum;
-                unsigned char  slow;
-        };
+	struct usbdevfs_connectinfo {
+		unsigned int   devnum;
+		unsigned char  slow;
+	};
 
     File modification time is not updated by this request.
 
@@ -477,45 +477,41 @@ USBDEVFS_CONNECTINFO
 USBDEVFS_GETDRIVER
     Returns the name of the kernel driver bound to a given interface (a
     string). Parameter is a pointer to this structure, which is
-    modified:
+    modified::
 
-    ::
-
-        struct usbdevfs_getdriver {
-                unsigned int  interface;
-                char          driver[USBDEVFS_MAXDRIVERNAME + 1];
-        };
+	struct usbdevfs_getdriver {
+		unsigned int  interface;
+		char          driver[USBDEVFS_MAXDRIVERNAME + 1];
+	};
 
     File modification time is not updated by this request.
 
 USBDEVFS_IOCTL
     Passes a request from userspace through to a kernel driver that has
-    an ioctl entry in the *struct usb_driver* it registered.
+    an ioctl entry in the *struct usb_driver* it registered::
 
-    ::
+	struct usbdevfs_ioctl {
+		int     ifno;
+		int     ioctl_code;
+		void    *data;
+	};
 
-        struct usbdevfs_ioctl {
-                int     ifno;
-                int     ioctl_code;
-                void    *data;
-        };
+	/* user mode call looks like this.
+	 * 'request' becomes the driver->ioctl() 'code' parameter.
+	 * the size of 'param' is encoded in 'request', and that data
+	 * is copied to or from the driver->ioctl() 'buf' parameter.
+	 */
+	static int
+	usbdev_ioctl (int fd, int ifno, unsigned request, void *param)
+	{
+		struct usbdevfs_ioctl   wrapper;
 
-        /* user mode call looks like this.
-         * 'request' becomes the driver->ioctl() 'code' parameter.
-         * the size of 'param' is encoded in 'request', and that data
-         * is copied to or from the driver->ioctl() 'buf' parameter.
-         */
-        static int
-        usbdev_ioctl (int fd, int ifno, unsigned request, void *param)
-        {
-                struct usbdevfs_ioctl   wrapper;
+		wrapper.ifno = ifno;
+		wrapper.ioctl_code = request;
+		wrapper.data = param;
 
-                wrapper.ifno = ifno;
-                wrapper.ioctl_code = request;
-                wrapper.data = param;
-
-                return ioctl (fd, USBDEVFS_IOCTL, &wrapper);
-        }
+		return ioctl (fd, USBDEVFS_IOCTL, &wrapper);
+	}
 
     File modification time is not updated by this request.
 
@@ -534,11 +530,11 @@ USBDEVFS_RELEASEINTERFACE
     the number of the interface (bInterfaceNumber from descriptor); File
     modification time is not updated by this request.
 
-        **Warning**
+.. warning::
 
-        *No security check is made to ensure that the task which made
-        the claim is the one which is releasing it. This means that user
-        mode driver may interfere other ones.*
+	*No security check is made to ensure that the task which made
+	the claim is the one which is releasing it. This means that user
+	mode driver may interfere other ones.*
 
 USBDEVFS_RESETEP
     Resets the data toggle value for an endpoint (bulk or interrupt) to
@@ -546,13 +542,13 @@ USBDEVFS_RESETEP
     as identified in the endpoint descriptor), with USB_DIR_IN added
     if the device's endpoint sends data to the host.
 
-        **Warning**
+	**Warning**
 
-        *Avoid using this request. It should probably be removed.* Using
-        it typically means the device and driver will lose toggle
-        synchronization. If you really lost synchronization, you likely
-        need to completely handshake with the device, using a request
-        like CLEAR_HALT or SET_INTERFACE.
+	*Avoid using this request. It should probably be removed.* Using
+	it typically means the device and driver will lose toggle
+	synchronization. If you really lost synchronization, you likely
+	need to completely handshake with the device, using a request
+	like CLEAR_HALT or SET_INTERFACE.
 
 USBDEVFS_DROP_PRIVILEGES
     This is used to relinquish the ability to do certain operations
@@ -574,16 +570,14 @@ a time.
 
 USBDEVFS_BULK
     Issues a bulk read or write request to the device. The ioctl
-    parameter is a pointer to this structure:
+    parameter is a pointer to this structure::
 
-    ::
-
-        struct usbdevfs_bulktransfer {
-                unsigned int  ep;
-                unsigned int  len;
-                unsigned int  timeout; /* in milliseconds */
-                void          *data;
-        };
+	struct usbdevfs_bulktransfer {
+		unsigned int  ep;
+		unsigned int  len;
+		unsigned int  timeout; /* in milliseconds */
+		void          *data;
+	};
 
     The "ep" value identifies a bulk endpoint number (1 to 15, as
     identified in an endpoint descriptor), masked with USB_DIR_IN when
@@ -606,25 +600,23 @@ USBDEVFS_CLEAR_HALT
 
 USBDEVFS_CONTROL
     Issues a control request to the device. The ioctl parameter points
-    to a structure like this:
+    to a structure like this::
 
-    ::
-
-        struct usbdevfs_ctrltransfer {
-                __u8   bRequestType;
-                __u8   bRequest;
-                __u16  wValue;
-                __u16  wIndex;
-                __u16  wLength;
-                __u32  timeout;  /* in milliseconds */
-                void   *data;
-        };
+	struct usbdevfs_ctrltransfer {
+		__u8   bRequestType;
+		__u8   bRequest;
+		__u16  wValue;
+		__u16  wIndex;
+		__u16  wLength;
+		__u32  timeout;  /* in milliseconds */
+		void   *data;
+	};
 
     The first eight bytes of this structure are the contents of the
     SETUP packet to be sent to the device; see the USB 2.0 specification
     for details. The bRequestType value is composed by combining a
-    USB_TYPE_\* value, a USB_DIR_\* value, and a USB_RECIP_\*
-    value (from *<linux/usb.h>*). If wLength is nonzero, it describes
+    ``USB_TYPE_*`` value, a ``USB_DIR_*`` value, and a ``USB_RECIP_*``
+    value (from ``linux/usb.h``). If wLength is nonzero, it describes
     the length of the data buffer, which is either written to the device
     (USB_DIR_OUT) or read from the device (USB_DIR_IN).
 
@@ -638,22 +630,20 @@ USBDEVFS_RESET
     the reset, this rebinds all device interfaces. File modification
     time is not updated by this request.
 
-        **Warning**
+.. warning::
 
-        *Avoid using this call* until some usbcore bugs get fixed, since
-        it does not fully synchronize device, interface, and driver (not
-        just usbfs) state.
+	*Avoid using this call* until some usbcore bugs get fixed, since
+	it does not fully synchronize device, interface, and driver (not
+	just usbfs) state.
 
 USBDEVFS_SETINTERFACE
     Sets the alternate setting for an interface. The ioctl parameter is
-    a pointer to a structure like this:
+    a pointer to a structure like this::
 
-    ::
-
-        struct usbdevfs_setinterface {
-                unsigned int  interface;
-                unsigned int  altsetting;
-        };
+	struct usbdevfs_setinterface {
+		unsigned int  interface;
+		unsigned int  altsetting;
+	};
 
     File modification time is not updated by this request.
 
@@ -669,11 +659,11 @@ USBDEVFS_SETCONFIGURATION
     configuration (bConfigurationValue from descriptor). File
     modification time is not updated by this request.
 
-        **Warning**
+.. warning::
 
-        *Avoid using this call* until some usbcore bugs get fixed, since
-        it does not fully synchronize device, interface, and driver (not
-        just usbfs) state.
+	*Avoid using this call* until some usbcore bugs get fixed, since
+	it does not fully synchronize device, interface, and driver (not
+	just usbfs) state.
 
 Asynchronous I/O Support
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -688,7 +678,7 @@ the blocking is separate.
 
 These requests are packaged into a structure that resembles the URB used
 by kernel device drivers. (No POSIX Async I/O support here, sorry.) It
-identifies the endpoint type (USBDEVFS_URB_TYPE_\*), endpoint
+identifies the endpoint type (``USBDEVFS_URB_TYPE_*``), endpoint
 (number, masked with USB_DIR_IN as appropriate), buffer and length,
 and a user "context" value serving to uniquely identify each request.
 (It's usually a pointer to per-request data.) Flags can modify requests
@@ -702,30 +692,28 @@ When usbfs returns these urbs, the status value is updated, and the
 buffer may have been modified. Except for isochronous transfers, the
 actual_length is updated to say how many bytes were transferred; if the
 USBDEVFS_URB_DISABLE_SPD flag is set ("short packets are not OK"), if
-fewer bytes were read than were requested then you get an error report.
-
-::
+fewer bytes were read than were requested then you get an error report::
 
     struct usbdevfs_iso_packet_desc {
-            unsigned int                     length;
-            unsigned int                     actual_length;
-            unsigned int                     status;
+	    unsigned int                     length;
+	    unsigned int                     actual_length;
+	    unsigned int                     status;
     };
 
     struct usbdevfs_urb {
-            unsigned char                    type;
-            unsigned char                    endpoint;
-            int                              status;
-            unsigned int                     flags;
-            void                             *buffer;
-            int                              buffer_length;
-            int                              actual_length;
-            int                              start_frame;
-            int                              number_of_packets;
-            int                              error_count;
-            unsigned int                     signr;
-            void                             *usercontext;
-            struct usbdevfs_iso_packet_desc  iso_frame_desc[];
+	    unsigned char                    type;
+	    unsigned char                    endpoint;
+	    int                              status;
+	    unsigned int                     flags;
+	    void                             *buffer;
+	    int                              buffer_length;
+	    int                              actual_length;
+	    int                              start_frame;
+	    int                              number_of_packets;
+	    int                              error_count;
+	    unsigned int                     signr;
+	    void                             *usercontext;
+	    struct usbdevfs_iso_packet_desc  iso_frame_desc[];
     };
 
 For these asynchronous requests, the file modification time reflects
