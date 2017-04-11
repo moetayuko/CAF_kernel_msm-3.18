@@ -1636,6 +1636,7 @@ static const struct of_device_id atmel_matrix_of_ids[] = {
 		.compatible = "atmel,at91sam9x5-matrix",
 		.data = (void *)AT91SAM9X5_MATRIX_EBICSA,
 	},
+	{ /* sentinel */ },
 };
 
 static int atmel_nand_controller_init(struct atmel_nand_controller *nc,
