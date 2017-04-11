@@ -1029,7 +1029,7 @@ static uint16_t vlv_compute_wm_level(const struct intel_crtc_state *crtc_state,
 	if (dev_priv->wm.pri_latency[level] == 0)
 		return USHRT_MAX;
 
-	if (!plane_state->base.visible)
+	if (!intel_wm_plane_visible(crtc_state, plane_state))
 		return 0;
 
 	cpp = plane_state->base.fb->format->cpp[0];
@@ -1039,7 +1039,7 @@ static uint16_t vlv_compute_wm_level(const struct intel_crtc_state *crtc_state,
 	if (WARN_ON(htotal == 0))
 		htotal = 1;
 
-	if (plane->base.type == DRM_PLANE_TYPE_CURSOR) {
+	if (plane->id == PLANE_CURSOR) {
 		/*
 		 * FIXME the formula gives values that are
 		 * too big for the cursor FIFO, and hence we
@@ -1203,7 +1203,7 @@ static bool vlv_plane_wm_compute(struct intel_crtc_state *crtc_state,
 	int level;
 	bool dirty = false;
 
-	if (!plane_state->base.visible) {
+	if (!intel_wm_plane_visible(crtc_state, plane_state)) {
 		dirty |= vlv_raw_plane_wm_set(crtc_state, 0, plane_id, 0);
 		goto out;
 	}

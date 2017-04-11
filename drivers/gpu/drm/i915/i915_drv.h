@@ -1511,12 +1511,6 @@ struct i915_gem_mm {
 	/** LRU list of objects with fence regs on them. */
 	struct list_head fence_list;
 
-	/**
-	 * Are we in a non-interruptible section of code like
-	 * modesetting?
-	 */
-	bool interruptible;
-
 	/* the indicator for dispatch video commands on two BSD rings */
 	atomic_t bsd_engine_dispatch_index;
 
@@ -3091,14 +3085,26 @@ void assert_forcewakes_inactive(struct drm_i915_private *dev_priv);
 
 int intel_wait_for_register(struct drm_i915_private *dev_priv,
 			    i915_reg_t reg,
-			    const u32 mask,
-			    const u32 value,
-			    const unsigned long timeout_ms);
+			    u32 mask,
+			    u32 value,
+			    unsigned int timeout_ms);
+int __intel_wait_for_register_fw(struct drm_i915_private *dev_priv,
+				 i915_reg_t reg,
+				 u32 mask,
+				 u32 value,
+				 unsigned int fast_timeout_us,
+				 unsigned int slow_timeout_ms,
+				 u32 *out_value);
+static inline
 int intel_wait_for_register_fw(struct drm_i915_private *dev_priv,
 			       i915_reg_t reg,
-			       const u32 mask,
-			       const u32 value,
-			       const unsigned long timeout_ms);
+			       u32 mask,
+			       u32 value,
+			       unsigned int timeout_ms)
+{
+	return __intel_wait_for_register_fw(dev_priv, reg, mask, value,
+					    2, timeout_ms, NULL);
+}
 
 static inline bool intel_gvt_active(struct drm_i915_private *dev_priv)
 {

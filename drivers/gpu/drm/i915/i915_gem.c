@@ -2340,7 +2340,7 @@ rebuild_st:
 			 * defer the oom here by reporting the ENOMEM back
 			 * to userspace.
 			 */
-			reclaim = mapping_gfp_constraint(mapping, 0);
+			reclaim = mapping_gfp_mask(mapping);
 			reclaim |= __GFP_NORETRY; /* reclaim, but no oom */
 
 			page = shmem_read_mapping_page_gfp(mapping, i, reclaim);
@@ -4195,7 +4195,7 @@ i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 	 * catch if we ever need to fix it. In the meantime, if you do spot
 	 * such a local variable, please consider fixing!
 	 */
-	if (WARN_ON(size >> PAGE_SHIFT > INT_MAX))
+	if (size >> PAGE_SHIFT > INT_MAX)
 		return ERR_PTR(-E2BIG);
 
 	if (overflows_type(size, obj->base.size))
@@ -4302,6 +4302,8 @@ static void __i915_gem_free_objects(struct drm_i915_private *i915,
 	intel_runtime_pm_put(i915);
 	mutex_unlock(&i915->drm.struct_mutex);
 
+	cond_resched();
+
 	llist_for_each_entry_safe(obj, on, freed, freed) {
 		GEM_BUG_ON(obj->bind_count);
 		GEM_BUG_ON(atomic_read(&obj->frontbuffer_bits));
@@ -4349,8 +4351,11 @@ static void __i915_gem_free_work(struct work_struct *work)
 	 * unbound now.
 	 */
 
-	while ((freed = llist_del_all(&i915->mm.free_list)))
+	while ((freed = llist_del_all(&i915->mm.free_list))) {
 		__i915_gem_free_objects(i915, freed);
+		if (need_resched())
+			break;
+	}
 }
 
 static void __i915_gem_free_object_rcu(struct rcu_head *head)
@@ -4455,6 +4460,8 @@ int i915_gem_suspend(struct drm_i915_private *dev_priv)
 	assert_kernel_context_is_current(dev_priv);
 	i915_gem_context_lost(dev_priv);
 	mutex_unlock(&dev->struct_mutex);
+
+	intel_guc_suspend(dev_priv);
 
 	cancel_delayed_work_sync(&dev_priv->gpu_error.hangcheck_work);
 	cancel_delayed_work_sync(&dev_priv->gt.retire_work);
@@ -4820,8 +4827,6 @@ i915_gem_load_init(struct drm_i915_private *dev_priv)
 
 	init_waitqueue_head(&dev_priv->pending_flip_queue);
 
-	dev_priv->mm.interruptible = true;
-
 	atomic_set(&dev_priv->mm.bsd_engine_dispatch_index, 0);
 
 	spin_lock_init(&dev_priv->fb_tracking.lock);
@@ -4862,9 +4867,10 @@ void i915_gem_load_cleanup(struct drm_i915_private *dev_priv)
 
 int i915_gem_freeze(struct drm_i915_private *dev_priv)
 {
-	mutex_lock(&dev_priv->drm.struct_mutex);
+	/* Discard all purgeable objects, let userspace recover those as
+	 * required after resuming.
+	 */
 	i915_gem_shrink_all(dev_priv);
-	mutex_unlock(&dev_priv->drm.struct_mutex);
 
 	return 0;
 }
@@ -4889,12 +4895,13 @@ int i915_gem_freeze_late(struct drm_i915_private *dev_priv)
 	 * we update that state just before writing out the image.
 	 *
 	 * To try and reduce the hibernation image, we manually shrink
-	 * the objects as well.
+	 * the objects as well, see i915_gem_freeze()
 	 */
 
-	mutex_lock(&dev_priv->drm.struct_mutex);
 	i915_gem_shrink(dev_priv, -1UL, I915_SHRINK_UNBOUND);
+	i915_gem_drain_freed_objects(dev_priv);
 
+	mutex_lock(&dev_priv->drm.struct_mutex);
 	for (p = phases; *p; p++) {
 		list_for_each_entry(obj, *p, global_link) {
 			obj->base.read_domains = I915_GEM_DOMAIN_CPU;

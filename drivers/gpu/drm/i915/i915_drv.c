@@ -1213,9 +1213,8 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct drm_i915_private *dev_priv;
 	int ret;
 
-	/* Enable nuclear pageflip on ILK+, except vlv/chv */
-	if (!i915.nuclear_pageflip &&
-	    (match_info->gen < 5 || match_info->has_gmch_display))
+	/* Enable nuclear pageflip on ILK+ */
+	if (!i915.nuclear_pageflip && match_info->gen < 5)
 		driver.driver_features &= ~DRIVER_ATOMIC;
 
 	ret = -ENOMEM;
@@ -1468,8 +1467,6 @@ static int i915_drm_suspend(struct drm_device *dev)
 			"GEM idle failed, resume might fail\n");
 		goto out;
 	}
-
-	intel_guc_suspend(dev_priv);
 
 	intel_display_suspend(dev);
 
