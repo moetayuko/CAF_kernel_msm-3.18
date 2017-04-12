@@ -163,6 +163,60 @@ static inline int ptr_ring_produce_bh(struct ptr_ring *r, void *ptr)
 	return ret;
 }
 
+
+static inline int ptr_ring_produce_batch_any(struct ptr_ring *r, void *ptr[], int batch)
+{
+	unsigned long flags;
+	int ret = -ENOSPC, n, i, producer;
+
+	spin_lock_irqsave(&r->producer_lock, flags);
+	if (unlikely(!batch)) {
+		ret = 0;
+		goto done;
+	}
+	if (unlikely(!r->size))
+		goto done;
+
+	producer = r->producer;
+	for (n = 0; n < batch; ++n) {
+		if (r->queue[producer]) {
+			break;
+		}
+		if (++producer >= r->size)
+			producer = 0;
+	}
+
+	if (!n)
+		goto done;
+
+	ret = n;
+
+	if (n < batch) {
+		/* Ring full. Produce normally. */
+		for (i = 0; i < n; ++i) {
+			r->queue[r->producer++] = ptr[i];
+			if (unlikely(r->producer >= r->size))
+				r->producer = 0;
+		}
+	} else {
+		/* Ring empty. Produce in the reverse order. */
+		for (i = n - 1; i >= 0; --i) {
+			if (--producer < 0)
+				producer = r->size - 1;
+			r->queue[producer] = ptr[i];
+		}
+		r->producer += batch;
+		if (unlikely(r->producer >= r->size))
+			r->producer -= r->size;
+	}
+
+
+done:
+	spin_unlock_irqrestore(&r->producer_lock, flags);
+
+	return ret;
+}
+
 /* Note: callers invoking this in a loop must use a compiler barrier,
  * for example cpu_relax(). Callers must take consumer_lock
  * if they dereference the pointer - see e.g. PTR_RING_PEEK_CALL.
