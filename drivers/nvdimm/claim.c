@@ -243,7 +243,15 @@ static int nsio_rw_bytes(struct nd_namespace_common *ndns,
 	}
 
 	if (unlikely(is_bad_pmem(&nsio->bb, sector, sz_align))) {
-		if (IS_ALIGNED(offset, 512) && IS_ALIGNED(size, 512)) {
+		/*
+		 * FIXME: nsio_rw_bytes() may be called from atomic
+		 * context in the BTT case and nvdimm_clear_poison()
+		 * takes a sleeping lock. Until the locking can be
+		 * reworked this capability depends on !BTT or BROKEN.
+		 */
+		if ((!IS_ENABLED(CONFIG_BTT) || IS_ENABLED(CONFIG_BROKEN))
+				&& IS_ALIGNED(offset, 512)
+				&& IS_ALIGNED(size, 512)) {
 			long cleared;
 
 			cleared = nvdimm_clear_poison(&ndns->dev, offset, size);
