@@ -59,6 +59,9 @@ There are three files associated with each group:
 	given to the default (root) group. You cannot remove CPUs
 	from the default group.
 
+"cpus_list": One or more CPU ranges of logical CPUs assigned to this
+	     group. Same rules apply like for the "cpus" file.
+
 "schemata": A list of all the resources available to this group.
 	Each resource has its own line and format - see below for
 	details.
@@ -128,6 +131,20 @@ L2 cache does not support code and data prioritization, so the
 schemata format is always:
 
 	L2:<cache_id0>=<cbm>;<cache_id1>=<cbm>;...
+
+Reading/writing the schemata file
+---------------------------------
+Reading the schemata file will show the state of all resources
+on all domains. When writing you only need to specify those values
+which you wish to change.  E.g.
+
+# cat schemata
+L3DATA:0=fffff;1=fffff;2=fffff;3=fffff
+L3CODE:0=fffff;1=fffff;2=fffff;3=fffff
+# echo "L3DATA:2=3c0;" > schemata
+# cat schemata
+L3DATA:0=fffff;1=fffff;2=3c0;3=fffff
+L3CODE:0=fffff;1=fffff;2=fffff;3=fffff
 
 Example 1
 ---------
