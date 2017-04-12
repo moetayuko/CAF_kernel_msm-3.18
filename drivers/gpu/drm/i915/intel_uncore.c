@@ -1585,19 +1585,23 @@ static int gen6_reset_engines(struct drm_i915_private *dev_priv,
 }
 
 /**
- * intel_wait_for_register_fw - wait until register matches expected state
+ * __intel_wait_for_register_fw - wait until register matches expected state
  * @dev_priv: the i915 device
  * @reg: the register to read
  * @mask: mask to apply to register value
  * @value: expected value
- * @timeout_ms: timeout in millisecond
+ * @fast_timeout_us: fast timeout in microsecond for atomic/tight wait
+ * @slow_timeout_ms: slow timeout in millisecond
+ * @out_value: optional placeholder to hold registry value
  *
  * This routine waits until the target register @reg contains the expected
  * @value after applying the @mask, i.e. it waits until ::
  *
  *     (I915_READ_FW(reg) & mask) == value
  *
- * Otherwise, the wait will timeout after @timeout_ms milliseconds.
+ * Otherwise, the wait will timeout after @slow_timeout_ms milliseconds.
+ * For atomic context @slow_timeout_ms must be zero and @fast_timeout_us
+ * must be not larger than 20,0000 microseconds.
  *
  * Note that this routine assumes the caller holds forcewake asserted, it is
  * not suitable for very long waits. See intel_wait_for_register() if you
@@ -1606,16 +1610,31 @@ static int gen6_reset_engines(struct drm_i915_private *dev_priv,
  *
  * Returns 0 if the register matches the desired condition, or -ETIMEOUT.
  */
-int intel_wait_for_register_fw(struct drm_i915_private *dev_priv,
-			       i915_reg_t reg,
-			       const u32 mask,
-			       const u32 value,
-			       const unsigned long timeout_ms)
+int __intel_wait_for_register_fw(struct drm_i915_private *dev_priv,
+				 i915_reg_t reg,
+				 u32 mask,
+				 u32 value,
+				 unsigned int fast_timeout_us,
+				 unsigned int slow_timeout_ms,
+				 u32 *out_value)
 {
-#define done ((I915_READ_FW(reg) & mask) == value)
-	int ret = wait_for_us(done, 2);
+	u32 reg_value;
+#define done (((reg_value = I915_READ_FW(reg)) & mask) == value)
+	int ret;
+
+	/* Catch any overuse of this function */
+	might_sleep_if(slow_timeout_ms);
+	GEM_BUG_ON(fast_timeout_us > 20000);
+
+	ret = -ETIMEDOUT;
+	if (fast_timeout_us && fast_timeout_us <= 20000)
+		ret = _wait_for_atomic(done, fast_timeout_us, 0);
 	if (ret)
-		ret = wait_for(done, timeout_ms);
+		ret = wait_for(done, slow_timeout_ms);
+
+	if (out_value)
+		*out_value = reg_value;
+
 	return ret;
 #undef done
 }
@@ -1639,18 +1658,26 @@ int intel_wait_for_register_fw(struct drm_i915_private *dev_priv,
  */
 int intel_wait_for_register(struct drm_i915_private *dev_priv,
 			    i915_reg_t reg,
-			    const u32 mask,
-			    const u32 value,
-			    const unsigned long timeout_ms)
+			    u32 mask,
+			    u32 value,
+			    unsigned int timeout_ms)
 {
-
 	unsigned fw =
 		intel_uncore_forcewake_for_reg(dev_priv, reg, FW_REG_READ);
 	int ret;
 
-	intel_uncore_forcewake_get(dev_priv, fw);
-	ret = wait_for_us((I915_READ_FW(reg) & mask) == value, 2);
-	intel_uncore_forcewake_put(dev_priv, fw);
+	might_sleep();
+
+	spin_lock_irq(&dev_priv->uncore.lock);
+	intel_uncore_forcewake_get__locked(dev_priv, fw);
+
+	ret = __intel_wait_for_register_fw(dev_priv,
+					   reg, mask, value,
+					   2, 0, NULL);
+
+	intel_uncore_forcewake_put__locked(dev_priv, fw);
+	spin_unlock_irq(&dev_priv->uncore.lock);
+
 	if (ret)
 		ret = wait_for((I915_READ_NOTRACE(reg) & mask) == value,
 			       timeout_ms);
