@@ -115,6 +115,7 @@ struct hisi_sas_device {
 	atomic64_t running_req;
 	struct list_head	list;
 	u8 dev_status;
+	int sata_idx;
 };
 
 struct hisi_sas_slot {
@@ -137,6 +138,7 @@ struct hisi_sas_slot {
 	struct hisi_sas_sge_page *sge_page;
 	dma_addr_t sge_page_dma;
 	struct work_struct abort_slot;
+	struct timer_list internal_abort_timer;
 };
 
 struct hisi_sas_tmf_task {
@@ -203,6 +205,7 @@ struct hisi_hba {
 
 	int slot_index_count;
 	unsigned long *slot_index_tags;
+	unsigned long reject_stp_links_msk;
 
 	/* SCSI/SAS glue */
 	struct sas_ha_struct sha;
@@ -237,6 +240,7 @@ struct hisi_hba {
 	struct hisi_sas_slot	*slot_info;
 	unsigned long flags;
 	const struct hisi_sas_hw *hw;	/* Low level hw interface */
+	unsigned long sata_dev_bitmap[BITS_TO_LONGS(HISI_SAS_MAX_DEVICES)];
 	struct work_struct rst_work;
 };
 
