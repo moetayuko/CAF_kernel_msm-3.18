@@ -41,6 +41,14 @@ int main(void)
   DEFINE(TI_ADDR_LIMIT,		offsetof(struct thread_info, addr_limit));
   DEFINE(TI_TASK,		offsetof(struct thread_info, task));
   DEFINE(TI_CPU,		offsetof(struct thread_info, cpu));
+#ifdef CONFIG_ALT_SYSCALL
+  DEFINE(TI_NR_SYSCALLS,	offsetof(struct thread_info, nr_syscalls));
+  DEFINE(TI_SYS_CALL_TABLE,	offsetof(struct thread_info, sys_call_table));
+#ifdef CONFIG_COMPAT
+  DEFINE(TI_COMPAT_NR_SYSCALLS,	offsetof(struct thread_info, compat_nr_syscalls));
+  DEFINE(TI_COMPAT_SYS_CALL_TABLE,	offsetof(struct thread_info, compat_sys_call_table));
+#endif
+#endif
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
   DEFINE(TSK_TI_TTBR0,		offsetof(struct thread_info, ttbr0));
 #endif
