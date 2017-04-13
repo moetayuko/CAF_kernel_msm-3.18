@@ -101,7 +101,6 @@ kvm-objs-$(CONFIG_KVM_BOOK3S_64) := $(kvm-book3s_64-module-objs)
 kvm-book3s_32-objs := \
 	$(common-objs-y) \
 	emulate.o \
-	fpu.o \
 	book3s_paired_singles.o \
 	book3s.o \
 	book3s_pr.o \
