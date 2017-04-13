@@ -2137,6 +2137,16 @@ mwifiex_cfg80211_assoc(struct mwifiex_private *priv, size_t ssid_len,
 	ret = mwifiex_set_encode(priv, NULL, NULL, 0, 0, NULL, 1);
 
 	if (mode == NL80211_IFTYPE_ADHOC) {
+		u16 enable = true;
+
+		/* set ibss coalescing_status */
+		ret = mwifiex_send_cmd(
+				priv,
+				HostCmd_CMD_802_11_IBSS_COALESCING_STATUS,
+				HostCmd_ACT_GEN_SET, 0, &enable, true);
+		if (ret)
+			return ret;
+
 		/* "privacy" is set only for ad-hoc mode */
 		if (privacy) {
 			/*
@@ -3071,8 +3081,10 @@ int mwifiex_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
 
 	mwifiex_stop_net_dev_queue(priv->netdev, adapter);
 
-	skb_queue_walk_safe(&priv->bypass_txq, skb, tmp)
+	skb_queue_walk_safe(&priv->bypass_txq, skb, tmp) {
+		skb_unlink(skb, &priv->bypass_txq);
 		mwifiex_write_data_complete(priv->adapter, skb, 0, -1);
+	}
 
 	if (netif_carrier_ok(priv->netdev))
 		netif_carrier_off(priv->netdev);
@@ -4196,6 +4208,92 @@ int mwifiex_init_channel_scan_gap(struct mwifiex_adapter *adapter)
 	return 0;
 }
 
+static const struct nla_policy
+mwifiex_vendor_attr_policy[NUM_MWIFIEX_VENDOR_CMD_ATTR] = {
+	[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_24] = { .type = NLA_U8 },
+	[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_52] = { .type = NLA_U8 },
+};
+
+static int mwifiex_parse_vendor_data(struct nlattr **tb,
+				     const void *data, int data_len)
+{
+	if (!data)
+		return -EINVAL;
+
+	return nla_parse(tb, MAX_MWIFIEX_VENDOR_CMD_ATTR, data, data_len,
+			 mwifiex_vendor_attr_policy);
+}
+
+static int mwifiex_vendor_set_tx_power_limt(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    const void *data, int data_len)
+{
+	struct mwifiex_private *priv = mwifiex_netdev_get_priv(wdev->netdev);
+	struct nlattr *tb[NUM_MWIFIEX_VENDOR_CMD_ATTR];
+	int ret;
+	u8 lowpwr;
+
+	ret = mwifiex_parse_vendor_data(tb, data, data_len);
+	if (ret)
+		return ret;
+
+	if (tb[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_24]) {
+		lowpwr = nla_get_u8(tb[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_24]) ?
+				true : false;
+		if ((lowpwr != priv->adapter->lowpwr_mode_2g4) &&
+		    priv->adapter->dt_node) {
+			ret = mwifiex_dnld_dt_cfgdata
+					(priv, priv->adapter->dt_node, lowpwr ?
+					 "marvell,caldata_00_txpwrlimit_2g" :
+					 "marvell,caldata_01_txpwrlimit_2g");
+			if (ret)
+				return -1;
+			priv->adapter->lowpwr_mode_2g4 = lowpwr;
+		}
+	}
+
+	if (tb[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_52]) {
+		lowpwr = nla_get_u8(tb[MWIFIEX_VENDOR_CMD_ATTR_TXP_LIMIT_52]) ?
+				true : false;
+		if ((lowpwr != priv->adapter->lowpwr_mode_5g2) &&
+		    priv->adapter->dt_node) {
+			ret = mwifiex_dnld_dt_cfgdata
+					(priv, priv->adapter->dt_node, lowpwr ?
+					 "marvell,caldata_00_txpwrlimit_5g" :
+					 "marvell,caldata_01_txpwrlimit_5g");
+			if (ret)
+				return -1;
+			priv->adapter->lowpwr_mode_5g2 = lowpwr;
+		}
+	}
+
+	return 0;
+}
+
+static const struct wiphy_vendor_command mwifiex_vendor_commands[] = {
+	{
+		.info = {
+			.vendor_id = MWIFIEX_VENDOR_ID,
+			.subcmd = MWIFIEX_VENDOR_CMD_SET_TX_POWER_LIMIT,
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+			WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = mwifiex_vendor_set_tx_power_limt,
+	},
+};
+
+/* @brief register vendor commands and events
+ *
+ * @param wiphy       A pointer to wiphy struct
+ *
+ * @return
+ */
+static void mwifiex_register_cfg80211_vendor_command(struct wiphy *wiphy)
+{
+	wiphy->vendor_commands = mwifiex_vendor_commands;
+	wiphy->n_vendor_commands = ARRAY_SIZE(mwifiex_vendor_commands);
+}
+
 /*
  * This function registers the device with CFG802.11 subsystem.
  *
@@ -4230,6 +4328,8 @@ int mwifiex_register_cfg80211(struct mwifiex_adapter *adapter)
 				 BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				 BIT(NL80211_IFTYPE_P2P_GO) |
 				 BIT(NL80211_IFTYPE_AP);
+
+	mwifiex_register_cfg80211_vendor_command(wiphy);
 
 	wiphy->bands[NL80211_BAND_2GHZ] = &mwifiex_band_2ghz;
 	if (adapter->config_bands & BAND_A)

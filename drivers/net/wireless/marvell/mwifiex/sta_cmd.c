@@ -1885,6 +1885,24 @@ static int mwifiex_cmd_get_wakeup_reason(struct mwifiex_private *priv,
 	return 0;
 }
 
+/* This function check if the command is supported by firmware */
+static int mwifiex_is_cmd_supported(struct mwifiex_private *priv, u16 cmd_no)
+{
+	if (!ISSUPP_ADHOC_ENABLED(priv->adapter->fw_cap_info)) {
+		switch (cmd_no) {
+		case HostCmd_CMD_802_11_IBSS_COALESCING_STATUS:
+		case HostCmd_CMD_802_11_AD_HOC_START:
+		case HostCmd_CMD_802_11_AD_HOC_JOIN:
+		case HostCmd_CMD_802_11_AD_HOC_STOP:
+			return -EOPNOTSUPP;
+		default:
+			break;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * This function prepares the commands before sending them to the firmware.
  *
@@ -1897,6 +1915,13 @@ int mwifiex_sta_prepare_cmd(struct mwifiex_private *priv, uint16_t cmd_no,
 {
 	struct host_cmd_ds_command *cmd_ptr = cmd_buf;
 	int ret = 0;
+
+	if (mwifiex_is_cmd_supported(priv, cmd_no)) {
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "0x%x command not supported by firmware\n",
+			    cmd_no);
+			return -EOPNOTSUPP;
+		}
 
 	/* Prepare command */
 	switch (cmd_no) {
@@ -2191,7 +2216,6 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta, bool init)
 {
 	struct mwifiex_adapter *adapter = priv->adapter;
 	int ret;
-	u16 enable = true;
 	struct mwifiex_ds_11n_amsdu_aggr_ctrl amsdu_aggr_ctrl;
 	struct mwifiex_ds_auto_ds auto_ds;
 	enum state_11d_t state_11d;
@@ -2218,9 +2242,7 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta, bool init)
 		 * The cal-data can be read from device tree and/or
 		 * a configuration file and downloaded to firmware.
 		 */
-		if (priv->adapter->iface_type == MWIFIEX_SDIO &&
-		    adapter->dev->of_node) {
-			adapter->dt_node = adapter->dev->of_node;
+		if (adapter->dt_node) {
 			if (of_property_read_u32(adapter->dt_node,
 						 "marvell,wakeup-pin",
 						 &data) == 0) {
@@ -2311,16 +2333,6 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta, bool init)
 			       HostCmd_ACT_GEN_GET, 0, NULL, true);
 	if (ret)
 		return -1;
-
-	if (priv->bss_type == MWIFIEX_BSS_TYPE_STA) {
-		/* set ibss coalescing_status */
-		ret = mwifiex_send_cmd(
-				priv,
-				HostCmd_CMD_802_11_IBSS_COALESCING_STATUS,
-				HostCmd_ACT_GEN_SET, 0, &enable, true);
-		if (ret)
-			return -1;
-	}
 
 	memset(&amsdu_aggr_ctrl, 0, sizeof(amsdu_aggr_ctrl));
 	amsdu_aggr_ctrl.enable = true;
