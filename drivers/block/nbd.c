@@ -1035,7 +1035,7 @@ static int nbd_init_request(void *data, struct request *rq,
 	return 0;
 }
 
-static struct blk_mq_ops nbd_mq_ops = {
+static const struct blk_mq_ops nbd_mq_ops = {
 	.queue_rq	= nbd_queue_rq,
 	.init_request	= nbd_init_request,
 	.timeout	= nbd_xmit_timeout,
@@ -1110,7 +1110,6 @@ static int nbd_dev_add(int index)
 	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, disk->queue);
 	disk->queue->limits.discard_granularity = 512;
 	blk_queue_max_discard_sectors(disk->queue, UINT_MAX);
-	disk->queue->limits.discard_zeroes_data = 0;
 	blk_queue_max_hw_sectors(disk->queue, 65536);
 	disk->queue->limits.max_sectors = 256;
 
