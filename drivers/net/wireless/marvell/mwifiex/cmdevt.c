@@ -1056,12 +1056,10 @@ mwifiex_cancel_all_pending_cmd(struct mwifiex_adapter *adapter)
 	list_for_each_entry_safe(cmd_node, tmp_node,
 				 &adapter->cmd_pending_q, list) {
 		list_del(&cmd_node->list);
-		spin_unlock_irqrestore(&adapter->cmd_pending_q_lock, flags);
 
 		if (cmd_node->wait_q_enabled)
 			adapter->cmd_wait_q.status = -1;
 		mwifiex_recycle_cmd_node(adapter, cmd_node);
-		spin_lock_irqsave(&adapter->cmd_pending_q_lock, flags);
 	}
 	spin_unlock_irqrestore(&adapter->cmd_pending_q_lock, flags);
 	spin_unlock_irqrestore(&adapter->mwifiex_cmd_lock, cmd_flags);
@@ -1118,13 +1116,14 @@ mwifiex_cancel_pending_ioctl(struct mwifiex_adapter *adapter)
 void
 mwifiex_check_ps_cond(struct mwifiex_adapter *adapter)
 {
-	if (!adapter->cmd_sent &&
+	if (!adapter->cmd_sent && !atomic_read(&adapter->tx_hw_pending) &&
 	    !adapter->curr_cmd && !IS_CARD_RX_RCVD(adapter))
 		mwifiex_dnld_sleep_confirm_cmd(adapter);
 	else
 		mwifiex_dbg(adapter, CMD,
-			    "cmd: Delay Sleep Confirm (%s%s%s)\n",
+			    "cmd: Delay Sleep Confirm (%s%s%s%s)\n",
 			    (adapter->cmd_sent) ? "D" : "",
+			    atomic_read(&adapter->tx_hw_pending) ? "T" : "",
 			    (adapter->curr_cmd) ? "C" : "",
 			    (IS_CARD_RX_RCVD(adapter)) ? "R" : "");
 }
