@@ -46,6 +46,7 @@
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
+#include <linux/alt-syscall.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
 #include <linux/binfmts.h>
@@ -237,6 +238,7 @@ out_unlock:
 out:
 	return error;
 }
+EXPORT_SYMBOL(sys_setpriority);
 
 /*
  * Ugh. To avoid negative return values, "getpriority()" will
@@ -308,6 +310,7 @@ out_unlock:
 
 	return retval;
 }
+EXPORT_SYMBOL_GPL(sys_getpriority);
 
 /*
  * Unprivileged users may change the real gid to the effective gid
@@ -2305,6 +2308,12 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case PR_SET_SECCOMP:
 		error = prctl_set_seccomp(arg2, (char __user *)arg3);
 		break;
+	case PR_ALT_SYSCALL:
+		if (arg2 == PR_ALT_SYSCALL_SET_SYSCALL_TABLE)
+			error = set_alt_sys_call_table((char __user *)arg3);
+		else
+			error = -EINVAL;
+		break;
 	case PR_GET_TSC:
 		error = GET_TSC_CTL(arg2);
 		break;
@@ -2428,6 +2437,7 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	}
 	return error;
 }
+EXPORT_SYMBOL(sys_prctl);
 
 SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 		struct getcpu_cache __user *, unused)
@@ -2441,6 +2451,7 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 		err |= put_user(cpu_to_node(cpu), nodep);
 	return err ? -EFAULT : 0;
 }
+EXPORT_SYMBOL(sys_getcpu);
 
 /**
  * do_sysinfo - fill in sysinfo struct
