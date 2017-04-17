@@ -34,12 +34,12 @@
 
 #define MIN_PLAYBACK_PERIOD_SIZE (128 * 2)
 #define MAX_PLAYBACK_PERIOD_SIZE (128 * 2 * 2 * 6)
-#define MIN_PLAYBACK_NUM_PERIODS (4)
+#define MIN_PLAYBACK_NUM_PERIODS (2)
 #define MAX_PLAYBACK_NUM_PERIODS (384)
 
 #define MIN_CAPTURE_PERIOD_SIZE (128 * 2)
 #define MAX_CAPTURE_PERIOD_SIZE (192 * 2 * 2 * 8 * 4)
-#define MIN_CAPTURE_NUM_PERIODS (4)
+#define MIN_CAPTURE_NUM_PERIODS (2)
 #define MAX_CAPTURE_NUM_PERIODS (384)
 
 static struct snd_pcm_hardware msm_afe_hardware_playback = {
