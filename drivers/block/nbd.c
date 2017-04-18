@@ -1660,7 +1660,7 @@ again:
 				goto out;
 			}
 			ret = nla_parse_nested(socks, NBD_SOCK_MAX, attr,
-					       nbd_sock_policy);
+					       nbd_sock_policy, NULL);
 			if (ret != 0) {
 				printk(KERN_ERR "nbd: error processing sock list\n");
 				ret = -EINVAL;
@@ -1816,7 +1816,7 @@ static int nbd_genl_reconfigure(struct sk_buff *skb, struct genl_info *info)
 				goto out;
 			}
 			ret = nla_parse_nested(socks, NBD_SOCK_MAX, attr,
-					       nbd_sock_policy);
+					       nbd_sock_policy, NULL);
 			if (ret != 0) {
 				printk(KERN_ERR "nbd: error processing sock list\n");
 				ret = -EINVAL;
