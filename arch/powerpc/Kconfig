@@ -586,7 +586,7 @@ config ARCH_SPARSEMEM_ENABLE
 
 config ARCH_SPARSEMEM_DEFAULT
 	def_bool y
-	depends on (SMP && PPC_PSERIES) || PPC_PS3
+	depends on PPC_BOOK3S_64
 
 config SYS_SUPPORTS_HUGETLBFS
 	bool
@@ -677,6 +677,16 @@ config PPC_256K_PAGES
 	  Say N unless you know what you are doing.
 
 endchoice
+
+config THREAD_SHIFT
+	int "Thread shift" if EXPERT
+	range 13 15
+	default "15" if PPC_256K_PAGES
+	default "14" if PPC64
+	default "13"
+	help
+	  Used to define the stack size. The default is almost always what you
+	  want. Only change this if you know what you are doing.
 
 config FORCE_MAX_ZONEORDER
 	int "Maximum zone order"
