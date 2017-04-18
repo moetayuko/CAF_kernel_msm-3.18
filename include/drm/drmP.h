@@ -57,7 +57,7 @@
 #include <linux/types.h>
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
-#include <linux/fence.h>
+#include <linux/dma-fence.h>
 
 #include <asm/mman.h>
 #include <asm/pgalloc.h>
@@ -363,7 +363,7 @@ struct drm_pending_event {
 	struct completion *completion;
 	void (*completion_release)(struct completion *completion);
 	struct drm_event *event;
-	struct fence *fence;
+	struct dma_fence *fence;
 	struct list_head link;
 	struct list_head pending_link;
 	struct drm_file *file_priv;
@@ -942,8 +942,13 @@ static inline bool drm_is_primary_client(const struct drm_file *file_priv)
 extern int drm_ioctl_permit(u32 flags, struct drm_file *file_priv);
 extern long drm_ioctl(struct file *filp,
 		      unsigned int cmd, unsigned long arg);
+#ifdef CONFIG_COMPAT
 extern long drm_compat_ioctl(struct file *filp,
 			     unsigned int cmd, unsigned long arg);
+#else
+/* Let drm_compat_ioctl be assigned to .compat_ioctl unconditionally */
+#define drm_compat_ioctl NULL
+#endif
 extern bool drm_ioctl_flags(unsigned int nr, unsigned int *flags);
 
 /* File Operations (drm_fops.c) */
