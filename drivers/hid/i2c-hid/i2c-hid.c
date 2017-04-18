@@ -38,8 +38,14 @@
 #include <linux/acpi.h>
 #include <linux/of.h>
 #include <linux/gpio/consumer.h>
+#include <linux/regulator/consumer.h>
 
 #include <linux/i2c/i2c-hid.h>
+
+#include "../hid-ids.h"
+
+/* quirks to control the device */
+#define I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV	BIT(0)
 
 /* flags */
 #define I2C_HID_STARTED		0
@@ -143,6 +149,7 @@ struct i2c_hid {
 	char			*argsbuf;	/* Command arguments buffer */
 
 	unsigned long		flags;		/* device flags */
+	unsigned long		quirks;		/* Various quirks */
 
 	wait_queue_head_t	wait;		/* For waiting the interrupt */
 	struct gpio_desc	*desc;
@@ -152,7 +159,41 @@ struct i2c_hid {
 
 	bool			irq_wake_enabled;
 	struct mutex		reset_lock;
+	struct regulator	*supply;
 };
+
+static const struct i2c_hid_quirks {
+	__u16 idVendor;
+	__u16 idProduct;
+	__u32 quirks;
+} i2c_hid_quirks[] = {
+	{ USB_VENDOR_ID_WEIDA, USB_DEVICE_ID_WEIDA_8752,
+		I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV },
+	{ USB_VENDOR_ID_WEIDA, USB_DEVICE_ID_WEIDA_8755,
+		I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV },
+	{ 0, 0 }
+};
+
+/*
+ * i2c_hid_lookup_quirk: return any quirks associated with a I2C HID device
+ * @idVendor: the 16-bit vendor ID
+ * @idProduct: the 16-bit product ID
+ *
+ * Returns: a u32 quirks value.
+ */
+static u32 i2c_hid_lookup_quirk(const u16 idVendor, const u16 idProduct)
+{
+	u32 quirks = 0;
+	int n;
+
+	for (n = 0; i2c_hid_quirks[n].idVendor; n++)
+		if (i2c_hid_quirks[n].idVendor == idVendor &&
+		    (i2c_hid_quirks[n].idProduct == (__u16)HID_ANY_ID ||
+		     i2c_hid_quirks[n].idProduct == idProduct))
+			quirks = i2c_hid_quirks[n].quirks;
+
+	return quirks;
+}
 
 static int __i2c_hid_command(struct i2c_client *client,
 		const struct i2c_hid_cmd *command, u8 reportID,
@@ -346,11 +387,27 @@ static int i2c_hid_set_power(struct i2c_client *client, int power_state)
 
 	i2c_hid_dbg(ihid, "%s\n", __func__);
 
+	/*
+	 * Some devices require to send a command to wakeup before power on.
+	 * The call will get a return value (EREMOTEIO) but device will be
+	 * triggered and activated. After that, it goes like a normal device.
+	 */
+	if (power_state == I2C_HID_PWR_ON &&
+	    ihid->quirks & I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV) {
+		ret = i2c_hid_command(client, &hid_set_power_cmd, NULL, 0);
+
+		/* Device was already activated */
+		if (!ret)
+			goto set_pwr_exit;
+	}
+
 	ret = __i2c_hid_command(client, &hid_set_power_cmd, power_state,
 		0, NULL, 0, NULL, 0);
+
 	if (ret)
 		dev_err(&client->dev, "failed to change power setting.\n");
 
+set_pwr_exit:
 	return ret;
 }
 
@@ -716,9 +773,11 @@ static int i2c_hid_start(struct hid_device *hid)
 	i2c_hid_find_max_report(hid, HID_FEATURE_REPORT, &bufsize);
 
 	if (bufsize > ihid->bufsize) {
+		disable_irq(ihid->irq);
 		i2c_hid_free_buffers(ihid);
 
 		ret = i2c_hid_alloc_buffers(ihid, bufsize);
+		enable_irq(ihid->irq);
 
 		if (ret)
 			return ret;
@@ -922,6 +981,7 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 		struct i2c_hid_platform_data *pdata)
 {
 	struct device *dev = &client->dev;
+	union i2c_smbus_data dummy;
 	u32 val;
 	int ret;
 
@@ -936,6 +996,24 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 	pdata->hid_descriptor_address = val;
+
+	/*
+	 * Unfortunately vendors like to interchange touchpad parts
+	 * between factory runs, but keep the same DTS, so we can't
+	 * be quite sure that the device is actually present in the
+	 * system even if it is described in the DTS.
+	 * Before trying to properly initialize the touchpad let's
+	 * first see it there is anything at the given address.
+	 */
+
+	ret = i2c_smbus_xfer(client->adapter, client->addr, 0,
+			     I2C_SMBUS_READ, 0, I2C_SMBUS_BYTE, &dummy);
+	if (ret) {
+		dev_dbg(&client->dev,
+			"basic IO failed (%d), assuming device is not present\n",
+			ret);
+		return -ENXIO;
+	}
 
 	return 0;
 }
@@ -967,6 +1045,21 @@ static int i2c_hid_probe(struct i2c_client *client,
 	ihid = kzalloc(sizeof(struct i2c_hid), GFP_KERNEL);
 	if (!ihid)
 		return -ENOMEM;
+
+	ihid->supply = devm_regulator_get(&client->dev, "power");
+	if (IS_ERR(ihid->supply)) {
+		ret = PTR_ERR(ihid->supply);
+		dev_err(&client->dev, "Failed to get power regulator: %d\n",
+			ret);
+		return ret;
+	}
+
+	ret = regulator_enable(ihid->supply);
+	if (ret < 0) {
+		dev_err(&client->dev, "Failed to enable power regulator: %d\n",
+			ret);
+		return ret;
+	}
 
 	if (client->dev.of_node) {
 		ret = i2c_hid_of_probe(client, &ihid->pdata);
@@ -1050,6 +1143,8 @@ static int i2c_hid_probe(struct i2c_client *client,
 		 client->name, hid->vendor, hid->product);
 	strlcpy(hid->phys, dev_name(&client->dev), sizeof(hid->phys));
 
+	ihid->quirks = i2c_hid_lookup_quirk(hid->vendor, hid->product);
+
 	ret = hid_add_device(hid);
 	if (ret) {
 		if (ret != -ENODEV)
@@ -1099,6 +1194,8 @@ static int i2c_hid_remove(struct i2c_client *client)
 
 	if (ihid->desc)
 		gpiod_put(ihid->desc);
+
+	regulator_disable(ihid->supply);
 
 	kfree(ihid);
 
@@ -1152,6 +1249,11 @@ static int i2c_hid_suspend(struct device *dev)
 		else
 			hid_warn(hid, "Failed to enable irq wake: %d\n",
 				wake_status);
+	} else {
+		ret = regulator_disable(ihid->supply);
+		if (ret < 0)
+			hid_warn(hid, "Failed to disable power supply: %d\n",
+				 ret);
 	}
 
 	return 0;
@@ -1165,7 +1267,12 @@ static int i2c_hid_resume(struct device *dev)
 	struct hid_device *hid = ihid->hid;
 	int wake_status;
 
-	if (device_may_wakeup(&client->dev) && ihid->irq_wake_enabled) {
+	if (!device_may_wakeup(&client->dev)) {
+		ret = regulator_enable(ihid->supply);
+		if (ret < 0)
+			hid_warn(hid, "Failed to enable power supply: %d\n",
+				 ret);
+	} else if (ihid->irq_wake_enabled) {
 		wake_status = disable_irq_wake(ihid->irq);
 		if (!wake_status)
 			ihid->irq_wake_enabled = false;
