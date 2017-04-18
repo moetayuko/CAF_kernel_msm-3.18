@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016 Intel Corporation
+ * Copyright © 2017 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,42 +22,9 @@
  *
  */
 
-#include "mock_engine.h"
-#include "mock_request.h"
+#ifndef __MOCK_UNCORE_H
+#define __MOCK_UNCORE_H
 
-struct drm_i915_gem_request *
-mock_request(struct intel_engine_cs *engine,
-	     struct i915_gem_context *context,
-	     unsigned long delay)
-{
-	struct drm_i915_gem_request *request;
-	struct mock_request *mock;
+void mock_uncore_init(struct drm_i915_private *i915);
 
-	/* NB the i915->requests slab cache is enlarged to fit mock_request */
-	request = i915_gem_request_alloc(engine, context);
-	if (IS_ERR(request))
-		return NULL;
-
-	mock = container_of(request, typeof(*mock), base);
-	mock->delay = delay;
-
-	return &mock->base;
-}
-
-bool mock_cancel_request(struct drm_i915_gem_request *request)
-{
-	struct mock_request *mock = container_of(request, typeof(*mock), base);
-	struct mock_engine *engine =
-		container_of(request->engine, typeof(*engine), base);
-	bool was_queued;
-
-	spin_lock_irq(&engine->hw_lock);
-	was_queued = !list_empty(&mock->link);
-	list_del_init(&mock->link);
-	spin_unlock_irq(&engine->hw_lock);
-
-	if (was_queued)
-		i915_gem_request_unsubmit(request);
-
-	return was_queued;
-}
+#endif /* !__MOCK_UNCORE_H */
