@@ -38,7 +38,6 @@
 #include <linux/idr.h>
 
 #include "ion.h"
-#include "ion_priv.h"
 
 bool ion_buffer_cached(struct ion_buffer *buffer)
 {
