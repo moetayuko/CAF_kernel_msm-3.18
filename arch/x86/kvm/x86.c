@@ -27,7 +27,6 @@
 #include "kvm_cache_regs.h"
 #include "x86.h"
 #include "cpuid.h"
-#include "assigned-dev.h"
 #include "pmu.h"
 #include "hyperv.h"
 
@@ -2675,10 +2674,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_SET_BOOT_CPU_ID:
  	case KVM_CAP_SPLIT_IRQCHIP:
 	case KVM_CAP_IMMEDIATE_EXIT:
-#ifdef CONFIG_KVM_DEVICE_ASSIGNMENT
-	case KVM_CAP_ASSIGN_DEV_IRQ:
-	case KVM_CAP_PCI_2_3:
-#endif
 		r = 1;
 		break;
 	case KVM_CAP_ADJUST_CLOCK:
@@ -2695,9 +2690,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		 */
 		r = kvm_x86_ops->cpu_has_high_real_mode_segbase();
 		break;
-	case KVM_CAP_COALESCED_MMIO:
-		r = KVM_COALESCED_MMIO_PAGE_OFFSET;
-		break;
 	case KVM_CAP_VAPIC:
 		r = !kvm_x86_ops->cpu_has_accelerated_tpr();
 		break;
@@ -2713,11 +2705,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_PV_MMU:	/* obsolete */
 		r = 0;
 		break;
-#ifdef CONFIG_KVM_DEVICE_ASSIGNMENT
-	case KVM_CAP_IOMMU:
-		r = iommu_present(&pci_bus_type);
-		break;
-#endif
 	case KVM_CAP_MCE:
 		r = KVM_MAX_MCE_BANKS;
 		break;
@@ -3124,7 +3111,14 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
 		return -EINVAL;
 
 	if (events->exception.injected &&
-	    (events->exception.nr > 31 || events->exception.nr == NMI_VECTOR))
+	    (events->exception.nr > 31 || events->exception.nr == NMI_VECTOR ||
+	     is_guest_mode(vcpu)))
+		return -EINVAL;
+
+	/* INITs are latched while in SMM */
+	if (events->flags & KVM_VCPUEVENT_VALID_SMM &&
+	    (events->smi.smm || events->smi.pending) &&
+	    vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED)
 		return -EINVAL;
 
 	process_nmi(vcpu);
@@ -4230,7 +4224,7 @@ long kvm_arch_vm_ioctl(struct file *filp,
 		break;
 	}
 	default:
-		r = kvm_vm_ioctl_assigned_device(kvm, ioctl, arg);
+		r = -ENOTTY;
 	}
 out:
 	return r;
@@ -7355,6 +7349,12 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 	    mp_state->mp_state != KVM_MP_STATE_RUNNABLE)
 		return -EINVAL;
 
+	/* INITs are latched while in SMM */
+	if ((is_smm(vcpu) || vcpu->arch.smi_pending) &&
+	    (mp_state->mp_state == KVM_MP_STATE_SIPI_RECEIVED ||
+	     mp_state->mp_state == KVM_MP_STATE_INIT_RECEIVED))
+		return -EINVAL;
+
 	if (mp_state->mp_state == KVM_MP_STATE_SIPI_RECEIVED) {
 		vcpu->arch.mp_state = KVM_MP_STATE_INIT_RECEIVED;
 		set_bit(KVM_APIC_SIPI, &vcpu->arch.apic->pending_events);
@@ -8068,7 +8068,6 @@ void kvm_arch_sync_events(struct kvm *kvm)
 {
 	cancel_delayed_work_sync(&kvm->arch.kvmclock_sync_work);
 	cancel_delayed_work_sync(&kvm->arch.kvmclock_update_work);
-	kvm_free_all_assigned_devices(kvm);
 	kvm_free_pit(kvm);
 }
 
@@ -8152,7 +8151,6 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	}
 	if (kvm_x86_ops->vm_destroy)
 		kvm_x86_ops->vm_destroy(kvm);
-	kvm_iommu_unmap_guest(kvm);
 	kvm_pic_destroy(kvm);
 	kvm_ioapic_destroy(kvm);
 	kvm_free_vcpus(kvm);
