@@ -31,6 +31,7 @@ Required properties:
 		Refers to TCM and CSM Base Addresses of UBI32 Memory map.
 - reg: physical address and length of the register set for the device.
 - qcom,id: Unique Identifier for the HLOS block.This field is unique identifier for the core, which is also used as an index for global nss context.
+- qcom,num-queue: Number of N2H queues supported per NSS core. These queues support RPS from NSS to Host.
 Optional properties:
 - qcom,ipv4-enabled: Enables registeration of N2H/PPPoE/ETH handlers, to receive stat sync
 	             IPV4 packets from UBI32.
@@ -54,6 +55,7 @@ nss: nss@e6000000 {
 	reg = <0xe6000000 0x1000>,
 		<0xe4000000 0x20000>;
 	qcom,id = <0>;
+	qcom,num-queue = <2>;
 	qcom,num-irq = <2>;
 	qcom,ipv4-enabled;
 	qcom,ipv4-reasm-enabled;
