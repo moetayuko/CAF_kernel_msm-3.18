@@ -43,6 +43,7 @@ struct rsnd_adg {
 };
 
 #define LRCLK_ASYNC	(1 << 0)
+#define AUDIO_OUT_48	(1 << 1)
 #define adg_mode_flags(adg)	(adg->flags)
 
 #define for_each_rsnd_clk(pos, adg, i)		\
@@ -364,7 +365,10 @@ found_clock:
 
 	rsnd_adg_set_ssi_clk(ssi_mod, data);
 
-	if (!(adg_mode_flags(adg) & LRCLK_ASYNC)) {
+	if (adg_mode_flags(adg) & LRCLK_ASYNC) {
+		if (adg_mode_flags(adg) & AUDIO_OUT_48)
+			ckr = 0x80000000;
+	} else {
 		if (0 == (rate % 8000))
 			ckr = 0x80000000;
 	}
@@ -427,11 +431,14 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 	struct clk *clk;
 	struct device *dev = rsnd_priv_to_dev(priv);
 	struct device_node *np = dev->of_node;
+	struct property *prop;
 	u32 ckr, rbgx, rbga, rbgb;
-	u32 rate, req_rate = 0, div;
+	u32 rate, div;
+#define REQ_SIZE 2
+	u32 req_rate[REQ_SIZE] = {};
 	uint32_t count = 0;
 	unsigned long req_48kHz_rate, req_441kHz_rate;
-	int i;
+	int i, req_size;
 	const char *parent_clk_name = NULL;
 	static const char * const clkout_name[] = {
 		[CLKOUT]  = "audio_clkout",
@@ -452,13 +459,18 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 	 * ADG supports BRRA/BRRB output only
 	 * this means all clkout0/1/2/3 will be same rate
 	 */
-	of_property_read_u32(np, "clock-frequency", &req_rate);
+	prop = of_find_property(np, "clock-frequency", NULL);;
+	req_size = prop->length / sizeof(u32);
+
+	of_property_read_u32_array(np, "clock-frequency", req_rate, req_size);
 	req_48kHz_rate = 0;
 	req_441kHz_rate = 0;
-	if (0 == (req_rate % 44100))
-		req_441kHz_rate = req_rate;
-	if (0 == (req_rate % 48000))
-		req_48kHz_rate = req_rate;
+	for (i = 0; i < req_size; i++) {
+		if (0 == (req_rate[i] % 44100))
+			req_441kHz_rate = req_rate[i];
+		if (0 == (req_rate[i] % 48000))
+			req_48kHz_rate = req_rate[i];
+	}
 
 	/*
 	 * This driver is assuming that AUDIO_CLKA/AUDIO_CLKB/AUDIO_CLKC
@@ -505,10 +517,8 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 				rbgb = rbgx;
 				adg->rbgb_rate_for_48khz = rate / div;
 				ckr |= brg_table[i] << 16;
-				if (req_48kHz_rate) {
+				if (req_48kHz_rate)
 					parent_clk_name = __clk_get_name(clk);
-					ckr |= 0x80000000;
-				}
 			}
 		}
 	}
@@ -523,7 +533,7 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 	 */
 	if (!count) {
 		clk = clk_register_fixed_rate(dev, clkout_name[CLKOUT],
-					      parent_clk_name, 0, req_rate);
+					      parent_clk_name, 0, req_rate[0]);
 		if (!IS_ERR(clk)) {
 			adg->clkout[CLKOUT] = clk;
 			of_clk_add_provider(np, of_clk_src_simple_get, clk);
@@ -536,7 +546,7 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 		for (i = 0; i < CLKOUTMAX; i++) {
 			clk = clk_register_fixed_rate(dev, clkout_name[i],
 						      parent_clk_name, 0,
-						      req_rate);
+						      req_rate[0]);
 			adg->clkout[i] = ERR_PTR(-ENOENT);
 			if (!IS_ERR(clk))
 				adg->clkout[i] = clk;
@@ -551,6 +561,9 @@ static void rsnd_adg_get_clkout(struct rsnd_priv *priv,
 	adg->rbga = rbga;
 	adg->rbgb = rbgb;
 
+	if (req_rate[0] % 48000 == 0)
+		adg->flags = AUDIO_OUT_48;
+
 	for_each_rsnd_clkout(clk, adg, i)
 		dev_dbg(dev, "clkout %d : %p : %ld\n", i, clk, clk_get_rate(clk));
 	dev_dbg(dev, "BRGCKR = 0x%08x, BRRA/BRRB = 0x%x/0x%x\n",
@@ -562,6 +575,7 @@ int rsnd_adg_probe(struct rsnd_priv *priv)
 	struct rsnd_adg *adg;
 	struct device *dev = rsnd_priv_to_dev(priv);
 	struct device_node *np = dev->of_node;
+	int ret;
 
 	adg = devm_kzalloc(dev, sizeof(*adg), GFP_KERNEL);
 	if (!adg) {
@@ -569,8 +583,10 @@ int rsnd_adg_probe(struct rsnd_priv *priv)
 		return -ENOMEM;
 	}
 
-	rsnd_mod_init(priv, &adg->mod, &adg_ops,
+	ret = rsnd_mod_init(priv, &adg->mod, &adg_ops,
 		      NULL, NULL, 0, 0);
+	if (ret)
+		return ret;
 
 	rsnd_adg_get_clkin(priv, adg);
 	rsnd_adg_get_clkout(priv, adg);
