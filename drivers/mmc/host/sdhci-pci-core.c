@@ -389,6 +389,7 @@ static int byt_sd_probe_slot(struct sdhci_pci_slot *slot)
 	slot->cd_con_id = NULL;
 	slot->cd_idx = 0;
 	slot->cd_override_level = true;
+	slot->cd_wake = true;
 	if (slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_BXT_SD ||
 	    slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_BXTM_SD ||
 	    slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_APL_SD)
@@ -1739,6 +1740,8 @@ static struct sdhci_pci_slot *sdhci_pci_probe_slot(
 				 slot->cd_override_level, 0, NULL)) {
 		dev_warn(&pdev->dev, "failed to setup card detect gpio\n");
 		slot->cd_idx = -1;
+	} else if (slot->cd_wake) {
+		mmc_gpio_cd_enable_wake(host->mmc);
 	}
 
 	ret = sdhci_add_host(host);
