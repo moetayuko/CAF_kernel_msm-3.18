@@ -36,6 +36,7 @@
 
 #include <trace/events/sched.h>
 
+#include <asm/sections.h>
 #include <asm/setup.h>
 
 #include "trace_output.h"
@@ -2807,17 +2808,27 @@ static int ftrace_shutdown(struct ftrace_ops *ops, int command)
 	 * callers are done before leaving this function.
 	 * The same goes for freeing the per_cpu data of the per_cpu
 	 * ops.
-	 *
-	 * Again, normal synchronize_sched() is not good enough.
-	 * We need to do a hard force of sched synchronization.
-	 * This is because we use preempt_disable() to do RCU, but
-	 * the function tracers can be called where RCU is not watching
-	 * (like before user_exit()). We can not rely on the RCU
-	 * infrastructure to do the synchronization, thus we must do it
-	 * ourselves.
 	 */
 	if (ops->flags & (FTRACE_OPS_FL_DYNAMIC | FTRACE_OPS_FL_PER_CPU)) {
+		/*
+		 * We need to do a hard force of sched synchronization.
+		 * This is because we use preempt_disable() to do RCU, but
+		 * the function tracers can be called where RCU is not watching
+		 * (like before user_exit()). We can not rely on the RCU
+		 * infrastructure to do the synchronization, thus we must do it
+		 * ourselves.
+		 */
 		schedule_on_each_cpu(ftrace_sync);
+
+		/*
+		 * When the kernel is preeptive, tasks can be preempted
+		 * while on a ftrace trampoline. Just scheduling a task on
+		 * a CPU is not good enough to flush them. Calling
+		 * synchornize_rcu_tasks() will wait for those tasks to
+		 * execute and either schedule voluntarily or enter user space.
+		 */
+		if (IS_ENABLED(CONFIG_PREEMPT))
+			synchronize_rcu_tasks();
 
 		arch_ftrace_trampoline_free(ops);
 
@@ -3154,23 +3165,12 @@ t_hash_show(struct seq_file *m, struct ftrace_iterator *iter)
 }
 
 static void *
-t_next(struct seq_file *m, void *v, loff_t *pos)
+t_func_next(struct seq_file *m, loff_t *pos)
 {
 	struct ftrace_iterator *iter = m->private;
-	struct ftrace_ops *ops = iter->ops;
 	struct dyn_ftrace *rec = NULL;
 
-	if (unlikely(ftrace_disabled))
-		return NULL;
-
-	if (iter->flags & FTRACE_ITER_HASH)
-		return t_hash_next(m, pos);
-
 	(*pos)++;
-	iter->pos = iter->func_pos = *pos;
-
-	if (iter->flags & FTRACE_ITER_PRINTALL)
-		return t_hash_start(m, pos);
 
  retry:
 	if (iter->idx >= iter->pg->index) {
@@ -3181,11 +3181,8 @@ t_next(struct seq_file *m, void *v, loff_t *pos)
 		}
 	} else {
 		rec = &iter->pg->records[iter->idx++];
-		if (((iter->flags & FTRACE_ITER_FILTER) &&
-		     !(ftrace_lookup_ip(ops->func_hash->filter_hash, rec->ip))) ||
-
-		    ((iter->flags & FTRACE_ITER_NOTRACE) &&
-		     !ftrace_lookup_ip(ops->func_hash->notrace_hash, rec->ip)) ||
+		if (((iter->flags & (FTRACE_ITER_FILTER | FTRACE_ITER_NOTRACE)) &&
+		     !ftrace_lookup_ip(iter->hash, rec->ip)) ||
 
 		    ((iter->flags & FTRACE_ITER_ENABLED) &&
 		     !(rec->flags & FTRACE_FL_ENABLED))) {
@@ -3196,11 +3193,38 @@ t_next(struct seq_file *m, void *v, loff_t *pos)
 	}
 
 	if (!rec)
-		return t_hash_start(m, pos);
+		return NULL;
 
+	iter->pos = iter->func_pos = *pos;
 	iter->func = rec;
 
 	return iter;
+}
+
+static void *
+t_next(struct seq_file *m, void *v, loff_t *pos)
+{
+	struct ftrace_iterator *iter = m->private;
+	void *ret;
+
+	if (unlikely(ftrace_disabled))
+		return NULL;
+
+	if (iter->flags & FTRACE_ITER_HASH)
+		return t_hash_next(m, pos);
+
+	if (iter->flags & FTRACE_ITER_PRINTALL) {
+		/* next must increment pos, and t_hash_start does not */
+		(*pos)++;
+		return t_hash_start(m, pos);
+	}
+
+	ret = t_func_next(m, pos);
+
+	if (!ret)
+		return t_hash_start(m, pos);
+
+	return ret;
 }
 
 static void reset_iter_read(struct ftrace_iterator *iter)
@@ -3213,7 +3237,6 @@ static void reset_iter_read(struct ftrace_iterator *iter)
 static void *t_start(struct seq_file *m, loff_t *pos)
 {
 	struct ftrace_iterator *iter = m->private;
-	struct ftrace_ops *ops = iter->ops;
 	void *p = NULL;
 	loff_t l;
 
@@ -3233,10 +3256,9 @@ static void *t_start(struct seq_file *m, loff_t *pos)
 	 * off, we can short cut and just print out that all
 	 * functions are enabled.
 	 */
-	if ((iter->flags & FTRACE_ITER_FILTER &&
-	     ftrace_hash_empty(ops->func_hash->filter_hash)) ||
-	    (iter->flags & FTRACE_ITER_NOTRACE &&
-	     ftrace_hash_empty(ops->func_hash->notrace_hash))) {
+	if ((iter->flags & (FTRACE_ITER_FILTER | FTRACE_ITER_NOTRACE)) &&
+	    ftrace_hash_empty(iter->hash)) {
+		iter->func_pos = 1; /* Account for the message */
 		if (*pos > 0)
 			return t_hash_start(m, pos);
 		iter->flags |= FTRACE_ITER_PRINTALL;
@@ -3256,7 +3278,7 @@ static void *t_start(struct seq_file *m, loff_t *pos)
 	iter->pg = ftrace_pages_start;
 	iter->idx = 0;
 	for (l = 0; l <= *pos; ) {
-		p = t_next(m, p, &l);
+		p = t_func_next(m, &l);
 		if (!p)
 			break;
 	}
@@ -3355,12 +3377,13 @@ ftrace_avail_open(struct inode *inode, struct file *file)
 		return -ENODEV;
 
 	iter = __seq_open_private(file, &show_ftrace_seq_ops, sizeof(*iter));
-	if (iter) {
-		iter->pg = ftrace_pages_start;
-		iter->ops = &global_ops;
-	}
+	if (!iter)
+		return -ENOMEM;
 
-	return iter ? 0 : -ENOMEM;
+	iter->pg = ftrace_pages_start;
+	iter->ops = &global_ops;
+
+	return 0;
 }
 
 static int
@@ -3369,13 +3392,14 @@ ftrace_enabled_open(struct inode *inode, struct file *file)
 	struct ftrace_iterator *iter;
 
 	iter = __seq_open_private(file, &show_ftrace_seq_ops, sizeof(*iter));
-	if (iter) {
-		iter->pg = ftrace_pages_start;
-		iter->flags = FTRACE_ITER_ENABLED;
-		iter->ops = &global_ops;
-	}
+	if (!iter)
+		return -ENOMEM;
 
-	return iter ? 0 : -ENOMEM;
+	iter->pg = ftrace_pages_start;
+	iter->flags = FTRACE_ITER_ENABLED;
+	iter->ops = &global_ops;
+
+	return 0;
 }
 
 /**
@@ -3440,7 +3464,8 @@ ftrace_regex_open(struct ftrace_ops *ops, int flag,
 			ret = -ENOMEM;
 			goto out_unlock;
 		}
-	}
+	} else
+		iter->hash = hash;
 
 	if (file->f_mode & FMODE_READ) {
 		iter->pg = ftrace_pages_start;
@@ -4536,6 +4561,9 @@ int ftrace_regex_release(struct inode *inode, struct file *file)
 			free_ftrace_hash_rcu(old_hash);
 		}
 		mutex_unlock(&ftrace_lock);
+	} else {
+		/* For read only, the hash is the ops hash */
+		iter->hash = NULL;
 	}
 
 	mutex_unlock(&iter->ops->func_hash->regex_lock);
@@ -5274,6 +5302,50 @@ void ftrace_module_init(struct module *mod)
 }
 #endif /* CONFIG_MODULES */
 
+void __init ftrace_free_init_mem(void)
+{
+	unsigned long start = (unsigned long)(&__init_begin);
+	unsigned long end = (unsigned long)(&__init_end);
+	struct ftrace_page **last_pg = &ftrace_pages_start;
+	struct ftrace_page *pg;
+	struct dyn_ftrace *rec;
+	struct dyn_ftrace key;
+	int order;
+
+	key.ip = start;
+	key.flags = end;	/* overload flags, as it is unsigned long */
+
+	mutex_lock(&ftrace_lock);
+
+	for (pg = ftrace_pages_start; pg; last_pg = &pg->next, pg = *last_pg) {
+		if (end < pg->records[0].ip ||
+		    start >= (pg->records[pg->index - 1].ip + MCOUNT_INSN_SIZE))
+			continue;
+ again:
+		rec = bsearch(&key, pg->records, pg->index,
+			      sizeof(struct dyn_ftrace),
+			      ftrace_cmp_recs);
+		if (!rec)
+			continue;
+		pg->index--;
+		if (!pg->index) {
+			*last_pg = pg->next;
+			order = get_count_order(pg->size / ENTRIES_PER_PAGE);
+			free_pages((unsigned long)pg->records, order);
+			kfree(pg);
+			pg = container_of(last_pg, struct ftrace_page, next);
+			if (!(*last_pg))
+				ftrace_pages = pg;
+			continue;
+		}
+		memmove(rec, rec + 1,
+			(pg->index - (rec - pg->records)) * sizeof(*rec));
+		/* More than one function may be in this block */
+		goto again;
+	}
+	mutex_unlock(&ftrace_lock);
+}
+
 void __init ftrace_init(void)
 {
 	extern unsigned long __start_mcount_loc[];
@@ -5316,22 +5388,6 @@ void __weak arch_ftrace_update_trampoline(struct ftrace_ops *ops)
 
 static void ftrace_update_trampoline(struct ftrace_ops *ops)
 {
-
-/*
- * Currently there's no safe way to free a trampoline when the kernel
- * is configured with PREEMPT. That is because a task could be preempted
- * when it jumped to the trampoline, it may be preempted for a long time
- * depending on the system load, and currently there's no way to know
- * when it will be off the trampoline. If the trampoline is freed
- * too early, when the task runs again, it will be executing on freed
- * memory and crash.
- */
-#ifdef CONFIG_PREEMPT
-	/* Currently, only non dynamic ops can have a trampoline */
-	if (ops->flags & FTRACE_OPS_FL_DYNAMIC)
-		return;
-#endif
-
 	arch_ftrace_update_trampoline(ops);
 }
 
