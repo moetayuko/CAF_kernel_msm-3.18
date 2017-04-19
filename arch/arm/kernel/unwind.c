@@ -281,7 +281,7 @@ static int unwind_exec_insn(struct unwind_ctrl_block *ctrl)
 		/* pop R4-R[4+bbb] */
 		for (reg = 4; reg <= 4 + (insn & 7); reg++)
 			ctrl->vrs[reg] = *vsp++;
-		if (insn & 0x80)
+		if (insn & 0x8)
 			ctrl->vrs[14] = *vsp++;
 		ctrl->vrs[SP] = (unsigned long)vsp;
 	} else if (insn == 0xb0) {
