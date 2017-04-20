@@ -425,7 +425,8 @@ static struct pci_ops rockchip_pcie_ops = {
 
 static void rockchip_pcie_set_power_limit(struct rockchip_pcie *rockchip)
 {
-	u32 status, curr, scale, power;
+	int curr;
+	u32 status, scale, power;
 
 	if (IS_ERR(rockchip->vpcie3v3))
 		return;
@@ -437,24 +438,25 @@ static void rockchip_pcie_set_power_limit(struct rockchip_pcie *rockchip)
 	 * to the actual power supply.
 	 */
 	curr = regulator_get_current_limit(rockchip->vpcie3v3);
-	if (curr > 0) {
-		scale = 3; /* 0.001x */
-		curr = curr / 1000; /* convert to mA */
-		power = (curr * 3300) / 1000; /* milliwatt */
-		while (power > PCIE_RC_CONFIG_DCR_CSPL_LIMIT) {
-			if (!scale) {
-				dev_warn(rockchip->dev, "invalid power supply\n");
-				return;
-			}
-			scale--;
-			power = power / 10;
-		}
+	if (curr <= 0)
+		return;
 
-		status = rockchip_pcie_read(rockchip, PCIE_RC_CONFIG_DCR);
-		status |= (power << PCIE_RC_CONFIG_DCR_CSPL_SHIFT) |
-			  (scale << PCIE_RC_CONFIG_DCR_CPLS_SHIFT);
-		rockchip_pcie_write(rockchip, status, PCIE_RC_CONFIG_DCR);
+	scale = 3; /* 0.001x */
+	curr = curr / 1000; /* convert to mA */
+	power = (curr * 3300) / 1000; /* milliwatt */
+	while (power > PCIE_RC_CONFIG_DCR_CSPL_LIMIT) {
+		if (!scale) {
+			dev_warn(rockchip->dev, "invalid power supply\n");
+			return;
+		}
+		scale--;
+		power = power / 10;
 	}
+
+	status = rockchip_pcie_read(rockchip, PCIE_RC_CONFIG_DCR);
+	status |= (power << PCIE_RC_CONFIG_DCR_CSPL_SHIFT) |
+		  (scale << PCIE_RC_CONFIG_DCR_CPLS_SHIFT);
+	rockchip_pcie_write(rockchip, status, PCIE_RC_CONFIG_DCR);
 }
 
 /**
@@ -596,7 +598,12 @@ static int rockchip_pcie_init_port(struct rockchip_pcie *rockchip)
 
 	/* Set RC's clock architecture as common clock */
 	status = rockchip_pcie_read(rockchip, PCIE_RC_CONFIG_LCS);
-	status |= PCI_EXP_LNKCTL_CCC;
+	status |= PCI_EXP_LNKSTA_SLC << 16;
+	rockchip_pcie_write(rockchip, status, PCIE_RC_CONFIG_LCS);
+
+	/* Set RC's RCB to 128 */
+	status = rockchip_pcie_read(rockchip, PCIE_RC_CONFIG_LCS);
+	status |= PCI_EXP_LNKCTL_RCB;
 	rockchip_pcie_write(rockchip, status, PCIE_RC_CONFIG_LCS);
 
 	/* Enable Gen1 training */
@@ -1397,7 +1404,7 @@ static int rockchip_pcie_probe(struct platform_device *pdev)
 		pcie_bus_configure_settings(child);
 
 	pci_bus_add_devices(bus);
-	return err;
+	return 0;
 
 err_free_res:
 	pci_free_resource_list(&res);
