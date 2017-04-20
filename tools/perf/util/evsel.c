@@ -236,6 +236,10 @@ void perf_evsel__init(struct perf_evsel *evsel,
 	evsel->sample_size = __perf_evsel__sample_size(attr->sample_type);
 	perf_evsel__calc_id_pos(evsel);
 	evsel->cmdline_group_boundary = false;
+	evsel->metric_expr   = NULL;
+	evsel->metric_name   = NULL;
+	evsel->metric_events = NULL;
+	evsel->collect_stat  = false;
 }
 
 struct perf_evsel *perf_evsel__new_idx(struct perf_event_attr *attr, int idx)
@@ -932,6 +936,9 @@ void perf_evsel__config(struct perf_evsel *evsel, struct record_opts *opts,
 	attr->mmap2 = track && !perf_missing_features.mmap2;
 	attr->comm  = track;
 
+	if (opts->record_namespaces)
+		attr->namespaces  = track;
+
 	if (opts->record_switch_events)
 		attr->context_switch = track;
 
@@ -1232,7 +1239,7 @@ int perf_evsel__read(struct perf_evsel *evsel, int cpu, int thread,
 	if (FD(evsel, cpu, thread) < 0)
 		return -EINVAL;
 
-	if (readn(FD(evsel, cpu, thread), count, sizeof(*count)) < 0)
+	if (readn(FD(evsel, cpu, thread), count, sizeof(*count)) <= 0)
 		return -errno;
 
 	return 0;
@@ -1250,7 +1257,7 @@ int __perf_evsel__read_on_cpu(struct perf_evsel *evsel,
 	if (evsel->counts == NULL && perf_evsel__alloc_counts(evsel, cpu + 1, thread + 1) < 0)
 		return -ENOMEM;
 
-	if (readn(FD(evsel, cpu, thread), &count, nv * sizeof(u64)) < 0)
+	if (readn(FD(evsel, cpu, thread), &count, nv * sizeof(u64)) <= 0)
 		return -errno;
 
 	perf_evsel__compute_deltas(evsel, cpu, thread, &count);
@@ -2450,11 +2457,17 @@ int perf_evsel__open_strerror(struct perf_evsel *evsel, struct target *target,
 			      int err, char *msg, size_t size)
 {
 	char sbuf[STRERR_BUFSIZE];
+	int printed = 0;
 
 	switch (err) {
 	case EPERM:
 	case EACCES:
-		return scnprintf(msg, size,
+		if (err == EPERM)
+			printed = scnprintf(msg, size,
+				"No permission to enable %s event.\n\n",
+				perf_evsel__name(evsel));
+
+		return scnprintf(msg + printed, size - printed,
 		 "You may not have permission to collect %sstats.\n\n"
 		 "Consider tweaking /proc/sys/kernel/perf_event_paranoid,\n"
 		 "which controls use of the performance events system by\n"
