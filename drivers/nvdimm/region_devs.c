@@ -255,6 +255,35 @@ static ssize_t size_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(size);
 
+static ssize_t flush_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct nd_region *nd_region = to_nd_region(dev);
+
+	/*
+	 * NOTE: in the nvdimm_has_flush() error case this attribute is
+	 * not visible.
+	 */
+	return sprintf(buf, "%d\n", nvdimm_has_flush(nd_region));
+}
+
+static ssize_t flush_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t len)
+{
+	bool flush;
+	int rc = strtobool(buf, &flush);
+	struct nd_region *nd_region = to_nd_region(dev);
+
+	if (rc)
+		return rc;
+	if (!flush)
+		return -EINVAL;
+	nvdimm_flush(nd_region);
+
+	return len;
+}
+static DEVICE_ATTR_RW(flush);
+
 static ssize_t mappings_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -474,6 +503,7 @@ static DEVICE_ATTR_RO(resource);
 
 static struct attribute *nd_region_attributes[] = {
 	&dev_attr_size.attr,
+	&dev_attr_flush.attr,
 	&dev_attr_nstype.attr,
 	&dev_attr_mappings.attr,
 	&dev_attr_btt_seed.attr,
@@ -507,6 +537,17 @@ static umode_t region_visible(struct kobject *kobj, struct attribute *a, int n)
 
 	if (!is_nd_pmem(dev) && a == &dev_attr_resource.attr)
 		return 0;
+
+	if (a == &dev_attr_flush.attr) {
+		int has_flush = nvdimm_has_flush(nd_region);
+
+		if (has_flush == 1)
+			return a->mode;
+		else if (has_flush == 0)
+			return 0444;
+		else
+			return 0;
+	}
 
 	if (a != &dev_attr_set_cookie.attr
 			&& a != &dev_attr_available_size.attr)
