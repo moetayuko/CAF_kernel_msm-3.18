@@ -9,9 +9,9 @@
 #define __CROS_EC_EC_COMMANDS_H
 
 /*
- * Include common.h first for CONFIG_HOSTCMD_ALIGNED, if it's defined.  This
- * generates more efficient code for accessing request/response structures
- * on ARM Cortex-M if the structures are guaranteed 32-bit aligned.
+ * Include common.h for CONFIG_HOSTCMD_ALIGNED, if it's defined. This
+ * generates more efficient code for accessing request/response structures on
+ * ARM Cortex-M if the structures are guaranteed 32-bit aligned.
  */
 #ifdef CHROMIUM_EC
 #include "common.h"
@@ -1076,6 +1076,8 @@ enum ec_feature_code {
 	EC_FEATURE_RTC = 27,
 	/* The MCU exposes a Fingerprint sensor */
 	EC_FEATURE_FINGERPRINT = 28,
+	/* The MCU exposes a Touchpad */
+	EC_FEATURE_TOUCHPAD = 29,
 };
 
 #define EC_FEATURE_MASK_0(event_code) (1UL << (event_code % 32))
@@ -2273,8 +2275,8 @@ struct __ec_align1 ec_params_force_lid_open {
 #define EC_CMD_CONFIG_POWER_BUTTON 0x002D
 
 enum ec_config_power_button_flags {
-	/* Enable/Disable SMI pulses for x86 devices */
-	EC_POWER_BUTTON_ENABLE_SMI_PULSE = 1 << 0,
+	/* Enable/Disable power button pulses for x86 devices */
+	EC_POWER_BUTTON_ENABLE_PULSE = (1 << 0),
 };
 
 struct __ec_align1 ec_params_config_power_button {
@@ -2797,7 +2799,10 @@ enum ec_mkbp_event {
 	/* New Fingerprint sensor event, the event data is fp_events bitmap. */
 	EC_MKBP_EVENT_FINGERPRINT = 5,
 
-	/* EC sent a sysrq command */
+	/*
+	 * Sysrq event: send emulated sysrq. The event data is sysrq,
+	 * corresponding to the key to be pressed.
+	 */
 	EC_MKBP_EVENT_SYSRQ = 6,
 
 	/* Number of MKBP events */
@@ -2820,9 +2825,9 @@ union __ec_align_offset1 ec_response_get_next_data {
 
 	uint32_t switches;
 
-	uint32_t sysrq;
-
 	uint32_t fp_events;
+
+	uint32_t sysrq;
 };
 
 struct __ec_align1 ec_response_get_next_event {
@@ -4035,6 +4040,13 @@ struct __ec_align2 ec_response_pd_chip_info {
 		uint8_t fw_version_string[8];
 		uint64_t fw_version_number;
 	};
+};
+
+/* Run RW signature verification and get status */
+#define EC_CMD_RWSIG_CHECK_STATUS	0x011C
+
+struct __ec_align4 ec_response_rwsig_check_status {
+	uint32_t status;
 };
 
 #endif  /* !__ACPI__ */
