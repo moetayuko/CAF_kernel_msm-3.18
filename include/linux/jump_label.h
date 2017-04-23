@@ -224,6 +224,11 @@ static inline void static_key_slow_dec(struct static_key *key)
 	atomic_dec(&key->enabled);
 }
 
+static inline void static_key_slow_dec_cpuslocked(struct static_key *key)
+{
+	static_key_slow_dec(key);
+}
+
 static inline int jump_label_text_reserved(void *start, void *end)
 {
 	return 0;
