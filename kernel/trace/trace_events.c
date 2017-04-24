@@ -326,6 +326,7 @@ void trace_event_enable_cmd_record(bool enable)
 	struct trace_event_file *file;
 	struct trace_array *tr;
 
+	get_online_cpus();
 	mutex_lock(&event_mutex);
 	do_for_each_event_file(tr, file) {
 
@@ -341,6 +342,7 @@ void trace_event_enable_cmd_record(bool enable)
 		}
 	} while_for_each_event_file();
 	mutex_unlock(&event_mutex);
+	put_online_cpus();
 }
 
 static int __ftrace_event_enable_disable(struct trace_event_file *file,
