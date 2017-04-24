@@ -32,6 +32,7 @@
 #include <linux/platform_device.h>
 #include <linux/usb/pd.h>
 #include <linux/usb/pd_vdo.h>
+#include <linux/usb/pd_vdo_dp.h>
 #include <linux/usb/typec.h>
 
 #include "tcpci.h"
