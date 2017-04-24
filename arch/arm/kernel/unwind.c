@@ -281,7 +281,7 @@ static int unwind_exec_insn(struct unwind_ctrl_block *ctrl)
 		/* pop R4-R[4+bbb] */
 		for (reg = 4; reg <= 4 + (insn & 7); reg++)
 			ctrl->vrs[reg] = *vsp++;
-		if (insn & 0x80)
+		if (insn & 0x8)
 			ctrl->vrs[14] = *vsp++;
 		ctrl->vrs[SP] = (unsigned long)vsp;
 	} else if (insn == 0xb0) {
@@ -416,12 +416,10 @@ void unwind_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 		tsk = current;
 
 	if (regs) {
-		frame.fp = regs->ARM_fp;
-		frame.sp = regs->ARM_sp;
-		frame.lr = regs->ARM_lr;
+		arm_get_current_stackframe(regs, &frame);
 		/* PC might be corrupted, use LR in that case. */
-		frame.pc = kernel_text_address(regs->ARM_pc)
-			 ? regs->ARM_pc : regs->ARM_lr;
+		if (!kernel_text_address(regs->ARM_pc))
+			frame.pc = regs->ARM_lr;
 	} else if (tsk == current) {
 		frame.fp = (unsigned long)__builtin_frame_address(0);
 		frame.sp = current_sp;
