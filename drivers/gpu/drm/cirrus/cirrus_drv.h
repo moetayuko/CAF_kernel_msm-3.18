@@ -49,6 +49,17 @@
 		WREG8(SEQ_DATA, v);				\
 	} while (0)						\
 
+#define PAL_ADDR 8
+#define PAL_DATA 9
+
+#define WREG_PAL(addr, r, g, b)					\
+	do {							\
+		WREG8(PAL_ADDR, addr);				\
+		WREG8(PAL_DATA, r);				\
+		WREG8(PAL_DATA, g);				\
+		WREG8(PAL_DATA, b);				\
+	} while (0)						\
+
 #define CRT_INDEX 0x14
 #define CRT_DATA 0x15
 
@@ -136,6 +147,8 @@ struct cirrus_device {
 	void __iomem			*rmmio;
 
 	struct cirrus_mc			mc;
+	resource_size_t			cursor_ram_size;
+	void __iomem			*cursor_iomem;
 	struct cirrus_mode_info		mode_info;
 
 	int				num_crtc;
@@ -163,6 +176,7 @@ struct cirrus_bo {
 	struct ttm_buffer_object bo;
 	struct ttm_placement placement;
 	struct ttm_bo_kmap_obj kmap;
+	struct ttm_bo_kmap_obj dma_buf_vmap;
 	struct drm_gem_object gem;
 	struct ttm_place placements[3];
 	int pin_count;
@@ -261,6 +275,14 @@ static inline void cirrus_bo_unreserve(struct cirrus_bo *bo)
 
 int cirrus_bo_push_sysram(struct cirrus_bo *bo);
 int cirrus_bo_pin(struct cirrus_bo *bo, u32 pl_flag, u64 *gpu_addr);
+
+struct sg_table *cirrus_gem_prime_get_sg_table(struct drm_gem_object *obj);
+void *cirrus_gem_prime_vmap(struct drm_gem_object *obj);
+void cirrus_gem_prime_vunmap(struct drm_gem_object *obj, void *vaddr);
+int cirrus_gem_prime_pin(struct drm_gem_object *obj);
+
+int cirrus_gem_prime_mmap(struct drm_gem_object *obj,
+			  struct vm_area_struct *vma);
 
 extern int cirrus_bpp;
 
