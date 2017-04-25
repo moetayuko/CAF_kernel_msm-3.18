@@ -112,7 +112,7 @@ int analogix_dp_enable_psr(struct device *dev)
 	struct edp_vsc_psr psr_vsc;
 
 	if (!dp->psr_support)
-		return -EINVAL;
+		return 0;
 
 	/* Prepare VSC packet as per EDP 1.4 spec, Table 6.9 */
 	memset(&psr_vsc, 0, sizeof(psr_vsc));
@@ -133,9 +133,10 @@ int analogix_dp_disable_psr(struct device *dev)
 {
 	struct analogix_dp_device *dp = dev_get_drvdata(dev);
 	struct edp_vsc_psr psr_vsc;
+	int ret;
 
 	if (!dp->psr_support)
-		return -EINVAL;
+		return 0;
 
 	/* Prepare VSC packet as per EDP 1.4 spec, Table 6.9 */
 	memset(&psr_vsc, 0, sizeof(psr_vsc));
@@ -146,6 +147,10 @@ int analogix_dp_disable_psr(struct device *dev)
 
 	psr_vsc.DB0 = 0;
 	psr_vsc.DB1 = 0;
+
+	ret = drm_dp_dpcd_writeb(&dp->aux, DP_SET_POWER, DP_SET_POWER_D0);
+	if (ret != 1)
+		dev_err(dp->dev, "Failed to set DP Power0 %d\n", ret);
 
 	analogix_dp_send_psr_spd(dp, &psr_vsc);
 	return 0;

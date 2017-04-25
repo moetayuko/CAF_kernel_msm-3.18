@@ -49,6 +49,9 @@ struct drm_atomic_state;
 
 struct drm_property *drm_mode_create_rotation_property(struct drm_device *dev,
 						       unsigned int supported_rotations);
+int drm_plane_create_rotation_property(struct drm_plane *plane,
+				       unsigned int rotation,
+				       unsigned int supported_rotations);
 unsigned int drm_rotation_simplify(unsigned int rotation,
 				   unsigned int supported_rotations);
 
