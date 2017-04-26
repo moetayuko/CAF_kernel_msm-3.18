@@ -529,6 +529,9 @@ static const char * const action_page_types[] = {
  */
 static int delete_from_lru_cache(struct page *p)
 {
+	if (memcg_kmem_enabled())
+		memcg_kmem_uncharge(p, 0);
+
 	if (!isolate_lru_page(p)) {
 		/*
 		 * Clear sensible page flags, so that the buddy system won't
