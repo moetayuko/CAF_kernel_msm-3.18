@@ -563,7 +563,6 @@ pnfs_put_lseg_locked(struct pnfs_layout_segment *lseg)
 		}
 	}
 }
-EXPORT_SYMBOL_GPL(pnfs_put_lseg_locked);
 
 /*
  * is l2 fully contained in l1?
@@ -1209,7 +1208,6 @@ out:
 	dprintk("<-- %s status: %d\n", __func__, status);
 	return status;
 }
-EXPORT_SYMBOL_GPL(_pnfs_return_layout);
 
 int
 pnfs_commit_and_return_layout(struct inode *inode)
@@ -2075,10 +2073,22 @@ void pnfs_error_mark_layout_for_return(struct inode *inode,
 EXPORT_SYMBOL_GPL(pnfs_error_mark_layout_for_return);
 
 void
+pnfs_generic_pg_check_layout(struct nfs_pageio_descriptor *pgio)
+{
+	if (pgio->pg_lseg == NULL ||
+	    test_bit(NFS_LSEG_VALID, &pgio->pg_lseg->pls_flags))
+		return;
+	pnfs_put_lseg(pgio->pg_lseg);
+	pgio->pg_lseg = NULL;
+}
+EXPORT_SYMBOL_GPL(pnfs_generic_pg_check_layout);
+
+void
 pnfs_generic_pg_init_read(struct nfs_pageio_descriptor *pgio, struct nfs_page *req)
 {
 	u64 rd_size = req->wb_bytes;
 
+	pnfs_generic_pg_check_layout(pgio);
 	if (pgio->pg_lseg == NULL) {
 		if (pgio->pg_dreq == NULL)
 			rd_size = i_size_read(pgio->pg_inode) - req_offset(req);
@@ -2109,6 +2119,7 @@ void
 pnfs_generic_pg_init_write(struct nfs_pageio_descriptor *pgio,
 			   struct nfs_page *req, u64 wb_size)
 {
+	pnfs_generic_pg_check_layout(pgio);
 	if (pgio->pg_lseg == NULL) {
 		pgio->pg_lseg = pnfs_update_layout(pgio->pg_inode,
 						   req->wb_context,
@@ -2408,10 +2419,20 @@ pnfs_do_read(struct nfs_pageio_descriptor *desc, struct nfs_pgio_header *hdr)
 	enum pnfs_try_status trypnfs;
 
 	trypnfs = pnfs_try_to_read_data(hdr, call_ops, lseg);
-	if (trypnfs == PNFS_TRY_AGAIN)
-		pnfs_read_resend_pnfs(hdr);
-	if (trypnfs == PNFS_NOT_ATTEMPTED || hdr->task.tk_status)
+	switch (trypnfs) {
+	case PNFS_NOT_ATTEMPTED:
 		pnfs_read_through_mds(desc, hdr);
+	case PNFS_ATTEMPTED:
+		break;
+	case PNFS_TRY_AGAIN:
+		/* cleanup hdr and prepare to redo pnfs */
+		if (!test_and_set_bit(NFS_IOHDR_REDO, &hdr->flags)) {
+			struct nfs_pgio_mirror *mirror = nfs_pgio_current_mirror(desc);
+			list_splice_init(&hdr->pages, &mirror->pg_list);
+			mirror->pg_recoalesce = 1;
+		}
+		hdr->mds_ops->rpc_release(hdr);
+	}
 }
 
 static void pnfs_readhdr_free(struct nfs_pgio_header *hdr)
