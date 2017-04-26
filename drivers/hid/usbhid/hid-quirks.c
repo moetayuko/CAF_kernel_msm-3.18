@@ -65,6 +65,7 @@ static const struct hid_blacklist {
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_4PORTKVMC, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_CS682, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_CS692, HID_QUIRK_NOGET },
+	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_CS1758, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_FIGHTERSTICK, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_COMBATSTICK, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_FLIGHT_SIM_ECLIPSE_YOKE, HID_QUIRK_NOGET },
@@ -240,10 +241,8 @@ static int usbhid_modify_dquirk(const u16 idVendor, const u16 idProduct,
 	}
 
 	q_new = kmalloc(sizeof(struct quirks_list_struct), GFP_KERNEL);
-	if (!q_new) {
-		dbg_hid("Could not allocate quirks_list_struct\n");
+	if (!q_new)
 		return -ENOMEM;
-	}
 
 	q_new->hid_bl_item.idVendor = idVendor;
 	q_new->hid_bl_item.idProduct = idProduct;
@@ -309,10 +308,9 @@ int usbhid_quirks_init(char **quirks_param)
 				&idVendor, &idProduct, &quirks);
 
 		if (m != 3 ||
-				usbhid_modify_dquirk(idVendor, idProduct, quirks) != 0) {
-			printk(KERN_WARNING
-					"Could not parse HID quirk module param %s\n",
-					quirks_param[n]);
+		    usbhid_modify_dquirk(idVendor, idProduct, quirks) != 0) {
+			pr_warn("Could not parse HID quirk module param %s\n",
+				quirks_param[n]);
 		}
 	}
 
