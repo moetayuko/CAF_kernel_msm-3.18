@@ -890,8 +890,8 @@ out:
  * sd_setup_write_same_cmnd - write the same data to multiple blocks
  * @cmd: command to prepare
  *
- * Will issue either WRITE SAME(10) or WRITE SAME(16) depending on
- * preference indicated by target device.
+ * Will set up either WRITE SAME(10) or WRITE SAME(16) depending on
+ * the preference indicated by the target device.
  **/
 static int sd_setup_write_same_cmnd(struct scsi_cmnd *cmd)
 {
@@ -910,7 +910,7 @@ static int sd_setup_write_same_cmnd(struct scsi_cmnd *cmd)
 	BUG_ON(bio_offset(bio) || bio_iovec(bio).bv_len != sdp->sector_size);
 
 	if (sd_is_zoned(sdkp)) {
-		ret = sd_zbc_setup_write_cmnd(cmd);
+		ret = sd_zbc_write_lock_zone(cmd);
 		if (ret != BLKPREP_OK)
 			return ret;
 	}
@@ -982,7 +982,7 @@ static int sd_setup_read_write_cmnd(struct scsi_cmnd *SCpnt)
 	unsigned char protect;
 
 	if (zoned_write) {
-		ret = sd_zbc_setup_write_cmnd(SCpnt);
+		ret = sd_zbc_write_lock_zone(SCpnt);
 		if (ret != BLKPREP_OK)
 			return ret;
 	}
@@ -1209,7 +1209,7 @@ static int sd_setup_read_write_cmnd(struct scsi_cmnd *SCpnt)
 	ret = BLKPREP_OK;
  out:
 	if (zoned_write && ret != BLKPREP_OK)
-		sd_zbc_cancel_write_cmnd(SCpnt);
+		sd_zbc_write_unlock_zone(SCpnt);
 
 	return ret;
 }
@@ -1266,8 +1266,8 @@ static void sd_uninit_command(struct scsi_cmnd *SCpnt)
 
 /**
  *	sd_open - open a scsi disk device
- *	@inode: only i_rdev member may be used
- *	@filp: only f_mode and f_flags may be used
+ *	@bdev: Block device of the scsi disk to open
+ *	@mode: FMODE_* mask
  *
  *	Returns 0 if successful. Returns a negated errno value in case 
  *	of error.
@@ -1343,8 +1343,8 @@ error_out:
 /**
  *	sd_release - invoked when the (last) close(2) is called on this
  *	scsi disk.
- *	@inode: only i_rdev member may be used
- *	@filp: only f_mode and f_flags may be used
+ *	@disk: disk to release
+ *	@mode: FMODE_* mask
  *
  *	Returns 0. 
  *
@@ -1400,8 +1400,8 @@ static int sd_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 
 /**
  *	sd_ioctl - process an ioctl
- *	@inode: only i_rdev/i_bdev members may be used
- *	@filp: only f_mode and f_flags may be used
+ *	@bdev: target block device
+ *	@mode: FMODE_* mask
  *	@cmd: ioctl command number
  *	@arg: this is third argument given to ioctl(2) system call.
  *	Often contains a pointer.
@@ -1835,41 +1835,44 @@ static int sd_eh_action(struct scsi_cmnd *scmd, int eh_disp)
 
 static unsigned int sd_completed_bytes(struct scsi_cmnd *scmd)
 {
-	u64 start_lba = blk_rq_pos(scmd->request);
-	u64 end_lba = blk_rq_pos(scmd->request) + (scsi_bufflen(scmd) / 512);
-	u64 factor = scmd->device->sector_size / 512;
-	u64 bad_lba;
-	int info_valid;
+	struct request *req = scmd->request;
+	struct scsi_device *sdev = scmd->device;
+	unsigned int transferred, good_bytes;
+	u64 start_lba, end_lba, bad_lba;
+
+	/*
+	 * Some commands have a payload smaller than the device logical
+	 * block size (e.g. INQUIRY on a 4K disk).
+	 */
+	if (scsi_bufflen(scmd) <= sdev->sector_size)
+		return 0;
+
+	/* Check if we have a 'bad_lba' information */
+	if (!scsi_get_sense_info_fld(scmd->sense_buffer,
+				     SCSI_SENSE_BUFFERSIZE,
+				     &bad_lba))
+		return 0;
+
+	/*
+	 * If the bad lba was reported incorrectly, we have no idea where
+	 * the error is.
+	 */
+	start_lba = sectors_to_logical(sdev, blk_rq_pos(req));
+	end_lba = start_lba + bytes_to_logical(sdev, scsi_bufflen(scmd));
+	if (bad_lba < start_lba || bad_lba >= end_lba)
+		return 0;
+
 	/*
 	 * resid is optional but mostly filled in.  When it's unused,
 	 * its value is zero, so we assume the whole buffer transferred
 	 */
-	unsigned int transferred = scsi_bufflen(scmd) - scsi_get_resid(scmd);
-	unsigned int good_bytes;
+	transferred = scsi_bufflen(scmd) - scsi_get_resid(scmd);
 
-	info_valid = scsi_get_sense_info_fld(scmd->sense_buffer,
-					     SCSI_SENSE_BUFFERSIZE,
-					     &bad_lba);
-	if (!info_valid)
-		return 0;
-
-	if (scsi_bufflen(scmd) <= scmd->device->sector_size)
-		return 0;
-
-	/* be careful ... don't want any overflows */
-	do_div(start_lba, factor);
-	do_div(end_lba, factor);
-
-	/* The bad lba was reported incorrectly, we have no idea where
-	 * the error is.
+	/* This computation should always be done in terms of the
+	 * resolution of the device's medium.
 	 */
-	if (bad_lba < start_lba  || bad_lba >= end_lba)
-		return 0;
+	good_bytes = logical_to_bytes(sdev, bad_lba - start_lba);
 
-	/* This computation should always be done in terms of
-	 * the resolution of the device's medium.
-	 */
-	good_bytes = (bad_lba - start_lba) * scmd->device->sector_size;
 	return min(good_bytes, transferred);
 }
 
@@ -1891,8 +1894,6 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 	struct request *req = SCpnt->request;
 	int sense_valid = 0;
 	int sense_deferred = 0;
-	unsigned char op = SCpnt->cmnd[0];
-	unsigned char unmap = SCpnt->cmnd[1] & 8;
 
 	switch (req_op(req)) {
 	case REQ_OP_DISCARD:
@@ -1966,26 +1967,27 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 			good_bytes = sd_completed_bytes(SCpnt);
 		break;
 	case ILLEGAL_REQUEST:
-		if (sshdr.asc == 0x10)  /* DIX: Host detected corruption */
+		switch (sshdr.asc) {
+		case 0x10:	/* DIX: Host detected corruption */
 			good_bytes = sd_completed_bytes(SCpnt);
-		/* INVALID COMMAND OPCODE or INVALID FIELD IN CDB */
-		if (sshdr.asc == 0x20 || sshdr.asc == 0x24) {
-			switch (op) {
+			break;
+		case 0x20:	/* INVALID COMMAND OPCODE */
+		case 0x24:	/* INVALID FIELD IN CDB */
+			switch (SCpnt->cmnd[0]) {
 			case UNMAP:
 				sd_config_discard(sdkp, SD_LBP_DISABLE);
 				break;
 			case WRITE_SAME_16:
 			case WRITE_SAME:
-				if (unmap)
+				if (SCpnt->cmnd[1] & 8) { /* UNMAP */
 					sd_config_discard(sdkp, SD_LBP_DISABLE);
-				else {
+				} else {
 					sdkp->device->no_write_same = 1;
 					sd_config_write_same(sdkp);
-
-					good_bytes = 0;
 					req->__data_len = blk_rq_bytes(req);
 					req->rq_flags |= RQF_QUIET;
 				}
+				break;
 			}
 		}
 		break;
@@ -2823,7 +2825,7 @@ static void sd_read_app_tag_own(struct scsi_disk *sdkp, unsigned char *buffer)
 
 /**
  * sd_read_block_limits - Query disk device for preferred I/O sizes.
- * @disk: disk to query
+ * @sdkp: disk to query
  */
 static void sd_read_block_limits(struct scsi_disk *sdkp)
 {
@@ -2889,7 +2891,7 @@ static void sd_read_block_limits(struct scsi_disk *sdkp)
 
 /**
  * sd_read_block_characteristics - Query block dev. characteristics
- * @disk: disk to query
+ * @sdkp: disk to query
  */
 static void sd_read_block_characteristics(struct scsi_disk *sdkp)
 {
@@ -2937,7 +2939,7 @@ static void sd_read_block_characteristics(struct scsi_disk *sdkp)
 
 /**
  * sd_read_block_provisioning - Query provisioning VPD page
- * @disk: disk to query
+ * @sdkp: disk to query
  */
 static void sd_read_block_provisioning(struct scsi_disk *sdkp)
 {
