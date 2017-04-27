@@ -14,7 +14,6 @@
 #include <linux/rbtree.h>
 #include <linux/delay.h>
 #include <linux/random.h>
-#include <linux/log2.h>
 #include <crypto/hash.h>
 #include <crypto/skcipher.h>
 #include <linux/async_tx.h>
@@ -2369,7 +2368,7 @@ static void dm_integrity_set(struct dm_target *ti, struct dm_integrity_c *ic)
 	bi.profile = &dm_integrity_profile;
 	bi.tuple_size = ic->tag_size;
 	bi.tag_size = bi.tuple_size;
-	bi.interval_exp = ilog2(ic->sectors_per_block << SECTOR_SHIFT);
+	bi.interval_exp = ic->sb->log2_sectors_per_block + SECTOR_SHIFT;
 
 	blk_integrity_register(disk, &bi);
 	blk_queue_max_integrity_segments(disk->queue, UINT_MAX);
@@ -2496,8 +2495,6 @@ static int get_alg_and_key(const char *arg, struct alg_spec *a, char **error, ch
 
 	k = strchr(a->alg_string, ':');
 	if (k) {
-		unsigned i;
-
 		*k = 0;
 		a->key_string = k + 1;
 		if (strlen(a->key_string) & 1)
@@ -2507,16 +2504,8 @@ static int get_alg_and_key(const char *arg, struct alg_spec *a, char **error, ch
 		a->key = kmalloc(a->key_size, GFP_KERNEL);
 		if (!a->key)
 			goto nomem;
-		for (i = 0; i < a->key_size; i++) {
-			char digit[3];
-			digit[0] = a->key_string[i * 2];
-			digit[1] = a->key_string[i * 2 + 1];
-			digit[2] = 0;
-			if (strspn(digit, "0123456789abcdefABCDEF") != 2)
-				goto inval;
-			if (kstrtou8(digit, 16, &a->key[i]))
-				goto inval;
-		}
+		if (hex2bin(a->key, a->key_string, a->key_size))
+			goto inval;
 	}
 
 	return 0;
