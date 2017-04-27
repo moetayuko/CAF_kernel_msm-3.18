@@ -34,10 +34,8 @@ static inline void __tlbiel_pid(unsigned long pid, int set,
 	prs = 1; /* process scoped */
 	r = 1;   /* raidx format */
 
-	asm volatile("ptesync": : :"memory");
 	asm volatile(PPC_TLBIEL(%0, %4, %3, %2, %1)
 		     : : "r"(rb), "i"(r), "i"(prs), "i"(ric), "r"(rs) : "memory");
-	asm volatile("ptesync": : :"memory");
 }
 
 /*
@@ -47,9 +45,33 @@ static inline void _tlbiel_pid(unsigned long pid, unsigned long ric)
 {
 	int set;
 
-	for (set = 0; set < POWER9_TLB_SETS_RADIX ; set++) {
+	asm volatile("ptesync": : :"memory");
+
+	/*
+	 * Flush the first set of the TLB, and if we're doing a RIC_FLUSH_ALL,
+	 * also flush the entire Page Walk Cache.
+	 */
+	__tlbiel_pid(pid, 0, ric);
+
+	if (ric == RIC_FLUSH_ALL)
+		/* For the remaining sets, just flush the TLB */
+		ric = RIC_FLUSH_TLB;
+
+	for (set = 1; set < POWER9_TLB_SETS_RADIX ; set++)
 		__tlbiel_pid(pid, set, ric);
-	}
+
+	asm volatile("ptesync": : :"memory");
+	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
+}
+
+static inline void tlbiel_pwc(unsigned long pid)
+{
+	asm volatile("ptesync": : :"memory");
+
+	/* For PWC flush, we don't look at set number */
+	__tlbiel_pid(pid, 0, RIC_FLUSH_PWC);
+
+	asm volatile("ptesync": : :"memory");
 	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
 }
 
@@ -129,12 +151,18 @@ void radix__local_flush_tlb_pwc(struct mmu_gather *tlb, unsigned long addr)
 {
 	unsigned long pid;
 	struct mm_struct *mm = tlb->mm;
+	/*
+	 * If we are doing a full mm flush, we will do a tlb flush
+	 * with RIC_FLUSH_ALL later.
+	 */
+	if (tlb->fullmm)
+		return;
 
 	preempt_disable();
 
 	pid = mm->context.id;
 	if (pid != MMU_NO_CONTEXT)
-		_tlbiel_pid(pid, RIC_FLUSH_PWC);
+		tlbiel_pwc(pid);
 
 	preempt_enable();
 }
@@ -195,6 +223,12 @@ void radix__flush_tlb_pwc(struct mmu_gather *tlb, unsigned long addr)
 	unsigned long pid;
 	struct mm_struct *mm = tlb->mm;
 
+	/*
+	 * If we are doing a full mm flush, we will do a tlb flush
+	 * with RIC_FLUSH_ALL later.
+	 */
+	if (tlb->fullmm)
+		return;
 	preempt_disable();
 
 	pid = mm->context.id;
@@ -210,7 +244,7 @@ void radix__flush_tlb_pwc(struct mmu_gather *tlb, unsigned long addr)
 		if (lock_tlbie)
 			raw_spin_unlock(&native_tlbie_lock);
 	} else
-		_tlbiel_pid(pid, RIC_FLUSH_PWC);
+		tlbiel_pwc(pid);
 no_context:
 	preempt_enable();
 }
@@ -437,7 +471,7 @@ void radix__flush_tlb_pte_p9_dd1(unsigned long old_pte, struct mm_struct *mm,
 		return;
 	}
 
-	if (old_pte & _PAGE_LARGE)
+	if (old_pte & R_PAGE_LARGE)
 		radix__flush_tlb_page_psize(mm, address, MMU_PAGE_2M);
 	else
 		radix__flush_tlb_page_psize(mm, address, mmu_virtual_psize);
