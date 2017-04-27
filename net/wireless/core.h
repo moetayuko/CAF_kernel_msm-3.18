@@ -74,7 +74,7 @@ struct cfg80211_registered_device {
 	u32 bss_entries;
 	struct cfg80211_scan_request *scan_req; /* protected by RTNL */
 	struct sk_buff *scan_msg;
-	struct cfg80211_sched_scan_request __rcu *sched_scan_req;
+	struct list_head sched_scan_req_list;
 	unsigned long suspend_at;
 	struct work_struct scan_done_wk;
 	struct work_struct sched_scan_results_wk;
@@ -91,10 +91,7 @@ struct cfg80211_registered_device {
 
 	struct cfg80211_coalesce *coalesce;
 
-	spinlock_t destroy_list_lock;
-	struct list_head destroy_list;
 	struct work_struct destroy_work;
-
 	struct work_struct sched_scan_stop_wk;
 
 	struct cfg80211_chan_def radar_chandef;
@@ -264,11 +261,6 @@ struct cfg80211_beacon_registration {
 	u32 nlportid;
 };
 
-struct cfg80211_iface_destroy {
-	struct list_head list;
-	u32 nlportid;
-};
-
 struct cfg80211_cqm_config {
 	u32 rssi_hyst;
 	s32 last_rssi_event_value;
@@ -424,9 +416,16 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 void __cfg80211_scan_done(struct work_struct *wk);
 void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 			   bool send_message);
+void cfg80211_add_sched_scan_req(struct cfg80211_registered_device *rdev,
+				 struct cfg80211_sched_scan_request *req);
+int cfg80211_sched_scan_req_possible(struct cfg80211_registered_device *rdev,
+				     bool want_multi);
 void __cfg80211_sched_scan_results(struct work_struct *wk);
+int cfg80211_stop_sched_scan_req(struct cfg80211_registered_device *rdev,
+				 struct cfg80211_sched_scan_request *req,
+				 bool driver_initiated);
 int __cfg80211_stop_sched_scan(struct cfg80211_registered_device *rdev,
-			       bool driver_initiated);
+			       u64 reqid, bool driver_initiated);
 void cfg80211_upload_connect_keys(struct wireless_dev *wdev);
 int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 			  struct net_device *dev, enum nl80211_iftype ntype,

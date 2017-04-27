@@ -3405,7 +3405,7 @@ brcmf_cfg80211_sched_scan_start(struct wiphy *wiphy,
 }
 
 static int brcmf_cfg80211_sched_scan_stop(struct wiphy *wiphy,
-					  struct net_device *ndev)
+					  struct net_device *ndev, u64 reqid)
 {
 	struct brcmf_cfg80211_info *cfg = wiphy_to_cfg(wiphy);
 	struct brcmf_if *ifp = netdev_priv(ndev);
@@ -3607,7 +3607,7 @@ static s32 brcmf_cfg80211_resume(struct wiphy *wiphy)
 				      cfg->wowl.pre_pmmode);
 		cfg->wowl.active = false;
 		if (cfg->wowl.nd_enabled) {
-			brcmf_cfg80211_sched_scan_stop(cfg->wiphy, ifp->ndev);
+			brcmf_cfg80211_sched_scan_stop(cfg->wiphy, ifp->ndev, 0);
 			brcmf_fweh_unregister(cfg->pub, BRCMF_E_PFN_NET_FOUND);
 			brcmf_fweh_register(cfg->pub, BRCMF_E_PFN_NET_FOUND,
 					    brcmf_notify_sched_scan_results);
@@ -3691,7 +3691,7 @@ static s32 brcmf_cfg80211_suspend(struct wiphy *wiphy,
 
 	/* Stop scheduled scan */
 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_PNO))
-		brcmf_cfg80211_sched_scan_stop(wiphy, ndev);
+		brcmf_cfg80211_sched_scan_stop(wiphy, ndev, 0);
 
 	/* end any scanning */
 	if (test_bit(BRCMF_SCAN_STATUS_BUSY, &cfg->scan_status))
@@ -6374,11 +6374,11 @@ err:
 static void brcmf_wiphy_pno_params(struct wiphy *wiphy)
 {
 	/* scheduled scan settings */
+	wiphy->max_sched_scan_reqs = 1;
 	wiphy->max_sched_scan_ssids = BRCMF_PNO_MAX_PFN_COUNT;
 	wiphy->max_match_sets = BRCMF_PNO_MAX_PFN_COUNT;
 	wiphy->max_sched_scan_ie_len = BRCMF_SCAN_IE_LEN_MAX;
 	wiphy->max_sched_scan_plan_interval = BRCMF_PNO_SCHED_SCAN_MAX_PERIOD;
-	wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
 }
 
 #ifdef CONFIG_PM
