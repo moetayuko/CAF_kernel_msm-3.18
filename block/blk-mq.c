@@ -1166,13 +1166,9 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 		put_cpu();
 	}
 
-	if (msecs == 0)
-		kblockd_schedule_work_on(blk_mq_hctx_next_cpu(hctx),
-					 &hctx->run_work);
-	else
-		kblockd_schedule_delayed_work_on(blk_mq_hctx_next_cpu(hctx),
-						 &hctx->delayed_run_work,
-						 msecs_to_jiffies(msecs));
+	kblockd_schedule_delayed_work_on(blk_mq_hctx_next_cpu(hctx),
+					 &hctx->run_work,
+					 msecs_to_jiffies(msecs));
 }
 
 void blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, unsigned long msecs)
@@ -1224,8 +1220,7 @@ EXPORT_SYMBOL(blk_mq_queue_stopped);
 
 void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx)
 {
-	cancel_work(&hctx->run_work);
-	cancel_delayed_work(&hctx->delay_work);
+	cancel_delayed_work_sync(&hctx->run_work);
 	set_bit(BLK_MQ_S_STOPPED, &hctx->state);
 }
 EXPORT_SYMBOL(blk_mq_stop_hw_queue);
@@ -1282,38 +1277,40 @@ static void blk_mq_run_work_fn(struct work_struct *work)
 {
 	struct blk_mq_hw_ctx *hctx;
 
-	hctx = container_of(work, struct blk_mq_hw_ctx, run_work);
+	hctx = container_of(work, struct blk_mq_hw_ctx, run_work.work);
+
+	/*
+	 * If we are stopped, don't run the queue. The exception is if
+	 * BLK_MQ_S_START_ON_RUN is set. For that case, we auto-clear
+	 * the STOPPED bit and run it.
+	 */
+	if (test_bit(BLK_MQ_S_STOPPED, &hctx->state)) {
+		if (!test_bit(BLK_MQ_S_START_ON_RUN, &hctx->state))
+			return;
+
+		clear_bit(BLK_MQ_S_START_ON_RUN, &hctx->state);
+		clear_bit(BLK_MQ_S_STOPPED, &hctx->state);
+	}
 
 	__blk_mq_run_hw_queue(hctx);
 }
 
-static void blk_mq_delayed_run_work_fn(struct work_struct *work)
-{
-	struct blk_mq_hw_ctx *hctx;
-
-	hctx = container_of(work, struct blk_mq_hw_ctx, delayed_run_work.work);
-
-	__blk_mq_run_hw_queue(hctx);
-}
-
-static void blk_mq_delay_work_fn(struct work_struct *work)
-{
-	struct blk_mq_hw_ctx *hctx;
-
-	hctx = container_of(work, struct blk_mq_hw_ctx, delay_work.work);
-
-	if (test_and_clear_bit(BLK_MQ_S_STOPPED, &hctx->state))
-		__blk_mq_run_hw_queue(hctx);
-}
 
 void blk_mq_delay_queue(struct blk_mq_hw_ctx *hctx, unsigned long msecs)
 {
 	if (unlikely(!blk_mq_hw_queue_mapped(hctx)))
 		return;
 
+	/*
+	 * Stop the hw queue, then modify currently delayed work.
+	 * This should prevent us from running the queue prematurely.
+	 * Mark the queue as auto-clearing STOPPED when it runs.
+	 */
 	blk_mq_stop_hw_queue(hctx);
-	kblockd_schedule_delayed_work_on(blk_mq_hctx_next_cpu(hctx),
-			&hctx->delay_work, msecs_to_jiffies(msecs));
+	set_bit(BLK_MQ_S_START_ON_RUN, &hctx->state);
+	kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx),
+					&hctx->run_work,
+					msecs_to_jiffies(msecs));
 }
 EXPORT_SYMBOL(blk_mq_delay_queue);
 
@@ -1898,9 +1895,7 @@ static int blk_mq_init_hctx(struct request_queue *q,
 	if (node == NUMA_NO_NODE)
 		node = hctx->numa_node = set->numa_node;
 
-	INIT_WORK(&hctx->run_work, blk_mq_run_work_fn);
-	INIT_DELAYED_WORK(&hctx->delayed_run_work, blk_mq_delayed_run_work_fn);
-	INIT_DELAYED_WORK(&hctx->delay_work, blk_mq_delay_work_fn);
+	INIT_DELAYED_WORK(&hctx->run_work, blk_mq_run_work_fn);
 	spin_lock_init(&hctx->lock);
 	INIT_LIST_HEAD(&hctx->dispatch);
 	hctx->queue = q;
