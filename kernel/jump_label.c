@@ -90,6 +90,16 @@ void static_key_enable(struct static_key *key)
 }
 EXPORT_SYMBOL_GPL(static_key_enable);
 
+void static_key_enable_cpuslocked(struct static_key *key)
+{
+	int count = static_key_count(key);
+
+	WARN_ON_ONCE(count < 0 || count > 1);
+
+	if (!count)
+		static_key_slow_inc_cpuslocked(key);
+}
+
 void static_key_disable(struct static_key *key)
 {
 	int count = static_key_count(key);

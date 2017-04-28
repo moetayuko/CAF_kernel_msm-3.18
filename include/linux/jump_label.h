@@ -164,6 +164,7 @@ extern void static_key_slow_dec_cpuslocked(struct static_key *key);
 extern void jump_label_apply_nops(struct module *mod);
 extern int static_key_count(struct static_key *key);
 extern void static_key_enable(struct static_key *key);
+extern void static_key_enable_cpuslocked(struct static_key *key);
 extern void static_key_disable(struct static_key *key);
 extern void static_key_disable_cpuslocked(struct static_key *key);
 
@@ -250,6 +251,11 @@ static inline void static_key_enable(struct static_key *key)
 
 	if (!count)
 		static_key_slow_inc(key);
+}
+
+static inline void static_key_enable_cpuslocked(struct static_key *key)
+{
+	static_key_enable(key);
 }
 
 static inline void static_key_disable(struct static_key *key)
@@ -429,6 +435,7 @@ extern bool ____wrong_branch_error(void);
  */
 
 #define static_branch_enable(x)			static_key_enable(&(x)->key)
+#define static_branch_enable_cpuslocked(x)	static_key_enable_cpuslocked(&(x)->key)
 #define static_branch_disable(x)		static_key_disable(&(x)->key)
 #define static_branch_disable_cpuslocked(x)	static_key_disable_cpuslocked(&(x)->key)
 
