@@ -365,6 +365,7 @@ affs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 				symname++;
 	}
 	*p = 0;
+	inode->i_size = i + 1;
 	mark_buffer_dirty_inode(bh, inode);
 	affs_brelse(bh);
 	mark_inode_dirty(inode);
@@ -476,11 +477,6 @@ static struct inode *affs_nfs_get_inode(struct super_block *sb, u64 ino,
 	inode = affs_iget(sb, ino);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
-
-	if (generation && inode->i_generation != generation) {
-		iput(inode);
-		return ERR_PTR(-ESTALE);
-	}
 
 	return inode;
 }
