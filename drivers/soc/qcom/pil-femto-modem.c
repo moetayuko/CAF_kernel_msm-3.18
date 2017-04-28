@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,7 @@
 #include <linux/sysfs.h>
 #include <linux/vmalloc.h>
 #include <linux/semaphore.h>
+#include <linux/moduleparam.h>
 
 #include <asm/page.h>
 #include <asm/cacheflush.h>
@@ -43,6 +44,28 @@
 #define Q6_FREQ_ROW_MASK	0x0000000F
 #define Q6_FREQ_ROW_SHIFT	28
 #define Q6_FREQ_COL_SHIFT(q6)	(Q6_FREQ_ROW_SHIFT - (((q6) + 1) * 3))
+#define IS_Q6_FREQ_ROW_VALID(row) \
+	(((row) >= Q6_FREQ_ROW_MIN) && ((row) <= Q6_FREQ_ROW_MAX))
+#define IS_Q6_FREQ_COL_VALID(col) \
+	(((col) >= Q6_FREQ_COL_MIN) && ((col) <= Q6_FREQ_COL_MAX))
+
+/* Initialize to invalid values since these should only be used if set
+ * by the command line
+ */
+static u32 q6_freq_col[MAX_NUM_Q6] = {
+	(Q6_FREQ_COL_MAX + 1),
+	(Q6_FREQ_COL_MAX + 1),
+	(Q6_FREQ_COL_MAX + 1),
+	(Q6_FREQ_COL_MAX + 1)};
+module_param_array(q6_freq_col, uint, NULL, S_IRUSR);
+MODULE_PARM_DESC(q6_freq_col, "Q6 frequency column indices");
+
+/* Initialize to invalid value since this should only be used if set
+ * by the command line
+ */
+static u32 q6_freq_row = Q6_FREQ_ROW_MAX + 1;
+module_param(q6_freq_row, uint, S_IRUSR);
+MODULE_PARM_DESC(q6_freq_row, "Q6 frequency row index");
 
 /* These macros assist with creating sysfs attributes */
 #define MAKE_RO_ATTR(_name, _ptr, _index)\
@@ -113,8 +136,6 @@ struct femto_modem_data {
 	u32 max_num_modems;
 	u32 disc_modems;
 	u8  change_q6_freqs;
-	u32 q6_freq_row;
-	u32 q6_freq_col[MAX_NUM_Q6];
 
 	/* sysfs */
 	struct kobject *kobj;
@@ -274,10 +295,9 @@ static int pil_femto_modem_send_mba_set_q6_freqs(struct femto_modem_data *drv)
 	 *
 	 * The lower 16 bits contains the command id.
 	 */
-	cmd |= (drv->q6_freq_row & Q6_FREQ_ROW_MASK) <<
-		Q6_FREQ_ROW_SHIFT;
+	cmd |= (q6_freq_row & Q6_FREQ_ROW_MASK) << Q6_FREQ_ROW_SHIFT;
 	for (q6 = 0; q6 < MAX_NUM_Q6; q6++) {
-		cmd |= (drv->q6_freq_col[q6] & Q6_FREQ_COL_MASK) <<
+		cmd |= (q6_freq_col[q6] & Q6_FREQ_COL_MASK) <<
 			Q6_FREQ_COL_SHIFT(q6);
 	}
 
@@ -518,7 +538,7 @@ static ssize_t show_q6_freq_row(struct kobject *kobj,
 	if (!drv)
 		return -EINVAL;
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", drv->q6_freq_row);
+	return scnprintf(buf, PAGE_SIZE, "%u\n", q6_freq_row);
 }
 
 static ssize_t show_q6_freq_col(struct kobject *kobj,
@@ -534,8 +554,7 @@ static ssize_t show_q6_freq_col(struct kobject *kobj,
 		return -EINVAL;
 
 	for (index = 0; index < MAX_NUM_Q6; index++)
-		len += snprintf(freq_str + len, 16, "%u ",
-				drv->q6_freq_col[index]);
+		len += snprintf(freq_str + len, 16, "%u ", q6_freq_col[index]);
 
 	return scnprintf(buf, PAGE_SIZE, "%s\n", freq_str);
 }
@@ -831,6 +850,43 @@ static int pil_femto_modem_desc_driver_exit(
 	return 0;
 }
 
+static int pil_femto_modem_validate_q6_freq_params(struct device *dev)
+{
+	int ret;
+	int index = 0;
+
+	/* Validate the q6 frequency row */
+	ret = IS_Q6_FREQ_ROW_VALID(q6_freq_row) ? 1 : 0;
+	if (!ret)
+		/* The row is invalid, but we'll fall back to the
+		 * device tree, if it's set. Otherwise, defaults
+		 * will be used.
+		 */
+		dev_warn(dev, "Invalid q6 freq row module param: %u\n",
+			q6_freq_row);
+	else {
+		/* The row is valid, so the cols must also be valid. */
+		for (index = 0; index < MAX_NUM_Q6; index++) {
+			/* The col value is invalid, so we'll fall
+			 * back to the device tree, if set.
+			 */
+			if (!IS_Q6_FREQ_COL_VALID(q6_freq_col[index])) {
+				ret = 0;
+				break;
+			}
+		}
+
+		if (!ret)
+			dev_warn(dev,
+				"Invalid q6 %u freq col module param: %u\n",
+				index,
+				q6_freq_col[index]);
+
+	}
+
+	return ret;
+}
+
 static int pil_femto_modem_driver_probe(
 	struct platform_device *pdev)
 {
@@ -860,18 +916,34 @@ static int pil_femto_modem_driver_probe(
 	if (!drv->max_num_modems)
 		return -EINVAL;
 
-	/* Retrieve the q6 frequency row (if there) */
 	drv->change_q6_freqs = 0;
-	ret = of_property_read_u32(p_node, "qcom,q6-freq-row",
-		&drv->q6_freq_row);
 
+	/* See if the user set the frequency row via command line */
+	if (q6_freq_row != (Q6_FREQ_ROW_MAX + 1)) {
+		ret = pil_femto_modem_validate_q6_freq_params(dev);
+
+		if (ret)
+			drv->change_q6_freqs = 1;
+	}
+
+	/* If the user did not set the frequency row via command line OR
+	 * it was set and is invalid, see if it is set via device tree.
+	 */
+	if (!ret)
+		/* Retrieve the q6 frequency row (if there) */
+		ret = of_property_read_u32(p_node, "qcom,q6-freq-row",
+			&value);
+
+	/* Values are set via device tree - validate them */
 	if (!ret) {
 		/* Validate q6 frequency row */
-		if (drv->q6_freq_row > Q6_FREQ_ROW_MAX) {
+		if (!IS_Q6_FREQ_ROW_VALID(value)) {
 			dev_err(dev, "Invalid q6 freq row value: %u\n",
-				drv->q6_freq_row);
+				value);
 			return -EINVAL;
 		}
+
+		q6_freq_row = value;
 
 		/* Retrieve the q6 frequency column values (if there) */
 		of_property_for_each_u32(p_node, "qcom,q6-freq-col", prop, p,
@@ -883,7 +955,7 @@ static int pil_femto_modem_driver_probe(
 			}
 
 			/* Validate q6 frequency column value */
-			if (value > Q6_FREQ_COL_MAX) {
+			if (!IS_Q6_FREQ_COL_VALID(value)) {
 				dev_err(dev,
 					"Invalid q6 %u freq column value: %u\n",
 					index, value);
@@ -891,7 +963,7 @@ static int pil_femto_modem_driver_probe(
 			}
 
 			/* Value is valid, store it */
-			drv->q6_freq_col[index] = value;
+			q6_freq_col[index] = value;
 			index++;
 		}
 
