@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,7 +43,7 @@
 
 #define FSM9900_QDSP6_0_DEBUG_DUMP_PHYS	0x19800000
 #define FSM9900_QDSP6_1_DEBUG_DUMP_PHYS	0x19880000
-#define FSM9900_QDSP6_2_DEBUG_DUMP_PHYS	0x19900000
+#define FSM9900_QDSP6_2_DEBUG_DUMP_PHYS	0x19980000
 #define FSM9900_QDSP6_3_DEBUG_DUMP_PHYS	0x19A80000
 #define FSM9900_SCLTE_DEBUG_DUMP_PHYS	0x19780000
 #define FSM9900_SCLTE_DEBUG_TRACE_PHYS	0x19700000
@@ -141,13 +141,13 @@ static struct resource fsm9900_uio0_resources[] = {
 	},
 	{
 		.start = FSM9900_QDSP6_1_DEBUG_DUMP_PHYS,
-		.end   = FSM9900_QDSP6_1_DEBUG_DUMP_PHYS + SZ_512K - 1,
+		.end   = FSM9900_QDSP6_1_DEBUG_DUMP_PHYS + SZ_1M - 1,
 		.name  = "qdsp6_1_debug_dump",
 		.flags = IORESOURCE_MEM,
 	},
 	{
 		.start = FSM9900_QDSP6_2_DEBUG_DUMP_PHYS,
-		.end   = FSM9900_QDSP6_2_DEBUG_DUMP_PHYS + SZ_1M + SZ_512K - 1,
+		.end   = FSM9900_QDSP6_2_DEBUG_DUMP_PHYS + SZ_1M - 1,
 		.name  = "qdsp6_2_debug_dump",
 		.flags = IORESOURCE_MEM,
 	},
