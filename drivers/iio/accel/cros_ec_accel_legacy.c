@@ -204,7 +204,7 @@ static int read_ec_accel_data(struct cros_ec_accel_legacy_state *st,
 			      unsigned long scan_mask, s16 *data)
 {
 	u8 samp_id = 0xff, status = 0;
-	int attempts = 0;
+	int rv, attempts = 0;
 
 	/*
 	 * Continually read all data from EC until the status byte after
@@ -219,9 +219,10 @@ static int read_ec_accel_data(struct cros_ec_accel_legacy_state *st,
 			return -EIO;
 
 		/* Read status byte until EC is not busy. */
-		status = read_ec_until_not_busy(st);
-		if (status < 0)
-			return status;
+		rv = read_ec_until_not_busy(st);
+		if (rv < 0)
+			return rv;
+		status = rv;
 
 		/*
 		 * Store the current sample id so that we can compare to the
@@ -303,7 +304,7 @@ static const struct iio_info cros_ec_accel_legacy_info = {
  * is responsible for grabbing data from the device and pushing it into
  * the associated buffer.
  */
-irqreturn_t cros_ec_accel_legacy_capture(int irq, void *p)
+static irqreturn_t cros_ec_accel_legacy_capture(int irq, void *p)
 {
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
