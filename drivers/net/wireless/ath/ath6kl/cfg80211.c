@@ -3352,7 +3352,7 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 }
 
 static int ath6kl_cfg80211_sscan_stop(struct wiphy *wiphy,
-				      struct net_device *dev)
+				      struct net_device *dev, u64 reqid)
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	bool stopped;
@@ -3973,7 +3973,7 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 			    WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD;
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2, ar->fw_capabilities))
-		ar->wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+		ar->wiphy->max_sched_scan_reqs = 1;
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_INACTIVITY_TIMEOUT,
 		     ar->fw_capabilities))

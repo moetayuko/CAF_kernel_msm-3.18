@@ -1613,11 +1613,15 @@ static inline void get_random_mask_addr(u8 *buf, const u8 *addr, const u8 *mask)
 /**
  * struct cfg80211_match_set - sets of attributes to match
  *
- * @ssid: SSID to be matched; may be zero-length for no match (RSSI only)
+ * @ssid: SSID to be matched; may be zero-length in case of BSSID match
+ *	or no match (RSSI only)
+ * @bssid: BSSID to be matched; may be all-zero BSSID in case of SSID match
+ *	or no match (RSSI only)
  * @rssi_thold: don't report scan results below this threshold (in s32 dBm)
  */
 struct cfg80211_match_set {
 	struct cfg80211_ssid ssid;
+	u8 bssid[ETH_ALEN];
 	s32 rssi_thold;
 };
 
@@ -1678,6 +1682,8 @@ struct cfg80211_bss_select_adjust {
  * @rcu_head: RCU callback used to free the struct
  * @owner_nlportid: netlink portid of owner (if this should is a request
  *	owned by a particular socket)
+ * @nl_owner_dead: netlink owner socket was closed - this request be freed
+ * @list: for keeping list of requests.
  * @delay: delay in seconds to use before starting the first scan
  *	cycle.  The driver may ignore this parameter and start
  *	immediately (or at any other time), if this feature is not
@@ -1722,6 +1728,8 @@ struct cfg80211_sched_scan_request {
 	unsigned long scan_start;
 	struct rcu_head rcu_head;
 	u32 owner_nlportid;
+	bool nl_owner_dead;
+	struct list_head list;
 
 	/* keep last */
 	struct ieee80211_channel *channels[0];
@@ -2765,12 +2773,12 @@ struct cfg80211_nan_func {
  * @set_cqm_txe_config: Configure connection quality monitor TX error
  *	thresholds.
  * @sched_scan_start: Tell the driver to start a scheduled scan.
- * @sched_scan_stop: Tell the driver to stop an ongoing scheduled scan. This
- *	call must stop the scheduled scan and be ready for starting a new one
- *	before it returns, i.e. @sched_scan_start may be called immediately
- *	after that again and should not fail in that case. The driver should
- *	not call cfg80211_sched_scan_stopped() for a requested stop (when this
- *	method returns 0.)
+ * @sched_scan_stop: Tell the driver to stop an ongoing scheduled scan with
+ *	given request id. This call must stop the scheduled scan and be ready
+ *	for starting a new one before it returns, i.e. @sched_scan_start may be
+ *	called immediately after that again and should not fail in that case.
+ *	The driver should not call cfg80211_sched_scan_stopped() for a requested
+ *	stop (when this method returns 0).
  *
  * @mgmt_frame_register: Notify driver that a management frame type was
  *	registered. The callback is allowed to sleep.
@@ -3068,7 +3076,8 @@ struct cfg80211_ops {
 	int	(*sched_scan_start)(struct wiphy *wiphy,
 				struct net_device *dev,
 				struct cfg80211_sched_scan_request *request);
-	int	(*sched_scan_stop)(struct wiphy *wiphy, struct net_device *dev);
+	int	(*sched_scan_stop)(struct wiphy *wiphy, struct net_device *dev,
+				   u64 reqid);
 
 	int	(*set_rekey_data)(struct wiphy *wiphy, struct net_device *dev,
 				  struct cfg80211_gtk_rekey_data *data);
@@ -3213,7 +3222,7 @@ enum wiphy_flags {
 	WIPHY_FLAG_CONTROL_PORT_PROTOCOL	= BIT(7),
 	WIPHY_FLAG_IBSS_RSN			= BIT(8),
 	WIPHY_FLAG_MESH_AUTH			= BIT(10),
-	WIPHY_FLAG_SUPPORTS_SCHED_SCAN		= BIT(11),
+	/* use hole at 11 */
 	/* use hole at 12 */
 	WIPHY_FLAG_SUPPORTS_FW_ROAM		= BIT(13),
 	WIPHY_FLAG_AP_UAPSD			= BIT(14),
@@ -3551,6 +3560,8 @@ struct wiphy_iftype_ext_capab {
  *	this variable determines its size
  * @max_scan_ssids: maximum number of SSIDs the device can scan for in
  *	any given scan
+ * @max_sched_scan_reqs: maximum number of scheduled scan requests that
+ *	the device can run concurrently.
  * @max_sched_scan_ssids: maximum number of SSIDs the device can scan
  *	for in any given scheduled scan
  * @max_match_sets: maximum number of match sets the device can handle
@@ -3687,6 +3698,7 @@ struct wiphy {
 
 	int bss_priv_size;
 	u8 max_scan_ssids;
+	u8 max_sched_scan_reqs;
 	u8 max_sched_scan_ssids;
 	u8 max_match_sets;
 	u16 max_scan_ie_len;
@@ -3988,6 +4000,7 @@ struct cfg80211_cqm_config;
  * @event_list: (private) list for internal event processing
  * @event_lock: (private) lock for event list
  * @owner_nlportid: (private) owner socket port ID
+ * @nl_owner_dead: (private) owner socket went away
  * @cqm_config: (private) nl80211 RSSI monitor state
  */
 struct wireless_dev {
@@ -4037,11 +4050,12 @@ struct wireless_dev {
 
 	u32 ap_unexpected_nlportid;
 
+	u32 owner_nlportid;
+	bool nl_owner_dead;
+
 	bool cac_started;
 	unsigned long cac_start_time;
 	unsigned int cac_time_ms;
-
-	u32 owner_nlportid;
 
 #ifdef CONFIG_CFG80211_WEXT
 	/* wext data */
