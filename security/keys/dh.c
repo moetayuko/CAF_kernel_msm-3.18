@@ -306,7 +306,7 @@ long __keyctl_dh_compute(struct keyctl_dh_params __user *params,
 	}
 
 	/* allocate space for DH shared secret and SP800-56A otherinfo */
-	kbuf = kmalloc(kdfcopy ? (resultlen + kdfcopy->otherinfolen) : resultlen,
+	kbuf = kzalloc(kdfcopy ? (resultlen + kdfcopy->otherinfolen) : resultlen,
 		       GFP_KERNEL);
 	if (!kbuf) {
 		ret = -ENOMEM;
@@ -328,7 +328,7 @@ long __keyctl_dh_compute(struct keyctl_dh_params __user *params,
 	if (ret)
 		goto error5;
 
-	ret = mpi_read_buffer(result, kbuf, resultlen, &nbytes, NULL);
+	ret = mpi_read_buffer(result, kbuf, resultlen, &nbytes, NULL, false);
 	if (ret != 0)
 		goto error5;
 
