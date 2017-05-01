@@ -79,7 +79,9 @@ static void __init rcu_bootup_announce_oddness(void)
 		pr_info("\tHierarchical RCU autobalancing is disabled.\n");
 	if (IS_ENABLED(CONFIG_RCU_FAST_NO_HZ))
 		pr_info("\tRCU dyntick-idle grace-period acceleration is enabled.\n");
-	if (IS_ENABLED(CONFIG_PROVE_RCU))
+	if (IS_ENABLED(CONFIG_PROVE_RCU_REPEATEDLY))
+		pr_info("\tRCU lockdep checking is permanently enabled.\n");
+	else if (IS_ENABLED(CONFIG_PROVE_RCU))
 		pr_info("\tRCU lockdep checking is enabled.\n");
 	if (RCU_NUM_LVLS >= 4)
 		pr_info("\tFour(or more)-level hierarchy is enabled.\n");
@@ -90,8 +92,32 @@ static void __init rcu_bootup_announce_oddness(void)
 		pr_info("\tBoot-time adjustment of leaf fanout to %d.\n", rcu_fanout_leaf);
 	if (nr_cpu_ids != NR_CPUS)
 		pr_info("\tRCU restricting CPUs from NR_CPUS=%d to nr_cpu_ids=%d.\n", NR_CPUS, nr_cpu_ids);
-	if (IS_ENABLED(CONFIG_RCU_BOOST))
-		pr_info("\tRCU kthread priority: %d.\n", kthread_prio);
+#ifdef CONFIG_RCU_BOOST
+	pr_info("\tRCU priority boosting: priority %d delay %d ms.\n", kthread_prio, CONFIG_RCU_BOOST_DELAY);
+#endif
+	if (blimit != DEFAULT_RCU_BLIMIT)
+		pr_info("\tBoot-time adjustment of callback invocation limit to %ld.\n", blimit);
+	if (qhimark != DEFAULT_RCU_QHIMARK)
+		pr_info("\tBoot-time adjustment of callback high-water mark to %ld.\n", qhimark);
+	if (qlowmark != DEFAULT_RCU_QLOMARK)
+		pr_info("\tBoot-time adjustment of callback low-water mark to %ld.\n", qlowmark);
+	if (jiffies_till_first_fqs != ULONG_MAX)
+		pr_info("\tBoot-time adjustment of first FQS scan delay to %ld jiffies.\n", jiffies_till_first_fqs);
+	if (jiffies_till_next_fqs != ULONG_MAX)
+		pr_info("\tBoot-time adjustment of subsequent FQS scan delay to %ld jiffies.\n", jiffies_till_next_fqs);
+	if (rcu_kick_kthreads)
+		pr_info("\tKick kthreads if too-long grace period.\n");
+	if (IS_ENABLED(CONFIG_DEBUG_OBJECTS_RCU_HEAD))
+		pr_info("\tRCU callback double-/use-after-free debug enabled.\n");
+	if (IS_ENABLED(CONFIG_RCU_TORTURE_TEST_SLOW_PREINIT))
+		pr_info("\tRCU debug GP pre-init slowdown %d jiffies.\n", gp_preinit_delay);
+	if (IS_ENABLED(CONFIG_RCU_TORTURE_TEST_SLOW_INIT))
+		pr_info("\tRCU debug GP init slowdown %d jiffies.\n", gp_init_delay);
+	if (IS_ENABLED(CONFIG_RCU_TORTURE_TEST_SLOW_CLEANUP))
+		pr_info("\tRCU debug GP init slowdown %d jiffies.\n", gp_cleanup_delay);
+	if (IS_ENABLED(CONFIG_RCU_EQS_DEBUG))
+		pr_info("\tRCU debug extended QS entry/exit.\n");
+	rcupdate_announce_bootup_oddness();
 }
 
 #ifdef CONFIG_PREEMPT_RCU
@@ -154,6 +180,8 @@ static void rcu_preempt_ctxt_queue(struct rcu_node *rnp, struct rcu_data *rdp)
 			 (rnp->qsmask & rdp->grpmask ? RCU_GP_BLKD : 0) +
 			 (rnp->expmask & rdp->grpmask ? RCU_EXP_BLKD : 0);
 	struct task_struct *t = current;
+
+	lockdep_assert_held(&rnp->lock);
 
 	/*
 	 * Decide where to queue the newly blocked task.  In theory,
@@ -263,6 +291,7 @@ static void rcu_preempt_ctxt_queue(struct rcu_node *rnp, struct rcu_data *rdp)
  */
 static void rcu_preempt_qs(void)
 {
+	RCU_LOCKDEP_WARN(preemptible(), "rcu_preempt_qs() invoked with preemption enabled!!!\n");
 	if (__this_cpu_read(rcu_data_p->cpu_no_qs.s)) {
 		trace_rcu_grace_period(TPS("rcu_preempt"),
 				       __this_cpu_read(rcu_data_p->gpnum),
@@ -286,12 +315,14 @@ static void rcu_preempt_qs(void)
  *
  * Caller must disable interrupts.
  */
-static void rcu_preempt_note_context_switch(void)
+static void rcu_preempt_note_context_switch(bool preempt)
 {
 	struct task_struct *t = current;
 	struct rcu_data *rdp;
 	struct rcu_node *rnp;
 
+	RCU_LOCKDEP_WARN(preemptible(), "rcu_preempt_note_context_switch() invoked with preemption enabled!!!\n");
+	WARN_ON_ONCE(!preempt && t->rcu_read_lock_nesting > 0);
 	if (t->rcu_read_lock_nesting > 0 &&
 	    !t->rcu_read_unlock_special.b.blocked) {
 
@@ -607,6 +638,7 @@ static int rcu_print_task_exp_stall(struct rcu_node *rnp)
  */
 static void rcu_preempt_check_blocked_tasks(struct rcu_node *rnp)
 {
+	RCU_LOCKDEP_WARN(preemptible(), "rcu_preempt_check_blocked_tasks() invoked with preemption enabled!!!\n");
 	WARN_ON_ONCE(rcu_preempt_blocked_readers_cgp(rnp));
 	if (rcu_preempt_has_tasks(rnp))
 		rnp->gp_tasks = rnp->blkd_tasks.next;
@@ -663,8 +695,13 @@ EXPORT_SYMBOL_GPL(call_rcu);
  * synchronize_rcu() was waiting.  RCU read-side critical sections are
  * delimited by rcu_read_lock() and rcu_read_unlock(), and may be nested.
  *
- * See the description of synchronize_sched() for more detailed information
- * on memory ordering guarantees.
+ * See the description of synchronize_sched() for more detailed
+ * information on memory-ordering guarantees.  However, please note
+ * that -only- the memory-ordering guarantees apply.  For example,
+ * synchronize_rcu() is -not- guaranteed to wait on things like code
+ * protected by preempt_disable(), instead, synchronize_rcu() is -only-
+ * guaranteed to wait on RCU read-side critical sections, that is, sections
+ * of code protected by rcu_read_lock().
  */
 void synchronize_rcu(void)
 {
@@ -738,7 +775,7 @@ static void __init rcu_bootup_announce(void)
  * Because preemptible RCU does not exist, we never have to check for
  * CPUs being in quiescent states.
  */
-static void rcu_preempt_note_context_switch(void)
+static void rcu_preempt_note_context_switch(bool preempt)
 {
 }
 
@@ -992,6 +1029,7 @@ static void rcu_initiate_boost(struct rcu_node *rnp, unsigned long flags)
 {
 	struct task_struct *t;
 
+	lockdep_assert_held(&rnp->lock);
 	if (!rcu_preempt_blocked_readers_cgp(rnp) && rnp->exp_tasks == NULL) {
 		rnp->n_balk_exp_gp_tasks++;
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
@@ -1372,6 +1410,7 @@ int rcu_needs_cpu(u64 basemono, u64 *nextevt)
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 	unsigned long dj;
 
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_needs_cpu() invoked with irqs enabled!!!");
 	if (IS_ENABLED(CONFIG_RCU_NOCB_CPU_ALL)) {
 		*nextevt = KTIME_MAX;
 		return 0;
@@ -1424,6 +1463,7 @@ static void rcu_prepare_for_idle(void)
 	struct rcu_state *rsp;
 	int tne;
 
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_prepare_for_idle() invoked with irqs enabled!!!");
 	if (IS_ENABLED(CONFIG_RCU_NOCB_CPU_ALL) ||
 	    rcu_is_nocb_cpu(smp_processor_id()))
 		return;
@@ -1479,6 +1519,7 @@ static void rcu_prepare_for_idle(void)
  */
 static void rcu_cleanup_after_idle(void)
 {
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_cleanup_after_idle() invoked with irqs enabled!!!");
 	if (IS_ENABLED(CONFIG_RCU_NOCB_CPU_ALL) ||
 	    rcu_is_nocb_cpu(smp_processor_id()))
 		return;
@@ -1758,19 +1799,54 @@ bool rcu_is_nocb_cpu(int cpu)
 #endif /* #ifndef CONFIG_RCU_NOCB_CPU_ALL */
 
 /*
- * Kick the leader kthread for this NOCB group.
+ * Kick the leader kthread for this NOCB group.  Caller holds lock.
  */
-static void wake_nocb_leader(struct rcu_data *rdp, bool force)
+static void __wake_nocb_leader(struct rcu_data *rdp, bool force)
 {
 	struct rcu_data *rdp_leader = rdp->nocb_leader;
 
+	lockdep_assert_held(&rdp->nocb_lock);
 	if (!READ_ONCE(rdp_leader->nocb_kthread))
 		return;
-	if (READ_ONCE(rdp_leader->nocb_leader_sleep) || force) {
+	del_timer(&rdp->nocb_timer);
+	if (rdp_leader->nocb_leader_sleep || force) {
 		/* Prior smp_mb__after_atomic() orders against prior enqueue. */
 		WRITE_ONCE(rdp_leader->nocb_leader_sleep, false);
+		smp_mb(); /* ->nocb_leader_sleep before swake_up(). */
 		swake_up(&rdp_leader->nocb_wq);
 	}
+}
+
+/*
+ * Kick the leader kthread for this NOCB group, but caller has not
+ * acquired locks.
+ */
+static void wake_nocb_leader(struct rcu_data *rdp, bool force)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdp->nocb_lock, flags);
+	__wake_nocb_leader(rdp, force);
+	spin_unlock_irqrestore(&rdp->nocb_lock, flags);
+}
+
+/*
+ * Arrange to wake the leader kthread for this NOCB group at some
+ * future time when it is safe to do so.
+ */
+static void wake_nocb_leader_defer(struct rcu_data *rdp, int waketype,
+				   const char *reason)
+{
+	unsigned long flags;
+	bool needtimer;
+
+	spin_lock_irqsave(&rdp->nocb_lock, flags);
+	needtimer = rdp->nocb_defer_wakeup == RCU_NOCB_WAKE_NOT;
+	WRITE_ONCE(rdp->nocb_defer_wakeup, waketype);
+	trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu, reason);
+	spin_unlock_irqrestore(&rdp->nocb_lock, flags);
+	if (needtimer)
+		mod_timer(&rdp->nocb_timer, 1);
 }
 
 /*
@@ -1860,11 +1936,8 @@ static void __call_rcu_nocb_enqueue(struct rcu_data *rdp,
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeEmpty"));
 		} else {
-			WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE);
-			/* Store ->nocb_defer_wakeup before ->rcu_urgent_qs. */
-			smp_store_release(this_cpu_ptr(&rcu_dynticks.rcu_urgent_qs), true);
-			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
-					    TPS("WakeEmptyIsDeferred"));
+			wake_nocb_leader_defer(rdp, RCU_NOCB_WAKE,
+					       TPS("WakeEmptyIsDeferred"));
 		}
 		rdp->qlen_last_fqs_check = 0;
 	} else if (len > rdp->qlen_last_fqs_check + qhimark) {
@@ -1874,11 +1947,8 @@ static void __call_rcu_nocb_enqueue(struct rcu_data *rdp,
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeOvf"));
 		} else {
-			WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE_FORCE);
-			/* Store ->nocb_defer_wakeup before ->rcu_urgent_qs. */
-			smp_store_release(this_cpu_ptr(&rcu_dynticks.rcu_urgent_qs), true);
-			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
-					    TPS("WakeOvfIsDeferred"));
+			wake_nocb_leader_defer(rdp, RCU_NOCB_WAKE,
+					       TPS("WakeOvfIsDeferred"));
 		}
 		rdp->qlen_last_fqs_check = LONG_MAX / 2;
 	} else {
@@ -2023,6 +2093,7 @@ wait_again:
 	 * nocb_gp_head, where they await a grace period.
 	 */
 	gotcbs = false;
+	smp_mb(); /* wakeup before ->nocb_head reads. */
 	for (rdp = my_rdp; rdp; rdp = rdp->nocb_next_follower) {
 		rdp->nocb_gp_head = READ_ONCE(rdp->nocb_head);
 		if (!rdp->nocb_gp_head)
@@ -2194,16 +2265,40 @@ static int rcu_nocb_need_deferred_wakeup(struct rcu_data *rdp)
 }
 
 /* Do a deferred wakeup of rcu_nocb_kthread(). */
-static void do_nocb_deferred_wakeup(struct rcu_data *rdp)
+static void do_nocb_deferred_wakeup_common(struct rcu_data *rdp)
 {
+	unsigned long flags;
 	int ndw;
 
-	if (!rcu_nocb_need_deferred_wakeup(rdp))
+	spin_lock_irqsave(&rdp->nocb_lock, flags);
+	if (!rcu_nocb_need_deferred_wakeup(rdp)) {
+		spin_unlock_irqrestore(&rdp->nocb_lock, flags);
 		return;
+	}
 	ndw = READ_ONCE(rdp->nocb_defer_wakeup);
-	WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE_NOT);
-	wake_nocb_leader(rdp, ndw == RCU_NOGP_WAKE_FORCE);
+	WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOCB_WAKE_NOT);
+	__wake_nocb_leader(rdp, ndw == RCU_NOCB_WAKE_FORCE);
 	trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu, TPS("DeferredWake"));
+	spin_unlock_irqrestore(&rdp->nocb_lock, flags);
+}
+
+/* Do a deferred wakeup of rcu_nocb_kthread() from a timer handler. */
+static void do_nocb_deferred_wakeup_timer(unsigned long x)
+{
+	do_nocb_deferred_wakeup_common((struct rcu_data *)x);
+}
+
+/*
+ * Do a deferred wakeup of rcu_nocb_kthread() from fastpath.
+ * This means we do an inexact common-case check.  Note that if
+ * we miss, ->nocb_timer will eventually clean things up.
+ */
+static void do_nocb_deferred_wakeup(struct rcu_data *rdp)
+{
+	if (rcu_nocb_need_deferred_wakeup(rdp)) {
+		del_timer(&rdp->nocb_timer);
+		do_nocb_deferred_wakeup_common(rdp);
+	}
 }
 
 void __init rcu_init_nohz(void)
@@ -2267,6 +2362,9 @@ static void __init rcu_boot_init_nocb_percpu_data(struct rcu_data *rdp)
 	rdp->nocb_tail = &rdp->nocb_head;
 	init_swait_queue_head(&rdp->nocb_wq);
 	rdp->nocb_follower_tail = &rdp->nocb_follower_head;
+	spin_lock_init(&rdp->nocb_lock);
+	setup_timer(&rdp->nocb_timer, do_nocb_deferred_wakeup_timer,
+		    (unsigned long)rdp);
 }
 
 /*
@@ -2512,6 +2610,8 @@ static void rcu_sysidle_enter(int irq)
 	unsigned long j;
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_sysidle_enter() invoked with irqs enabled!!!");
+
 	/* If there are no nohz_full= CPUs, no need to track this. */
 	if (!tick_nohz_full_enabled())
 		return;
@@ -2583,6 +2683,8 @@ static void rcu_sysidle_exit(int irq)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_sysidle_exit() invoked with irqs enabled!!!");
+
 	/* If there are no nohz_full= CPUs, no need to track this. */
 	if (!tick_nohz_full_enabled())
 		return;
@@ -2641,6 +2743,8 @@ static void rcu_sysidle_check_cpu(struct rcu_data *rdp, bool *isidle,
 	int cur;
 	unsigned long j;
 	struct rcu_dynticks *rdtp = rdp->dynticks;
+
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_sysidle_check_cpu() invoked with irqs enabled!!!");
 
 	/* If there are no nohz_full= CPUs, don't check system-wide idleness. */
 	if (!tick_nohz_full_enabled())
@@ -2809,6 +2913,8 @@ bool rcu_sys_is_idle(void)
 {
 	static struct rcu_sysidle_head rsh;
 	int rss = READ_ONCE(full_sysidle_state);
+
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_sys_is_idle() invoked with irqs enabled!!!");
 
 	if (WARN_ON_ONCE(smp_processor_id() != tick_do_timer_cpu))
 		return false;

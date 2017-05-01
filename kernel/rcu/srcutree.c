@@ -39,7 +39,9 @@
 
 #include "rcu.h"
 
-ulong exp_holdoff = 50 * 1000; /* Holdoff (ns) for auto-expediting. */
+/* Holdoff in nanoseconds for auto-expediting. */
+#define DEFAULT_SRCU_EXP_HOLDOFF (25 * 1000)
+static ulong exp_holdoff = DEFAULT_SRCU_EXP_HOLDOFF;
 module_param(exp_holdoff, ulong, 0444);
 
 static void srcu_invoke_callbacks(struct work_struct *work);
@@ -274,15 +276,20 @@ static bool srcu_readers_active_idx_check(struct srcu_struct *sp, int idx)
 	 * not mean that there are no more readers, as one could have read
 	 * the current index but not have incremented the lock counter yet.
 	 *
-	 * Possible bug: There is no guarantee that there haven't been
-	 * ULONG_MAX increments of ->srcu_lock_count[] since the unlocks were
-	 * counted, meaning that this could return true even if there are
-	 * still active readers.  Since there are no memory barriers around
-	 * srcu_flip(), the CPU is not required to increment ->srcu_idx
-	 * before running srcu_readers_unlock_idx(), which means that there
-	 * could be an arbitrarily large number of critical sections that
-	 * execute after srcu_readers_unlock_idx() but use the old value
-	 * of ->srcu_idx.
+	 * So suppose that the updater is preempted here for so long
+	 * that more than ULONG_MAX non-nested readers come and go in
+	 * the meantime.  It turns out that this cannot result in overflow
+	 * because if a reader modifies its unlock count after we read it
+	 * above, then that reader's next load of ->srcu_idx is guaranteed
+	 * to get the new value, which will cause it to operate on the
+	 * other bank of counters, where it cannot contribute to the
+	 * overflow of these counters.  This means that there is a maximum
+	 * of 2*NR_CPUS increments, which cannot overflow given current
+	 * systems, especially not on 64-bit systems.
+	 *
+	 * OK, how about nesting?  This does impose a limit on nesting
+	 * of floor(ULONG_MAX/NR_CPUS/2), which should be sufficient,
+	 * especially on 64-bit systems.
 	 */
 	return srcu_readers_lock_idx(sp, idx) == unlocks;
 }
@@ -671,6 +678,16 @@ static bool try_check_zero(struct srcu_struct *sp, int idx, int trycount)
  */
 static void srcu_flip(struct srcu_struct *sp)
 {
+	/*
+	 * Ensure that if this updater saw a given reader's increment
+	 * from __srcu_read_lock(), that reader was using an old value
+	 * of ->srcu_idx.  Also ensure that if a given reader sees the
+	 * new value of ->srcu_idx, this updater's earlier scans cannot
+	 * have seen that reader's increments (which is OK, because this
+	 * grace period need not wait on that reader).
+	 */
+	smp_mb(); /* E */  /* Pairs with B and C. */
+
 	WRITE_ONCE(sp->srcu_idx, sp->srcu_idx + 1);
 
 	/*
@@ -745,6 +762,13 @@ static bool srcu_might_be_idle(struct srcu_struct *sp)
 }
 
 /*
+ * SRCU callback function to leak a callback.
+ */
+static void srcu_leak_callback(struct rcu_head *rhp)
+{
+}
+
+/*
  * Enqueue an SRCU callback on the srcu_data structure associated with
  * the current CPU and the specified srcu_struct structure, initiating
  * grace-period processing if it is not already running.
@@ -782,6 +806,12 @@ void __call_srcu(struct srcu_struct *sp, struct rcu_head *rhp,
 	struct srcu_data *sdp;
 
 	check_init_srcu_struct(sp);
+	if (debug_rcu_head_queue(rhp)) {
+		/* Probable double call_srcu(), so leak the callback. */
+		WRITE_ONCE(rhp->func, srcu_leak_callback);
+		WARN_ONCE(1, "call_srcu(): Leaked duplicate callback\n");
+		return;
+	}
 	rhp->func = func;
 	local_irq_save(flags);
 	sdp = this_cpu_ptr(sp->sda);
@@ -956,9 +986,12 @@ void srcu_barrier(struct srcu_struct *sp)
 		spin_lock_irq(&sdp->lock);
 		atomic_inc(&sp->srcu_barrier_cpu_cnt);
 		sdp->srcu_barrier_head.func = srcu_barrier_cb;
+		debug_rcu_head_queue(&sdp->srcu_barrier_head);
 		if (!rcu_segcblist_entrain(&sdp->srcu_cblist,
-					   &sdp->srcu_barrier_head, 0))
+					   &sdp->srcu_barrier_head, 0)) {
+			debug_rcu_head_unqueue(&sdp->srcu_barrier_head);
 			atomic_dec(&sp->srcu_barrier_cpu_cnt);
+		}
 		spin_unlock_irq(&sdp->lock);
 	}
 
@@ -1083,6 +1116,7 @@ static void srcu_invoke_callbacks(struct work_struct *work)
 	spin_unlock_irq(&sdp->lock);
 	rhp = rcu_cblist_dequeue(&ready_cbs);
 	for (; rhp != NULL; rhp = rcu_cblist_dequeue(&ready_cbs)) {
+		debug_rcu_head_unqueue(rhp);
 		local_bh_disable();
 		rhp->func(rhp);
 		local_bh_enable();
@@ -1152,3 +1186,12 @@ void srcutorture_get_gp_data(enum rcutorture_type test_type,
 	*gpnum = rcu_seq_ctr(sp->srcu_gp_seq_needed);
 }
 EXPORT_SYMBOL_GPL(srcutorture_get_gp_data);
+
+static int __init srcu_bootup_announce(void)
+{
+	pr_info("Hierarchical SRCU implementation.\n");
+	if (exp_holdoff != DEFAULT_SRCU_EXP_HOLDOFF)
+		pr_info("\tNon-default auto-expedite holdoff of %lu ns.\n", exp_holdoff);
+	return 0;
+}
+early_initcall(srcu_bootup_announce);

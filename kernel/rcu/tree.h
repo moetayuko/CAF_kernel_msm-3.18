@@ -288,7 +288,9 @@ struct rcu_data {
 	struct rcu_head **nocb_follower_tail;
 	struct swait_queue_head nocb_wq; /* For nocb kthreads to sleep on. */
 	struct task_struct *nocb_kthread;
+	spinlock_t nocb_lock;		/* Guard following pair of fields. */
 	int nocb_defer_wakeup;		/* Defer wakeup of nocb_kthread. */
+	struct timer_list nocb_timer;	/* Enforce finite deferral. */
 
 	/* The following fields are used by the leader, hence own cacheline. */
 	struct rcu_head *nocb_gp_head ____cacheline_internodealigned_in_smp;
@@ -311,9 +313,9 @@ struct rcu_data {
 };
 
 /* Values for nocb_defer_wakeup field in struct rcu_data. */
-#define RCU_NOGP_WAKE_NOT	0
-#define RCU_NOGP_WAKE		1
-#define RCU_NOGP_WAKE_FORCE	2
+#define RCU_NOCB_WAKE_NOT	0
+#define RCU_NOCB_WAKE		1
+#define RCU_NOCB_WAKE_FORCE	2
 
 #define RCU_JIFFIES_TILL_FORCE_QS (1 + (HZ > 250) + (HZ > 500))
 					/* For jiffies_till_first_fqs and */
@@ -476,7 +478,7 @@ DECLARE_PER_CPU(char, rcu_cpu_has_work);
 
 /* Forward declarations for rcutree_plugin.h */
 static void rcu_bootup_announce(void);
-static void rcu_preempt_note_context_switch(void);
+static void rcu_preempt_note_context_switch(bool preempt);
 static int rcu_preempt_blocked_readers_cgp(struct rcu_node *rnp);
 #ifdef CONFIG_HOTPLUG_CPU
 static bool rcu_preempt_has_tasks(struct rcu_node *rnp);
