@@ -56,6 +56,7 @@ enum {
 	IB_SA_METHOD_GET_TRACE_TBL	= 0x13
 };
 
+#define OPA_SA_CLASS_VERSION	0x80
 enum {
 	IB_SA_ATTR_CLASS_PORTINFO    = 0x01,
 	IB_SA_ATTR_NOTICE	     = 0x02,
@@ -454,14 +455,8 @@ int ib_sa_guid_info_rec_query(struct ib_sa_client *client,
 			      void *context,
 			      struct ib_sa_query **sa_query);
 
-/* Support get SA ClassPortInfo */
-int ib_sa_classport_info_rec_query(struct ib_sa_client *client,
-				   struct ib_device *device, u8 port_num,
-				   int timeout_ms, gfp_t gfp_mask,
-				   void (*callback)(int status,
-						    struct ib_class_port_info *resp,
-						    void *context),
-				   void *context,
-				   struct ib_sa_query **sa_query);
+bool ib_sa_sendonly_fullmem_support(struct ib_sa_client *client,
+				    struct ib_device *device,
+				    u8 port_num);
 
 #endif /* IB_SA_H */

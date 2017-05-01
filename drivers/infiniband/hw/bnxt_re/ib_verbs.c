@@ -692,9 +692,9 @@ int bnxt_re_destroy_qp(struct ib_qp *ib_qp)
 		kfree(rdev->qp1_sqp);
 	}
 
-	if (qp->rumem && !IS_ERR(qp->rumem))
+	if (!IS_ERR_OR_NULL(qp->rumem))
 		ib_umem_release(qp->rumem);
-	if (qp->sumem && !IS_ERR(qp->sumem))
+	if (!IS_ERR_OR_NULL(qp->sumem))
 		ib_umem_release(qp->sumem);
 
 	mutex_lock(&rdev->qp_lock);
@@ -2116,7 +2116,7 @@ int bnxt_re_destroy_cq(struct ib_cq *ib_cq)
 		dev_err(rdev_to_dev(rdev), "Failed to destroy HW CQ");
 		return rc;
 	}
-	if (cq->umem && !IS_ERR(cq->umem))
+	if (!IS_ERR_OR_NULL(cq->umem))
 		ib_umem_release(cq->umem);
 
 	if (cq) {
@@ -2818,7 +2818,7 @@ int bnxt_re_dereg_mr(struct ib_mr *ib_mr)
 {
 	struct bnxt_re_mr *mr = container_of(ib_mr, struct bnxt_re_mr, ib_mr);
 	struct bnxt_re_dev *rdev = mr->rdev;
-	int rc = 0;
+	int rc;
 
 	if (mr->npages && mr->pages) {
 		rc = bnxt_qplib_free_fast_reg_page_list(&rdev->qplib_res,
@@ -2829,7 +2829,7 @@ int bnxt_re_dereg_mr(struct ib_mr *ib_mr)
 	}
 	rc = bnxt_qplib_free_mrw(&rdev->qplib_res, &mr->qplib_mr);
 
-	if (!IS_ERR(mr->ib_umem) && mr->ib_umem)
+	if (!IS_ERR_OR_NULL(mr->ib_umem))
 		ib_umem_release(mr->ib_umem);
 
 	kfree(mr);
@@ -3016,7 +3016,7 @@ struct ib_mr *bnxt_re_reg_user_mr(struct ib_pd *ib_pd, u64 start, u64 length,
 	struct bnxt_re_mr *mr;
 	struct ib_umem *umem;
 	u64 *pbl_tbl, *pbl_tbl_orig;
-	int i, umem_pgs, pages, page_shift, rc;
+	int i, umem_pgs, pages, rc;
 	struct scatterlist *sg;
 	int entry;
 
@@ -3062,22 +3062,22 @@ struct ib_mr *bnxt_re_reg_user_mr(struct ib_pd *ib_pd, u64 start, u64 length,
 	}
 	pbl_tbl_orig = pbl_tbl;
 
-	page_shift = ilog2(umem->page_size);
 	if (umem->hugetlb) {
 		dev_err(rdev_to_dev(rdev), "umem hugetlb not supported!");
 		rc = -EFAULT;
 		goto fail;
 	}
-	if (umem->page_size != PAGE_SIZE) {
-		dev_err(rdev_to_dev(rdev), "umem page size unsupported!");
+
+	if (umem->page_shift != PAGE_SHIFT) {
+		dev_err(rdev_to_dev(rdev), "umem page shift unsupported!");
 		rc = -EFAULT;
 		goto fail;
 	}
 	/* Map umem buf ptrs to the PBL */
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
-		pages = sg_dma_len(sg) >> page_shift;
+		pages = sg_dma_len(sg) >> umem->page_shift;
 		for (i = 0; i < pages; i++, pbl_tbl++)
-			*pbl_tbl = sg_dma_address(sg) + (i << page_shift);
+			*pbl_tbl = sg_dma_address(sg) + (i << umem->page_shift);
 	}
 	rc = bnxt_qplib_reg_mr(&rdev->qplib_res, &mr->qplib_mr, pbl_tbl_orig,
 			       umem_pgs, false);

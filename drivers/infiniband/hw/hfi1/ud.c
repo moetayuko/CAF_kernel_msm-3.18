@@ -537,7 +537,7 @@ void return_cnp(struct hfi1_ibport *ibp, struct rvt_qp *qp, u32 remote_qpn,
 	bth0 = pkey | (IB_OPCODE_CNP << 24);
 	ohdr->bth[0] = cpu_to_be32(bth0);
 
-	ohdr->bth[1] = cpu_to_be32(remote_qpn | (1 << HFI1_BECN_SHIFT));
+	ohdr->bth[1] = cpu_to_be32(remote_qpn | (1 << IB_BECN_SHIFT));
 	ohdr->bth[2] = 0; /* PSN 0 */
 
 	hdr.lrh[0] = cpu_to_be16(lrh0);
@@ -680,7 +680,7 @@ void hfi1_ud_rcv(struct hfi1_packet *packet)
 	u32 tlen = packet->tlen;
 	struct rvt_qp *qp = packet->qp;
 	bool has_grh = rcv_flags & HFI1_HAS_GRH;
-	u8 sc5 = hdr2sc(hdr, packet->rhf);
+	u8 sc5 = hfi1_9B_get_sc5(hdr, packet->rhf);
 	u32 bth1;
 	u8 sl_from_sc, sl;
 	u16 slid;
@@ -688,17 +688,15 @@ void hfi1_ud_rcv(struct hfi1_packet *packet)
 
 	qkey = be32_to_cpu(ohdr->u.ud.deth[0]);
 	src_qp = be32_to_cpu(ohdr->u.ud.deth[1]) & RVT_QPN_MASK;
-	dlid = be16_to_cpu(hdr->lrh[1]);
+	dlid = ib_get_dlid(hdr);
 	bth1 = be32_to_cpu(ohdr->bth[1]);
-	slid = be16_to_cpu(hdr->lrh[3]);
-	pkey = (u16)be32_to_cpu(ohdr->bth[0]);
-	sl = (be16_to_cpu(hdr->lrh[0]) >> 4) & 0xf;
-	extra_bytes = (be32_to_cpu(ohdr->bth[0]) >> 20) & 3;
+	slid = ib_get_slid(hdr);
+	pkey = ib_bth_get_pkey(ohdr);
+	opcode = ib_bth_get_opcode(ohdr);
+	sl = ib_get_sl(hdr);
+	extra_bytes = ib_bth_get_pad(ohdr);
 	extra_bytes += (SIZE_OF_CRC << 2);
 	sl_from_sc = ibp->sc_to_sl[sc5];
-
-	opcode = be32_to_cpu(ohdr->bth[0]) >> 24;
-	opcode &= 0xff;
 
 	process_ecn(qp, packet, (opcode != IB_OPCODE_CNP));
 	/*

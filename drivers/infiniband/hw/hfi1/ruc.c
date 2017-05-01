@@ -1,5 +1,5 @@
 /*
- * Copyright(c) 2015, 2016 Intel Corporation.
+ * Copyright(c) 2015 - 2017 Intel Corporation.
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
@@ -238,18 +238,18 @@ int hfi1_ruc_check_hdr(struct hfi1_ibport *ibp, struct ib_header *hdr,
 				qp->alt_ah_attr.grh.dgid.global.interface_id))
 				goto err;
 		}
-		if (unlikely(rcv_pkey_check(ppd_from_ibp(ibp), (u16)bth0,
-					    sc5, be16_to_cpu(hdr->lrh[3])))) {
+		if (unlikely(rcv_pkey_check(ppd_from_ibp(ibp), (u16)bth0, sc5,
+					    ib_get_slid(hdr)))) {
 			hfi1_bad_pqkey(ibp, OPA_TRAP_BAD_P_KEY,
 				       (u16)bth0,
-				       (be16_to_cpu(hdr->lrh[0]) >> 4) & 0xF,
+				       ib_get_sl(hdr),
 				       0, qp->ibqp.qp_num,
-				       be16_to_cpu(hdr->lrh[3]),
-				       be16_to_cpu(hdr->lrh[1]));
+				       ib_get_slid(hdr),
+				       ib_get_dlid(hdr));
 			goto err;
 		}
 		/* Validate the SLID. See Ch. 9.6.1.5 and 17.2.8 */
-		if (be16_to_cpu(hdr->lrh[3]) != qp->alt_ah_attr.dlid ||
+		if (ib_get_slid(hdr) != qp->alt_ah_attr.dlid ||
 		    ppd_from_ibp(ibp)->port != qp->alt_ah_attr.port_num)
 			goto err;
 		spin_lock_irqsave(&qp->s_lock, flags);
@@ -273,18 +273,18 @@ int hfi1_ruc_check_hdr(struct hfi1_ibport *ibp, struct ib_header *hdr,
 			     qp->remote_ah_attr.grh.dgid.global.interface_id))
 				goto err;
 		}
-		if (unlikely(rcv_pkey_check(ppd_from_ibp(ibp), (u16)bth0,
-					    sc5, be16_to_cpu(hdr->lrh[3])))) {
+		if (unlikely(rcv_pkey_check(ppd_from_ibp(ibp), (u16)bth0, sc5,
+					    ib_get_slid(hdr)))) {
 			hfi1_bad_pqkey(ibp, OPA_TRAP_BAD_P_KEY,
 				       (u16)bth0,
-				       (be16_to_cpu(hdr->lrh[0]) >> 4) & 0xF,
+				       ib_get_sl(hdr),
 				       0, qp->ibqp.qp_num,
-				       be16_to_cpu(hdr->lrh[3]),
-				       be16_to_cpu(hdr->lrh[1]));
+				       ib_get_slid(hdr),
+				       ib_get_dlid(hdr));
 			goto err;
 		}
 		/* Validate the SLID. See Ch. 9.6.1.5 */
-		if (be16_to_cpu(hdr->lrh[3]) != qp->remote_ah_attr.dlid ||
+		if (ib_get_slid(hdr) != qp->remote_ah_attr.dlid ||
 		    ppd_from_ibp(ibp)->port != qp->port_num)
 			goto err;
 		if (qp->s_mig_state == IB_MIG_REARM &&
@@ -775,7 +775,7 @@ void hfi1_make_ruc_header(struct rvt_qp *qp, struct ib_other_headers *ohdr,
 	if (qp->s_flags & RVT_S_ECN) {
 		qp->s_flags &= ~RVT_S_ECN;
 		/* we recently received a FECN, so return a BECN */
-		bth1 |= (HFI1_BECN_MASK << HFI1_BECN_SHIFT);
+		bth1 |= (IB_BECN_MASK << IB_BECN_SHIFT);
 	}
 	ohdr->bth[1] = cpu_to_be32(bth1);
 	ohdr->bth[2] = cpu_to_be32(bth2);
@@ -784,23 +784,29 @@ void hfi1_make_ruc_header(struct rvt_qp *qp, struct ib_other_headers *ohdr,
 /* when sending, force a reschedule every one of these periods */
 #define SEND_RESCHED_TIMEOUT (5 * HZ)  /* 5s in jiffies */
 
+void hfi1_do_send_from_rvt(struct rvt_qp *qp)
+{
+	hfi1_do_send(qp, false);
+}
+
 void _hfi1_do_send(struct work_struct *work)
 {
 	struct iowait *wait = container_of(work, struct iowait, iowork);
 	struct rvt_qp *qp = iowait_to_qp(wait);
 
-	hfi1_do_send(qp);
+	hfi1_do_send(qp, true);
 }
 
 /**
  * hfi1_do_send - perform a send on a QP
  * @work: contains a pointer to the QP
+ * @in_thread: true if in a workqueue thread
  *
  * Process entries in the send work queue until credit or queue is
  * exhausted.  Only allow one CPU to send a packet per QP.
  * Otherwise, two threads could send packets out of order.
  */
-void hfi1_do_send(struct rvt_qp *qp)
+void hfi1_do_send(struct rvt_qp *qp, bool in_thread)
 {
 	struct hfi1_pkt_state ps;
 	struct hfi1_qp_priv *priv = qp->priv;
@@ -868,8 +874,10 @@ void hfi1_do_send(struct rvt_qp *qp)
 			qp->s_hdrwords = 0;
 			/* allow other tasks to run */
 			if (unlikely(time_after(jiffies, timeout))) {
-				if (workqueue_congested(cpu,
-							ps.ppd->hfi1_wq)) {
+				if (!in_thread ||
+				    workqueue_congested(
+						cpu,
+						ps.ppd->hfi1_wq)) {
 					spin_lock_irqsave(
 						&qp->s_lock,
 						ps.flags);
@@ -882,11 +890,9 @@ void hfi1_do_send(struct rvt_qp *qp)
 						*ps.ppd->dd->send_schedule);
 					return;
 				}
-				if (!irqs_disabled()) {
-					cond_resched();
-					this_cpu_inc(
-					   *ps.ppd->dd->send_schedule);
-				}
+				cond_resched();
+				this_cpu_inc(
+					*ps.ppd->dd->send_schedule);
 				timeout = jiffies + (timeout_int) / 8;
 			}
 			spin_lock_irqsave(&qp->s_lock, ps.flags);
@@ -909,8 +915,10 @@ void hfi1_send_complete(struct rvt_qp *qp, struct rvt_swqe *wqe,
 
 	last = qp->s_last;
 	old_last = last;
+	trace_hfi1_qp_send_completion(qp, wqe, last);
 	if (++last >= qp->s_size)
 		last = 0;
+	trace_hfi1_qp_send_completion(qp, wqe, last);
 	qp->s_last = last;
 	/* See post_send() */
 	barrier();
@@ -920,7 +928,10 @@ void hfi1_send_complete(struct rvt_qp *qp, struct rvt_swqe *wqe,
 	    qp->ibqp.qp_type == IB_QPT_GSI)
 		atomic_dec(&ibah_to_rvtah(wqe->ud_wr.ah)->refcount);
 
-	rvt_qp_swqe_complete(qp, wqe, status);
+	rvt_qp_swqe_complete(qp,
+			     wqe,
+			     ib_hfi1_wc_opcode[wqe->wr.opcode],
+			     status);
 
 	if (qp->s_acked == old_last)
 		qp->s_acked = last;

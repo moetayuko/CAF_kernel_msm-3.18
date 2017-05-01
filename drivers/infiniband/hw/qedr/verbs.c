@@ -681,16 +681,16 @@ static void qedr_populate_pbls(struct qedr_dev *dev, struct ib_umem *umem,
 
 	pbe_cnt = 0;
 
-	shift = ilog2(umem->page_size);
+	shift = umem->page_shift;
 
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
 		pages = sg_dma_len(sg) >> shift;
 		for (pg_cnt = 0; pg_cnt < pages; pg_cnt++) {
 			/* store the page address in pbe */
 			pbe->lo = cpu_to_le32(sg_dma_address(sg) +
-					      umem->page_size * pg_cnt);
+					      (pg_cnt << shift));
 			addr = upper_32_bits(sg_dma_address(sg) +
-					     umem->page_size * pg_cnt);
+					     (pg_cnt << shift));
 			pbe->hi = cpu_to_le32(addr);
 			pbe_cnt++;
 			total_num_pbes++;
@@ -822,6 +822,17 @@ int qedr_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
 {
 	struct qedr_cq *cq = get_qedr_cq(ibcq);
 	unsigned long sflags;
+	struct qedr_dev *dev;
+
+	dev = get_qedr_dev(ibcq->device);
+
+	if (cq->destroyed) {
+		DP_ERR(dev,
+		       "warning: arm was invoked after destroy for cq %p (icid=%d)\n",
+		       cq, cq->icid);
+		return -EINVAL;
+	}
+
 
 	if (cq->cq_type == QEDR_CQ_TYPE_GSI)
 		return 0;
@@ -987,35 +998,82 @@ int qedr_resize_cq(struct ib_cq *ibcq, int new_cnt, struct ib_udata *udata)
 	return 0;
 }
 
+#define QEDR_DESTROY_CQ_MAX_ITERATIONS		(10)
+#define QEDR_DESTROY_CQ_ITER_DURATION		(10)
+
 int qedr_destroy_cq(struct ib_cq *ibcq)
 {
 	struct qedr_dev *dev = get_qedr_dev(ibcq->device);
 	struct qed_rdma_destroy_cq_out_params oparams;
 	struct qed_rdma_destroy_cq_in_params iparams;
 	struct qedr_cq *cq = get_qedr_cq(ibcq);
+	int iter;
+	int rc;
 
-	DP_DEBUG(dev, QEDR_MSG_CQ, "destroy cq: cq_id %d", cq->icid);
+	DP_DEBUG(dev, QEDR_MSG_CQ, "destroy cq %p (icid=%d)\n", cq, cq->icid);
+
+	cq->destroyed = 1;
 
 	/* GSIs CQs are handled by driver, so they don't exist in the FW */
-	if (cq->cq_type != QEDR_CQ_TYPE_GSI) {
-		int rc;
+	if (cq->cq_type == QEDR_CQ_TYPE_GSI)
+		goto done;
 
-		iparams.icid = cq->icid;
-		rc = dev->ops->rdma_destroy_cq(dev->rdma_ctx, &iparams,
-					       &oparams);
-		if (rc)
-			return rc;
-		dev->ops->common->chain_free(dev->cdev, &cq->pbl);
-	}
+	iparams.icid = cq->icid;
+	rc = dev->ops->rdma_destroy_cq(dev->rdma_ctx, &iparams, &oparams);
+	if (rc)
+		return rc;
+
+	dev->ops->common->chain_free(dev->cdev, &cq->pbl);
 
 	if (ibcq->uobject && ibcq->uobject->context) {
 		qedr_free_pbl(dev, &cq->q.pbl_info, cq->q.pbl_tbl);
 		ib_umem_release(cq->q.umem);
 	}
 
+	/* We don't want the IRQ handler to handle a non-existing CQ so we
+	 * wait until all CNQ interrupts, if any, are received. This will always
+	 * happen and will always happen very fast. If not, then a serious error
+	 * has occured. That is why we can use a long delay.
+	 * We spin for a short time so we don’t lose time on context switching
+	 * in case all the completions are handled in that span. Otherwise
+	 * we sleep for a while and check again. Since the CNQ may be
+	 * associated with (only) the current CPU we use msleep to allow the
+	 * current CPU to be freed.
+	 * The CNQ notification is increased in qedr_irq_handler().
+	 */
+	iter = QEDR_DESTROY_CQ_MAX_ITERATIONS;
+	while (oparams.num_cq_notif != READ_ONCE(cq->cnq_notif) && iter) {
+		udelay(QEDR_DESTROY_CQ_ITER_DURATION);
+		iter--;
+	}
+
+	iter = QEDR_DESTROY_CQ_MAX_ITERATIONS;
+	while (oparams.num_cq_notif != READ_ONCE(cq->cnq_notif) && iter) {
+		msleep(QEDR_DESTROY_CQ_ITER_DURATION);
+		iter--;
+	}
+
+	if (oparams.num_cq_notif != cq->cnq_notif)
+		goto err;
+
+	/* Note that we don't need to have explicit code to wait for the
+	 * completion of the event handler because it is invoked from the EQ.
+	 * Since the destroy CQ ramrod has also been received on the EQ we can
+	 * be certain that there's no event handler in process.
+	 */
+done:
+	cq->sig = ~cq->sig;
+
 	kfree(cq);
 
 	return 0;
+
+err:
+	DP_ERR(dev,
+	       "CQ %p (icid=%d) not freed, expecting %d ints but got %d ints\n",
+	       cq, cq->icid, oparams.num_cq_notif, cq->cnq_notif);
+
+	return -EINVAL;
 }
 
 static inline int get_gid_info_from_table(struct ib_qp *ibqp,
@@ -2190,7 +2248,7 @@ struct ib_mr *qedr_reg_user_mr(struct ib_pd *ibpd, u64 start, u64 len,
 	mr->hw_mr.pbl_ptr = mr->info.pbl_table[0].pa;
 	mr->hw_mr.pbl_two_level = mr->info.pbl_info.two_layered;
 	mr->hw_mr.pbl_page_size_log = ilog2(mr->info.pbl_info.pbl_size);
-	mr->hw_mr.page_size_log = ilog2(mr->umem->page_size);
+	mr->hw_mr.page_size_log = mr->umem->page_shift;
 	mr->hw_mr.fbo = ib_umem_offset(mr->umem);
 	mr->hw_mr.length = len;
 	mr->hw_mr.vaddr = usr_addr;
@@ -2624,6 +2682,8 @@ static int qedr_prepare_reg(struct qedr_qp *qp,
 	fwqe1->addr.hi = upper_32_bits(mr->ibmr.iova);
 	fwqe1->addr.lo = lower_32_bits(mr->ibmr.iova);
 	fwqe1->l_key = wr->key;
+
+	fwqe2->access_ctrl = 0;
 
 	SET_FIELD2(fwqe2->access_ctrl, RDMA_SQ_FMR_WQE_2ND_REMOTE_READ,
 		   !!(wr->access & IB_ACCESS_REMOTE_READ));
@@ -3271,57 +3331,81 @@ static int qedr_poll_cq_req(struct qedr_dev *dev,
 	return cnt;
 }
 
+static inline int qedr_cqe_resp_status_to_ib(u8 status)
+{
+	switch (status) {
+	case RDMA_CQE_RESP_STS_LOCAL_ACCESS_ERR:
+		return IB_WC_LOC_ACCESS_ERR;
+	case RDMA_CQE_RESP_STS_LOCAL_LENGTH_ERR:
+		return IB_WC_LOC_LEN_ERR;
+	case RDMA_CQE_RESP_STS_LOCAL_QP_OPERATION_ERR:
+		return IB_WC_LOC_QP_OP_ERR;
+	case RDMA_CQE_RESP_STS_LOCAL_PROTECTION_ERR:
+		return IB_WC_LOC_PROT_ERR;
+	case RDMA_CQE_RESP_STS_MEMORY_MGT_OPERATION_ERR:
+		return IB_WC_MW_BIND_ERR;
+	case RDMA_CQE_RESP_STS_REMOTE_INVALID_REQUEST_ERR:
+		return IB_WC_REM_INV_RD_REQ_ERR;
+	case RDMA_CQE_RESP_STS_OK:
+		return IB_WC_SUCCESS;
+	default:
+		return IB_WC_GENERAL_ERR;
+	}
+}
+
+static inline int qedr_set_ok_cqe_resp_wc(struct rdma_cqe_responder *resp,
+					  struct ib_wc *wc)
+{
+	wc->status = IB_WC_SUCCESS;
+	wc->byte_len = le32_to_cpu(resp->length);
+
+	if (resp->flags & QEDR_RESP_IMM) {
+		wc->ex.imm_data = le32_to_cpu(resp->imm_data_or_inv_r_Key);
+		wc->wc_flags |= IB_WC_WITH_IMM;
+
+		if (resp->flags & QEDR_RESP_RDMA)
+			wc->opcode = IB_WC_RECV_RDMA_WITH_IMM;
+
+		if (resp->flags & QEDR_RESP_INV)
+			return -EINVAL;
+
+	} else if (resp->flags & QEDR_RESP_INV) {
+		wc->ex.imm_data = le32_to_cpu(resp->imm_data_or_inv_r_Key);
+		wc->wc_flags |= IB_WC_WITH_INVALIDATE;
+
+		if (resp->flags & QEDR_RESP_RDMA)
+			return -EINVAL;
+
+	} else if (resp->flags & QEDR_RESP_RDMA) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static void __process_resp_one(struct qedr_dev *dev, struct qedr_qp *qp,
 			       struct qedr_cq *cq, struct ib_wc *wc,
 			       struct rdma_cqe_responder *resp, u64 wr_id)
 {
-	enum ib_wc_status wc_status = IB_WC_SUCCESS;
-	u8 flags;
-
+	/* Must fill fields before qedr_set_ok_cqe_resp_wc() */
 	wc->opcode = IB_WC_RECV;
 	wc->wc_flags = 0;
 
-	switch (resp->status) {
-	case RDMA_CQE_RESP_STS_LOCAL_ACCESS_ERR:
-		wc_status = IB_WC_LOC_ACCESS_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_LOCAL_LENGTH_ERR:
-		wc_status = IB_WC_LOC_LEN_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_LOCAL_QP_OPERATION_ERR:
-		wc_status = IB_WC_LOC_QP_OP_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_LOCAL_PROTECTION_ERR:
-		wc_status = IB_WC_LOC_PROT_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_MEMORY_MGT_OPERATION_ERR:
-		wc_status = IB_WC_MW_BIND_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_REMOTE_INVALID_REQUEST_ERR:
-		wc_status = IB_WC_REM_INV_RD_REQ_ERR;
-		break;
-	case RDMA_CQE_RESP_STS_OK:
-		wc_status = IB_WC_SUCCESS;
-		wc->byte_len = le32_to_cpu(resp->length);
+	if (likely(resp->status == RDMA_CQE_RESP_STS_OK)) {
+		if (qedr_set_ok_cqe_resp_wc(resp, wc))
+			DP_ERR(dev,
+			       "CQ %p (icid=%d) has invalid CQE responder flags=0x%x\n",
+			       cq, cq->icid, resp->flags);
 
-		flags = resp->flags & QEDR_RESP_RDMA_IMM;
-
-		if (flags == QEDR_RESP_RDMA_IMM)
-			wc->opcode = IB_WC_RECV_RDMA_WITH_IMM;
-
-		if (flags == QEDR_RESP_RDMA_IMM || flags == QEDR_RESP_IMM) {
-			wc->ex.imm_data =
-				le32_to_cpu(resp->imm_data_or_inv_r_Key);
-			wc->wc_flags |= IB_WC_WITH_IMM;
-		}
-		break;
-	default:
-		wc->status = IB_WC_GENERAL_ERR;
-		DP_ERR(dev, "Invalid CQE status detected\n");
+	} else {
+		wc->status = qedr_cqe_resp_status_to_ib(resp->status);
+		if (wc->status == IB_WC_GENERAL_ERR)
+			DP_ERR(dev,
+			       "CQ %p (icid=%d) contains an invalid CQE status %d\n",
+			       cq, cq->icid, resp->status);
 	}
 
-	/* fill WC */
-	wc->status = wc_status;
+	/* Fill the rest of the WC */
 	wc->vendor_err = 0;
 	wc->src_qp = qp->id;
 	wc->qp = &qp->ibqp;
@@ -3415,6 +3499,13 @@ int qedr_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	unsigned long flags;
 	int update = 0;
 	int done = 0;
+
+	if (cq->destroyed) {
+		DP_ERR(dev,
+		       "warning: poll was invoked after destroy for cq %p (icid=%d)\n",
+		       cq, cq->icid);
+		return 0;
+	}
 
 	if (cq->cq_type == QEDR_CQ_TYPE_GSI)
 		return qedr_gsi_poll_cq(ibcq, num_entries, wc);
