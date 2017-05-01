@@ -9742,12 +9742,10 @@ SYSCALL_DEFINE5(perf_event_open,
 		goto err_task;
 	}
 
-	get_online_cpus();
-
 	if (task) {
 		err = mutex_lock_interruptible(&task->signal->cred_guard_mutex);
 		if (err)
-			goto err_cpus;
+			goto err_task;
 
 		/*
 		 * Reuse ptrace permission checks for now.
@@ -9765,11 +9763,13 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (flags & PERF_FLAG_PID_CGROUP)
 		cgroup_fd = pid;
 
+	get_online_cpus();
+
 	event = perf_event_alloc(&attr, cpu, task, group_leader, NULL,
 				 NULL, NULL, cgroup_fd);
 	if (IS_ERR(event)) {
 		err = PTR_ERR(event);
-		goto err_cred;
+		goto err_cpus;
 	}
 
 	if (is_sampling_event(event)) {
@@ -10017,12 +10017,12 @@ SYSCALL_DEFINE5(perf_event_open,
 		perf_event_ctx_unlock(group_leader, gctx);
 	mutex_unlock(&ctx->mutex);
 
+	put_online_cpus();
+
 	if (task) {
 		mutex_unlock(&task->signal->cred_guard_mutex);
 		put_task_struct(task);
 	}
-
-	put_online_cpus();
 
 	mutex_lock(&current->perf_event_mutex);
 	list_add_tail(&event->owner_entry, &current->perf_event_list);
@@ -10054,11 +10054,11 @@ err_alloc:
 	 */
 	if (!event_file)
 		free_event(event);
+err_cpus:
+	put_online_cpus();
 err_cred:
 	if (task)
 		mutex_unlock(&task->signal->cred_guard_mutex);
-err_cpus:
-	put_online_cpus();
 err_task:
 	if (task)
 		put_task_struct(task);
