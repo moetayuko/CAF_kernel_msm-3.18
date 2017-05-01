@@ -4337,7 +4337,15 @@ EXPORT_SYMBOL_GPL(perf_event_release_kernel);
  */
 static int perf_release(struct inode *inode, struct file *file)
 {
-	perf_event_release_kernel(file->private_data);
+	/*
+	 * The error exit path of sys_perf_event_open() might have released
+	 * the event already and cleared file->private_data.
+	 */
+	if (file->private_data) {
+		get_online_cpus();
+		perf_event_release_kernel(file->private_data);
+		put_online_cpus();
+	}
 	return 0;
 }
 
@@ -7619,7 +7627,7 @@ static void sw_perf_event_destroy(struct perf_event *event)
 
 	WARN_ON(event->parent);
 
-	static_key_slow_dec(&perf_swevent_enabled[event_id]);
+	static_key_slow_dec_cpuslocked(&perf_swevent_enabled[event_id]);
 	swevent_hlist_put();
 }
 
@@ -7783,9 +7791,7 @@ EXPORT_SYMBOL_GPL(perf_tp_event);
 
 static void tp_perf_event_destroy(struct perf_event *event)
 {
-	get_online_cpus();
 	perf_trace_destroy(event);
-	put_online_cpus();
 }
 
 static int perf_tp_event_init(struct perf_event *event)
@@ -10043,6 +10049,12 @@ err_locked:
 		perf_event_ctx_unlock(group_leader, gctx);
 	mutex_unlock(&ctx->mutex);
 /* err_file: */
+	/*
+	 * Release the event manually to avoid hotplug lock recursion in
+	 * perf_release().
+	 */
+	event_file->private_data = NULL;
+	perf_event_release_kernel(event);
 	fput(event_file);
 err_context:
 	perf_unpin_context(ctx);
@@ -10086,10 +10098,10 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	struct perf_event *event;
 	int err;
 
+	get_online_cpus();
 	/*
 	 * Get the target context (task or percpu):
 	 */
-
 	event = perf_event_alloc(attr, cpu, task, NULL, NULL,
 				 overflow_handler, context, -1);
 	if (IS_ERR(event)) {
@@ -10121,7 +10133,7 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	perf_install_in_context(ctx, event, cpu);
 	perf_unpin_context(ctx);
 	mutex_unlock(&ctx->mutex);
-
+	put_online_cpus();
 	return event;
 
 err_unlock:
@@ -10131,6 +10143,7 @@ err_unlock:
 err_free:
 	free_event(event);
 err:
+	put_online_cpus();
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(perf_event_create_kernel_counter);
@@ -10364,8 +10377,10 @@ void perf_event_exit_task(struct task_struct *child)
 	}
 	mutex_unlock(&child->perf_event_mutex);
 
+	get_online_cpus();
 	for_each_task_context_nr(ctxn)
 		perf_event_exit_task_context(child, ctxn);
+	put_online_cpus();
 
 	/*
 	 * The perf_event_exit_task_context calls perf_event_task
@@ -10410,6 +10425,7 @@ void perf_event_free_task(struct task_struct *task)
 	struct perf_event *event, *tmp;
 	int ctxn;
 
+	get_online_cpus();
 	for_each_task_context_nr(ctxn) {
 		ctx = task->perf_event_ctxp[ctxn];
 		if (!ctx)
@@ -10434,6 +10450,7 @@ void perf_event_free_task(struct task_struct *task)
 		mutex_unlock(&ctx->mutex);
 		put_ctx(ctx);
 	}
+	put_online_cpus();
 }
 
 void perf_event_delayed_put(struct task_struct *task)
