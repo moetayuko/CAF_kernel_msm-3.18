@@ -989,6 +989,7 @@
 			earlyprintk=ttySn[,baudrate]
 			earlyprintk=dbgp[debugController#]
 			earlyprintk=pciserial,bus:device.function[,baudrate]
+			earlyprintk=xdbc[xhciController#]
 
 			earlyprintk is useful when the kernel crashes before
 			the normal console is initialized. It is not enabled by
@@ -3187,6 +3188,12 @@
 	ramdisk_size=	[RAM] Sizes of RAM disks in kilobytes
 			See Documentation/blockdev/ramdisk.txt.
 
+	ras=option[,option,...]	[KNL] RAS-specific options
+
+		cec_disable	[X86]
+				Disable the Correctable Errors Collector,
+				see CONFIG_RAS_CEC help text.
+
 	rcu_nocbs=	[KNL]
 			The argument is a cpu list, as described above.
 
@@ -3787,6 +3794,14 @@
 	spia_fio_base=
 	spia_pedr=
 	spia_peddr=
+
+	srcutree.exp_holdoff [KNL]
+			Specifies how many nanoseconds must elapse
+			since the end of the last SRCU grace period for
+			a given srcu_struct until the next normal SRCU
+			grace period will be considered for automatic
+			expediting.  Set to zero to disable automatic
+			expediting.
 
 	stacktrace	[FTRACE]
 			Enabled the stack tracer on boot up.
