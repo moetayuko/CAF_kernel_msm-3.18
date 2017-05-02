@@ -28,9 +28,18 @@ Required properties:
  * "ti,bq27621" - BQ27621
 - reg: integer, i2c address of the device.
 
+Optional properties:
+- monitored-battery: phandle of battery information devicetree node
+
+  See Documentation/devicetree/bindings/power/supply/battery.txt
+  If either of the referenced battery's *-full-design-*-hours properties are set,
+  then both must be.
+
 Example:
 
-bq27510g3 {
+bq27510g3 : fuel-gauge@55 {
     compatible = "ti,bq27510g3";
     reg = <0x55>;
+
+    monitored-battery = <&bat>;
 };
