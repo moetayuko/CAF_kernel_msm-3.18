@@ -379,6 +379,7 @@ void __wait_rcu_gp(bool checktiny, int n, call_rcu_func_t *crcu_array,
 		   struct rcu_synchronize *rs_array)
 {
 	int i;
+	int j;
 
 	/* Initialize and register callbacks for each flavor specified. */
 	for (i = 0; i < n; i++) {
@@ -390,7 +391,13 @@ void __wait_rcu_gp(bool checktiny, int n, call_rcu_func_t *crcu_array,
 		}
 		init_rcu_head_on_stack(&rs_array[i].head);
 		init_completion(&rs_array[i].completion);
-		(crcu_array[i])(&rs_array[i].head, wakeme_after_rcu);
+		for (j = 0; j < i; j++)
+			if (crcu_array[j] == crcu_array[i]) {
+				complete(&rs_array[i].completion);
+				break;
+			}
+		if (j == i)
+			(crcu_array[i])(&rs_array[i].head, wakeme_after_rcu);
 	}
 
 	/* Wait for all callbacks to be invoked. */
@@ -560,7 +567,8 @@ static DEFINE_RAW_SPINLOCK(rcu_tasks_cbs_lock);
 DEFINE_SRCU(tasks_rcu_exit_srcu);
 
 /* Control stall timeouts.  Disable with <= 0, otherwise jiffies till stall. */
-static int rcu_task_stall_timeout __read_mostly = HZ * 60 * 10;
+#define RCU_TASK_STALL_TIMEOUT (HZ * 60 * 10)
+static int rcu_task_stall_timeout __read_mostly = RCU_TASK_STALL_TIMEOUT;
 module_param(rcu_task_stall_timeout, int, 0644);
 
 static void rcu_spawn_tasks_kthread(void);
@@ -851,6 +859,23 @@ static void rcu_spawn_tasks_kthread(void)
 
 #endif /* #ifdef CONFIG_TASKS_RCU */
 
+#ifndef CONFIG_TINY_RCU
+
+/*
+ * Print any non-default Tasks RCU settings.
+ */
+static void __init rcu_tasks_bootup_oddness(void)
+{
+#ifdef CONFIG_TASKS_RCU
+	if (rcu_task_stall_timeout != RCU_TASK_STALL_TIMEOUT)
+		pr_info("\tTasks-RCU CPU stall warnings timeout set to %d (rcu_task_stall_timeout).\n", rcu_task_stall_timeout);
+	else
+		pr_info("\tTasks RCU enabled.\n");
+#endif /* #ifdef CONFIG_TASKS_RCU */
+}
+
+#endif /* #ifndef CONFIG_TINY_RCU */
+
 #ifdef CONFIG_PROVE_RCU
 
 /*
@@ -935,3 +960,25 @@ late_initcall(rcu_verify_early_boot_tests);
 #else
 void rcu_early_boot_tests(void) {}
 #endif /* CONFIG_PROVE_RCU */
+
+#ifndef CONFIG_TINY_RCU
+
+/*
+ * Print any significant non-default boot-time settings.
+ */
+void __init rcupdate_announce_bootup_oddness(void)
+{
+	if (rcu_normal)
+		pr_info("\tNo expedited grace period (rcu_normal).\n");
+	else if (rcu_normal_after_boot)
+		pr_info("\tNo expedited grace period (rcu_normal_after_boot).\n");
+	else if (rcu_expedited)
+		pr_info("\tAll grace periods are expedited (rcu_expedited).\n");
+	if (rcu_cpu_stall_suppress)
+		pr_info("\tRCU CPU stall warnings suppressed (rcu_cpu_stall_suppress).\n");
+	if (rcu_cpu_stall_timeout != CONFIG_RCU_CPU_STALL_TIMEOUT)
+		pr_info("\tRCU CPU stall warnings timeout set to %d (rcu_cpu_stall_timeout).\n", rcu_cpu_stall_timeout);
+	rcu_tasks_bootup_oddness();
+}
+
+#endif /* #ifndef CONFIG_TINY_RCU */
