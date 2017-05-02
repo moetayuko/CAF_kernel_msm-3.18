@@ -1267,7 +1267,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
  * eventually). The difference is that pulled data not copied, but
  * immediately discarded.
  */
-static void __pskb_trim_head(struct sk_buff *skb, int len)
+static int __pskb_trim_head(struct sk_buff *skb, int len)
 {
 	struct skb_shared_info *shinfo;
 	int i, k, eat;
@@ -1277,7 +1277,7 @@ static void __pskb_trim_head(struct sk_buff *skb, int len)
 		__skb_pull(skb, eat);
 		len -= eat;
 		if (!len)
-			return;
+			return 0;
 	}
 	eat = len;
 	k = 0;
@@ -1303,23 +1303,28 @@ static void __pskb_trim_head(struct sk_buff *skb, int len)
 	skb_reset_tail_pointer(skb);
 	skb->data_len -= len;
 	skb->len = skb->data_len;
+	return len;
 }
 
 /* Remove acked data from a packet in the transmit queue. */
 int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
+	u32 delta_truesize;
+
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return -ENOMEM;
 
-	__pskb_trim_head(skb, len);
+	delta_truesize = __pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq += len;
 	skb->ip_summed = CHECKSUM_PARTIAL;
 
-	skb->truesize	     -= len;
-	sk->sk_wmem_queued   -= len;
-	sk_mem_uncharge(sk, len);
-	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+	if (delta_truesize) {
+		skb->truesize	   -= delta_truesize;
+		sk->sk_wmem_queued -= delta_truesize;
+		sk_mem_uncharge(sk, delta_truesize);
+		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+	}
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
@@ -2999,6 +3004,8 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 {
 	struct sk_buff *skb;
 
+	TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTRSTS);
+
 	/* NOTE: No TCP options attached and we never retransmit this. */
 	skb = alloc_skb(MAX_TCP_HEADER, priority);
 	if (!skb) {
@@ -3014,8 +3021,6 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 	/* Send it off. */
 	if (tcp_transmit_skb(sk, skb, 0, priority))
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTFAILED);
-
-	TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTRSTS);
 }
 
 /* Send a crossed SYN-ACK during socket establishment.

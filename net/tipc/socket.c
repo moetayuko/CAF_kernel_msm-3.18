@@ -115,7 +115,8 @@ static void tipc_data_ready(struct sock *sk);
 static void tipc_write_space(struct sock *sk);
 static void tipc_sock_destruct(struct sock *sk);
 static int tipc_release(struct socket *sock);
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags);
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern);
 static void tipc_sk_timeout(unsigned long data);
 static int tipc_sk_publish(struct tipc_sock *tsk, uint scope,
 			   struct tipc_name_seq const *seq);
@@ -865,6 +866,14 @@ static void tipc_sk_proto_rcv(struct tipc_sock *tsk, struct sk_buff *skb,
 	if (!tsk_peer_msg(tsk, hdr))
 		goto exit;
 
+	if (unlikely(msg_errcode(hdr))) {
+		tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+		tipc_node_remove_conn(sock_net(sk), tsk_peer_node(tsk),
+				      tsk_peer_port(tsk));
+		sk->sk_state_change(sk);
+		goto exit;
+	}
+
 	tsk->probe_unacked = false;
 
 	if (mtyp == CONN_PROBE) {
@@ -1082,7 +1091,7 @@ static int __tipc_sendstream(struct socket *sock, struct msghdr *m, size_t dlen)
 		}
 	} while (sent < dlen && !rc);
 
-	return rc ? rc : sent;
+	return sent ? sent : rc;
 }
 
 /**
@@ -1258,7 +1267,10 @@ static int tipc_wait_for_rcvmsg(struct socket *sock, long *timeop)
 	struct sock *sk = sock->sk;
 	DEFINE_WAIT(wait);
 	long timeo = *timeop;
-	int err;
+	int err = sock_error(sk);
+
+	if (err)
+		return err;
 
 	for (;;) {
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
@@ -1279,6 +1291,10 @@ static int tipc_wait_for_rcvmsg(struct socket *sock, long *timeop)
 			break;
 		err = sock_intr_errno(timeo);
 		if (signal_pending(current))
+			break;
+
+		err = sock_error(sk);
+		if (err)
 			break;
 	}
 	finish_wait(sk_sleep(sk), &wait);
@@ -1483,7 +1499,7 @@ restart:
 	if (unlikely(flags & MSG_PEEK))
 		goto exit;
 
-	tsk->rcv_unacked += tsk_inc(tsk, hlen + sz);
+	tsk->rcv_unacked += tsk_inc(tsk, hlen + msg_data_sz(msg));
 	if (unlikely(tsk->rcv_unacked >= (tsk->rcv_win / 4)))
 		tipc_sk_send_ack(tsk);
 	tsk_advance_rx_queue(sk);
@@ -1550,6 +1566,8 @@ static bool filter_connect(struct tipc_sock *tsk, struct sk_buff *skb)
 	struct sock *sk = &tsk->sk;
 	struct net *net = sock_net(sk);
 	struct tipc_msg *hdr = buf_msg(skb);
+	u32 pport = msg_origport(hdr);
+	u32 pnode = msg_orignode(hdr);
 
 	if (unlikely(msg_mcast(hdr)))
 		return false;
@@ -1557,18 +1575,28 @@ static bool filter_connect(struct tipc_sock *tsk, struct sk_buff *skb)
 	switch (sk->sk_state) {
 	case TIPC_CONNECTING:
 		/* Accept only ACK or NACK message */
-		if (unlikely(!msg_connected(hdr)))
-			return false;
+		if (unlikely(!msg_connected(hdr))) {
+			if (pport != tsk_peer_port(tsk) ||
+			    pnode != tsk_peer_node(tsk))
+				return false;
+
+			tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+			sk->sk_err = ECONNREFUSED;
+			sk->sk_state_change(sk);
+			return true;
+		}
 
 		if (unlikely(msg_errcode(hdr))) {
 			tipc_set_sk_state(sk, TIPC_DISCONNECTING);
 			sk->sk_err = ECONNREFUSED;
+			sk->sk_state_change(sk);
 			return true;
 		}
 
 		if (unlikely(!msg_isdata(hdr))) {
 			tipc_set_sk_state(sk, TIPC_DISCONNECTING);
 			sk->sk_err = EINVAL;
+			sk->sk_state_change(sk);
 			return true;
 		}
 
@@ -1580,8 +1608,7 @@ static bool filter_connect(struct tipc_sock *tsk, struct sk_buff *skb)
 			return true;
 
 		/* If empty 'ACK-' message, wake up sleeping connect() */
-		if (waitqueue_active(sk_sleep(sk)))
-			wake_up_interruptible(sk_sleep(sk));
+		sk->sk_data_ready(sk);
 
 		/* 'ACK-' message is neither accepted nor rejected: */
 		msg_set_dest_droppable(hdr, 1);
@@ -2029,7 +2056,8 @@ static int tipc_wait_for_accept(struct socket *sock, long timeo)
  *
  * Returns 0 on success, errno otherwise
  */
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern)
 {
 	struct sock *new_sk, *sk = sock->sk;
 	struct sk_buff *buf;
@@ -2051,7 +2079,7 @@ static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
 
 	buf = skb_peek(&sk->sk_receive_queue);
 
-	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, 0);
+	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, kern);
 	if (res)
 		goto exit;
 	security_sk_clone(sock->sk, new_sock->sk);

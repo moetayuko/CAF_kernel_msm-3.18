@@ -4341,22 +4341,22 @@ static const char readme_msg[] =
 	"\t\t\t  traces\n"
 #endif
 #endif /* CONFIG_STACK_TRACER */
-#ifdef CONFIG_KPROBE_EVENT
+#ifdef CONFIG_KPROBE_EVENTS
 	"  kprobe_events\t\t- Add/remove/show the kernel dynamic events\n"
 	"\t\t\t  Write into this file to define/undefine new trace events.\n"
 #endif
-#ifdef CONFIG_UPROBE_EVENT
+#ifdef CONFIG_UPROBE_EVENTS
 	"  uprobe_events\t\t- Add/remove/show the userspace dynamic events\n"
 	"\t\t\t  Write into this file to define/undefine new trace events.\n"
 #endif
-#if defined(CONFIG_KPROBE_EVENT) || defined(CONFIG_UPROBE_EVENT)
+#if defined(CONFIG_KPROBE_EVENTS) || defined(CONFIG_UPROBE_EVENTS)
 	"\t  accepts: event-definitions (one definition per line)\n"
 	"\t   Format: p|r[:[<group>/]<event>] <place> [<args>]\n"
 	"\t           -:[<group>/]<event>\n"
-#ifdef CONFIG_KPROBE_EVENT
+#ifdef CONFIG_KPROBE_EVENTS
 	"\t    place: [<module>:]<symbol>[+<offset>]|<memaddr>\n"
 #endif
-#ifdef CONFIG_UPROBE_EVENT
+#ifdef CONFIG_UPROBE_EVENTS
 	"\t    place: <path>:<offset>\n"
 #endif
 	"\t     args: <name>=fetcharg[:type]\n"
@@ -6733,11 +6733,13 @@ ftrace_trace_snapshot_callback(struct ftrace_hash *hash,
 		return ret;
 
  out_reg:
+	ret = alloc_snapshot(&global_trace);
+	if (ret < 0)
+		goto out;
+
 	ret = register_ftrace_function_probe(glob, ops, count);
 
-	if (ret >= 0)
-		alloc_snapshot(&global_trace);
-
+ out:
 	return ret < 0 ? ret : 0;
 }
 
@@ -7402,6 +7404,7 @@ static int instance_rmdir(const char *name)
 
 	tracing_set_nop(tr);
 	event_trace_del_tracer(tr);
+	ftrace_clear_pids(tr);
 	ftrace_destroy_function_files(tr);
 	tracefs_remove_recursive(tr->dir);
 	free_trace_buffers(tr);

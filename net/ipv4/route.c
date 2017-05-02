@@ -2359,7 +2359,8 @@ struct rtable *__ip_route_output_key_hash(struct net *net, struct flowi4 *fl4,
 		}
 
 		/* L3 master device is the loopback for that domain */
-		dev_out = l3mdev_master_dev_rcu(dev_out) ? : net->loopback_dev;
+		dev_out = l3mdev_master_dev_rcu(FIB_RES_DEV(res)) ? :
+			net->loopback_dev;
 		fl4->flowi4_oif = dev_out->ifindex;
 		flags |= RTCF_LOCAL;
 		goto make_route;
@@ -2620,7 +2621,7 @@ static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 	skb_reset_network_header(skb);
 
 	/* Bugfix: need to give ip_route_input enough of an IP header to not gag. */
-	ip_hdr(skb)->protocol = IPPROTO_ICMP;
+	ip_hdr(skb)->protocol = IPPROTO_UDP;
 	skb_reserve(skb, MAX_HEADER + sizeof(struct iphdr));
 
 	src = tb[RTA_SRC] ? nla_get_in_addr(tb[RTA_SRC]) : 0;

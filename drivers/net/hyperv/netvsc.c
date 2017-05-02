@@ -236,6 +236,7 @@ static int netvsc_init_buf(struct hv_device *device)
 	struct netvsc_device *net_device;
 	struct nvsp_message *init_packet;
 	struct net_device *ndev;
+	size_t map_words;
 	int node;
 
 	net_device = get_outbound_net_device(device);
@@ -401,11 +402,9 @@ static int netvsc_init_buf(struct hv_device *device)
 		   net_device->send_section_size, net_device->send_section_cnt);
 
 	/* Setup state for managing the send buffer. */
-	net_device->map_words = DIV_ROUND_UP(net_device->send_section_cnt,
-					     BITS_PER_LONG);
+	map_words = DIV_ROUND_UP(net_device->send_section_cnt, BITS_PER_LONG);
 
-	net_device->send_section_map = kcalloc(net_device->map_words,
-					       sizeof(ulong), GFP_KERNEL);
+	net_device->send_section_map = kcalloc(map_words, sizeof(ulong), GFP_KERNEL);
 	if (net_device->send_section_map == NULL) {
 		ret = -ENOMEM;
 		goto cleanup;
@@ -683,7 +682,7 @@ static u32 netvsc_get_next_send_section(struct netvsc_device *net_device)
 	unsigned long *map_addr = net_device->send_section_map;
 	unsigned int i;
 
-	for_each_clear_bit(i, map_addr, net_device->map_words) {
+	for_each_clear_bit(i, map_addr, net_device->send_section_cnt) {
 		if (sync_test_and_set_bit(i, map_addr) == 0)
 			return i;
 	}
@@ -1136,14 +1135,10 @@ static void netvsc_receive(struct net_device *ndev,
 static void netvsc_send_table(struct hv_device *hdev,
 			      struct nvsp_message *nvmsg)
 {
-	struct netvsc_device *nvscdev;
 	struct net_device *ndev = hv_get_drvdata(hdev);
+	struct net_device_context *net_device_ctx = netdev_priv(ndev);
 	int i;
 	u32 count, *tab;
-
-	nvscdev = get_outbound_net_device(hdev);
-	if (!nvscdev)
-		return;
 
 	count = nvmsg->msg.v5_msg.send_table.count;
 	if (count != VRSS_SEND_TAB_SIZE) {
@@ -1155,7 +1150,7 @@ static void netvsc_send_table(struct hv_device *hdev,
 		      nvmsg->msg.v5_msg.send_table.offset);
 
 	for (i = 0; i < count; i++)
-		nvscdev->send_table[i] = tab[i];
+		net_device_ctx->tx_send_table[i] = tab[i];
 }
 
 static void netvsc_send_vf(struct net_device_context *net_device_ctx,
@@ -1235,8 +1230,11 @@ void netvsc_channel_cb(void *context)
 		return;
 
 	net_device = net_device_to_netvsc_device(ndev);
-	if (unlikely(net_device->destroy) &&
-	    netvsc_channel_idle(net_device, q_idx))
+	if (unlikely(!net_device))
+		return;
+
+	if (unlikely(net_device->destroy &&
+		     netvsc_channel_idle(net_device, q_idx)))
 		return;
 
 	/* commit_rd_index() -> hv_signal_on_read() needs this. */
