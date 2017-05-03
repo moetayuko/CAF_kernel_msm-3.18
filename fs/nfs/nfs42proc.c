@@ -379,6 +379,7 @@ nfs42_layoutstat_done(struct rpc_task *task, void *calldata)
 			pnfs_mark_layout_stateid_invalid(lo, &head);
 			spin_unlock(&inode->i_lock);
 			pnfs_free_lseg_list(&head);
+			nfs_commit_inode(inode, 0);
 		} else
 			spin_unlock(&inode->i_lock);
 		break;
@@ -400,8 +401,6 @@ nfs42_layoutstat_done(struct rpc_task *task, void *calldata)
 	case -EOPNOTSUPP:
 		NFS_SERVER(inode)->caps &= ~NFS_CAP_LAYOUTSTATS;
 	}
-
-	dprintk("%s server returns %d\n", __func__, task->tk_status);
 }
 
 static void
