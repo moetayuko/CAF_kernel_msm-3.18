@@ -891,7 +891,7 @@ int dax_writeback_mapping_range(struct address_space *mapping,
 out:
 	put_dax(dax_dev);
 	trace_dax_writeback_range_done(inode, start_index, end_index);
-	return ret;
+	return (ret < 0 ? ret : 0);
 }
 EXPORT_SYMBOL_GPL(dax_writeback_mapping_range);
 
