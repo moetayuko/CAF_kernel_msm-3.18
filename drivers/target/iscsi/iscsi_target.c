@@ -574,7 +574,8 @@ iscsit_xmit_nondatain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 	return 0;
 }
 
-static int iscsit_map_iovec(struct iscsi_cmd *, struct kvec *, u32, u32);
+static int iscsit_map_iovec(struct iscsi_cmd *, struct kvec *, u32 nvec,
+			    u32, u32);
 static void iscsit_unmap_iovec(struct iscsi_cmd *);
 static u32 iscsit_do_crypto_hash_sg(struct ahash_request *, struct iscsi_cmd *,
 				    u32, u32, u32, u8 *);
@@ -605,7 +606,8 @@ iscsit_xmit_datain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 			 *header_digest);
 	}
 
-	iov_ret = iscsit_map_iovec(cmd, &cmd->iov_data[1],
+	iov_ret = iscsit_map_iovec(cmd, &cmd->iov_data[iov_count],
+				   cmd->orig_iov_data_count - (iov_count + 2),
 				   datain->offset, datain->length);
 	if (iov_ret < 0)
 		return -1;
@@ -891,10 +893,11 @@ EXPORT_SYMBOL(iscsit_reject_cmd);
 static int iscsit_map_iovec(
 	struct iscsi_cmd *cmd,
 	struct kvec *iov,
+	u32 nvec,
 	u32 data_offset,
 	u32 data_length)
 {
-	u32 i = 0;
+	u32 i = 0, orig_data_length = data_length;
 	struct scatterlist *sg;
 	unsigned int page_off;
 
@@ -903,9 +906,12 @@ static int iscsit_map_iovec(
 	 */
 	u32 ent = data_offset / PAGE_SIZE;
 
+	if (!data_length)
+		return 0;
+
 	if (ent >= cmd->se_cmd.t_data_nents) {
 		pr_err("Initial page entry out-of-bounds\n");
-		return -1;
+		goto overflow;
 	}
 
 	sg = &cmd->se_cmd.t_data_sg[ent];
@@ -915,7 +921,12 @@ static int iscsit_map_iovec(
 	cmd->first_data_sg_off = page_off;
 
 	while (data_length) {
-		u32 cur_len = min_t(u32, data_length, sg->length - page_off);
+		u32 cur_len;
+
+		if (WARN_ON_ONCE(!sg || i >= nvec))
+			goto overflow;
+
+		cur_len = min_t(u32, data_length, sg->length - page_off);
 
 		iov[i].iov_base = kmap(sg_page(sg)) + sg->offset + page_off;
 		iov[i].iov_len = cur_len;
@@ -929,6 +940,16 @@ static int iscsit_map_iovec(
 	cmd->kmapped_nents = i;
 
 	return i;
+
+overflow:
+	pr_err("offset %d + length %d overflow; %d/%d; sg-list:\n",
+	       data_offset, orig_data_length, i, nvec);
+	for_each_sg(cmd->se_cmd.t_data_sg, sg,
+		    cmd->se_cmd.t_data_nents, i) {
+		pr_err("[%d] off %d len %d\n",
+		       i, sg->offset, sg->length);
+	}
+	return -1;
 }
 
 static void iscsit_unmap_iovec(struct iscsi_cmd *cmd)
@@ -1578,8 +1599,8 @@ iscsit_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 	rx_size += payload_length;
 	iov = &cmd->iov_data[0];
 
-	iov_ret = iscsit_map_iovec(cmd, iov, be32_to_cpu(hdr->offset),
-				   payload_length);
+	iov_ret = iscsit_map_iovec(cmd, iov, cmd->orig_iov_data_count - 2,
+				   be32_to_cpu(hdr->offset), payload_length);
 	if (iov_ret < 0)
 		return -1;
 
@@ -1599,6 +1620,7 @@ iscsit_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 		rx_size += ISCSI_CRC_LEN;
 	}
 
+	WARN_ON_ONCE(iov_count > cmd->orig_iov_data_count);
 	rx_got = rx_data(conn, &cmd->iov_data[0], iov_count, rx_size);
 
 	iscsit_unmap_iovec(cmd);
@@ -1864,6 +1886,7 @@ static int iscsit_handle_nop_out(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 			rx_size += ISCSI_CRC_LEN;
 		}
 
+		WARN_ON_ONCE(niov > cmd->orig_iov_data_count);
 		rx_got = rx_data(conn, &cmd->iov_misc[0], niov, rx_size);
 		if (rx_got != rx_size) {
 			ret = -1;
@@ -2274,6 +2297,7 @@ iscsit_handle_text_cmd(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 			rx_size += ISCSI_CRC_LEN;
 		}
 
+		WARN_ON_ONCE(niov > cmd->orig_iov_data_count);
 		rx_got = rx_data(conn, &iov[0], niov, rx_size);
 		if (rx_got != rx_size)
 			goto reject;
@@ -2588,8 +2612,9 @@ static int iscsit_handle_immediate_data(
 	void *dump_buf = NULL;
 
 	rx_size = min(cmd->se_cmd.data_length - cmd->write_data_done, length);
-	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data, cmd->write_data_done,
-				   rx_size);
+	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data,
+				   cmd->orig_iov_data_count - 2,
+				   cmd->write_data_done, rx_size);
 	if (iov_ret < 0)
 		return IMMEDIATE_DATA_CANNOT_RECOVER;
 
@@ -2624,6 +2649,7 @@ static int iscsit_handle_immediate_data(
 		rx_size += ISCSI_CRC_LEN;
 	}
 
+	WARN_ON_ONCE(iov_count > cmd->orig_iov_data_count);
 	rx_got = rx_data(conn, &cmd->iov_data[0], iov_count, rx_size);
 
 	kfree(dump_buf);
