@@ -120,7 +120,7 @@ static inline struct nd_blk_region_desc *to_blk_region_desc(
 }
 
 int nvdimm_bus_add_poison(struct nvdimm_bus *nvdimm_bus, u64 addr, u64 length);
-void nvdimm_clear_from_poison_list(struct nvdimm_bus *nvdimm_bus,
+void nvdimm_forget_poison(struct nvdimm_bus *nvdimm_bus,
 		phys_addr_t start, unsigned int len);
 struct nvdimm_bus *nvdimm_bus_register(struct device *parent,
 		struct nvdimm_bus_descriptor *nfit_desc);
