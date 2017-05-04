@@ -888,9 +888,10 @@ static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, int *sectors,
 sense_reason_t
 sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 {
+	enum { INVALID_SIZE = 1 };
 	struct se_device *dev = cmd->se_dev;
 	unsigned char *cdb = cmd->t_task_cdb;
-	unsigned int size;
+	unsigned int size = INVALID_SIZE;
 	u32 sectors = 0;
 	sense_reason_t ret;
 
@@ -1212,7 +1213,7 @@ check_lba:
 			return TCM_ADDRESS_OUT_OF_RANGE;
 		}
 
-		if (!(cmd->se_cmd_flags & SCF_COMPARE_AND_WRITE))
+		if (size == INVALID_SIZE)
 			size = sbc_get_size(cmd, sectors);
 	}
 
