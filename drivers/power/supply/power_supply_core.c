@@ -17,6 +17,7 @@
 #include <linux/device.h>
 #include <linux/notifier.h>
 #include <linux/err.h>
+#include <linux/of.h>
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
 #include "power_supply.h"
@@ -280,13 +281,19 @@ static inline int power_supply_check_supplies(struct power_supply *psy)
 }
 #endif
 
-static int __power_supply_am_i_supplied(struct device *dev, void *data)
+struct psy_am_i_supplied_data {
+	struct power_supply *psy;
+	unsigned int count;
+};
+
+static int __power_supply_am_i_supplied(struct device *dev, void *_data)
 {
 	union power_supply_propval ret = {0,};
-	struct power_supply *psy = data;
 	struct power_supply *epsy = dev_get_drvdata(dev);
+	struct psy_am_i_supplied_data *data = _data;
 
-	if (__power_supply_is_supplied_by(epsy, psy))
+	data->count++;
+	if (__power_supply_is_supplied_by(epsy, data->psy))
 		if (!epsy->desc->get_property(epsy, POWER_SUPPLY_PROP_ONLINE,
 					&ret))
 			return ret.intval;
@@ -296,12 +303,16 @@ static int __power_supply_am_i_supplied(struct device *dev, void *data)
 
 int power_supply_am_i_supplied(struct power_supply *psy)
 {
+	struct psy_am_i_supplied_data data = { psy, 0 };
 	int error;
 
-	error = class_for_each_device(power_supply_class, NULL, psy,
+	error = class_for_each_device(power_supply_class, NULL, &data,
 				      __power_supply_am_i_supplied);
 
-	dev_dbg(&psy->dev, "%s %d\n", __func__, error);
+	dev_dbg(&psy->dev, "%s count %u err %d\n", __func__, data.count, error);
+
+	if (data.count == 0)
+		return -ENODEV;
 
 	return error;
 }
@@ -486,6 +497,50 @@ struct power_supply *devm_power_supply_get_by_phandle(struct device *dev,
 }
 EXPORT_SYMBOL_GPL(devm_power_supply_get_by_phandle);
 #endif /* CONFIG_OF */
+
+int power_supply_get_battery_info(struct power_supply *psy,
+				  struct power_supply_battery_info *info)
+{
+	struct device_node *battery_np;
+	const char *value;
+	int err;
+
+	info->energy_full_design_uwh = -EINVAL;
+	info->charge_full_design_uah = -EINVAL;
+	info->voltage_min_design_uv  = -EINVAL;
+
+	if (!psy->of_node) {
+		dev_warn(&psy->dev, "%s currently only supports devicetree\n",
+			 __func__);
+		return -ENXIO;
+	}
+
+	battery_np = of_parse_phandle(psy->of_node, "monitored-battery", 0);
+	if (!battery_np)
+		return -ENODEV;
+
+	err = of_property_read_string(battery_np, "compatible", &value);
+	if (err)
+		return err;
+
+	if (strcmp("simple-battery", value))
+		return -ENODEV;
+
+	/* The property and field names below must correspond to elements
+	 * in enum power_supply_property. For reasoning, see
+	 * Documentation/power/power_supply_class.txt.
+	 */
+
+	of_property_read_u32(battery_np, "energy-full-design-microwatt-hours",
+			     &info->energy_full_design_uwh);
+	of_property_read_u32(battery_np, "charge-full-design-microamp-hours",
+			     &info->charge_full_design_uah);
+	of_property_read_u32(battery_np, "voltage-min-design-microvolt",
+			     &info->voltage_min_design_uv);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(power_supply_get_battery_info);
 
 int power_supply_get_property(struct power_supply *psy,
 			    enum power_supply_property psp,
