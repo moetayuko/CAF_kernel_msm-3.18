@@ -28,6 +28,7 @@
 #include "ipc_reg.h"
 #include "ipc_api.h"
 
+#include "danipc_k.h"
 #include "danipc_lowlevel.h"
 
 /* -----------------------------------------------------------
@@ -50,24 +51,23 @@ uint8_t	ipc_req_sn;	/* Maintain node related sequence number */
  * Returns: n/a
  *
  */
-static inline void ipc_appl_init(uint8_t local_cpuid,
-				 struct ipc_trns_func const *def_trns_funcs,
-				 uint8_t ifidx, uint8_t fifos_initialized)
+static inline void ipc_appl_init(struct danipc_fifo *fifo,
+				 struct ipc_trns_func const *def_trns_funcs)
 {
-	ipc_agent_table_clean(local_cpuid);
+	ipc_agent_table_clean(fifo->node_id);
 
-	if (fifos_initialized == 0)
-		ipc_trns_fifo_buf_init(local_cpuid, ifidx);
+	if ((fifo->flag & DANIPC_FIFO_F_INIT) == 0)
+		ipc_trns_fifo_buf_init(fifo);
 	else
-		ipc_trns_fifo_move_m_to_b(local_cpuid);
+		ipc_trns_fifo_move_m_to_b(fifo);
 
 	/* Initialize IPC routing table (of CPU#) */
-	ipc_route_table_init(local_cpuid, def_trns_funcs);
+	ipc_route_table_init(fifo->node_id, def_trns_funcs);
 }
 
-unsigned ipc_init(uint8_t local_cpuid, uint8_t ifidx, uint8_t fifos_initialized)
+unsigned ipc_init(struct danipc_fifo *fifo)
 {
-	ipc_appl_init(local_cpuid, &ipc_fifo_utils, ifidx, fifos_initialized);
+	ipc_appl_init(fifo, &ipc_fifo_utils);
 	return 0;
 }
 

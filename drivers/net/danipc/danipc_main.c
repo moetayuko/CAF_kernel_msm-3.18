@@ -118,7 +118,7 @@ void alloc_pool_buffers(struct danipc_if *intf)
 
 void free_pool_buffers(struct danipc_if *intf)
 {
-	struct danipc_pktq          *rx_pool = &intf->rx_pkt_pool;
+	struct danipc_pktq	  *rx_pool = &intf->rx_pkt_pool;
 
 	while (!skb_queue_empty(&rx_pool->q))
 		dev_kfree_skb(__skb_dequeue(&rx_pool->q));
@@ -170,8 +170,7 @@ static int acquire_local_fifo(struct danipc_fifo *fifo,
 		goto out;
 	}
 
-	ret = ipc_init(fifo->node_id, fifo->idx,
-		       (fifo->flag & DANIPC_FIFO_F_INIT));
+	ret = ipc_init(fifo);
 	if (ret)
 		goto out;
 	fifo->flag |= DANIPC_FIFO_F_INIT;
@@ -250,18 +249,9 @@ static int danipc_open(struct net_device *dev)
 	struct danipc_if	*intf = netdev_priv(dev);
 	struct danipc_drvr	*drv = intf->drvr;
 	struct danipc_fifo	*fifo = intf->fifo;
-	struct packet_proc_info *pproc_hi = &intf->pproc[ipc_trns_prio_1];
-	struct packet_proc_info *pproc_lo = &intf->pproc[ipc_trns_prio_0];
-	uint8_t		rxptype_hi = pproc_hi->rxproc_type;
-	uint8_t		rxptype_lo = pproc_lo->rxproc_type;
-	int			rc;
-
-	if (rxptype_hi >= rx_max_proc || rxptype_lo >= rx_max_proc) {
-		pr_err("Invalid rxtype. hi: %u, lo: %u\n",
-		       rxptype_hi, rxptype_lo);
-		BUG();
-		return -EINVAL;
-	}
+	int			rc = -ENOMEM;
+	uint32_t		prio;
+	enum pkt_rx_proc_type	ptype;
 
 	rc = acquire_local_fifo(fifo, intf, DANIPC_FIFO_OWNER_TYPE_NETDEV);
 	if (rc) {
@@ -273,31 +263,25 @@ static int danipc_open(struct net_device *dev)
 	if (rc == 0) {
 		alloc_pool_buffers(intf);
 
-		if (pproc_hi->rxproc_type == rx_proc_timer) {
-			(drv->proc_rx[rxptype_hi].init)(pproc_hi);
-			(drv->proc_rx[rxptype_lo].init)(pproc_lo);
+		for (prio = 0; prio < max_ipc_prio; prio++) {
+			ptype = intf->pproc[prio].rxproc_type;
 
-			netif_start_queue(dev);
-			drv->ndev_active++;
+			if (ptype == rx_proc_parallel) {
+				rc = request_irq(dev->irq, danipc_interrupt, 0,
+						 dev->name, &intf->pproc[prio]);
 
-			rc = 0;
-		} else {
-			rc = request_irq(dev->irq, danipc_interrupt, 0,
-					 dev->name, pproc_lo);
-
-			if (rc == 0) {
 				irq_set_affinity(dev->irq,
 						 cpumask_of(intf->affinity));
+				(drv->proc_rx[ptype].init)(&intf->pproc[prio]);
 
-				(drv->proc_rx[rxptype_hi].init)(pproc_hi);
-				(drv->proc_rx[rxptype_lo].init)(pproc_lo);
-
-				danipc_init_irq(fifo);
-
-				netif_start_queue(dev);
-				drv->ndev_active++;
+				danipc_init_irq(fifo, prio);
+			} else {
+				(drv->proc_rx[ptype].init)(&intf->pproc[prio]);
 			}
 		}
+
+		netif_start_queue(dev);
+		drv->ndev_active++;
 	}
 
 	return rc;
@@ -307,30 +291,21 @@ static int danipc_close(struct net_device *dev)
 {
 	struct danipc_if		*intf = netdev_priv(dev);
 	struct danipc_drvr		*drv = intf->drvr;
-	struct packet_proc_info	*pproc_hi =
-		 &intf->pproc[ipc_trns_prio_1];
-	struct packet_proc_info	*pproc_lo =
-		 &intf->pproc[ipc_trns_prio_0];
-	uint8_t			rxptype_hi = pproc_hi->rxproc_type;
-	uint8_t			rxptype_lo = pproc_lo->rxproc_type;
-
-	if (rxptype_hi >= rx_max_proc || rxptype_lo >= rx_max_proc) {
-		pr_err("Invalid rxtype. hi: %u, lo: %u\n",
-		       rxptype_hi, rxptype_lo);
-		BUG();
-		return -EINVAL;
-	}
+	uint32_t			prio;
+	enum pkt_rx_proc_type	ptype;
 
 	netif_stop_queue(dev);
 
-	if (pproc_hi->rxproc_type == rx_proc_timer) {
-		(drv->proc_rx[rxptype_hi].stop)(pproc_hi);
-		(drv->proc_rx[rxptype_lo].stop)(pproc_lo);
-	} else {
-		danipc_disable_irq(intf->fifo);
-		(drv->proc_rx[rxptype_hi].stop)(pproc_hi);
-		(drv->proc_rx[rxptype_lo].stop)(pproc_lo);
-		free_irq(dev->irq, pproc_lo);
+	for (prio = 0; prio < max_ipc_prio; prio++) {
+		ptype = intf->pproc[prio].rxproc_type;
+
+		if (ptype != rx_proc_parallel) {
+			(drv->proc_rx[ptype].stop)(&intf->pproc[prio]);
+		} else {
+			danipc_disable_irq(intf->fifo, prio);
+			(drv->proc_rx[ptype].stop)(&intf->pproc[prio]);
+			free_irq(dev->irq, &intf->pproc[prio]);
+		}
 	}
 
 	danipc_if_cleanup(intf);
@@ -364,15 +339,15 @@ static const struct net_device_ops danipc_netdev_ops = {
 
 static void danipc_setup(struct net_device *dev)
 {
-	dev->netdev_ops         = &danipc_netdev_ops;
+	dev->netdev_ops	 = &danipc_netdev_ops;
 
 	dev->type		= ARPHRD_VOID;
 	dev->hard_header_len    = sizeof(struct ipc_msg_hdr);
-	dev->addr_len           = sizeof(danipc_addr_t);
+	dev->addr_len	   = sizeof(danipc_addr_t);
 	dev->tx_queue_len       = 1000;
 
 	/* New-style flags. */
-	dev->flags              = IFF_NOARP;
+	dev->flags	      = IFF_NOARP;
 }
 
 /* Our vision of L2 header: it is of type struct danipc_pair
@@ -559,6 +534,12 @@ static int danipc_if_init(struct platform_device *pdev,
 		if (strcmp(dev->name, "danipc") == 0) {
 			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_timer;
 			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_parallel;
+		} else if (strcmp(dev->name, "danipc-hex2log") == 0) {
+			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_default;
+			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_parallel;
+		} else if (strcmp(dev->name, "danipc-hex3log") == 0) {
+			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_parallel;
+			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_default;
 		} else {
 			/* danipc-pcap */
 			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_timer;
@@ -632,12 +613,14 @@ static int probe_local_fifo(struct platform_device *pdev,
 
 	pr_info("FIFO %s %s!\n", probe_list->res_name,
 		(rc == ENODEV) ? "NOT FOUND" : "FOUND");
-	return rc;
+	return 0;
 }
 
 static struct danipc_probe_info danipc_probe_list[DANIPC_MAX_LFIFO] = {
 	{"apps_ipc_data", "danipc", 256},
 	{"apps_ipc_pcap", "danipc-pcap", 0},
+	{"apps_hex_ipc_log", "danipc-hex2log", 0},
+	{"apps_hex_ipc_log", "danipc-hex3log", 0},
 };
 
 static int danipc_probe_lfifo(struct platform_device *pdev, const char *regs[])
@@ -743,7 +726,7 @@ static int danipc_cdev_rx_buf_release(struct danipc_cdev *cdev)
 
 	for (pri = ipc_trns_prio_0; pri < max_ipc_prio; pri++)
 		danipc_fifo_drain(fifo->node_id, pri);
-	ipc_trns_fifo_buf_init(fifo->node_id, fifo->idx);
+	ipc_trns_fifo_buf_init(fifo);
 
 	return 0;
 }
@@ -1895,7 +1878,7 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 		goto err_release_rx_kmem;
 	}
 
-	danipc_init_irq(fifo);
+	danipc_init_irq(fifo, ipc_trns_prio_1);
 
 	file->private_data = cdev;
 
@@ -1934,7 +1917,7 @@ static int danipc_cdev_release(struct inode *inode, struct file *file)
 
 	dev_dbg(cdev->dev, "%s\n", __func__);
 
-	danipc_disable_irq(fifo);
+	danipc_disable_irq(fifo, ipc_trns_prio_1);
 	free_irq(fifo->irq, cdev);
 	danipc_cdev_stop_rx_work(cdev);
 
@@ -2473,7 +2456,8 @@ static int danipc_probe(struct platform_device *pdev)
 		"phycpu0_ipc", "phycpu1_ipc", "phycpu2_ipc", "phycpu3_ipc",
 		"phydsp0_ipc", "phydsp1_ipc", "phydsp2_ipc", NULL,
 		"apps_ipc_data", "qdsp6_0_ipc", "qdsp6_1_ipc",
-		"qdsp6_2_ipc", "qdsp6_3_ipc", "apps_ipc_pcap", NULL, NULL
+		"qdsp6_2_ipc", "qdsp6_3_ipc", "apps_ipc_pcap",
+		"apps_hex_ipc_log", NULL,
 	};
 	static const char	*resource[RESOURCE_NUM] = {
 		"ipc_bufs", "agent_table", "apps_ipc_intr_en"

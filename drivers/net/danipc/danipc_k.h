@@ -2,7 +2,7 @@
  *	All files except if stated otherwise in the beginning of the file
  *	are under the ISC license:
  *	----------------------------------------------------------------------
- *	Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *	Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *	Copyright (c) 2010-2012 Design Art Networks Ltd.
  *
  *	Permission to use, copy, modify, and/or distribute this software for any
@@ -144,7 +144,7 @@ struct danipc_probe_info {
 	const uint16_t	poolsz;
 };
 
-#define DANIPC_MAX_LFIFO	2
+#define DANIPC_MAX_LFIFO	4
 #define DANIPC_FIFO_F_INIT	1
 #define DANIPC_FIFO_F_INUSE	2
 
@@ -179,7 +179,7 @@ struct danipc_if {
 	struct danipc_pktq			rx_pkt_pool;
 
 	uint32_t		irq;
-	uint8_t		ifidx;
+	uint8_t			ifidx;
 	uint8_t			rx_fifo_idx;
 
 	/* Yield in favour of high-prio FIFO */
@@ -378,8 +378,8 @@ void danipc_ll_cleanup(struct danipc_drvr *drv);
 int danipc_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
 int danipc_hard_start_xmit(struct sk_buff *skb, struct net_device *dev);
 
-void danipc_init_irq(struct danipc_fifo *fifo);
-void danipc_disable_irq(struct danipc_fifo *fifo);
+void danipc_init_irq(struct danipc_fifo *fifo, uint32_t prio);
+void danipc_disable_irq(struct danipc_fifo *fifo, uint32_t prio);
 irqreturn_t danipc_interrupt(int irq, void *data);
 irqreturn_t danipc_cdev_interrupt(int irq, void *data);
 

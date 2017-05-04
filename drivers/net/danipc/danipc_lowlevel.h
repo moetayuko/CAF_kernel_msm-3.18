@@ -105,6 +105,8 @@ struct ipc_to_virt_map {
 	atomic_t		pending_skbs;
 };
 
+struct danipc_fifo;
+
 uint32_t virt_to_ipc(const int cpuid, const unsigned prio, void *v_addr);
 void *ipc_to_virt(const int cpuid, const unsigned prio,
 		  const uint32_t raw_ipc_addr);
@@ -113,13 +115,10 @@ void *ipc_to_virt(const int cpuid, const unsigned prio,
 	(((cpuid&(PLATFORM_MAX_NUM_OF_NODES-1)) << 4) +	\
 				(0x0f & (lid)))
 
-void ipc_trns_fifo_move_m_to_b(uint8_t cpuid);
-unsigned ipc_init(
-	uint8_t local_cpuid,
-	uint8_t ifidx,
-	uint8_t fifos_initialized);
+void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo);
+unsigned ipc_init(struct danipc_fifo *fifo);
 unsigned ipc_cleanup(uint8_t local_cpuid);
-void ipc_trns_fifo_buf_init(uint8_t cpuid , uint8_t ifidx);
+void ipc_trns_fifo_buf_init(struct danipc_fifo *fifo);
 void ipc_trns_fifo_buf_flush(uint8_t cpuid);
 void ipc_route_table_init(uint8_t local_cpuid,
 			  struct ipc_trns_func const *ptr);
@@ -142,9 +141,9 @@ struct ipc_trns_func const *get_trns_funcs(uint8_t cpuid);
 
 extern struct ipc_to_virt_map	ipc_to_virt_map[PLATFORM_MAX_NUM_OF_NODES][2];
 
-void danipc_clear_interrupt(uint8_t fifo);
-void danipc_mask_interrupt(uint8_t fifo);
-void danipc_unmask_interrupt(uint8_t fifo);
+void danipc_clear_interrupt(uint8_t fifo, uint32_t prio);
+void danipc_mask_interrupt(uint8_t fifo, uint32_t prio);
+void danipc_unmask_interrupt(uint8_t fifo, uint32_t prio);
 
 uint32_t danipc_read_af_threshold(uint8_t intf);
 uint32_t danipc_set_af_threshold(uint8_t intf, uint8_t n, uint8_t thr);

@@ -51,6 +51,13 @@
 #define CDU_INT0_STATUS_F0	0x54
 #define CDU_INT0_RAW_STATUS_F0	0x5C
 #define CDU_INT0_CLEAR_F0	0x64
+
+#define CDU_INT1_MASK_F0	0x48
+#define CDU_INT1_ENABLE_F0	0x50
+#define CDU_INT1_STATUS_F0	0x58
+#define CDU_INT1_RAW_STATUS_F0	0x60
+#define CDU_INT1_CLEAR_F0	0x68
+
 #define FIFO_0_POP_COUNTER	0x6C
 #define FIFO_POP_COUNTER_ENABLE 0x80
 
@@ -59,8 +66,12 @@
 
 #define FIFO_SHIFT(n)		((n) * 8)
 /* Almost Full(AF) interrupt indication bit */
-#define IPC_INTR_FIFO_AF	5
+#define IPC_INT0_FIFO_AF	5
+#define IPC_INT1_FIFO_AF	21
 #define IPC_INTR(intr)		(1 << (intr))
+
+/* AF threshold offset for a FIFO */
+#define AF_THR_FIFO_OFFSET(fifo) (fifo<<3)
 
 /* Allocation of IPC FIFOS among CPU cores is evident from
  * Platform specific dts file.
@@ -69,15 +80,17 @@
 #define TCSR_IPC0_CDU0_INT1_MUX	0x2
 #define TCSR_IPC3_CDU1_INT0_MUX	0x4000
 #define TCSR_IPC3_CDU1_INT1_MUX	0x8000
+#define TCSR_IPC4_CDU0_INT0_MUX	0x10000
+#define TCSR_IPC4_CDU1_INT0_MUX	0x20000
 
 /* Mux IPC0_CDU0 and IPC3_CDU1 interrupts to APPS.
  * As APPS receives all its messages from
  * FIFOs in TCSR_IPC0_CDU0 alone.
  */
-#define APPS_IPC_DATA_FIFO_INT	(TCSR_IPC0_CDU0_INT0_MUX | \
-				 TCSR_IPC0_CDU0_INT1_MUX)
-#define APPS_IPC_PCAP_FIFO_INT	(TCSR_IPC3_CDU1_INT0_MUX | \
-				 TCSR_IPC3_CDU1_INT1_MUX)
+#define APPS_IPC_DATA_FIFO_INT	(TCSR_IPC0_CDU0_INT0_MUX)
+#define APPS_IPC_PCAP_FIFO_INT	(TCSR_IPC3_CDU1_INT0_MUX)
+#define APPS_IPC_HEX2_LOG_FIFO_INT	(TCSR_IPC4_CDU0_INT0_MUX)
+#define APPS_IPC_HEX3_LOG_FIFO_INT	(TCSR_IPC4_CDU1_INT0_MUX)
 
 /* IPC and Linux coexistence.
  * IPC uses/needs physical addresses with bit 31 set while Linux obviously
@@ -100,9 +113,29 @@ struct ipc_to_virt_map		ipc_to_virt_map[PLATFORM_MAX_NUM_OF_NODES][2];
 
 void __iomem		*apps_ipc_mux;
 
+/* Maps the priority (lo = 0, hi = 1) to it's corresponding register set */
+uint32_t reg_prio_map[max_ipc_prio][5] = {
+	{CDU_INT1_MASK_F0, CDU_INT1_ENABLE_F0, CDU_INT1_STATUS_F0,
+	 CDU_INT1_RAW_STATUS_F0, CDU_INT1_CLEAR_F0},
+	{CDU_INT0_MASK_F0, CDU_INT0_ENABLE_F0, CDU_INT0_STATUS_F0,
+	 CDU_INT0_RAW_STATUS_F0, CDU_INT0_CLEAR_F0},
+};
+
+/* Index to one of registers in reg_prio_map */
+#define CDU_INT_MASK_F0        0
+#define CDU_INT_ENABLE_F0      1
+#define CDU_INT_STATUS_F0      2
+#define CDU_INT_RAW_STATUS_F0  3
+#define CDU_INT_CLEAR_F0       4
+
+/* Maps priority to appropriate AF bit */
+uint32_t int_enable_prio[max_ipc_prio] = {IPC_INT1_FIFO_AF, IPC_INT0_FIFO_AF};
+
 static uint32_t apps_ipc_mux_val[DANIPC_MAX_LFIFO] = {
 	APPS_IPC_DATA_FIFO_INT,
-	APPS_IPC_PCAP_FIFO_INT
+	APPS_IPC_PCAP_FIFO_INT,
+	APPS_IPC_HEX2_LOG_FIFO_INT,
+	APPS_IPC_HEX3_LOG_FIFO_INT
 };
 
 static const struct ipc_buf_desc *find_ext_buf_from_addr(uint32_t addr)
@@ -118,28 +151,40 @@ static const struct ipc_buf_desc *find_ext_buf_from_addr(uint32_t addr)
 	return NULL;
 }
 
-void danipc_clear_interrupt(uint8_t fifo)
+void danipc_clear_interrupt(uint8_t fifo, uint32_t prio)
 {
 	const unsigned          base_addr = ipc_regs[fifo];
 
-	__raw_writel_no_log(IPC_INTR(IPC_INTR_FIFO_AF),
-			    (void *)(base_addr + CDU_INT0_CLEAR_F0));
+	if (unlikely(prio >= max_ipc_prio))
+		return;
+
+	__raw_writel_no_log(IPC_INTR(int_enable_prio[prio]),
+			    (void *)(base_addr +
+			    reg_prio_map[prio][CDU_INT_CLEAR_F0]));
 }
 
-void danipc_mask_interrupt(uint8_t fifo)
+void danipc_mask_interrupt(uint8_t fifo, uint32_t prio)
 {
 	const unsigned          base_addr = ipc_regs[fifo];
 
-	__raw_writel_no_log(IPC_INTR(IPC_INTR_FIFO_AF),
-			    (void *)(base_addr + CDU_INT0_MASK_F0));
+	if (unlikely(prio >= max_ipc_prio))
+		return;
+
+	__raw_writel_no_log(IPC_INTR(int_enable_prio[prio]),
+			    (void *)(base_addr +
+			    reg_prio_map[prio][CDU_INT_MASK_F0]));
 }
 
-void danipc_unmask_interrupt(uint8_t fifo)
+void danipc_unmask_interrupt(uint8_t fifo, uint32_t prio)
 {
 	const unsigned          base_addr = ipc_regs[fifo];
 
-	__raw_writel_no_log(~IPC_INTR(IPC_INTR_FIFO_AF),
-			    (void *)(base_addr + CDU_INT0_MASK_F0));
+	if (unlikely(prio >= max_ipc_prio))
+		return;
+
+	__raw_writel_no_log(~IPC_INTR(int_enable_prio[prio]),
+			    (void *)(base_addr +
+			    reg_prio_map[prio][CDU_INT_MASK_F0]));
 }
 
 static void *map_ipc_buffers(struct danipc_drvr *drv)
@@ -469,8 +514,8 @@ static void danipc_cdev_rx_poll(unsigned long data)
 	struct danipc_fifo *fifo = cdev->fifo;
 	const unsigned	base_addr = ipc_regs[fifo->node_id];
 	int n = 0;
-	uint32_t intval = IPC_INTR(IPC_INTR_FIFO_AF) |
-		(IPC_INTR(IPC_INTR_FIFO_AF) << FIFO_SHIFT(2));
+	uint32_t intval = IPC_INTR(IPC_INT0_FIFO_AF) |
+		(IPC_INTR(IPC_INT0_FIFO_AF) << FIFO_SHIFT(2));
 
 	n = danipc_cdev_recv(cdev, 0);
 	n += danipc_cdev_recv(cdev, 2);
@@ -526,29 +571,52 @@ irqreturn_t danipc_interrupt(int irq, void *data)
 	/* By default we always pass packet_proc for low-prio
 	 * danipc fifo.
 	 */
-	struct packet_proc_info *pproc_hi =
-		 &((struct packet_proc_info *)data)[ipc_trns_prio_1];
-	struct danipc_if		*intf = pproc_hi->intf;
+	struct packet_proc_info *pproc =
+		 (struct packet_proc_info *)data;
+	struct danipc_if		*intf = pproc->intf;
 	struct packet_proc		*proc_rx =
-		&intf->drvr->proc_rx[pproc_hi->rxproc_type];
+		&intf->drvr->proc_rx[pproc->rxproc_type];
 	const unsigned	base_addr = ipc_regs[intf->rx_fifo_idx];
+	uint8_t	prio = pproc - intf->pproc;
+	uint32_t *reg_prio;
+
+	if (unlikely(prio > max_ipc_prio))
+		return IRQ_NONE;
+
+	reg_prio = reg_prio_map[prio];
 
 	/* Mask all IPC interrupts. */
-	__raw_writel_no_log(~0, (void *)(base_addr + CDU_INT0_MASK_F0));
+	__raw_writel_no_log(~0,
+			    (void *)(base_addr + reg_prio[CDU_INT_MASK_F0]));
 
-	(proc_rx->schedule_work)(&pproc_hi->rx_work);
+	(proc_rx->schedule_work)(&pproc->rx_work);
 
 	return IRQ_HANDLED;
 }
 
-void danipc_init_irq(struct danipc_fifo *fifo)
+void danipc_init_irq(struct danipc_fifo *fifo, uint32_t prio)
 {
 	const unsigned		 base_addr = ipc_regs[fifo->node_id];
-	uint32_t int_val = IPC_INTR(IPC_INTR_FIFO_AF);
+	uint32_t int_val = IPC_INTR(int_enable_prio[prio]);
 	uint32_t af_val = AF_THRESHOLD;
+	uint32_t		*reg_prio;
+
+	if (prio >= max_ipc_prio || fifo == NULL)
+		return;
+
+	/* Cannot request for separate interrupt on low priority FIFO and have
+	 * character device. Char device has 1 interrupt for both hi and lo FIFO
+	 */
+	if (prio == 0 &&
+	    fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV) {
+		pr_err("chardev and low priority FIFO interrupt not supported");
+		return;
+	}
+
+	reg_prio = reg_prio_map[prio];
 
 	if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV)
-		int_val |= IPC_INTR(IPC_INTR_FIFO_AF) << FIFO_SHIFT(2);
+		int_val |= IPC_INTR(IPC_INT0_FIFO_AF) << FIFO_SHIFT(2);
 
 	if (fifo->idx == 0) {
 		if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV)
@@ -557,6 +625,13 @@ void danipc_init_irq(struct danipc_fifo *fifo)
 		af_val = AF_PCAP_THRESHOLD;
 		if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV)
 			af_val |= AF_PCAP_THRESHOLD << FIFO_SHIFT(2);
+	} else if (fifo->idx == 2 || fifo->idx == 3) {
+		af_val = __raw_readl((void *)(base_addr + FIFO_THR_AF_CFG_F0));
+
+		if (prio == 1)
+			af_val |= AF_PCAP_THRESHOLD<<FIFO_SHIFT(0);
+		else
+			af_val |= AF_PCAP_THRESHOLD<<FIFO_SHIFT(2);
 	} else {
 		pr_err("%s: Unknown device passed %p\n", __func__ , fifo);
 		return;
@@ -567,9 +642,12 @@ void danipc_init_irq(struct danipc_fifo *fifo)
 
 	__raw_writel_no_log(FIFO_POP_SET_ALL_FIFOS,
 			    (void *)(base_addr + FIFO_POP_COUNTER_ENABLE));
-	__raw_writel_no_log(int_val, (void *)(base_addr + CDU_INT0_CLEAR_F0));
-	__raw_writel_no_log(int_val, (void *)(base_addr + CDU_INT0_ENABLE_F0));
-	__raw_writel_no_log(~int_val, (void *)(base_addr + CDU_INT0_MASK_F0));
+	__raw_writel_no_log(int_val,
+			    (void *)(base_addr + reg_prio[CDU_INT_CLEAR_F0]));
+	__raw_writel_no_log(int_val,
+			    (void *)(base_addr + reg_prio[CDU_INT_ENABLE_F0]));
+	__raw_writel_no_log(~int_val,
+			    (void *)(base_addr + reg_prio[CDU_INT_MASK_F0]));
 
 	/* Route interrupts from TCSR to APPS (relevant to APPS-FIFO) */
 	/* TBD: makesure apps_ipc_mux is incremented by 4 bytes */
@@ -729,18 +807,33 @@ uint32_t danipc_read_fifo_irq_status(uint8_t fifo)
 	return irq_status;
 }
 
-void danipc_disable_irq(struct danipc_fifo *fifo)
+void danipc_disable_irq(struct danipc_fifo *fifo, uint32_t prio)
 {
 	const unsigned	base_addr = ipc_regs[fifo->node_id];
-	uint32_t int_val = IPC_INTR(IPC_INTR_FIFO_AF);
+	uint32_t int_val = IPC_INTR(int_enable_prio[prio]);
+	uint32_t *reg_prio;
+
+	if (prio >= max_ipc_prio || fifo == NULL)
+		return;
+
+	if (prio == 0 &&
+	    fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV) {
+		pr_err("chardev and low priority FIFO interrupt not supported");
+		return;
+	}
 
 	if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_CDEV)
-		int_val |= IPC_INTR(IPC_INTR_FIFO_AF) << FIFO_SHIFT(2);
+		int_val |= IPC_INTR(IPC_INT0_FIFO_AF) << FIFO_SHIFT(2);
+
+	reg_prio = reg_prio_map[prio];
 
 	/* Clear, disable and mask all interrupts from this CDU */
-	__raw_writel_no_log(int_val, (void *)(base_addr + CDU_INT0_CLEAR_F0));
-	__raw_writel_no_log(0, (void *)(base_addr + CDU_INT0_ENABLE_F0));
-	__raw_writel_no_log(int_val, (void *)(base_addr + CDU_INT0_MASK_F0));
+	__raw_writel_no_log(int_val,
+			    (void *)(base_addr + reg_prio[CDU_INT_CLEAR_F0]));
+	__raw_writel_no_log(0,
+			    (void *)(base_addr + reg_prio[CDU_INT_ENABLE_F0]));
+	__raw_writel_no_log(int_val,
+			    (void *)(base_addr + reg_prio[CDU_INT_MASK_F0]));
 
 	/* Route interrupts from TCSR to APPS (relevant to APPS-FIFO) */
 	/* TBD: makesure apps_ipc_mux is incremented by 4 bytes */
