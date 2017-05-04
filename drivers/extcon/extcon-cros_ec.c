@@ -25,7 +25,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-#include <linux/usb/class-dual-role.h>
+#include <linux/usb/typec.h>
 
 #define CROS_EC_USB_POLLING_DELAY msecs_to_jiffies(1000)
 
@@ -55,15 +55,19 @@ struct cros_ec_extcon_info {
 
 	struct notifier_block notifier;
 
-	unsigned int dr; /* data role */
-	unsigned int pr; /* power role */
-	bool dp; /* DisplayPort enabled */
-	bool mux; /* SuperSpeed (usb3) enabled */
-	unsigned int power_type;
-	unsigned int writeable;
+	bool connected;
+	enum typec_data_role dr;	/* data role */
+	enum typec_role vr;		/* vconn role */
+	enum typec_role pr;		/* power role */
+	bool dp;			/* DisplayPort enabled */
+	bool mux;			/* SuperSpeed (usb3) enabled */
 	wait_queue_head_t role_wait;
 
-	struct dual_role_phy_instance *drp_inst;
+	struct typec_capability typec_caps;
+	struct typec_port *typec_port;
+
+	struct typec_partner_desc partner_desc;
+	struct typec_partner *partner;
 };
 
 static const unsigned int usb_type_c_cable[] = {
@@ -115,30 +119,6 @@ static int cros_ec_pd_command(struct cros_ec_extcon_info *info,
 }
 
 /**
- * cros_ec_usb_get_power_type() - Get power type info about PD device attached to
- * given port.
- * @info: pointer to struct cros_ec_extcon_info
- *
- * Return: power type on success, <0 on failure.
- */
-static int cros_ec_usb_get_power_type(struct cros_ec_extcon_info *info)
-{
-	struct ec_params_usb_pd_power_info req;
-	struct ec_response_usb_pd_power_info resp;
-	int ret;
-
-	req.port = info->port_id;
-	ret = cros_ec_pd_command(info, EC_CMD_USB_PD_POWER_INFO, 0,
-				 &req, sizeof(req), &resp, sizeof(resp));
-	if (ret < 0)
-		return ret;
-
-	return resp.type;
-}
-
-
-
-/**
  * cros_ec_usb_get_pd_mux_state() - Get PD mux state for given port.
  * @info: pointer to struct cros_ec_extcon_info
  *
@@ -169,7 +149,8 @@ static int cros_ec_usb_get_pd_mux_state(struct cros_ec_extcon_info *info)
  * Return: role info on success, -ENOTCONN if no cable is connected, <0 on failure.
  */
 static int cros_ec_usb_get_role(struct cros_ec_extcon_info *info,
-				bool *polarity)
+				bool *polarity,
+				bool *pd_capable)
 {
 	struct ec_params_usb_pd_control pd_control;
 	struct ec_response_usb_pd_control_v1 resp;
@@ -189,6 +170,7 @@ static int cros_ec_usb_get_role(struct cros_ec_extcon_info *info,
 		return -ENOTCONN;
 
 	*polarity = resp.polarity;
+	*pd_capable = resp.enabled & PD_CTRL_RESP_ENABLED_PD_CAPABLE;
 
 	return resp.role;
 }
@@ -212,106 +194,34 @@ static int cros_ec_pd_get_num_ports(struct cros_ec_extcon_info *info)
 	return resp.num_ports;
 }
 
-static const char *cros_ec_usb_role_string(unsigned int role)
+static const char *cros_ec_usb_role_string(bool connected,
+					   enum typec_data_role dr)
 {
-	return DUAL_ROLE_PROP_DR_NONE == role ? "DISCONNECTED" :
-		(DUAL_ROLE_PROP_DR_HOST == role ? "DFP" : "UFP");
-}
-
-static const char *cros_ec_usb_power_type_string(unsigned int type)
-{
-	switch (type) {
-	case USB_CHG_TYPE_NONE:
-		return "USB_CHG_TYPE_NONE";
-	case USB_CHG_TYPE_PD:
-		return "USB_CHG_TYPE_PD";
-	case USB_CHG_TYPE_PROPRIETARY:
-		return "USB_CHG_TYPE_PROPRIETARY";
-	case USB_CHG_TYPE_C:
-		return "USB_CHG_TYPE_C";
-	case USB_CHG_TYPE_BC12_DCP:
-		return "USB_CHG_TYPE_BC12_DCP";
-	case USB_CHG_TYPE_BC12_CDP:
-		return "USB_CHG_TYPE_BC12_CDP";
-	case USB_CHG_TYPE_BC12_SDP:
-		return "USB_CHG_TYPE_BC12_SDP";
-	case USB_CHG_TYPE_OTHER:
-		return "USB_CHG_TYPE_OTHER";
-	case USB_CHG_TYPE_VBUS:
-		return "USB_CHG_TYPE_VBUS";
-	case USB_CHG_TYPE_UNKNOWN:
-		return "USB_CHG_TYPE_UNKNOWN";
-	default:
-		return "USB_CHG_TYPE_UNKNOWN";
-	}
-}
-
-static bool cros_ec_usb_power_type_is_wall_wart(unsigned int type,
-						unsigned int role)
-{
-	switch (type) {
-	/* FIXME : Guppy, Donnettes, and other chargers will be miscategorized
-	 * because they identify with USB_CHG_TYPE_C, but we can't return true
-	 * here from that code because that breaks Suzy-Q and other kinds of
-	 * USB Type-C cables and peripherals.
-	 */
-	case USB_CHG_TYPE_PROPRIETARY:
-	case USB_CHG_TYPE_BC12_DCP:
-		return true;
-	case USB_CHG_TYPE_PD:
-#if 0		/* TODO(crosbug.com/p/45871) use USB comm bit when available */
-		return !(role & PD_CTRL_RESP_ROLE_USB_COMM);
-#else
-		return false;
-#endif
-	case USB_CHG_TYPE_C:
-	case USB_CHG_TYPE_BC12_CDP:
-	case USB_CHG_TYPE_BC12_SDP:
-	case USB_CHG_TYPE_OTHER:
-	case USB_CHG_TYPE_VBUS:
-	case USB_CHG_TYPE_UNKNOWN:
-	case USB_CHG_TYPE_NONE:
-	default:
-		return false;
-	}
-}
-
-static unsigned int cros_ec_usb_role_is_writeable(unsigned int role)
-{
-	unsigned int write_mask = 0;
-
-	if (role & PD_CTRL_RESP_ROLE_DR_POWER)
-		write_mask |= (1 << DUAL_ROLE_PROP_PR);
-	if ((role & PD_CTRL_RESP_ROLE_DR_DATA) &&
-	    (role & PD_CTRL_RESP_ROLE_USB_COMM))
-		write_mask |= (1 << DUAL_ROLE_PROP_DR);
-
-	return write_mask;
+	return connected ? (dr == TYPEC_HOST ? "DFP" : "UFP") : "DISCONNECTED";
 }
 
 static int extcon_cros_ec_detect_cable(struct cros_ec_extcon_info *info,
 				       bool force)
 {
 	struct device *dev = info->dev;
-	int role, power_type;
-	unsigned int dr, pr;
+	int role;
+	enum typec_data_role dr;
+	enum typec_role pr, vr;
 	bool polarity, dp, mux, hpd;
+	bool pd_capable;
+	bool connected;
 
-	power_type = cros_ec_usb_get_power_type(info);
-	if (power_type < 0) {
-		dev_err(dev, "failed getting power type err = %d\n",
-			power_type);
-		return power_type;
-	}
-
-	role = cros_ec_usb_get_role(info, &polarity);
+	role = cros_ec_usb_get_role(info, &polarity, &pd_capable);
 	if (role < 0) {
 		if (role != -ENOTCONN) {
 			dev_err(dev, "failed getting role err = %d\n", role);
 			return role;
 		}
-		dr = DUAL_ROLE_PROP_DR_NONE;
-		pr = DUAL_ROLE_PROP_PR_NONE;
+		connected = false;
+		pd_capable = false;
+		dr = -1;
+		pr = -1;
+		vr = -1;
 		polarity = false;
 		dp = false;
 		mux = false;
@@ -320,10 +230,13 @@ static int extcon_cros_ec_detect_cable(struct cros_ec_extcon_info *info,
 	} else {
 		int pd_mux_state;
 
+		connected = true;
 		dr = (role & PD_CTRL_RESP_ROLE_DATA) ?
-			DUAL_ROLE_PROP_DR_HOST : DUAL_ROLE_PROP_DR_DEVICE;
+			TYPEC_HOST : TYPEC_DEVICE;
 		pr = (role & PD_CTRL_RESP_ROLE_POWER) ?
-			DUAL_ROLE_PROP_PR_SRC : DUAL_ROLE_PROP_PR_SNK;
+			TYPEC_SOURCE : TYPEC_SINK;
+		vr = (role & PD_CTRL_RESP_ROLE_VCONN) ?
+		  	TYPEC_SOURCE : TYPEC_SINK;
 		pd_mux_state = cros_ec_usb_get_pd_mux_state(info);
 		if (pd_mux_state < 0)
 			pd_mux_state = USB_PD_MUX_USB_ENABLED;
@@ -332,36 +245,30 @@ static int extcon_cros_ec_detect_cable(struct cros_ec_extcon_info *info,
 		hpd = pd_mux_state & USB_PD_MUX_HPD_IRQ;
 
 		dev_dbg(dev,
-			"connected role 0x%x pwr type %d dr %d pr %d pol %d mux %d dp %d hpd %d\n",
-			role, power_type, dr, pr, polarity, mux, dp, hpd);
+			"connected role 0x%x dr %d pr %d pol %d mux %d dp %d hpd %d\n",
+			role, dr, pr, polarity, mux, dp, hpd);
 	}
 
-	/*
-	 * When there is no USB host (e.g. USB PD charger),
-	 * we are not really a UFP for the AP.
-	 */
-	if (dr == DUAL_ROLE_PROP_DR_DEVICE &&
-	    cros_ec_usb_power_type_is_wall_wart(power_type, role))
-		dr = DUAL_ROLE_PROP_DR_NONE;
-
-	if (force || info->dr != dr || info->pr != pr || info->dp != dp ||
-	    info->mux != mux || info->power_type != power_type) {
+	if (force || info->connected != connected || info->dr != dr ||
+	    info->pr != pr || info->dp != dp || info->mux != mux ||
+	    info->vr != vr) {
 		bool host_connected = false, device_connected = false;
 
-		dev_dbg(dev, "Type/Role switch! type = %s role = %s\n",
-			cros_ec_usb_power_type_string(power_type),
-			cros_ec_usb_role_string(dr));
+		dev_dbg(dev, "Role switch! role = %s\n",
+			cros_ec_usb_role_string(connected, dr));
+		info->connected = connected;
 		info->dr = dr;
 		info->pr = pr;
 		info->dp = dp;
 		info->mux = mux;
-		info->power_type = power_type;
-		info->writeable = cros_ec_usb_role_is_writeable(role);
+		info->vr = vr;
 
-		if (dr == DUAL_ROLE_PROP_DR_DEVICE)
-			device_connected = true;
-		else if (dr == DUAL_ROLE_PROP_DR_HOST)
-			host_connected = true;
+		if (connected) {
+			if (dr == TYPEC_DEVICE)
+				device_connected = true;
+			else
+				host_connected = true;
+		}
 
 		extcon_set_state(info->edev, EXTCON_USB, device_connected);
 		extcon_set_state(info->edev, EXTCON_USB_HOST, host_connected);
@@ -400,7 +307,28 @@ static int extcon_cros_ec_detect_cable(struct cros_ec_extcon_info *info,
 		extcon_sync(info->edev, EXTCON_DISP_DP);
 
 		wake_up_all(&info->role_wait);
-		dual_role_instance_changed(info->drp_inst);
+
+		if (connected) {
+			if (!info->partner) {
+				info->partner_desc.usb_pd = pd_capable;
+				info->partner_desc.accessory = 0;
+				// TODO: Set partner identity if available
+				info->partner =
+				  typec_register_partner(info->typec_port,
+							 &info->partner_desc);
+			}
+			typec_set_data_role(info->typec_port, dr);
+			typec_set_pwr_role(info->typec_port, pr);
+			typec_set_vconn_role(info->typec_port, vr);
+			// FIXME
+			typec_set_pwr_opmode(info->typec_port,
+					     pr == TYPEC_SOURCE ?
+					     	TYPEC_PWR_MODE_PD :
+						TYPEC_PWR_MODE_USB);
+		} else if (info->partner) {
+			typec_unregister_partner(info->partner);
+			info->partner = NULL;
+		}
 	} else if (hpd) {
 		extcon_set_property(info->edev, EXTCON_DISP_DP,
 				    EXTCON_PROP_DISP_HPD,
@@ -429,29 +357,22 @@ static int extcon_cros_ec_event(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
-static bool extcon_cros_ec_has_vconn(struct cros_ec_extcon_info *info)
+static inline struct cros_ec_extcon_info *
+typec_cap_to_info(const struct typec_capability *cap)
 {
-	bool polarity;
-	int role;
-
-	role = cros_ec_usb_get_role(info, &polarity);
-
-	return (role >= 0) && (role & PD_CTRL_RESP_ROLE_VCONN);
+        return container_of(cap, struct cros_ec_extcon_info, typec_caps);
 }
 
-static int extcon_cros_ec_force_data_role(struct cros_ec_extcon_info *info,
-					   unsigned int new_dr)
+static int extcon_cros_ec_dr_set(const struct typec_capability *cap,
+				 enum typec_data_role new_dr)
 {
+	struct cros_ec_extcon_info *info = typec_cap_to_info(cap);
 	struct device *dev = info->dev;
 	struct ec_params_usb_pd_control pd_control;
 	struct ec_response_usb_pd_control_v1 resp;
 	int ret;
 
 	dev_info(dev, "Force Data Role to %d (from %d)\n", new_dr, info->dr);
-
-	if ((new_dr != DUAL_ROLE_PROP_DR_HOST) &&
-	    (new_dr != DUAL_ROLE_PROP_DR_DEVICE))
-		return -EINVAL;
 
 	if (new_dr == info->dr)
 		return 0;
@@ -464,7 +385,7 @@ static int extcon_cros_ec_force_data_role(struct cros_ec_extcon_info *info,
 				 &pd_control, sizeof(pd_control),
 				 &resp, sizeof(resp));
 	dev_dbg(dev, "EC data swap to %s = %d\n",
-		new_dr == DUAL_ROLE_PROP_DR_HOST ? "dfp" : "ufp", ret);
+		new_dr == TYPEC_HOST ? "dfp" : "ufp", ret);
 	if (ret < 0)
 		return ret;
 
@@ -477,9 +398,10 @@ static int extcon_cros_ec_force_data_role(struct cros_ec_extcon_info *info,
 	return ret == 0 ? -ETIMEDOUT : ret;
 }
 
-static int extcon_cros_ec_force_power_role(struct cros_ec_extcon_info *info,
-					   unsigned int new_pr)
+static int extcon_cros_ec_pr_set(const struct typec_capability *cap,
+				 enum typec_role new_pr)
 {
+	struct cros_ec_extcon_info *info = typec_cap_to_info(cap);
 	struct device *dev = info->dev;
 	struct ec_params_charge_port_override p;
 	int ret;
@@ -490,13 +412,12 @@ static int extcon_cros_ec_force_power_role(struct cros_ec_extcon_info *info,
 		return 0;
 
 	switch (new_pr) {
-	case DUAL_ROLE_PROP_PR_SRC:
+	case TYPEC_SOURCE:
 		p.override_port = OVERRIDE_DONT_CHARGE;
 		break;
-	case DUAL_ROLE_PROP_PR_SNK:
+	case TYPEC_SINK:
 		p.override_port = 0;
 		break;
-	case DUAL_ROLE_PROP_PR_NONE:
 	default:
 		return -EINVAL;
 	}
@@ -516,95 +437,6 @@ static int extcon_cros_ec_force_power_role(struct cros_ec_extcon_info *info,
 
 	return ret == 0 ? -ETIMEDOUT : ret;
 }
-
-static int extcon_drp_get_prop(struct dual_role_phy_instance *inst,
-			enum dual_role_property prop,
-			unsigned int *val)
-{
-	struct cros_ec_extcon_info *info = dual_role_get_drvdata(inst);
-	int ret = 0;
-
-	if (!info)
-		return -EINVAL;
-
-	switch (prop) {
-	case DUAL_ROLE_PROP_MODE:
-		*val = info->pr == DUAL_ROLE_PROP_PR_SRC ?
-			DUAL_ROLE_PROP_MODE_DFP :
-			(info->pr == DUAL_ROLE_PROP_PR_SNK ?
-				DUAL_ROLE_PROP_MODE_UFP :
-				DUAL_ROLE_PROP_MODE_NONE);
-		break;
-	case DUAL_ROLE_PROP_PR:
-		*val = info->pr;
-		break;
-	case DUAL_ROLE_PROP_DR:
-		*val = info->dr;
-		break;
-	case DUAL_ROLE_PROP_VCONN_SUPPLY:
-		*val = extcon_cros_ec_has_vconn(info);
-		break;
-	default:
-		ret = -EINVAL;
-	}
-
-	return ret;
-}
-
-static int extcon_drp_is_writeable(struct dual_role_phy_instance *inst,
-				enum dual_role_property prop)
-{
-	struct cros_ec_extcon_info *info = dual_role_get_drvdata(inst);
-
-	if (info)
-		return info->writeable & (1 << prop);
-	else /* Not initialized yet */
-		return (prop == DUAL_ROLE_PROP_PR) ||
-		       (prop == DUAL_ROLE_PROP_DR);
-}
-
-static int extcon_drp_set_prop(struct dual_role_phy_instance *inst,
-				enum dual_role_property prop,
-				const unsigned int *val)
-{
-	struct cros_ec_extcon_info *info = dual_role_get_drvdata(inst);
-	int ret = 0;
-
-	if (!info)
-		return -EINVAL;
-
-	switch (prop) {
-	case DUAL_ROLE_PROP_PR:
-		ret = extcon_cros_ec_force_power_role(info, *val);
-		break;
-	case DUAL_ROLE_PROP_DR:
-		ret = extcon_cros_ec_force_data_role(info, *val);
-		break;
-	case DUAL_ROLE_PROP_MODE:
-	case DUAL_ROLE_PROP_VCONN_SUPPLY:
-	default:
-		ret = -EINVAL;
-	}
-
-	return ret;
-}
-
-static enum dual_role_property extcon_drp_properties[] = {
-	DUAL_ROLE_PROP_MODE,
-	DUAL_ROLE_PROP_PR,
-	DUAL_ROLE_PROP_DR,
-	DUAL_ROLE_PROP_VCONN_SUPPLY,
-};
-
-static struct dual_role_phy_desc extcon_drp_desc = {
-		.name = "otg_default",
-		.supported_modes = DUAL_ROLE_SUPPORTED_MODES_DFP_AND_UFP,
-		.properties = extcon_drp_properties,
-		.num_properties = ARRAY_SIZE(extcon_drp_properties),
-		.get_property = extcon_drp_get_prop,
-		.set_property = extcon_drp_set_prop,
-		.property_is_writeable = extcon_drp_is_writeable,
-};
 
 static int extcon_cros_ec_probe(struct platform_device *pdev)
 {
@@ -677,19 +509,23 @@ static int extcon_cros_ec_probe(struct platform_device *pdev)
 	extcon_set_property_capability(info->edev, EXTCON_DISP_DP,
 				       EXTCON_PROP_DISP_HPD);
 
-	info->dr = DUAL_ROLE_PROP_DR_NONE;
-	info->pr = DUAL_ROLE_PROP_PR_NONE;
+	info->dr = -1;
+	info->pr = -1;
+	info->connected = false;
 	init_waitqueue_head(&info->role_wait);
 
 	platform_set_drvdata(pdev, info);
 
-	if (IS_ENABLED(CONFIG_DUAL_ROLE_USB_INTF)) {
-		struct dual_role_phy_instance *inst;
+	info->typec_caps.prefer_role = TYPEC_SINK;
+	info->typec_caps.type = TYPEC_PORT_DRP;
+	info->typec_caps.revision = 0x0120;
+	info->typec_caps.pd_revision = 0x0200;
+	info->typec_caps.dr_set = extcon_cros_ec_dr_set;
+	info->typec_caps.pr_set = extcon_cros_ec_pr_set;
 
-		inst = devm_dual_role_instance_register(dev, &extcon_drp_desc);
-		inst->drv_data = info;
-		info->drp_inst = inst;
-	}
+	info->typec_port = typec_register_port(dev, &info->typec_caps);
+	if (!info->typec_port)
+		return -ENOMEM;
 
 	/* Get PD events from the EC */
 	info->notifier.notifier_call = extcon_cros_ec_event;
@@ -697,7 +533,7 @@ static int extcon_cros_ec_probe(struct platform_device *pdev)
 					       &info->notifier);
 	if (ret < 0) {
 		dev_err(dev, "failed to register notifier\n");
-		return ret;
+		goto unregister_port;
 	}
 
 	/* Perform initial detection */
@@ -712,19 +548,19 @@ static int extcon_cros_ec_probe(struct platform_device *pdev)
 unregister_notifier:
 	blocking_notifier_chain_unregister(&info->ec->event_notifier,
 					   &info->notifier);
+unregister_port:
+	typec_unregister_port(info->typec_port);
 	return ret;
 }
 
 static int extcon_cros_ec_remove(struct platform_device *pdev)
 {
 	struct cros_ec_extcon_info *info = platform_get_drvdata(pdev);
-	struct device *dev = &pdev->dev;
-
-	if (IS_ENABLED(CONFIG_DUAL_ROLE_USB_INTF))
-		devm_dual_role_instance_unregister(dev, info->drp_inst);
 
 	blocking_notifier_chain_unregister(&info->ec->event_notifier,
 					   &info->notifier);
+
+	typec_unregister_port(info->typec_port);
 
 	return 0;
 }
