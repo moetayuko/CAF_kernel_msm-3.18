@@ -852,6 +852,11 @@ static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, int *sectors,
 		*sectors = transport_get_sectors_10(cdb);
 		cmd->t_task_lba = transport_lba_32(cdb);
 		break;
+	case VERIFY_12:
+	case WRITE_VERIFY_12:
+		*sectors = transport_get_sectors_12(cdb);
+		cmd->t_task_lba = transport_lba_32(cdb);
+		break;
 	case VERIFY_16:
 	case WRITE_VERIFY_16:
 		*sectors = transport_get_sectors_16(cdb);
@@ -967,6 +972,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		cmd->execute_cmd = sbc_execute_rw;
 		break;
 	case WRITE_VERIFY:
+	case WRITE_VERIFY_12:
 	case WRITE_VERIFY_16:
 		ret = sbc_parse_verify(cmd, &sectors, &size);
 		if (ret)
@@ -1169,6 +1175,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 			return ret;
 		break;
 	case VERIFY:
+	case VERIFY_12:
 	case VERIFY_16:
 		ret = sbc_parse_verify(cmd, &sectors, &size);
 		if (ret)
