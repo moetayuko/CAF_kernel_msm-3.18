@@ -109,6 +109,9 @@ struct pd_message {
 	__le32 payload[PD_MAX_PAYLOAD];
 } __packed;
 
+/* VDO: Vendor Data Object */
+#define VDO_MAX_OBJECTS		6
+
 /* PDO: Power Data Object */
 #define PDO_MAX_OBJECTS		7
 
