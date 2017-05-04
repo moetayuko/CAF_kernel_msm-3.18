@@ -38,6 +38,7 @@ config EXTCON_AXP288
 config EXTCON_CROS_EC
 	tristate "ChromeOS EC extcon support"
 	depends on MFD_CROS_EC
+	select TYPEC
 	help
 	  Say Y here to enable USB Type C cable detection extcon support when
 	  using Chrome OS EC based USB Type-C ports.
