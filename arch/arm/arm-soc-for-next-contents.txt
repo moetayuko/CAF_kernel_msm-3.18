@@ -1,4 +1,15 @@
 fixes
+	<no branch> (62e24c5775ecb387a3eb33701378ccfa6dbc98ee)
+		git://git.pengutronix.de/git/pza/linux tags/reset-fixes-for-4.11-2
+	<no branch> (0d98479738b950e30bb4f782d60099d44076ad67)
+		https://git.kernel.org/pub/scm/linux/kernel/git/sunxi/linux tags/sunxi-fixes-for-4.11-2
+	<no branch> (d43e85b7d7c759a01f92fa09bba5d6eb6e406795)
+		git://git.infradead.org/linux-mvebu tags/mvebu-fixes-4.11-1
+	<no branch> (04abaf07f6d5cdf22b7a478a86e706dfeeeef960)
+		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v4.11/fixes-rc6-signed
+		contains omap/fixes
+	patch
+		ARM: omap2+: make omap4_get_cpu1_ns_pa_addr declaration usable
 
 next/fixes-non-critical
 	oxnas/soc
@@ -58,6 +69,8 @@ next/arm64
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-soc64-4.12
 	mvebu/defconfig2
 		git://git.infradead.org/linux-mvebu tags/mvebu-defconfig64-4.12-2
+	patch
+		arm64: sunxi: always enable reset controller
 
 next/dt
 	gemini/dts
@@ -131,6 +144,10 @@ next/dt
 		arm: spear6xx: switch spear600-evb to the new flash partition DT binding
 		arm: spear6xx: remove unneeded pinctrl properties in spear600-evb
 		arm: spear6xx: add DT description of the ADC on SPEAr600
+	vexpress/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/vexpress-dt-4.12
+	samsung/dt-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-dt-4.12-2
 
 next/dt64
 	shared/dt-symlinks
@@ -174,6 +191,12 @@ next/dt64
 		git://github.com/hisilicon/linux-hisi tags/hisi-arm64-dt-for-4.12
 	mvevu/dt64
 		git://git.infradead.org/linux-mvebu tags/mvebu-dt64-4.12-2
+	juno/fixes
+		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/juno-fixes-4.12
+	samsung/dt64-3
+		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-dt64-4.12-3
+	patch
+		arm64: dts: Add basic DT to support Spreadtrum's SP9860G
 
 next/defconfig
 	patch
@@ -229,12 +252,14 @@ next/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator tags/arm-to-clk-icst
 	imx/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-drivers-4.12
-	zte-drivers
+	<no branch> (71ce8430348f989d0c78871828d96e0e616056dd)
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/zte-drivers-4.12
 	renesas/sysc
 		https://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas tags/renesas-sysc-for-v4.12
 	samsung/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-drivers-4.12
+	keystone/soc-fix
+		git://git.kernel.org/pub/scm/linux/kernel/git/ssantosh/linux-keystone for_4.12/soc-pmdomain-p2
 
 next/tee
 	tee/initial-merge
