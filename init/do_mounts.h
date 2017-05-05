@@ -77,7 +77,7 @@ static inline void md_run_setup(void) {}
 
 #ifdef CONFIG_BLK_DEV_DM
 
-void dm_run_setup(void);
+void __init dm_run_setup(void);
 
 #else
 
