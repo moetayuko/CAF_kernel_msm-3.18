@@ -3917,8 +3917,8 @@ F:	drivers/dma-buf/
 F:	include/linux/dma-buf*
 F:	include/linux/reservation.h
 F:	include/linux/*fence.h
-F:	Documentation/dma-buf-sharing.txt
-T:	git git://git.linaro.org/people/sumitsemwal/linux-dma-buf.git
+F:	Documentation/driver-api/dma-buf.rst
+T:	git git://anongit.freedesktop.org/drm/drm-misc
 
 SYNC FILE FRAMEWORK
 M:	Sumit Semwal <sumit.semwal@linaro.org>
