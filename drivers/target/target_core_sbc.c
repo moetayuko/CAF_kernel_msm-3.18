@@ -836,10 +836,8 @@ sbc_check_dpofua(struct se_device *dev, struct se_cmd *cmd, unsigned char *cdb)
  * @cmd:     (in)  structure that describes the SCSI command to be parsed.
  * @sectors: (out) Number of logical blocks on the storage medium that will be
  *           affected by the SCSI command.
- * @bufflen: (out) Expected length of the SCSI Data-Out buffer.
  */
-static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, int *sectors,
-				       u32 *bufflen)
+static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, unsigned int *sectors)
 {
 	struct se_device *dev = cmd->se_dev;
 	u8 *cdb = cmd->t_task_cdb;
@@ -871,10 +869,7 @@ static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, int *sectors,
 
 	switch (bytchk) {
 	case 0:
-		*bufflen = 0;
-		break;
 	case 1:
-		*bufflen = sbc_get_size(cmd, *sectors);
 		cmd->se_cmd_flags |= SCF_SCSI_DATA_CDB;
 		break;
 	default:
@@ -967,7 +962,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		break;
 	case WRITE_VERIFY:
 	case WRITE_VERIFY_16:
-		ret = sbc_parse_verify(cmd, &sectors, &size);
+		ret = sbc_parse_verify(cmd, &sectors);
 		if (ret)
 			return ret;
 		cmd->execute_cmd = sbc_execute_rw;
@@ -1169,7 +1164,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		break;
 	case VERIFY:
 	case VERIFY_16:
-		ret = sbc_parse_verify(cmd, &sectors, &size);
+		ret = sbc_parse_verify(cmd, &sectors);
 		if (ret)
 			return ret;
 		cmd->execute_cmd = sbc_emulate_noop;
