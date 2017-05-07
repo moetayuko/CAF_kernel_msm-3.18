@@ -1304,6 +1304,7 @@ void netdev_notify_peers(struct net_device *dev)
 {
 	rtnl_lock();
 	call_netdevice_notifiers(NETDEV_NOTIFY_PEERS, dev);
+	call_netdevice_notifiers(NETDEV_RESEND_IGMP, dev);
 	rtnl_unlock();
 }
 EXPORT_SYMBOL(netdev_notify_peers);
@@ -2448,6 +2449,9 @@ EXPORT_SYMBOL(netif_tx_wake_queue);
 void __dev_kfree_skb_irq(struct sk_buff *skb, enum skb_free_reason reason)
 {
 	unsigned long flags;
+
+	if (unlikely(!skb))
+		return;
 
 	if (likely(atomic_read(&skb->users) == 1)) {
 		smp_rmb();
@@ -6756,7 +6760,6 @@ int dev_change_xdp_fd(struct net_device *dev, int fd, u32 flags)
 
 	return err;
 }
-EXPORT_SYMBOL(dev_change_xdp_fd);
 
 /**
  *	dev_new_index	-	allocate an ifindex
