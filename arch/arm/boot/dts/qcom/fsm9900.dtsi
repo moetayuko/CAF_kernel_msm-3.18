@@ -314,6 +314,12 @@
 			qcom,smdpkt-dev-name = "smd_data_2";
 		};
 
+		qcom,smdpkt-tf_1 {
+			qcom,smdpkt-remote = "hex1";
+			qcom,smdpkt-port-name = "TESTFRAMEWORK_1";
+			qcom,smdpkt-dev-name = "smd_tf_1";
+		};
+
 		qcom,smdpkt-infra_test_2 {
 			qcom,smdpkt-remote = "hex1";
 			qcom,smdpkt-port-name = "INFRA_TEST_2";
@@ -336,6 +342,12 @@
 			qcom,smdpkt-remote = "hex2";
 			qcom,smdpkt-port-name = "TESTFRAMEWORK";
 			qcom,smdpkt-dev-name = "smd_tf_0";
+		};
+
+		qcom,smdpkt-tf_2 {
+			qcom,smdpkt-remote = "hex2";
+			qcom,smdpkt-port-name = "TESTFRAMEWORK_2";
+			qcom,smdpkt-dev-name = "smd_tf_2";
 		};
 
 		qcom,smdpkt-infra_test_0 {
