@@ -4077,10 +4077,12 @@ static unsigned int binder_poll(struct file *filp,
 				struct poll_table_struct *wait)
 {
 	struct binder_proc *proc = filp->private_data;
-	struct binder_thread *thread = NULL;
+	struct binder_thread *thread;
 	int wait_for_proc_work;
 
 	thread = binder_get_thread(proc);
+	if (!thread)
+		return POLLERR;
 
 	binder_inner_proc_lock(thread->proc);
 	wait_for_proc_work = thread->transaction_stack == NULL &&
