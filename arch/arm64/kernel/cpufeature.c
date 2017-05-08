@@ -966,6 +966,7 @@ static void __init setup_elf_hwcaps(const struct arm64_cpu_capabilities *hwcaps)
 			cap_set_elf_hwcap(hwcaps);
 }
 
+/* Should be called with CPU hotplug lock held */
 void update_cpu_capabilities(const struct arm64_cpu_capabilities *caps,
 			    const char *info)
 {
@@ -1085,14 +1086,16 @@ void check_local_cpu_capabilities(void)
 	 * advertised capabilities.
 	 */
 	if (!sys_caps_initialised)
-		update_cpu_errata_workarounds();
+		update_cpu_errata_workarounds_cpuslocked();
 	else
 		verify_local_cpu_capabilities();
 }
 
 static void __init setup_feature_capabilities(void)
 {
+	get_online_cpus();
 	update_cpu_capabilities(arm64_features, "detected feature:");
+	put_online_cpus();
 	enable_cpu_capabilities(arm64_features);
 }
 
