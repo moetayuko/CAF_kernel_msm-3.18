@@ -98,7 +98,7 @@ void __gcov_merge_icall_topn(gcov_type *counters, unsigned int n_counters)
 }
 EXPORT_SYMBOL(__gcov_merge_icall_topn);
 
-void __gcov_exit (void)
+void __gcov_exit(void)
 {
 	/* Unused. */
 }
