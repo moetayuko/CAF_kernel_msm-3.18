@@ -111,7 +111,7 @@ struct acpi_button {
 	bool suspended;
 };
 
-static BLOCKING_NOTIFIER_HEAD(acpi_lid_notifier);
+static ATOMIC_NOTIFIER_HEAD(acpi_lid_notifier);
 static struct acpi_device *lid_device;
 static u8 lid_init_state = ACPI_BUTTON_LID_INIT_OPEN;
 
@@ -138,10 +138,9 @@ static int acpi_lid_evaluate_state(struct acpi_device *device)
 	return lid_state ? 1 : 0;
 }
 
-static int acpi_lid_notify_state(struct acpi_device *device, int state)
+static void acpi_lid_notify_state(struct acpi_device *device, int state)
 {
 	struct acpi_button *button = acpi_driver_data(device);
-	int ret;
 	ktime_t next_report;
 	bool do_update;
 
@@ -219,18 +218,7 @@ static int acpi_lid_notify_state(struct acpi_device *device, int state)
 	if (state)
 		pm_wakeup_event(&device->dev, 0);
 
-	ret = blocking_notifier_call_chain(&acpi_lid_notifier, state, device);
-	if (ret == NOTIFY_DONE)
-		ret = blocking_notifier_call_chain(&acpi_lid_notifier, state,
-						   device);
-	if (ret == NOTIFY_DONE || ret == NOTIFY_OK) {
-		/*
-		 * It is also regarded as success if the notifier_chain
-		 * returns NOTIFY_OK or NOTIFY_DONE.
-		 */
-		ret = 0;
-	}
-	return ret;
+	atomic_notifier_call_chain(&acpi_lid_notifier, state, device);
 }
 
 static int acpi_button_state_seq_show(struct seq_file *seq, void *offset)
@@ -341,13 +329,13 @@ static int acpi_button_remove_fs(struct acpi_device *device)
    -------------------------------------------------------------------------- */
 int acpi_lid_notifier_register(struct notifier_block *nb)
 {
-	return blocking_notifier_chain_register(&acpi_lid_notifier, nb);
+	return atomic_notifier_chain_register(&acpi_lid_notifier, nb);
 }
 EXPORT_SYMBOL(acpi_lid_notifier_register);
 
 int acpi_lid_notifier_unregister(struct notifier_block *nb)
 {
-	return blocking_notifier_chain_unregister(&acpi_lid_notifier, nb);
+	return atomic_notifier_chain_unregister(&acpi_lid_notifier, nb);
 }
 EXPORT_SYMBOL(acpi_lid_notifier_unregister);
 
@@ -368,7 +356,8 @@ static int acpi_lid_update_state(struct acpi_device *device)
 	if (state < 0)
 		return state;
 
-	return acpi_lid_notify_state(device, state);
+	acpi_lid_notify_state(device, state);
+	return 0;
 }
 
 static void acpi_lid_initialize_state(struct acpi_device *device)
