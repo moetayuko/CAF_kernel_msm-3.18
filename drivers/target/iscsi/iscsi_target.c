@@ -1570,9 +1570,11 @@ iscsit_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 {
 	struct kvec *iov;
 	u32 checksum, iov_count = 0, padding = 0, rx_got = 0, rx_size = 0;
-	u32 payload_length = ntoh24(hdr->dlength);
+	u32 payload_length;
 	int iov_ret, data_crc_failed = 0;
 
+	payload_length = min_t(u32, cmd->se_cmd.data_length,
+			       ntoh24(hdr->dlength));
 	rx_size += payload_length;
 	iov = &cmd->iov_data[0];
 
@@ -2583,14 +2585,31 @@ static int iscsit_handle_immediate_data(
 	u32 checksum, iov_count = 0, padding = 0;
 	struct iscsi_conn *conn = cmd->conn;
 	struct kvec *iov;
+	void *dump_buf = NULL;
 
-	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data, cmd->write_data_done, length);
+	rx_size = min(cmd->se_cmd.data_length - cmd->write_data_done, length);
+	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data, cmd->write_data_done,
+				   rx_size);
 	if (iov_ret < 0)
 		return IMMEDIATE_DATA_CANNOT_RECOVER;
 
-	rx_size = length;
 	iov_count = iov_ret;
 	iov = &cmd->iov_data[0];
+	if (rx_size < length) {
+		/*
+		 * Special case: length of immediate data exceeds the data
+		 * buffer size derived from the CDB (overflow).
+		 */
+		dump_buf = kmalloc(length - rx_size, GFP_KERNEL);
+		if (!dump_buf) {
+			iscsit_unmap_iovec(cmd);
+			return IMMEDIATE_DATA_CANNOT_RECOVER;
+		}
+		iov[iov_count].iov_base = dump_buf;
+		iov[iov_count].iov_len = length - rx_size;
+		iov_count++;
+		rx_size = length;
+	}
 
 	padding = ((-length) & 3);
 	if (padding != 0) {
@@ -2607,6 +2626,7 @@ static int iscsit_handle_immediate_data(
 
 	rx_got = rx_data(conn, &cmd->iov_data[0], iov_count, rx_size);
 
+	kfree(dump_buf);
 	iscsit_unmap_iovec(cmd);
 
 	if (rx_got != rx_size) {
