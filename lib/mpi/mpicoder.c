@@ -137,11 +137,12 @@ static int count_lzeros(MPI a)
  *		the data to-be-written on -EOVERFLOW in case buf_len was too
  *		small.
  * @sign:	if not NULL, it will be set to the sign of a.
+ * @skip_lzeros:Skip the leading zeros of the MPI before writing to buffer.
  *
  * Return:	0 on success or error code in case of error
  */
 int mpi_read_buffer(MPI a, uint8_t *buf, unsigned buf_len, unsigned *nbytes,
-		    int *sign)
+		    int *sign, bool skip_lzeros)
 {
 	uint8_t *p;
 #if BYTES_PER_MPI_LIMB == 4
@@ -152,7 +153,7 @@ int mpi_read_buffer(MPI a, uint8_t *buf, unsigned buf_len, unsigned *nbytes,
 #error please implement for this limb size.
 #endif
 	unsigned int n = mpi_get_size(a);
-	int i, lzeros;
+	int i, lzeros = 0;
 
 	if (!buf || !nbytes)
 		return -EINVAL;
@@ -160,7 +161,8 @@ int mpi_read_buffer(MPI a, uint8_t *buf, unsigned buf_len, unsigned *nbytes,
 	if (sign)
 		*sign = a->sign;
 
-	lzeros = count_lzeros(a);
+	if (skip_lzeros)
+		lzeros = count_lzeros(a);
 
 	if (buf_len < n - lzeros) {
 		*nbytes = n - lzeros;
@@ -219,7 +221,7 @@ void *mpi_get_buffer(MPI a, unsigned *nbytes, int *sign)
 	if (!buf)
 		return NULL;
 
-	ret = mpi_read_buffer(a, buf, n, nbytes, sign);
+	ret = mpi_read_buffer(a, buf, n, nbytes, sign, true);
 
 	if (ret) {
 		kfree(buf);
