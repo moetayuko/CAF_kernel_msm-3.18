@@ -1060,10 +1060,8 @@ static int __elevator_change(struct request_queue *q, const char *name)
 		return elevator_switch(q, NULL);
 
 	e = elevator_get(name, true);
-	if (!e) {
-		printk(KERN_ERR "elevator: type %s not found\n", name);
+	if (!e)
 		return -EINVAL;
-	}
 
 	if (q->elevator &&
 	    !strcmp(name, q->elevator->type->elevator_name)) {
@@ -1106,7 +1104,6 @@ ssize_t elv_iosched_store(struct request_queue *q, const char *name,
 	if (!ret)
 		return count;
 
-	printk(KERN_ERR "elevator: switch to %s failed\n", elevator_name);
 	return ret;
 }
 
