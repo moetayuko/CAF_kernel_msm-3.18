@@ -126,7 +126,7 @@ static int check_acpi_tpm2(struct device *dev)
 	return 0;
 }
 #else
-static int check_acpi_tpm2(struct acpi_device *dev)
+static int check_acpi_tpm2(struct device *dev)
 {
 	return 0;
 }
