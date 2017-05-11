@@ -135,9 +135,9 @@ config CRYPTO_DES_S390
 config CRYPTO_AES_S390
 	tristate "AES cipher algorithms"
 	depends on S390
+	depends on PKEY
 	select CRYPTO_ALGAPI
 	select CRYPTO_BLKCIPHER
-	select PKEY
 	help
 	  This is the s390 hardware accelerated implementation of the
 	  AES cipher algorithms (FIPS-197).
