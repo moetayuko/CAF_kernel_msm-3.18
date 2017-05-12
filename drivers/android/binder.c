@@ -491,7 +491,7 @@ static inline void *kzalloc_preempt_disabled(size_t size)
 {
 	void *ptr;
 
-	ptr = kzalloc(size, GFP_NOWAIT);
+	ptr = kzalloc(size, GFP_NOWAIT | __GFP_NOWARN);
 	if (ptr)
 		return ptr;
 
