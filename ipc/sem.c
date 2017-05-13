@@ -475,6 +475,7 @@ static int newary(struct ipc_namespace *ns, struct ipc_params *params)
 {
 	int id;
 	int retval;
+	void *sem_alloc;
 	struct sem_array *sma;
 	int size;
 	key_t key = params->key;
@@ -488,11 +489,14 @@ static int newary(struct ipc_namespace *ns, struct ipc_params *params)
 		return -ENOSPC;
 
 	size = sizeof(*sma) + nsems * sizeof(struct sem);
-	sma = ipc_rcu_alloc(size);
-	if (!sma)
+	sem_alloc = ipc_rcu_alloc(size);
+	if (!sem_alloc)
 		return -ENOMEM;
 
-	memset(sma, 0, size);
+	memset(sem_alloc, 0, size);
+
+	sma = sem_alloc;
+	sma->sem_base = sem_alloc + sizeof(*sma);
 
 	sma->sem_perm.mode = (semflg & S_IRWXUGO);
 	sma->sem_perm.key = key;
@@ -503,8 +507,6 @@ static int newary(struct ipc_namespace *ns, struct ipc_params *params)
 		ipc_rcu_putref(sma, ipc_rcu_free);
 		return retval;
 	}
-
-	sma->sem_base = (struct sem *) &sma[1];
 
 	for (i = 0; i < nsems; i++) {
 		INIT_LIST_HEAD(&sma->sem_base[i].pending_alter);
