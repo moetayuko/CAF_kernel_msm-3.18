@@ -286,7 +286,11 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 	struct super_block *sb = lower->d_sb;
 	uuid_be *uuid = (uuid_be *) &sb->s_uuid;
 	const struct ovl_fh *fh = NULL;
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 	int err;
+
+	if (ofs->nooriginxattr)
+		return 0;
 
 	/*
 	 * When lower layer doesn't support export operations store a 'null' fh,
@@ -302,6 +306,15 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 
 	err = ovl_do_setxattr(upper, OVL_XATTR_ORIGIN, fh, fh ? fh->len : 0, 0);
 	kfree(fh);
+
+	/*
+	 * Do not fail when upper doesn't support xattrs.
+	 */
+	if (err == -EOPNOTSUPP) {
+		pr_warn("overlayfs: cannot set " OVL_XATTR_ORIGIN " xattr on upper\n");
+		ofs->nooriginxattr = true;
+		return 0;
+	}
 
 	return err;
 }
