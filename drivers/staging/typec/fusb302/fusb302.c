@@ -489,7 +489,7 @@ static int tcpm_init(struct tcpc_dev *dev)
 	ret = fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data);
 	if (ret < 0)
 		return ret;
-	chip->vbus_present = !!(FUSB_REG_STATUS0 & FUSB_REG_STATUS0_VBUSOK);
+	chip->vbus_present = !!(data & FUSB_REG_STATUS0_VBUSOK);
 	ret = fusb302_i2c_read(chip, FUSB_REG_DEVICE_ID, &data);
 	if (ret < 0)
 		return ret;
@@ -1025,7 +1025,7 @@ static int fusb302_pd_send_message(struct fusb302_chip *chip,
 	buf[pos++] = FUSB302_TKN_SYNC1;
 	buf[pos++] = FUSB302_TKN_SYNC2;
 
-	len = pd_header_cnt(msg->header) * 4;
+	len = pd_header_cnt_le(msg->header) * 4;
 	/* plug 2 for header */
 	len += 2;
 	if (len > 0x1F) {
@@ -1481,7 +1481,7 @@ static int fusb302_pd_read_message(struct fusb302_chip *chip,
 				     (u8 *)&msg->header);
 	if (ret < 0)
 		return ret;
-	len = pd_header_cnt(msg->header) * 4;
+	len = pd_header_cnt_le(msg->header) * 4;
 	/* add 4 to length to include the CRC */
 	if (len > PD_MAX_PAYLOAD * 4) {
 		fusb302_log(chip, "PD message too long %d", len);
@@ -1663,14 +1663,12 @@ static int init_gpio(struct fusb302_chip *chip)
 	if (ret < 0) {
 		fusb302_log(chip,
 			    "cannot set GPIO Int_N to input, ret=%d", ret);
-		gpio_free(chip->gpio_int_n);
 		return ret;
 	}
 	ret = gpio_to_irq(chip->gpio_int_n);
 	if (ret < 0) {
 		fusb302_log(chip,
 			    "cannot request IRQ for GPIO Int_N, ret=%d", ret);
-		gpio_free(chip->gpio_int_n);
 		return ret;
 	}
 	chip->gpio_int_n_irq = ret;
@@ -1787,11 +1785,13 @@ static const struct of_device_id fusb302_dt_match[] = {
 	{.compatible = "fcs,fusb302"},
 	{},
 };
+MODULE_DEVICE_TABLE(of, fusb302_dt_match);
 
 static const struct i2c_device_id fusb302_i2c_device_id[] = {
 	{"typec_fusb302", 0},
 	{},
 };
+MODULE_DEVICE_TABLE(i2c, fusb302_i2c_device_id);
 
 static const struct dev_pm_ops fusb302_pm_ops = {
 	.suspend = fusb302_pm_suspend,
