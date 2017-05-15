@@ -4021,10 +4021,12 @@ static void unaccount_event(struct perf_event *event)
 
 static void perf_sched_delayed(struct work_struct *work)
 {
+	get_online_cpus();
 	mutex_lock(&perf_sched_mutex);
 	if (atomic_dec_and_test(&perf_sched_count))
-		static_branch_disable(&perf_sched_events);
+		static_branch_disable_cpuslocked(&perf_sched_events);
 	mutex_unlock(&perf_sched_mutex);
+	put_online_cpus();
 }
 
 /*
@@ -4340,7 +4342,15 @@ EXPORT_SYMBOL_GPL(perf_event_release_kernel);
  */
 static int perf_release(struct inode *inode, struct file *file)
 {
-	perf_event_release_kernel(file->private_data);
+	/*
+	 * The error exit path of sys_perf_event_open() might have released
+	 * the event already and cleared file->private_data.
+	 */
+	if (file->private_data) {
+		get_online_cpus();
+		perf_event_release_kernel(file->private_data);
+		put_online_cpus();
+	}
 	return 0;
 }
 
@@ -7724,7 +7734,6 @@ static int swevent_hlist_get(void)
 {
 	int err, cpu, failed_cpu;
 
-	get_online_cpus();
 	for_each_possible_cpu(cpu) {
 		err = swevent_hlist_get_cpu(cpu);
 		if (err) {
@@ -7732,8 +7741,6 @@ static int swevent_hlist_get(void)
 			goto fail;
 		}
 	}
-	put_online_cpus();
-
 	return 0;
 fail:
 	for_each_possible_cpu(cpu) {
@@ -7741,8 +7748,6 @@ fail:
 			break;
 		swevent_hlist_put_cpu(cpu);
 	}
-
-	put_online_cpus();
 	return err;
 }
 
@@ -7754,7 +7759,7 @@ static void sw_perf_event_destroy(struct perf_event *event)
 
 	WARN_ON(event->parent);
 
-	static_key_slow_dec(&perf_swevent_enabled[event_id]);
+	static_key_slow_dec_cpuslocked(&perf_swevent_enabled[event_id]);
 	swevent_hlist_put();
 }
 
@@ -7790,7 +7795,7 @@ static int perf_swevent_init(struct perf_event *event)
 		if (err)
 			return err;
 
-		static_key_slow_inc(&perf_swevent_enabled[event_id]);
+		static_key_slow_inc_cpuslocked(&perf_swevent_enabled[event_id]);
 		event->destroy = sw_perf_event_destroy;
 	}
 
@@ -9299,7 +9304,7 @@ static void account_event(struct perf_event *event)
 
 		mutex_lock(&perf_sched_mutex);
 		if (!atomic_read(&perf_sched_count)) {
-			static_branch_enable(&perf_sched_events);
+			static_key_slow_inc_cpuslocked(&perf_sched_events.key);
 			/*
 			 * Guarantee that all CPUs observe they key change and
 			 * call the perf scheduling hooks before proceeding to
@@ -9882,12 +9887,10 @@ SYSCALL_DEFINE5(perf_event_open,
 		goto err_task;
 	}
 
-	get_online_cpus();
-
 	if (task) {
 		err = mutex_lock_interruptible(&task->signal->cred_guard_mutex);
 		if (err)
-			goto err_cpus;
+			goto err_task;
 
 		/*
 		 * Reuse ptrace permission checks for now.
@@ -9905,11 +9908,13 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (flags & PERF_FLAG_PID_CGROUP)
 		cgroup_fd = pid;
 
+	get_online_cpus();
+
 	event = perf_event_alloc(&attr, cpu, task, group_leader, NULL,
 				 NULL, NULL, cgroup_fd);
 	if (IS_ERR(event)) {
 		err = PTR_ERR(event);
-		goto err_cred;
+		goto err_cpus;
 	}
 
 	if (is_sampling_event(event)) {
@@ -10157,12 +10162,12 @@ SYSCALL_DEFINE5(perf_event_open,
 		perf_event_ctx_unlock(group_leader, gctx);
 	mutex_unlock(&ctx->mutex);
 
+	put_online_cpus();
+
 	if (task) {
 		mutex_unlock(&task->signal->cred_guard_mutex);
 		put_task_struct(task);
 	}
-
-	put_online_cpus();
 
 	mutex_lock(&current->perf_event_mutex);
 	list_add_tail(&event->owner_entry, &current->perf_event_list);
@@ -10183,6 +10188,12 @@ err_locked:
 		perf_event_ctx_unlock(group_leader, gctx);
 	mutex_unlock(&ctx->mutex);
 /* err_file: */
+	/*
+	 * Release the event manually to avoid hotplug lock recursion in
+	 * perf_release().
+	 */
+	event_file->private_data = NULL;
+	perf_event_release_kernel(event);
 	fput(event_file);
 err_context:
 	perf_unpin_context(ctx);
@@ -10194,11 +10205,11 @@ err_alloc:
 	 */
 	if (!event_file)
 		free_event(event);
+err_cpus:
+	put_online_cpus();
 err_cred:
 	if (task)
 		mutex_unlock(&task->signal->cred_guard_mutex);
-err_cpus:
-	put_online_cpus();
 err_task:
 	if (task)
 		put_task_struct(task);
@@ -10226,10 +10237,10 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	struct perf_event *event;
 	int err;
 
+	get_online_cpus();
 	/*
 	 * Get the target context (task or percpu):
 	 */
-
 	event = perf_event_alloc(attr, cpu, task, NULL, NULL,
 				 overflow_handler, context, -1);
 	if (IS_ERR(event)) {
@@ -10261,7 +10272,7 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	perf_install_in_context(ctx, event, cpu);
 	perf_unpin_context(ctx);
 	mutex_unlock(&ctx->mutex);
-
+	put_online_cpus();
 	return event;
 
 err_unlock:
@@ -10271,6 +10282,7 @@ err_unlock:
 err_free:
 	free_event(event);
 err:
+	put_online_cpus();
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(perf_event_create_kernel_counter);
@@ -10504,8 +10516,10 @@ void perf_event_exit_task(struct task_struct *child)
 	}
 	mutex_unlock(&child->perf_event_mutex);
 
+	get_online_cpus();
 	for_each_task_context_nr(ctxn)
 		perf_event_exit_task_context(child, ctxn);
+	put_online_cpus();
 
 	/*
 	 * The perf_event_exit_task_context calls perf_event_task
@@ -10550,6 +10564,7 @@ void perf_event_free_task(struct task_struct *task)
 	struct perf_event *event, *tmp;
 	int ctxn;
 
+	get_online_cpus();
 	for_each_task_context_nr(ctxn) {
 		ctx = task->perf_event_ctxp[ctxn];
 		if (!ctx)
@@ -10574,6 +10589,7 @@ void perf_event_free_task(struct task_struct *task)
 		mutex_unlock(&ctx->mutex);
 		put_ctx(ctx);
 	}
+	put_online_cpus();
 }
 
 void perf_event_delayed_put(struct task_struct *task)
