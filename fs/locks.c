@@ -2323,7 +2323,7 @@ int fcntl_getlk64(struct file *filp, unsigned int cmd, struct flock64 *flock)
 	if (error)
 		goto out;
 
-	flock.l_type = file_lock.fl_type;
+	flock->l_type = file_lock.fl_type;
 	if (file_lock.fl_type != F_UNLCK)
 		posix_lock_to_flock64(flock, &file_lock);
 
