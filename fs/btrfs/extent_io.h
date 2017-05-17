@@ -205,11 +205,45 @@ struct extent_buffer {
  */
 struct extent_changeset {
 	/* How many bytes are set/cleared in this operation */
-	u64 bytes_changed;
+	unsigned int bytes_changed;
 
 	/* Changed ranges */
 	struct ulist range_changed;
 };
+
+static inline void extent_changeset_init(struct extent_changeset *changeset)
+{
+	changeset->bytes_changed = 0;
+	ulist_init(&changeset->range_changed);
+}
+
+static inline struct extent_changeset *extent_changeset_alloc(void)
+{
+	struct extent_changeset *ret;
+
+	ret = kmalloc(sizeof(*ret), GFP_KERNEL);
+	if (!ret)
+		return NULL;
+
+	extent_changeset_init(ret);
+	return ret;
+}
+
+static inline void extent_changeset_release(struct extent_changeset *changeset)
+{
+	if (!changeset)
+		return;
+	changeset->bytes_changed = 0;
+	ulist_release(&changeset->range_changed);
+}
+
+static inline void extent_changeset_free(struct extent_changeset *changeset)
+{
+	if (!changeset)
+		return;
+	extent_changeset_release(changeset);
+	kfree(changeset);
+}
 
 static inline void extent_set_compress_type(unsigned long *bio_flags,
 					    int compress_type)
@@ -464,6 +498,7 @@ btrfs_bio_alloc(struct block_device *bdev, u64 first_sector, int nr_vecs,
 		gfp_t gfp_flags);
 struct bio *btrfs_io_bio_alloc(gfp_t gfp_mask, unsigned int nr_iovecs);
 struct bio *btrfs_bio_clone(struct bio *bio, gfp_t gfp_mask);
+struct bio *btrfs_bio_clone_partial(struct bio *orig, int offset, int size);
 
 struct btrfs_fs_info;
 struct btrfs_inode;
