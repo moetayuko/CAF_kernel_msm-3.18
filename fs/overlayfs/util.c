@@ -165,14 +165,21 @@ struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry)
 void ovl_set_dir_cache(struct dentry *dentry, struct ovl_dir_cache *cache)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
-
 	oe->cache = cache;
 }
 
 bool ovl_dentry_is_opaque(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
+
 	return oe->opaque;
+}
+
+bool ovl_dentry_is_impure(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	return oe->impure;
 }
 
 bool ovl_dentry_is_whiteout(struct dentry *dentry)
@@ -185,6 +192,13 @@ void ovl_dentry_set_opaque(struct dentry *dentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	oe->opaque = true;
+}
+
+void ovl_dentry_set_impure(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	oe->impure = true;
 }
 
 bool ovl_redirect_dir(struct super_block *sb)
