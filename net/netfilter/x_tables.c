@@ -296,12 +296,20 @@ int xt_data_to_user(void __user *dst, const void *src,
 }
 EXPORT_SYMBOL_GPL(xt_data_to_user);
 
+#ifdef CONFIG_COMPAT
 #define XT_DATA_TO_USER(U, K, TYPE, C_SIZE)				\
 	xt_data_to_user(U->data, K->data,				\
 			K->u.kernel.TYPE->usersize,			\
 			C_SIZE ? : K->u.kernel.TYPE->TYPE##size,	\
 			C_SIZE ? COMPAT_XT_ALIGN(C_SIZE) :		\
 				 XT_ALIGN(K->u.kernel.TYPE->TYPE##size))
+#else
+#define XT_DATA_TO_USER(U, K, TYPE, C_SIZE)				\
+	xt_data_to_user(U->data, K->data,				\
+			K->u.kernel.TYPE->usersize,			\
+			C_SIZE ? : K->u.kernel.TYPE->TYPE##size,	\
+			C_SIZE ? : XT_ALIGN(K->u.kernel.TYPE->TYPE##size))
+#endif
 
 int xt_match_to_user(const struct xt_entry_match *m,
 		     struct xt_entry_match __user *u)
