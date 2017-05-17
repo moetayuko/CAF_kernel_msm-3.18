@@ -19,6 +19,8 @@
 #include <drm/drm_plane_helper.h>
 
 #include <linux/component.h>
+#include <linux/list.h>
+#include <linux/of_graph.h>
 #include <linux/reset.h>
 
 #include "sun4i_backend.h"
@@ -71,7 +73,8 @@ void sun4i_backend_layer_enable(struct sun4i_backend *backend,
 {
 	u32 val;
 
-	DRM_DEBUG_DRIVER("Enabling layer %d\n", layer);
+	DRM_DEBUG_DRIVER("%sabling layer %d\n", enable ? "En" : "Dis",
+			 layer);
 
 	if (enable)
 		val = SUN4I_BACKEND_MODCTL_LAY_EN(layer);
@@ -288,6 +291,45 @@ static int sun4i_backend_free_sat(struct device *dev) {
 	return 0;
 }
 
+/*
+ * The display backend can take video output from the display frontend, or
+ * the display enhancement unit on the A80, as input for one it its layers.
+ * This relationship within the display pipeline is encoded in the device
+ * tree with of_graph, and we use it here to figure out which backend, if
+ * there are 2 or more, we are currently probing. The number would be in
+ * the "reg" property of the upstream output port endpoint.
+ */
+static int sun4i_backend_of_get_id(struct device_node *node)
+{
+	struct device_node *port, *ep;
+	int ret = -EINVAL;
+
+	/* input is port 0 */
+	port = of_graph_get_port_by_id(node, 0);
+	if (!port)
+		return -EINVAL;
+
+	/* try finding an upstream endpoint */
+	for_each_available_child_of_node(port, ep) {
+		struct device_node *remote;
+		u32 reg;
+
+		remote = of_parse_phandle(ep, "remote-endpoint", 0);
+		if (!remote)
+			continue;
+
+		ret = of_property_read_u32(remote, "reg", &reg);
+		if (ret)
+			continue;
+
+		ret = reg;
+	}
+
+	of_node_put(port);
+
+	return ret;
+}
+
 static struct regmap_config sun4i_backend_regmap_config = {
 	.reg_bits	= 32,
 	.val_bits	= 32,
@@ -310,7 +352,11 @@ static int sun4i_backend_bind(struct device *dev, struct device *master,
 	if (!backend)
 		return -ENOMEM;
 	dev_set_drvdata(dev, backend);
-	drv->backend = backend;
+
+	backend->node = dev->of_node;
+	backend->id = sun4i_backend_of_get_id(dev->of_node);
+	if (backend->id < 0)
+		return backend->id;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	regs = devm_ioremap_resource(dev, res);
@@ -320,7 +366,7 @@ static int sun4i_backend_bind(struct device *dev, struct device *master,
 	backend->regs = devm_regmap_init_mmio(dev, regs,
 					      &sun4i_backend_regmap_config);
 	if (IS_ERR(backend->regs)) {
-		dev_err(dev, "Couldn't create the backend0 regmap\n");
+		dev_err(dev, "Couldn't create the backend regmap\n");
 		return PTR_ERR(backend->regs);
 	}
 
@@ -369,6 +415,8 @@ static int sun4i_backend_bind(struct device *dev, struct device *master,
 		}
 	}
 
+	list_add_tail(&backend->list, &drv->backend_list);
+
 	/* Reset the registers */
 	for (i = 0x800; i < 0x1000; i += 4)
 		regmap_write(backend->regs, i, 0);
@@ -399,6 +447,8 @@ static void sun4i_backend_unbind(struct device *dev, struct device *master,
 				 void *data)
 {
 	struct sun4i_backend *backend = dev_get_drvdata(dev);
+
+	list_del(&backend->list);
 
 	if (of_device_is_compatible(dev->of_node,
 				    "allwinner,sun8i-a33-display-backend"))
