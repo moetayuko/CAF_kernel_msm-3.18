@@ -83,7 +83,6 @@ void sun4i_backend_layer_enable(struct sun4i_backend *backend,
 	regmap_update_bits(backend->engine.regs, SUN4I_BACKEND_MODCTL_REG,
 			   SUN4I_BACKEND_MODCTL_LAY_EN(layer), val);
 }
-EXPORT_SYMBOL(sun4i_backend_layer_enable);
 
 static int sun4i_backend_drm_format_to_layer(struct drm_plane *plane,
 					     u32 format, u32 *mode)
@@ -170,7 +169,6 @@ int sun4i_backend_update_layer_coord(struct sun4i_backend *backend,
 
 	return 0;
 }
-EXPORT_SYMBOL(sun4i_backend_update_layer_coord);
 
 int sun4i_backend_update_layer_formats(struct sun4i_backend *backend,
 				       int layer, struct drm_plane *plane)
@@ -205,7 +203,6 @@ int sun4i_backend_update_layer_formats(struct sun4i_backend *backend,
 
 	return 0;
 }
-EXPORT_SYMBOL(sun4i_backend_update_layer_formats);
 
 int sun4i_backend_update_layer_buffer(struct sun4i_backend *backend,
 				      int layer, struct drm_plane *plane)
@@ -246,7 +243,6 @@ int sun4i_backend_update_layer_buffer(struct sun4i_backend *backend,
 
 	return 0;
 }
-EXPORT_SYMBOL(sun4i_backend_update_layer_buffer);
 
 static int sun4i_backend_init_sat(struct device *dev) {
 	struct sun4i_backend *backend = dev_get_drvdata(dev);
