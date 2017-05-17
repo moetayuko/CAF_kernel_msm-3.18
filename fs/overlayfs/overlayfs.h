@@ -24,6 +24,7 @@ enum ovl_path_type {
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"
 #define OVL_XATTR_REDIRECT OVL_XATTR_PREFIX "redirect"
 #define OVL_XATTR_ORIGIN OVL_XATTR_PREFIX "origin"
+#define OVL_XATTR_IMPURE OVL_XATTR_PREFIX "impure"
 
 /*
  * The tuple (fh,uuid) is a universal unique identifier for a copy up origin,
@@ -203,8 +204,10 @@ struct dentry *ovl_dentry_real(struct dentry *dentry);
 struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry);
 void ovl_set_dir_cache(struct dentry *dentry, struct ovl_dir_cache *cache);
 bool ovl_dentry_is_opaque(struct dentry *dentry);
+bool ovl_dentry_is_impure(struct dentry *dentry);
 bool ovl_dentry_is_whiteout(struct dentry *dentry);
 void ovl_dentry_set_opaque(struct dentry *dentry);
+void ovl_dentry_set_impure(struct dentry *dentry);
 bool ovl_redirect_dir(struct super_block *sb);
 void ovl_clear_redirect_dir(struct super_block *sb);
 const char *ovl_dentry_get_redirect(struct dentry *dentry);
@@ -263,7 +266,7 @@ static inline void ovl_copyattr(struct inode *from, struct inode *to)
 
 /* dir.c */
 extern const struct inode_operations ovl_dir_inode_operations;
-struct dentry *ovl_lookup_temp(struct dentry *workdir, struct dentry *dentry);
+struct dentry *ovl_lookup_temp(struct dentry *workdir);
 struct cattr {
 	dev_t rdev;
 	umode_t mode;

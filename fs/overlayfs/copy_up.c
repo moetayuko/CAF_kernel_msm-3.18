@@ -286,7 +286,11 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 	struct super_block *sb = lower->d_sb;
 	uuid_be *uuid = (uuid_be *) &sb->s_uuid;
 	const struct ovl_fh *fh = NULL;
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 	int err;
+
+	if (ofs->nooriginxattr)
+		return 0;
 
 	/*
 	 * When lower layer doesn't support export operations store a 'null' fh,
@@ -302,6 +306,15 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 
 	err = ovl_do_setxattr(upper, OVL_XATTR_ORIGIN, fh, fh ? fh->len : 0, 0);
 	kfree(fh);
+
+	/*
+	 * Do not fail when upper doesn't support xattrs.
+	 */
+	if (err == -EOPNOTSUPP) {
+		pr_warn("overlayfs: cannot set " OVL_XATTR_ORIGIN " xattr on upper\n");
+		ofs->nooriginxattr = true;
+		return 0;
+	}
 
 	return err;
 }
@@ -342,13 +355,14 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	if (tmpfile)
 		temp = ovl_do_tmpfile(upperdir, stat->mode);
 	else
-		temp = ovl_lookup_temp(workdir, dentry);
-	err = PTR_ERR(temp);
-	if (IS_ERR(temp))
-		goto out1;
-
+		temp = ovl_lookup_temp(workdir);
 	err = 0;
-	if (!tmpfile)
+	if (IS_ERR(temp)) {
+		err = PTR_ERR(temp);
+		temp = NULL;
+	}
+
+	if (!err && !tmpfile)
 		err = ovl_create_real(wdir, temp, &cattr, NULL, true);
 
 	if (new_creds) {
