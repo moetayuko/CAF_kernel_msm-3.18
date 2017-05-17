@@ -48,7 +48,6 @@ struct btrfs_trans_handle;
 struct btrfs_transaction;
 struct btrfs_pending_snapshot;
 extern struct kmem_cache *btrfs_trans_handle_cachep;
-extern struct kmem_cache *btrfs_transaction_cachep;
 extern struct kmem_cache *btrfs_bit_radix_cachep;
 extern struct kmem_cache *btrfs_path_cachep;
 extern struct kmem_cache *btrfs_free_space_cachep;
@@ -830,7 +829,6 @@ struct btrfs_fs_info {
 	struct btrfs_super_block *super_for_commit;
 	struct super_block *sb;
 	struct inode *btree_inode;
-	struct backing_dev_info bdi;
 	struct mutex tree_log_mutex;
 	struct mutex transaction_kthread_mutex;
 	struct mutex cleaner_mutex;
