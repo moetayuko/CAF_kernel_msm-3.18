@@ -89,7 +89,6 @@ struct btrfs_end_io_wq {
 	struct btrfs_fs_info *info;
 	int error;
 	enum btrfs_wq_endio_type metadata;
-	struct list_head list;
 	struct btrfs_work work;
 };
 
@@ -120,7 +119,6 @@ void btrfs_end_io_wq_exit(void)
 struct async_submit_bio {
 	struct inode *inode;
 	struct bio *bio;
-	struct list_head list;
 	extent_submit_bio_hook_t *submit_bio_start;
 	extent_submit_bio_hook_t *submit_bio_done;
 	int mirror_num;
