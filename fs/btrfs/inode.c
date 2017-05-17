@@ -7486,11 +7486,11 @@ out:
 bool btrfs_page_exists_in_range(struct inode *inode, loff_t start, loff_t end)
 {
 	struct radix_tree_root *root = &inode->i_mapping->page_tree;
-	int found = false;
+	bool found = false;
 	void **pagep = NULL;
 	struct page *page = NULL;
-	int start_idx;
-	int end_idx;
+	unsigned long start_idx;
+	unsigned long end_idx;
 
 	start_idx = start >> PAGE_SHIFT;
 
