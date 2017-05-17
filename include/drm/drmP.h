@@ -994,6 +994,7 @@ extern void drm_vblank_post_modeset(struct drm_device *dev, unsigned int pipe);
 void drm_put_dev(struct drm_device *dev);
 void drm_unplug_dev(struct drm_device *dev);
 extern unsigned int drm_debug;
+extern bool drm_master_relax;
 
 				/* Debugfs support */
 #if defined(CONFIG_DEBUG_FS)
