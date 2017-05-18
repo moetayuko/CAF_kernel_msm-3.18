@@ -1,6 +1,8 @@
 /*
- * Copyright 2015 Aleksei Mamlin
- * Aleksei Mamlin <mamlinav@gmail.com>
+ * Copyright (C) 2017 Icenowy Zheng <icenowy@aosc.xyz>
+ *
+ * Based on sun50i-h5-orangepi-pc2.dts, which is:
+ *   Copyright (C) 2016 ARM Ltd.
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -42,14 +44,21 @@
  */
 
 /dts-v1/;
-#include "sun4i-a10.dtsi"
-#include "sunxi-common-regulators.dtsi"
+#include "sun50i-h5.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 
 / {
-	model = "HAOYU Electronics Marsboard A10";
-	compatible = "haoyu,a10-marsboard", "allwinner,sun4i-a10";
+	model = "Xunlong Orange Pi Prime";
+	compatible = "xunlong,orangepi-prime", "allwinner,sun50i-h5";
+
+	reg_vcc3v3: vcc3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+	};
 
 	aliases {
 		serial0 = &uart0;
@@ -61,36 +70,50 @@
 
 	leds {
 		compatible = "gpio-leds";
-		pinctrl-names = "default";
-		pinctrl-0 = <&led_pins_marsboard>;
 
-		red1 {
-			label = "marsboard:red1:usr";
-			gpios = <&pio 1 5 GPIO_ACTIVE_HIGH>;
+		pwr {
+			label = "orangepi:green:pwr";
+			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
 		};
 
-		red2 {
-			label = "marsboard:red2:usr";
-			gpios = <&pio 1 6 GPIO_ACTIVE_HIGH>;
+		status {
+			label = "orangepi:red:status";
+			gpios = <&pio 0 20 GPIO_ACTIVE_HIGH>;
 		};
+	};
 
-		red3 {
-			label = "marsboard:red3:usr";
-			gpios = <&pio 1 7 GPIO_ACTIVE_HIGH>;
-		};
+	r-gpio-keys {
+		compatible = "gpio-keys";
 
-		red4 {
-			label = "marsboard:red4:usr";
-			gpios = <&pio 1 8 GPIO_ACTIVE_HIGH>;
+		sw4 {
+			label = "sw4";
+			linux,code = <BTN_0>;
+			gpios = <&r_pio 0 3 GPIO_ACTIVE_LOW>;
 		};
+	};
+
+	reg_usb0_vbus: usb0-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb0-vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */
+		status = "okay";
+	};
+
+	wifi_pwrseq: wifi_pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&pio 2 14 GPIO_ACTIVE_LOW>; /* PC14 */
 	};
 };
 
-&ahci {
-	status = "okay";
-};
-
 &codec {
+	allwinner,audio-routing =
+		"Line Out", "LINEOUT",
+		"MIC1", "Mic",
+		"Mic",  "MBIAS";
 	status = "okay";
 };
 
@@ -102,50 +125,36 @@
 	status = "okay";
 };
 
-&emac_sram {
+&ehci2 {
 	status = "okay";
 };
 
-&emac {
+&ehci3 {
+	status = "okay";
+};
+
+&ir {
 	pinctrl-names = "default";
-	pinctrl-0 = <&emac_pins_a>;
-	phy = <&phy1>;
+	pinctrl-0 = <&ir_pins_a>;
 	status = "okay";
-};
-
-&i2c0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c0_pins_a>;
-	status = "okay";
-};
-
-&i2c1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c1_pins_a>;
-	status = "okay";
-};
-
-&i2c2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c2_pins_a>;
-	status = "okay";
-};
-
-&mdio {
-	status = "okay";
-
-	phy1: ethernet-phy@1 {
-		reg = <1>;
-	};
 };
 
 &mmc0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&mmc0_pins_a>;
+	pinctrl-0 = <&mmc0_pins_a>, <&mmc0_cd_pin>;
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
-	cd-gpios = <&pio 7 1 GPIO_ACTIVE_HIGH>; /* PH1 */
-	cd-inverted;
+	cd-gpios = <&pio 5 6 GPIO_ACTIVE_LOW>; /* PF6 */
+	status = "okay";
+};
+
+&mmc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc1_pins_a>;
+	vmmc-supply = <&reg_vcc3v3>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	bus-width = <4>;
+	non-removable;
 	status = "okay";
 };
 
@@ -157,35 +166,11 @@
 	status = "okay";
 };
 
-&otg_sram {
+&ohci2 {
 	status = "okay";
 };
 
-&pio {
-	led_pins_marsboard: led_pins@0 {
-		pins = "PB5", "PB6", "PB7", "PB8";
-		function = "gpio_out";
-	};
-
-	usb0_id_detect_pin: usb0_id_detect_pin@0 {
-		pins = "PH4";
-		function = "gpio_in";
-		bias-pull-up;
-	};
-};
-
-&reg_usb1_vbus {
-	status = "okay";
-};
-
-&reg_usb2_vbus {
-	status = "okay";
-};
-
-&spi0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&spi0_pins_a>,
-		    <&spi0_cs0_pins_a>;
+&ohci3 {
 	status = "okay";
 };
 
@@ -195,16 +180,26 @@
 	status = "okay";
 };
 
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins>;
+	status = "disabled";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
+	status = "disabled";
+};
+
 &usb_otg {
 	dr_mode = "otg";
 	status = "okay";
 };
 
 &usbphy {
-	pinctrl-names = "default";
-	pinctrl-0 = <&usb0_id_detect_pin>;
-	usb0_id_det-gpio = <&pio 7 4 GPIO_ACTIVE_HIGH>; /* PH4 */
-	usb1_vbus-supply = <&reg_usb1_vbus>;
-	usb2_vbus-supply = <&reg_usb2_vbus>;
+	/* USB Type-A ports' VBUS is always on */
+	usb0_id_det-gpios = <&pio 0 21 GPIO_ACTIVE_HIGH>; /* PA21 */
+	usb0_vbus-supply = <&reg_usb0_vbus>;
 	status = "okay";
 };
