@@ -4235,8 +4235,7 @@ static int handle_exit(struct kvm_vcpu *vcpu)
 	u32 exit_code = svm->vmcb->control.exit_code;
 
 	trace_kvm_exit(exit_code, vcpu, KVM_ISA_SVM);
-
-	vcpu->arch.gpa_available = (exit_code == SVM_EXIT_NPF);
+	vcpu->arch.gpa_available = false;
 
 	if (!is_cr_intercept(svm, INTERCEPT_CR0_WRITE))
 		vcpu->arch.cr0 = svm->vmcb->save.cr0;

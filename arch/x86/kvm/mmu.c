@@ -3793,6 +3793,8 @@ int kvm_handle_page_fault(struct kvm_vcpu *vcpu, u64 error_code,
 
 		if (need_unprotect && kvm_event_needs_reinjection(vcpu))
 			kvm_mmu_unprotect_page_virt(vcpu, fault_address);
+		vcpu->arch.gpa_available = true;
+		vcpu->arch.gpa_val = fault_address;
 		r = kvm_mmu_page_fault(vcpu, fault_address, error_code, insn,
 				insn_len);
 		break;

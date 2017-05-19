@@ -6394,6 +6394,7 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	       PFERR_GUEST_FINAL_MASK : PFERR_GUEST_PAGE_MASK;
 
 	vcpu->arch.gpa_available = true;
+	vcpu->arch.gpa_val = gpa;
 	vcpu->arch.exit_qualification = exit_qualification;
 
 	return kvm_mmu_page_fault(vcpu, gpa, error_code, NULL, 0);
@@ -6412,6 +6413,7 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 
 	ret = handle_mmio_page_fault(vcpu, gpa, true);
 	vcpu->arch.gpa_available = true;
+	vcpu->arch.gpa_val = gpa;
 	if (likely(ret == RET_MMIO_PF_EMULATE))
 		return x86_emulate_instruction(vcpu, gpa, 0, NULL, 0) ==
 					      EMULATE_DONE;
