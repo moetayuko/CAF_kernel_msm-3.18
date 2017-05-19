@@ -30,6 +30,7 @@
 #include "sun4i_drv.h"
 #include "sun4i_rgb.h"
 #include "sun4i_tcon.h"
+#include "sunxi_engine.h"
 
 void sun4i_tcon_disable(struct sun4i_tcon *tcon)
 {
@@ -129,6 +130,9 @@ void sun4i_tcon0_mode_set(struct sun4i_tcon *tcon,
 	u8 clk_delay;
 	u32 val = 0;
 
+	/* Configure the dot clock */
+	clk_set_rate(tcon->dclk, mode->crtc_clock * 1000);
+
 	/* Adjust clock delay */
 	clk_delay = sun4i_tcon_get_clk_delay(mode, 0);
 	regmap_update_bits(tcon->regs, SUN4I_TCON0_CTL_REG,
@@ -203,6 +207,9 @@ void sun4i_tcon1_mode_set(struct sun4i_tcon *tcon,
 	u32 val;
 
 	WARN_ON(!tcon->quirks->has_channel_1);
+
+	/* Configure the dot clock */
+	clk_set_rate(tcon->sclk1, mode->crtc_clock * 1000);
 
 	/* Adjust clock delay */
 	clk_delay = sun4i_tcon_get_clk_delay(mode, 1);
@@ -402,21 +409,79 @@ static int sun4i_tcon_init_regmap(struct device *dev,
 	return 0;
 }
 
+/*
+ * On SoCs with the old display pipeline design (Display Engine 1.0),
+ * the TCON is always tied to just one backend. Hence we can traverse
+ * the of_graph upwards to find the backend our tcon is connected to,
+ * and take its ID as our own.
+ *
+ * We can either identify backends from their compatible strings, which
+ * means maintaining a large list of them. Or, since the backend is
+ * registered and binded before the TCON, we can just go through the
+ * list of registered backends and compare the device node.
+ *
+ * As the structures now store engines instead of backends, here this
+ * function in fact searches the corresponding engine, and the ID is
+ * requested via the get_id function of the engine.
+ */
+static struct sunxi_engine *sun4i_tcon_find_engine(struct sun4i_drv *drv,
+						   struct device_node *node)
+{
+	struct device_node *port, *ep, *remote;
+	struct sunxi_engine *engine;
+
+	port = of_graph_get_port_by_id(node, 0);
+	if (!port)
+		return ERR_PTR(-EINVAL);
+
+	for_each_available_child_of_node(port, ep) {
+		remote = of_graph_get_remote_port_parent(ep);
+		if (!remote)
+			continue;
+
+		/* does this node match any registered engines? */
+		list_for_each_entry(engine, &drv->engine_list, list) {
+			if (remote == engine->node) {
+				of_node_put(remote);
+				of_node_put(port);
+				return engine;
+			}
+		}
+
+		/* keep looking through upstream ports */
+		engine = sun4i_tcon_find_engine(drv, remote);
+		if (!IS_ERR(engine)) {
+			of_node_put(remote);
+			of_node_put(port);
+			return engine;
+		}
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+
 static int sun4i_tcon_bind(struct device *dev, struct device *master,
 			   void *data)
 {
 	struct drm_device *drm = data;
 	struct sun4i_drv *drv = drm->dev_private;
+	struct sunxi_engine *engine;
 	struct sun4i_tcon *tcon;
 	int ret;
+
+	engine = sun4i_tcon_find_engine(drv, dev->of_node);
+	if (IS_ERR(engine)) {
+		dev_err(dev, "Couldn't find matching engine\n");
+		return -EPROBE_DEFER;
+	}
 
 	tcon = devm_kzalloc(dev, sizeof(*tcon), GFP_KERNEL);
 	if (!tcon)
 		return -ENOMEM;
 	dev_set_drvdata(dev, tcon);
-	drv->tcon = tcon;
 	tcon->drm = drm;
 	tcon->dev = dev;
+	tcon->id = engine->id;
 	tcon->quirks = of_device_get_match_data(dev);
 
 	tcon->lcd_rst = devm_reset_control_get(dev, "lcd");
@@ -459,7 +524,7 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 		goto err_free_dotclock;
 	}
 
-	tcon->crtc = sun4i_crtc_init(drm, drv->backend, tcon);
+	tcon->crtc = sun4i_crtc_init(drm, engine, tcon);
 	if (IS_ERR(tcon->crtc)) {
 		dev_err(dev, "Couldn't create our CRTC\n");
 		ret = PTR_ERR(tcon->crtc);
@@ -469,6 +534,8 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 	ret = sun4i_rgb_init(drm, tcon);
 	if (ret < 0)
 		goto err_free_clocks;
+
+	list_add_tail(&tcon->list, &drv->tcon_list);
 
 	return 0;
 
@@ -486,6 +553,7 @@ static void sun4i_tcon_unbind(struct device *dev, struct device *master,
 {
 	struct sun4i_tcon *tcon = dev_get_drvdata(dev);
 
+	list_del(&tcon->list);
 	sun4i_dclk_free(tcon);
 	sun4i_tcon_free_clocks(tcon);
 }
@@ -533,11 +601,16 @@ static const struct sun4i_tcon_quirks sun8i_a33_quirks = {
 	/* nothing is supported */
 };
 
+static const struct sun4i_tcon_quirks sun8i_v3s_quirks = {
+	/* nothing is supported */
+};
+
 static const struct of_device_id sun4i_tcon_of_table[] = {
 	{ .compatible = "allwinner,sun5i-a13-tcon", .data = &sun5i_a13_quirks },
 	{ .compatible = "allwinner,sun6i-a31-tcon", .data = &sun6i_a31_quirks },
 	{ .compatible = "allwinner,sun6i-a31s-tcon", .data = &sun6i_a31s_quirks },
 	{ .compatible = "allwinner,sun8i-a33-tcon", .data = &sun8i_a33_quirks },
+	{ .compatible = "allwinner,sun8i-v3s-tcon", .data = &sun8i_v3s_quirks },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sun4i_tcon_of_table);
