@@ -1,7 +1,7 @@
 /*
  * Device Tree Include file for Freescale Layerscape-1046A family SoC.
  *
- * Copyright 2016, Freescale Semiconductor, Inc.
+ * Copyright 2016 Freescale Semiconductor, Inc.
  *
  * Mingkai Hu <mingkai.hu@nxp.com>
  *
@@ -70,6 +70,14 @@
 
 &duart1 {
 	status = "okay";
+};
+
+&esdhc {
+	mmc-hs200-1_8v;
+	sd-uhs-sdr104;
+	sd-uhs-sdr50;
+	sd-uhs-sdr25;
+	sd-uhs-sdr12;
 };
 
 &i2c0 {
