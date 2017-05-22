@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "5d3652ee_676df9ba",
+        "filename": "sound/soc/msm/qdsp6v2/q6lsm.c",
+        "patchSetId": 1
+      },
+      "lineNbr": 1390,
+      "author": {
+        "id": 1115331
+      },
+      "writtenOn": "2017-05-22T19:55:23Z",
+      "side": 1,
+      "message": "Probably should use memzero_explicit() instead.",
+      "revId": "c8e063584ddf9689376f05ea355a52e279c8faf8",
+      "serverId": "85c56323-6fa9-3386-8a01-6480fb634889",
+      "unresolved": false
+    }
+  ]
+}
