@@ -42,7 +42,7 @@
 
 #define CRYPTO_CONFIG_RESET 0xE01EF
 #define MAX_SPS_DESC_FIFO_SIZE 0xfff0
-#define QCE_MAX_NUM_DSCR    0x200
+#define QCE_MAX_NUM_DSCR    0x100
 #define QCE_SECTOR_SIZE	    0x200
 #define CE_CLK_100MHZ	100000000
 #define CE_CLK_DIV	1000000
@@ -89,24 +89,14 @@ static int poll_cpu;
 #define MS_TO_NS(x) (x * 1000000)
 #define MICRO_TO_NS(x) (x * 1000)
 
-/* Used to determine the mode */
-#define MAX_BUNCH_MODE_REQ 3
 /* Max number of request supported */
-#define MAX_QCE_BAM_REQ 8
-#define SET_INTR_AT_REQ			(MAX_QCE_BAM_REQ - 1)
-/* To create extra request space to hold dummy request */
-#define MAX_QCE_BAM_REQ_WITH_DUMMY_REQ	(MAX_QCE_BAM_REQ + 1)
-/* Allocate the memory for MAX_QCE_BAM_REQ  + 1 (for dummy request) */
-#define MAX_QCE_ALLOC_BAM_REQ		MAX_QCE_BAM_REQ_WITH_DUMMY_REQ
-/* QCE driver modes */
-#define IN_INTERRUPT_MODE 0
-#define IN_BUNCH_MODE 1
+#define MAX_QCE_BAM_REQ 16
+#define SET_INTR_AT_REQ			(MAX_QCE_BAM_REQ - 2)
+#define MAX_QCE_ALLOC_BAM_REQ		MAX_QCE_BAM_REQ
 /* Delay timer to expire when in bunch mode */
-#define POLL_DELAY_IN_MICROS (100)
+#define POLL_DELAY_IN_MICROS (200)
 #define MAX_EMPTY_POLL 5
 #define QCE_POLL_CPU 1
-/* Index to point the dummy request */
-#define DUMMY_REQ_INDEX			MAX_QCE_BAM_REQ
 
 #define TOTAL_IOVEC_SPACE_PER_PIPE (QCE_MAX_NUM_DSCR * sizeof(struct sps_iovec))
 
