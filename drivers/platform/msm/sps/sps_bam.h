@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -618,4 +618,20 @@ bool sps_bam_pipe_pending_desc(struct sps_bam *dev, u32 pipe_index);
  * Return: 0 on success, negative value on error
  */
 int sps_bam_pipe_inject_zlt(struct sps_bam *dev, u32 pipe_index);
+
+
+/**
+ * Poll a BAM pipe's EOT completion.
+ *
+ *  This function provides client to poll a BAM pipe's EOT completion
+ *  at the absence of INT. Same as under INT, registered callback for an
+ *  event will be called, if the event occurs.
+ *
+ * @dev - pointer to BAM device descriptor
+ *
+ * @pipe - pointer to pipe state
+ *
+ */
+void pipe_handler_eot_poll(struct sps_bam *dev, struct sps_pipe *pipe);
+
 #endif	/* _SPSBAM_H_ */

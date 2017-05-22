@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1829,6 +1829,199 @@ static void pipe_handler_wakeup(struct sps_bam *dev, struct sps_pipe *pipe)
 		event->notify.user = event_reg->user;
 		trigger_event(dev, pipe, event_reg, event);
 	}
+}
+
+/**
+ *  This function provides client to poll a BAM pipe's EOT completion
+ *  at the absence of INT. Same as under INT, registered callback for an
+ *  event will be called, if the event occurs.
+ *
+ *
+ * @dev - pointer to BAM device descriptor
+ *
+ * @pipe - pointer to pipe state
+ *
+ */
+void pipe_handler_eot_poll(struct sps_bam *dev, struct sps_pipe *pipe)
+{
+	struct sps_bam_event_reg *event_reg;
+	struct sps_q_event *event;
+	struct sps_iovec *desc;
+	struct sps_iovec *cache;
+	void **user;
+	u32 *update_offset;
+	u32 offset;
+	u32 end_offset;
+	enum sps_event event_id;
+	u32 flags;
+	u32 enabled;
+	int producer = (pipe->mode == SPS_MODE_SRC);
+	unsigned long sflags = 0;
+
+	if (pipe->late_eot || pipe->sys.no_queue || pipe->sys.ack_xfers) {
+		SPS_ERR(dev,
+			"%s: does not handle pipe with late_eot %d or no_queue %d or ack_xfers %d\n",
+			__func__, pipe->late_eot,  pipe->sys.no_queue,
+			pipe->sys.ack_xfers);
+		return;
+	}
+	if (pipe->sys.handler_eot) {
+		/*
+		 * This can happen if the pipe is configured for polling
+		 * (IRQ disabled) and callback event generation.
+		 * The client may perform a get_iovec() inside the callback.
+		 */
+		SPS_DBG(dev,
+			"sps:%s; still handling EOT for pipe %d.\n",
+			__func__, pipe->pipe_index);
+		return;
+	}
+
+	pipe->sys.handler_eot = true;
+
+	/*  spin lock the BAM isr_lock to lock out potential BAM irq */
+	spin_lock_irqsave(&dev->isr_lock, sflags);
+
+	/* Get offset of last descriptor completed by the pipe */
+	end_offset = sps_bam_pipe_get_desc_read_offset(dev, pipe);
+
+	if (dev->ipc_loglevel == 0)
+		SPS_DBG(dev,
+			"sps:%s; pipe index:%d; read pointer:0x%x; write pointer:0x%x; sys.acked_offset:0x%x.\n",
+			__func__, pipe->pipe_index, end_offset,
+			sps_bam_pipe_get_desc_write_offset(dev, pipe),
+						pipe->sys.acked_offset);
+	/*
+	 * Get offset of last descriptor processed by software,
+	 * and update to the last descriptor completed by the pipe
+	 */
+	update_offset = &pipe->sys.acked_offset;
+	offset = *update_offset;
+	/* Are there any completed descriptors to process? */
+	if (offset == end_offset) {
+		SPS_DBG(dev,
+			"sps:%s; there is no completed desc to process for pipe %d.\n",
+			__func__, pipe->pipe_index);
+		goto out;
+	}
+
+	/* Determine enabled events */
+	enabled = 0;
+	if ((pipe->irq_mask & SPS_O_EOT))
+		enabled |= SPS_IOVEC_FLAG_EOT;
+
+	if ((pipe->irq_mask & SPS_O_DESC_DONE))
+		enabled |= SPS_IOVEC_FLAG_INT;
+
+	/*
+	 * For producer pipe, update the cached descriptor byte count and flags.
+	 * For consumer pipe, the BAM does not update the descriptors, so just
+	 * use the cached copies.
+	 */
+	if (producer) {
+		/*
+		 * Do copies in a tight loop to increase chance of
+		 * multi-descriptor burst accesses on the bus
+		 */
+		struct sps_iovec *desc_end;
+
+		/* Set starting point for copy */
+		desc = (struct sps_iovec *) (pipe->sys.desc_buf + offset);
+		cache = (struct sps_iovec *) (pipe->sys.desc_cache + offset);
+
+		/* Fetch all completed descriptors to end of FIFO (wrap) */
+		if (end_offset < offset) {
+			desc_end = (struct sps_iovec *)
+				   (pipe->sys.desc_buf + pipe->desc_size);
+			while (desc < desc_end)
+				*cache++ = *desc++;
+
+			desc = (void *)pipe->sys.desc_buf;
+			cache = (void *)pipe->sys.desc_cache;
+		}
+
+		/* Fetch all remaining completed descriptors (no wrap) */
+		desc_end = (struct sps_iovec *) (pipe->sys.desc_buf +
+						 end_offset);
+		while (desc < desc_end)
+			*cache++ = *desc++;
+	}
+
+	/* Process all completed descriptors */
+	cache = (struct sps_iovec *) (pipe->sys.desc_cache + offset);
+	user = &pipe->sys.user_ptrs[offset / sizeof(struct sps_iovec)];
+	for (;;) {
+		SPS_DBG(dev,
+			"sps:%s; pipe index:%d; iovec addr:0x%x; size:0x%x; flags:0x%x; enabled:0x%x; *user is %s NULL.\n",
+			__func__, pipe->pipe_index, cache->addr,
+			cache->size, cache->flags, enabled,
+			(*user == NULL) ? "" : "not");
+
+		/*
+		 * Increment offset to next descriptor and update pipe offset
+		 * so a client callback can fetch the I/O vector.
+		 */
+		offset += sizeof(struct sps_iovec);
+		if (offset >= pipe->desc_size)
+			/* Roll to start of descriptor FIFO */
+			offset = 0;
+
+		*update_offset = offset;
+#ifdef SPS_BAM_STATISTICS
+		pipe->sys.desc_rd_count++;
+#endif /* SPS_BAM_STATISTICS */
+
+		/* Did client request notification for this descriptor? */
+		flags = cache->flags & enabled;
+		if (*user != NULL || flags) {
+			int index;
+
+			if ((flags & SPS_IOVEC_FLAG_EOT))
+				event_id = SPS_EVENT_EOT;
+			else
+				event_id = SPS_EVENT_DESC_DONE;
+
+			index = SPS_EVENT_INDEX(event_id);
+			event_reg = &pipe->sys.event_regs[index];
+			event = alloc_event(pipe, event_reg);
+			if (event != NULL) {
+				/*
+				 * Store the descriptor and user pointer
+				 * in the notification
+				 */
+				event->notify.data.transfer.iovec = *cache;
+				event->notify.data.transfer.user = *user;
+
+				event->notify.event_id = event_id;
+				event->notify.user = event_reg->user;
+				trigger_event(dev, pipe, event_reg, event);
+			} else {
+				SPS_ERR(dev,
+					"sps: %s: pipe %d: event is NULL.\n",
+					__func__, pipe->pipe_index);
+			}
+#ifdef SPS_BAM_STATISTICS
+			if (*user != NULL)
+				pipe->sys.user_found++;
+#endif /* SPS_BAM_STATISTICS */
+		}
+
+		/* Increment to next descriptor */
+		if (offset == end_offset)
+			break;	/* No more descriptors */
+
+		if (offset) {
+			cache++;
+			user++;
+		} else {
+			cache = (void *)pipe->sys.desc_cache;
+			user = pipe->sys.user_ptrs;
+		}
+	}
+
+out:
+	pipe->sys.handler_eot = false;
+	spin_unlock_irqrestore(&dev->isr_lock, sflags);
 }
 
 /**

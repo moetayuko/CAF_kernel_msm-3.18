@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1677,6 +1677,35 @@ int sps_transfer_one(struct sps_pipe *h, phys_addr_t addr, u32 size,
 	return result;
 }
 EXPORT_SYMBOL(sps_transfer_one);
+
+/**
+ * Perform a poll pipe fifo eot
+ *
+ */
+int sps_poll_fifo_eot(struct sps_pipe *h)
+{
+
+	struct sps_pipe *pipe = h;
+	struct sps_bam *bam;
+	int result = 0;
+
+	/*
+	 * Don't sps_bam_lock() which may cause deadlock. The scenario can be
+	 * as following:
+	 * The pipe_handler_eot_poll() may invoke completion call back to
+	 * the client which may issue sps_transfer for new requests.
+	 * sps_transfer does sps_bam_lock and a deadlock happens.
+	 */
+	bam = pipe->bam;
+	if (bam == NULL) {
+		SPS_ERR(sps, "sps:%s:Connection is not in connected state.",
+				__func__);
+		return SPS_ERROR;
+	}
+	pipe_handler_eot_poll(bam, pipe);
+	return result;
+}
+EXPORT_SYMBOL(sps_poll_fifo_eot);
 
 /**
  * Read event queue for an SPS connection end point
