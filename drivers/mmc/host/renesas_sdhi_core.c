@@ -638,6 +638,7 @@ efree:
 eprobe:
 	return ret;
 }
+EXPORT_SYMBOL_GPL(renesas_sdhi_probe);
 
 int renesas_sdhi_remove(struct platform_device *pdev)
 {
@@ -648,3 +649,4 @@ int renesas_sdhi_remove(struct platform_device *pdev)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(renesas_sdhi_remove);
