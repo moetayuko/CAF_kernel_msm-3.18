@@ -1225,7 +1225,7 @@ struct sps_bam *sps_h2bam(unsigned long h)
  * @return pointer to BAM device struct, or NULL on error
  *
  */
-static struct sps_bam *sps_bam_lock(struct sps_pipe *pipe)
+static struct sps_bam *__sps_bam_lock(struct sps_pipe *pipe)
 {
 	struct sps_bam *bam;
 	u32 pipe_index;
@@ -1252,7 +1252,16 @@ static struct sps_bam *sps_bam_lock(struct sps_pipe *pipe)
 		return NULL;
 	}
 
+	bam->spinlock_locked = true;
 	return bam;
+}
+
+static inline struct sps_bam *sps_bam_lock(struct sps_pipe *pipe)
+{
+	if (pipe->connect.options & SPS_O_NO_LOCK)
+		return pipe->bam;
+	else
+		return __sps_bam_lock(pipe);
 }
 
 /**
@@ -1265,7 +1274,11 @@ static struct sps_bam *sps_bam_lock(struct sps_pipe *pipe)
  */
 static inline void sps_bam_unlock(struct sps_bam *bam)
 {
-	spin_unlock_irqrestore(&bam->connection_lock, bam->irqsave_flags);
+	if (bam->spinlock_locked) {
+		bam->spinlock_locked = false;
+		spin_unlock_irqrestore(&bam->connection_lock,
+				       bam->irqsave_flags);
+	}
 }
 
 /**
@@ -1347,6 +1360,7 @@ int sps_connect(struct sps_pipe *h, struct sps_connect *connect)
 	pipe->bam_pipe_sw_offset_reg_offset =
 		bam_get_pipe_sw_offset_reg_offset(&bam->base, pipe->pipe_index);
 	pipe->write_desc_offset_cached = false;
+	pipe->read_desc_offset_cached = false;
 exit_err:
 	mutex_unlock(&sps->lock);
 

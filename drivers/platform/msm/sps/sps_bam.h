@@ -193,7 +193,9 @@ struct sps_pipe {
 	u32 bam_pipe_event_reg_offset;
 	u32 bam_pipe_sw_offset_reg_offset;
 	bool write_desc_offset_cached;
+	bool read_desc_offset_cached;
 	u32 cached_write_desc_offset;
+	u32 cached_read_desc_offset;
 };
 
 /* BAM device descriptor */
@@ -211,6 +213,7 @@ struct sps_bam {
 	spinlock_t isr_lock;
 	spinlock_t connection_lock;
 	unsigned long irqsave_flags;
+	bool spinlock_locked;
 
 	/* Pipe state */
 	u32 pipe_active_mask;

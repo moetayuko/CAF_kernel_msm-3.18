@@ -188,6 +188,10 @@ enum sps_option {
 	SPS_O_LATE_EOT   = 0x00080000,
 
 	/* Options to enable software features */
+	SPS_O_NO_LOCK         = 0x00100000,
+	SPS_O_XFER_NO_EOT_CHK = 0x00200000,
+
+
 	/* Do not disable a pipe during disconnection */
 	SPS_O_NO_DISABLE      = 0x00800000,
 	/* Transfer operation should be polled */

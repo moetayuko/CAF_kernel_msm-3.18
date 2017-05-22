@@ -1442,8 +1442,32 @@ static inline u32 sps_bam_pipe_get_desc_write_offset(struct sps_bam *dev,
 static inline u32 sps_bam_pipe_get_desc_read_offset(struct sps_bam *dev,
 					struct sps_pipe *pipe)
 {
-	return ioread32(dev->base + pipe->bam_pipe_sw_offset_reg_offset)
-			& SW_DESC_OFST;
+	pipe->cached_read_desc_offset =
+		ioread32(dev->base + pipe->bam_pipe_sw_offset_reg_offset)
+		& SW_DESC_OFST;
+	pipe->read_desc_offset_cached = true;
+	return pipe->cached_read_desc_offset;
+}
+
+static inline bool sps_bam_pipe_check_unused_desc_num_cache(
+	struct sps_bam *dev,
+	struct sps_pipe *pipe,
+	u32 desc_num)
+{
+	u32 sw_offset, peer_offset, fifo_size;
+	u32 desc_size = sizeof(struct sps_iovec);
+	u32 free;
+
+	fifo_size = pipe->desc_size;
+	sw_offset = pipe->cached_read_desc_offset;
+	peer_offset = sps_bam_pipe_get_desc_write_offset(dev, pipe);
+
+	if (sw_offset <= peer_offset)
+		free = (fifo_size - (peer_offset - sw_offset)) / desc_size;
+	else
+		free = (sw_offset - peer_offset) / desc_size;
+
+	return (free > desc_num) ? true : false;
 }
 
 /**
@@ -1487,6 +1511,8 @@ int sps_bam_pipe_transfer_one(struct sps_bam *dev,
 	if (next_write >= pipe->desc_size)
 		next_write = 0;
 
+	if (pipe->connect.options & SPS_O_XFER_NO_EOT_CHK)
+		goto set_desc;
 	if (next_write == pipe->sys.acked_offset) {
 		/*
 		 * If pipe is polled and client is not ACK'ing descriptors,
@@ -1523,6 +1549,7 @@ int sps_bam_pipe_transfer_one(struct sps_bam *dev,
 		}
 	}
 
+set_desc:
 	/* Create descriptor */
 	if (!pipe->sys.no_queue)
 		desc = (struct sps_iovec *) (pipe->sys.desc_cache +
@@ -1607,10 +1634,14 @@ int sps_bam_pipe_transfer(struct sps_bam *dev,
 		return SPS_ERROR;
 	}
 
+	count = transfer->iovec_count;
 	if (!pipe->sys.ack_xfers && pipe->polled) {
-		sps_bam_pipe_get_unused_desc_num(dev, pipe,
-					&count);
-		count = pipe->desc_size / sizeof(struct sps_iovec) - count - 1;
+		if (!pipe->read_desc_offset_cached ||
+		    !sps_bam_pipe_check_unused_desc_num_cache(
+			    dev, pipe, count)) {
+			sps_bam_pipe_get_unused_desc_num(dev, pipe, &count);
+			count = pipe->num_descs - count - 1;
+		}
 	} else
 		sps_bam_get_free_count(dev, pipe, &count);
 
@@ -1857,6 +1888,7 @@ void pipe_handler_eot_poll(struct sps_bam *dev, struct sps_pipe *pipe)
 	u32 enabled;
 	int producer = (pipe->mode == SPS_MODE_SRC);
 	unsigned long sflags = 0;
+	bool need_lock = (pipe->connect.options & SPS_O_NO_LOCK) ? false : true;
 
 	if (pipe->late_eot || pipe->sys.no_queue || pipe->sys.ack_xfers) {
 		SPS_ERR(dev,
@@ -1880,7 +1912,8 @@ void pipe_handler_eot_poll(struct sps_bam *dev, struct sps_pipe *pipe)
 	pipe->sys.handler_eot = true;
 
 	/*  spin lock the BAM isr_lock to lock out potential BAM irq */
-	spin_lock_irqsave(&dev->isr_lock, sflags);
+	if (need_lock)
+		spin_lock_irqsave(&dev->isr_lock, sflags);
 
 	/* Get offset of last descriptor completed by the pipe */
 	end_offset = sps_bam_pipe_get_desc_read_offset(dev, pipe);
@@ -2021,7 +2054,8 @@ void pipe_handler_eot_poll(struct sps_bam *dev, struct sps_pipe *pipe)
 
 out:
 	pipe->sys.handler_eot = false;
-	spin_unlock_irqrestore(&dev->isr_lock, sflags);
+	if (need_lock)
+		spin_unlock_irqrestore(&dev->isr_lock, sflags);
 }
 
 /**
