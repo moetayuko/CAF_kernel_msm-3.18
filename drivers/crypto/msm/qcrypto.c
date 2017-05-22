@@ -136,17 +136,49 @@ struct qcrypto_req_control {
 	int res; /* execution result */
 };
 
+#define DEFAULT_POLL_INTVAL	100
+#define MICRO_TO_NS(us)		(us * 1000)
+#define DEFAULT_POLL_CPU	1
+#define DEFAULT_POLL_RETRY	100
+
+struct crypto_poll_ctl {
+	struct list_head	list;
+	struct crypto_priv	*cp;
+	struct workqueue_struct	*wq;
+	enum resp_workq_sts	state;
+	struct work_struct	work;
+	struct tasklet_hrtimer	timer;
+	struct list_head	engine_list;
+	spinlock_t		lock;
+	struct crypto_engine	*first_engine_to_poll;
+	bool			pm_support;
+
+	int			cpu;		/* which CPU it is on */
+	u32			intval;		/* polling interval */
+	u32			retry;
+	u32			max_retry;
+
+	u64	sched;
+	u64	poll;
+};
+
 struct crypto_engine {
 	struct list_head elist;
+	struct list_head plist;
 	void *qce; /* qce handle */
 	struct platform_device *pdev; /* platform device */
 	struct crypto_priv *pcp;
+	struct crypto_poll_ctl *pctl;
+
 	uint32_t  bus_scale_handle;
-	struct crypto_queue req_queue;	/*
+	struct crypto_queue areq_queue;	/*
 					 * request queue for those requests
 					 * that have this engine assigned
 					 * waiting to be executed
 					 */
+	struct crypto_queue req_queue;	/* request queue for all the
+					 * requests ready to be execute.
+					 * There is no locking protection */
 	u64 total_req;
 	u64 err_req;
 	u32 unit;
@@ -155,7 +187,6 @@ struct crypto_engine {
 	unsigned int signature;
 
 	enum qcrypto_bus_state bw_state;
-	bool   high_bw_req;
 	struct timer_list bw_reaper_timer;
 	struct work_struct bw_reaper_ws;
 	struct work_struct bw_allocate_ws;
@@ -169,15 +200,13 @@ struct crypto_engine {
 	/*Added to support multi-requests*/
 	unsigned int max_req;
 	struct   qcrypto_req_control *preq_pool;
-	atomic_t req_count;
-	bool issue_req;		/* an request is being issued to qce */
-	bool first_engine;	/* this engine is the first engine or not */
-	unsigned int irq_cpu;	/* the cpu running the irq of this engine */
+	unsigned int req_count;
 	unsigned int max_req_used; /* debug stats */
 };
 
 #define MAX_SMP_CPU    8
 #define COMP_WQ_CPU    3
+#define POLLING_CPU    1
 
 struct crypto_priv {
 	/* CE features supported by target device*/
@@ -217,9 +246,11 @@ struct crypto_priv {
 					 */
 	enum resp_workq_sts sched_resp_workq_status;
 	enum req_processing_sts ce_req_proc_sts;
-	int cpu_getting_irqs_frm_first_ce;
 	struct crypto_engine *first_engine;
-	struct crypto_engine *scheduled_eng; /* last engine scheduled */
+
+	/* polling */
+	struct list_head	poll_ctl_list;
+	u32			poll_ctl_num;
 
 	/* debug stats */
 	unsigned no_avail;
@@ -228,25 +259,39 @@ struct crypto_priv {
 	unsigned max_qlen;
 	unsigned int max_resp_qlen;
 	unsigned int max_reorder_cnt;
-	u64 cpu_req[MAX_SMP_CPU+1];
 	u64 queue_complete_work;
 };
 static struct crypto_priv qcrypto_dev;
 static struct crypto_engine *_qcrypto_static_assign_engine(
 					struct crypto_priv *cp);
-static struct crypto_engine *_avail_eng(struct crypto_priv *cp);
+
+static inline void qcrypto_poll_ctl_sched(struct crypto_poll_ctl *ctl)
+{
+	if (!hrtimer_active(&ctl->timer.timer) &&
+	    (cmpxchg(&ctl->state, NOT_SCHEDULED, IS_SCHEDULED) ==
+	     NOT_SCHEDULED)) {
+		queue_work_on(ctl->cpu, ctl->wq, &ctl->work);
+		ctl->sched++;
+	}
+}
+
+static inline bool __qcrypto_engine_req_queue_empty(
+	struct crypto_engine *pengine)
+{
+	return (!pengine->req_queue.qlen && !pengine->areq_queue.qlen);
+}
+
 static struct qcrypto_req_control *qcrypto_alloc_req_control(
 						struct crypto_engine *pce)
 {
 	int i;
 	struct qcrypto_req_control *pqcrypto_req_control = pce->preq_pool;
-	unsigned int req_count;
 
 	for (i = 0; i < pce->max_req; i++) {
-		if (xchg(&pqcrypto_req_control->in_use, true) == false) {
-			req_count = atomic_inc_return(&pce->req_count);
-			if (req_count > pce->max_req_used)
-				pce->max_req_used = req_count;
+		if (!pqcrypto_req_control->in_use) {
+			pqcrypto_req_control->in_use = true;
+			if (++pce->req_count > pce->max_req_used)
+				pce->max_req_used = pce->req_count;
 			return pqcrypto_req_control;
 		}
 		pqcrypto_req_control++;
@@ -261,10 +306,11 @@ static void qcrypto_free_req_control(struct crypto_engine *pce,
 	preq->req = NULL;
 	preq->arsp = NULL;
 	/* free req */
-	if (xchg(&preq->in_use, false) == false) {
+	if (preq->in_use == false) {
 		pr_warn("request info %p free already\n", preq);
 	} else {
-		atomic_dec(&pce->req_count);
+		preq->in_use = false;
+		pce->req_count--;
 	}
 }
 
@@ -289,7 +335,7 @@ static void qcrypto_init_req_control(struct crypto_engine *pce,
 	int i;
 
 	pce->preq_pool = pqcrypto_req_control;
-	atomic_set(&pce->req_count, 0);
+	pce->req_count = 0;
 	for (i = 0; i < pce->max_req; i++) {
 		pqcrypto_req_control->index = i;
 		pqcrypto_req_control->in_use = false;
@@ -393,6 +439,7 @@ struct qcrypto_alg {
 };
 
 #define QCRYPTO_MAX_KEY_SIZE	64
+
 /* max of AES_BLOCK_SIZE, DES3_EDE_BLOCK_SIZE */
 #define QCRYPTO_MAX_IV_LENGTH	16
 
@@ -408,10 +455,10 @@ struct qcrypto_cipher_ctx {
 	unsigned int flags;
 
 	enum qce_hash_alg_enum  auth_alg; /* for aead */
-	u8 auth_key[QCRYPTO_MAX_KEY_SIZE];
-	u8 iv[QCRYPTO_MAX_IV_LENGTH];
+	u8 auth_key[QCRYPTO_MAX_KEY_SIZE] __aligned(4); /* 32-bit alignment */
+	u8 iv[QCRYPTO_MAX_IV_LENGTH] __aligned(4); /* 32-bit alignment */
 
-	u8 enc_key[QCRYPTO_MAX_KEY_SIZE];
+	u8 enc_key[QCRYPTO_MAX_KEY_SIZE] __aligned(4); /* 32-bit alignment */
 	unsigned int enc_key_len;
 
 	unsigned int authsize;
@@ -441,7 +488,8 @@ struct qcrypto_cipher_req_ctx {
 	struct qcrypto_resp_ctx rsp_entry;/* rsp entry. */
 	struct crypto_engine *pengine;  /* engine assigned to this request */
 	u8 *iv;
-	u8 rfc4309_iv[QCRYPTO_MAX_IV_LENGTH];
+	/* 32-bit alignment*/
+	u8 rfc4309_iv[QCRYPTO_MAX_IV_LENGTH] __aligned(4);
 	unsigned int ivsize;
 	int  aead;
 	unsigned char *assoc;		/* Pointer to formatted assoc data */
@@ -458,7 +506,8 @@ struct qcrypto_cipher_req_ctx {
 
 	struct aead_request *aead_req;
 	struct ahash_request *fb_hash_req;
-	uint8_t	fb_ahash_digest[SHA256_DIGEST_SIZE];
+	/* 32-bit alignment*/
+	uint8_t fb_ahash_digest[SHA256_DIGEST_SIZE] __aligned(4);
 	struct scatterlist *fb_ahash_sg;
 	char *fb_ahash_assoc_iv;
 	char *fb_aes_iv;
@@ -500,7 +549,8 @@ struct qcrypto_sha_ctx {
 	enum qce_hash_alg_enum  alg;
 	uint32_t		diglen;
 	uint32_t		authkey_in_len;
-	uint8_t			authkey[SHA_MAX_BLOCK_SIZE];
+	/* 32-bit alignment */
+	uint8_t		authkey[SHA_MAX_BLOCK_SIZE] __aligned(4);
 	struct ahash_request *ahash_req;
 	struct completion ahash_req_complete;
 };
@@ -521,14 +571,15 @@ struct qcrypto_sha_req_ctx {
 	u64 count;
 	uint8_t	first_blk;
 	uint8_t	last_blk;
-	uint8_t	 trailing_buf[SHA_MAX_BLOCK_SIZE];
+	/* 32-bit alignment */
+	uint8_t trailing_buf[SHA_MAX_BLOCK_SIZE] __aligned(4);
 	uint32_t trailing_buf_len;
 
 	/* dma buffer, Internal use */
 	uint8_t	staging_dmabuf
 		[SHA_MAX_BLOCK_SIZE+SHA_MAX_DIGEST_SIZE+MAX_ALIGN_SIZE];
 
-	uint8_t	digest[SHA_MAX_DIGEST_SIZE];
+	uint8_t	digest[SHA_MAX_DIGEST_SIZE] __aligned(4); /* 32-bit alignment */
 	struct scatterlist sg[2];
 };
 
@@ -659,40 +710,39 @@ static void qcrypto_bw_allocate_work(struct work_struct *work)
 {
 	struct  crypto_engine *pengine = container_of(work,
 				struct crypto_engine, bw_allocate_ws);
-	unsigned long flags;
-	struct crypto_priv *cp = pengine->pcp;
+	struct crypto_poll_ctl *ctl = pengine->pctl;
 
-	spin_lock_irqsave(&cp->lock, flags);
+	spin_lock_bh(&ctl->lock);
 	pengine->bw_state = BUS_BANDWIDTH_ALLOCATING;
-	spin_unlock_irqrestore(&cp->lock, flags);
+	spin_unlock_bh(&ctl->lock);
 
 	qcrypto_ce_set_bus(pengine, true);
 	qcrypto_bw_set_timeout(pengine);
-	spin_lock_irqsave(&cp->lock, flags);
+	spin_lock_bh(&ctl->lock);
 	pengine->bw_state = BUS_HAS_BANDWIDTH;
-	pengine->high_bw_req = false;
 	pengine->active_seq++;
 	pengine->check_flag = true;
-	spin_unlock_irqrestore(&cp->lock, flags);
-	_start_qcrypto_process(cp, pengine);
+	spin_unlock_bh(&ctl->lock);
+
+	qcrypto_poll_ctl_sched(ctl);
 };
 
 static void qcrypto_bw_reaper_work(struct work_struct *work)
 {
 	struct  crypto_engine *pengine = container_of(work,
 				struct crypto_engine, bw_reaper_ws);
+	struct crypto_poll_ctl *ctl = pengine->pctl;
 	struct crypto_priv *cp = pengine->pcp;
-	unsigned long flags;
 	u32    active_seq;
 	bool restart = false;
 
-	spin_lock_irqsave(&cp->lock, flags);
+	spin_lock_bh(&ctl->lock);
 	active_seq = pengine->active_seq;
 	if (pengine->bw_state == BUS_HAS_BANDWIDTH &&
 		(active_seq == pengine->last_active_seq)) {
 
 		/* check if engine is stuck */
-		if (atomic_read(&pengine->req_count) > 0) {
+		if (pengine->req_count > 0) {
 			if (pengine->check_flag)
 				dev_warn(&pengine->pdev->dev,
 				"The engine appears to be stuck seq %d.\n",
@@ -703,33 +753,245 @@ static void qcrypto_bw_reaper_work(struct work_struct *work)
 		if (cp->platform_support.bus_scale_table == NULL)
 			goto ret;
 		pengine->bw_state = BUS_BANDWIDTH_RELEASING;
-		spin_unlock_irqrestore(&cp->lock, flags);
+		spin_unlock_bh(&ctl->lock);
 
 		qcrypto_ce_set_bus(pengine, false);
 
-		spin_lock_irqsave(&cp->lock, flags);
+		spin_lock_bh(&ctl->lock);
 
-		if (pengine->high_bw_req == true) {
+		if (!__qcrypto_engine_req_queue_empty(pengine)) {
 			/* we got request while we are disabling clock */
 			pengine->bw_state = BUS_BANDWIDTH_ALLOCATING;
-			spin_unlock_irqrestore(&cp->lock, flags);
+			spin_unlock_bh(&ctl->lock);
 
 			qcrypto_ce_set_bus(pengine, true);
 
-			spin_lock_irqsave(&cp->lock, flags);
+			spin_lock_bh(&ctl->lock);
 			pengine->bw_state = BUS_HAS_BANDWIDTH;
-			pengine->high_bw_req = false;
 			restart = true;
 		} else
 			pengine->bw_state = BUS_NO_BANDWIDTH;
 	}
 ret:
 	pengine->last_active_seq = active_seq;
-	spin_unlock_irqrestore(&cp->lock, flags);
+	spin_unlock_bh(&ctl->lock);
 	if (restart)
-		_start_qcrypto_process(cp, pengine);
+		qcrypto_poll_ctl_sched(ctl);
 	if (pengine->bw_state != BUS_NO_BANDWIDTH)
 		qcrypto_bw_set_timeout(pengine);
+}
+
+static inline struct crypto_engine *next_engine_to_poll(struct crypto_engine *p)
+{
+	struct crypto_poll_ctl *ctl = p->pctl;
+
+	if (list_is_last(&p->plist, &ctl->engine_list))
+		p =  list_first_entry(&ctl->engine_list, struct crypto_engine,
+				      plist);
+	else
+		p = list_next_entry(p, plist);
+	return p;
+}
+
+static enum hrtimer_restart qcrypto_poll_timeout(struct hrtimer *timer)
+{
+	struct crypto_poll_ctl *ctl = container_of(timer,
+						   struct crypto_poll_ctl,
+						   timer.timer);
+	struct crypto_engine *pengine;
+	u32 n = 0;
+	bool restart_timer = true;
+
+	if (ctl->pm_support)
+		spin_lock(&ctl->lock);
+	ctl->poll++;
+
+	if (ctl->first_engine_to_poll == NULL)
+		goto out;
+
+	/* Check if any pending response to poll */
+	for (pengine = ctl->first_engine_to_poll; pengine;) {
+		switch (pengine->bw_state) {
+		case BUS_HAS_BANDWIDTH:
+			qce_poll_eot(pengine->qce);
+			break;
+		default:
+			break;
+		}
+		pengine = next_engine_to_poll(pengine);
+		if (pengine == ctl->first_engine_to_poll)
+			break;
+	}
+
+	/* Handle the pending request */
+	ctl->first_engine_to_poll =
+		next_engine_to_poll(ctl->first_engine_to_poll);
+	for (pengine = ctl->first_engine_to_poll; pengine;) {
+		switch (pengine->bw_state) {
+		case BUS_HAS_BANDWIDTH:
+			_start_qcrypto_process(pengine->pcp, pengine);
+			n += pengine->req_count;
+			break;
+		case BUS_NO_BANDWIDTH:
+			if (ctl->pm_support &&
+			    !__qcrypto_engine_req_queue_empty(pengine) &&
+			    !work_pending(&pengine->bw_allocate_ws))
+				qcrypto_ce_bw_allocate_req(pengine);
+			break;
+		default:
+			break;
+		}
+		pengine = next_engine_to_poll(pengine);
+		if (pengine == ctl->first_engine_to_poll)
+			break;
+	}
+
+out:
+	if (ctl->pm_support)
+		spin_unlock(&ctl->lock);
+
+	if (!n) {
+		if (++ctl->retry > ctl->max_retry) {
+			ctl->retry = 0;
+			restart_timer = false;
+		}
+	} else
+		ctl->retry = 0;
+
+	if (restart_timer) {
+		tasklet_hrtimer_start(
+			&ctl->timer,
+			ns_to_ktime((ctl->intval) ?
+				    MICRO_TO_NS(ctl->intval) :
+				    MICRO_TO_NS(DEFAULT_POLL_INTVAL)),
+			HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
+	} else
+		ctl->state = NOT_SCHEDULED;
+
+	return HRTIMER_NORESTART;
+}
+
+static void qcrypto_poll_work(struct work_struct *work)
+{
+	struct crypto_poll_ctl *ctl = container_of(work, struct crypto_poll_ctl,
+						   work);
+
+	ktime_t ktime = ktime_set(0, (ctl->intval) ? MICRO_TO_NS(ctl->intval) :
+				  MICRO_TO_NS(DEFAULT_POLL_INTVAL));
+
+	tasklet_hrtimer_start(&ctl->timer, ktime,
+			      HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
+	ctl->state = IS_SCHEDULED;
+}
+
+static struct crypto_poll_ctl *qcrypto_poll_ctl_alloc(struct crypto_priv *cp,
+						     int cpu)
+{
+	struct crypto_poll_ctl *ctl = NULL;
+
+	list_for_each_entry(ctl, &cp->poll_ctl_list, list) {
+		if (ctl->cpu == cpu)
+			return ctl;
+	}
+
+	ctl = kzalloc(sizeof(*ctl), GFP_KERNEL);
+	if (!ctl)
+		return NULL;
+
+	ctl->wq = alloc_workqueue(
+		"qcrypto_poll_wq",
+		WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
+	if (!ctl->wq) {
+		pr_err("Error allocating workqueue\n");
+		kfree(ctl);
+		return NULL;
+	}
+
+	INIT_WORK(&ctl->work, qcrypto_poll_work);
+	tasklet_hrtimer_init(&ctl->timer, qcrypto_poll_timeout,
+			     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	spin_lock_init(&ctl->lock);
+	INIT_LIST_HEAD(&ctl->engine_list);
+
+	ctl->cp = cp;
+	ctl->cpu = cpu;
+	ctl->state = NOT_SCHEDULED;
+	ctl->max_retry = DEFAULT_POLL_RETRY;
+	ctl->pm_support = (cp->ce_support.clk_mgmt_sus_res ||
+			   cp->platform_support.bus_scale_table) ? true : false;
+	list_add_tail(&ctl->list, &cp->poll_ctl_list);
+	cp->poll_ctl_num++;
+
+	return ctl;
+}
+
+static void qcrypto_poll_ctl_free(struct crypto_poll_ctl *ctl)
+{
+	cancel_work_sync(&ctl->work);
+	destroy_workqueue(ctl->wq);
+	tasklet_hrtimer_cancel(&ctl->timer);
+
+	list_del(&ctl->list);
+	ctl->cp->poll_ctl_num--;
+	kfree(ctl);
+}
+
+static void qcrypto_poll_ctl_free_all(struct crypto_priv *cp)
+{
+	struct crypto_poll_ctl *ctl;
+
+	while ((ctl = list_first_entry_or_null(&cp->poll_ctl_list,
+					      struct crypto_poll_ctl,
+					      list))) {
+		qcrypto_poll_ctl_free(ctl);
+	}
+}
+
+static int __qcrypto_poll_ctl_engine_attach(struct crypto_engine *pengine,
+					    struct crypto_poll_ctl *ctl)
+{
+	list_add_tail(&pengine->plist, &ctl->engine_list);
+	pengine->pctl = ctl;
+	if (!ctl->first_engine_to_poll)
+		ctl->first_engine_to_poll = pengine;
+
+	return 0;
+}
+
+static void __qcrypto_poll_ctl_engine_detach(struct crypto_engine *pengine)
+{
+	if (pengine->pctl->first_engine_to_poll == pengine) {
+		pengine->pctl->first_engine_to_poll =
+			next_engine_to_poll(pengine);
+		if (pengine->pctl->first_engine_to_poll == pengine)
+			pengine->pctl->first_engine_to_poll = NULL;
+	}
+	list_del(&pengine->plist);
+	pengine->pctl = NULL;
+}
+
+static inline void qcrypto_poll_ctl_engine_detach(struct crypto_engine *pengine)
+{
+	if (pengine->pctl) {
+		spin_lock_bh(&pengine->pctl->lock);
+		__qcrypto_poll_ctl_engine_detach(pengine);
+		spin_unlock_bh(&pengine->pctl->lock);
+	}
+}
+
+static inline int qcrypto_engine_set_polling_cpu(struct crypto_engine *pengine,
+						 int cpu)
+{
+	struct crypto_poll_ctl *ctl = qcrypto_poll_ctl_alloc(pengine->pcp, cpu);
+	int ret;
+
+	if (!ctl)
+		return -ENOMEM;
+
+	spin_lock_bh(&ctl->lock);
+	ret = __qcrypto_poll_ctl_engine_attach(pengine, ctl);
+	spin_unlock_bh(&ctl->lock);
+	return ret;
 }
 
 static int qcrypto_count_sg(struct scatterlist *sg, int nbytes)
@@ -1191,7 +1453,7 @@ static int _disp_stats(int id)
 	unsigned long flags;
 	struct crypto_priv *cp = &qcrypto_dev;
 	struct crypto_engine *pe;
-	int i;
+	struct crypto_poll_ctl *ctl;
 
 	pstat = &_qcrypto_stat;
 	len = scnprintf(_debug_read_buf, DEBUG_MAX_RW_BUF - 1,
@@ -1362,19 +1624,40 @@ static int _disp_stats(int id)
 	}
 	spin_unlock_irqrestore(&cp->lock, flags);
 
-	for (i = 0; i < MAX_SMP_CPU; i++)
-		if (cp->cpu_req[i])
+	list_for_each_entry(ctl, &cp->poll_ctl_list, list) {
+		len += scnprintf(
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"   CPU%1d PollCtl:\n"
+			"             Poll                 : %llu\n",
+			ctl->cpu,
+			ctl->poll);
+		len += scnprintf(
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"             Schedule             : %llu\n",
+			ctl->sched);
+		len += scnprintf(
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"             State                : %u\n",
+			ctl->state);
+		len += scnprintf(
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"             Engine               :");
+		list_for_each_entry(pe, &ctl->engine_list, plist) {
 			len += scnprintf(
 				_debug_read_buf + len,
 				DEBUG_MAX_RW_BUF - len - 1,
-				"   Req from CPU %1d in ISR Context     : %llu\n",
-				i, cp->cpu_req[i]);
-	if (cp->cpu_req[MAX_SMP_CPU])
+				" %u",
+				pe->unit);
+		}
 		len += scnprintf(
-				_debug_read_buf + len,
-				DEBUG_MAX_RW_BUF - len - 1,
-				"   Req  in process Context            : %llu\n",
-				 cp->cpu_req[MAX_SMP_CPU]);
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"\n");
+	}
 	return len;
 }
 
@@ -1384,25 +1667,13 @@ static void _qcrypto_remove_engine(struct crypto_engine *pengine)
 	struct qcrypto_alg *q_alg;
 	struct qcrypto_alg *n;
 	unsigned long flags;
-	struct crypto_engine *pe;
 
 	cp = pengine->pcp;
 
 	spin_lock_irqsave(&cp->lock, flags);
 	list_del(&pengine->elist);
-	if (pengine->first_engine) {
-		cp->first_engine = NULL;
-		pe = list_first_entry(&cp->engine_list, struct crypto_engine,
-								elist);
-		if (pe) {
-			pe->first_engine = true;
-			cp->first_engine = pe;
-		}
-	}
 	if (cp->next_engine == pengine)
 		cp->next_engine = NULL;
-	if (cp->scheduled_eng == pengine)
-		cp->scheduled_eng = NULL;
 	spin_unlock_irqrestore(&cp->lock, flags);
 
 	cp->total_units--;
@@ -1428,6 +1699,7 @@ static void _qcrypto_remove_engine(struct crypto_engine *pengine)
 		list_del(&q_alg->entry);
 		kzfree(q_alg);
 	}
+	qcrypto_poll_ctl_engine_detach(pengine);
 }
 
 static int _qcrypto_remove(struct platform_device *pdev)
@@ -1446,6 +1718,8 @@ static int _qcrypto_remove(struct platform_device *pdev)
 	if (pengine->qce)
 		qce_close(pengine->qce);
 	kzfree(pengine);
+	if (list_empty(&cp->engine_list))
+		qcrypto_poll_ctl_free_all(cp);
 	return 0;
 }
 
@@ -1615,9 +1889,6 @@ static void seq_response(struct work_struct *work)
 							 resp_work);
 	struct llist_node *list;
 	struct llist_node *rev = NULL;
-	struct crypto_engine *pengine;
-	unsigned long flags;
-	int total_unit;
 
 again:
 	list = llist_del_all(&cp->ordered_resp_list);
@@ -1649,18 +1920,9 @@ again:
 
 	if (atomic_read(&cp->resp_cnt) < COMPLETION_CB_BACKLOG_LENGTH_START &&
 		(cmpxchg(&cp->ce_req_proc_sts, STOPPED, IN_PROGRESS)
-						== STOPPED)) {
+						== STOPPED))
 		cp->resp_start++;
-		for (total_unit = cp->total_units; total_unit-- > 0;) {
-			spin_lock_irqsave(&cp->lock, flags);
-			pengine = _avail_eng(cp);
-			spin_unlock_irqrestore(&cp->lock, flags);
-			if (pengine)
-				_start_qcrypto_process(cp, pengine);
-			else
-				break;
-		}
-	}
+
 end:
 	if (cmpxchg(&cp->sched_resp_workq_status, SCHEDULE_AGAIN,
 				IS_SCHEDULED) == SCHEDULE_AGAIN)
@@ -1676,11 +1938,12 @@ static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 					int res)
 {
 	struct crypto_priv *cp = pengine->pcp;
-	unsigned long flags;
+	unsigned long flags = 0;
 	struct qcrypto_resp_ctx *arsp;
 	struct list_head *plist;
 	unsigned int resp_qlen;
 	unsigned int cnt = 0;
+	bool need_lock = (pengine->pcp->poll_ctl_num > 1) ? true : false;
 
 	switch (type) {
 	case CRYPTO_ALG_TYPE_AHASH:
@@ -1693,7 +1956,8 @@ static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 		break;
 	}
 
-	spin_lock_irqsave(&cp->lock, flags);
+	if (need_lock)
+		spin_lock_irqsave(&cp->lock, flags);
 
 	cur_arsp->res = res;
 	while (!list_empty(plist)) {
@@ -1719,7 +1983,8 @@ static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 		cp->resp_stop++;
 	}
 
-	spin_unlock_irqrestore(&cp->lock, flags);
+	if (need_lock)
+		spin_unlock_irqrestore(&cp->lock, flags);
 
 retry:
 	if (!llist_empty(&cp->ordered_resp_list)) {
@@ -1743,7 +2008,6 @@ static void req_done(struct qcrypto_req_control *pqcrypto_req_control)
 	struct qcrypto_resp_ctx *arsp;
 	u32 type = 0;
 	void *tfm_ctx = NULL;
-	unsigned int cpu;
 	int res;
 
 	pengine = pqcrypto_req_control->pce;
@@ -1757,16 +2021,8 @@ static void req_done(struct qcrypto_req_control *pqcrypto_req_control)
 		type = crypto_tfm_alg_type(areq->tfm);
 		tfm_ctx = crypto_tfm_ctx(areq->tfm);
 	}
-	cpu = smp_processor_id();
-	pengine->irq_cpu = cpu;
-	if (pengine->first_engine) {
-		if (cpu  != cp->cpu_getting_irqs_frm_first_ce)
-			cp->cpu_getting_irqs_frm_first_ce = cpu;
-	}
 	if (areq)
 		_qcrypto_tfm_complete(pengine, type, tfm_ctx, arsp, res);
-	if (ACCESS_ONCE(cp->ce_req_proc_sts) == IN_PROGRESS)
-		_start_qcrypto_process(cp, pengine);
 }
 
 static void _qce_ahash_complete(void *cookie, unsigned char *digest,
@@ -2512,13 +2768,90 @@ static struct crypto_engine *_qcrypto_static_assign_engine(
 	return pengine;
 }
 
-static int _start_qcrypto_process(struct crypto_priv *cp,
-				struct crypto_engine *pengine)
+static inline void __qcrypto_handle_backlogs(
+	struct crypto_async_request *first,
+	struct crypto_async_request *last)
+{
+	struct crypto_async_request *async_req = first;
+
+	while (1) {
+		async_req->complete(async_req, -EINPROGRESS);
+		if (async_req == last)
+			break;
+		async_req = list_next_entry(async_req, list);
+	}
+}
+
+static void _qcrypto_engine_fill_req_queue(struct crypto_engine *pengine)
 {
 	struct crypto_async_request *async_req = NULL;
-	struct crypto_async_request *backlog_eng = NULL;
-	struct crypto_async_request *backlog_cp = NULL;
+	struct crypto_async_request *first_eng_backlog_req;
+	struct crypto_async_request *last_eng_backlog_req;
+	struct crypto_async_request *first_cp_backlog_req;
+	struct crypto_async_request *last_cp_backlog_req;
+	struct crypto_priv *cp = pengine->pcp;
 	unsigned long flags;
+	u32 n = pengine->max_req - pengine->req_count;
+
+	if (pengine->req_queue.qlen >= n)
+		return;
+
+	spin_lock_irqsave(&cp->lock, flags);
+
+	first_eng_backlog_req = crypto_get_backlog(&pengine->areq_queue);
+	while (pengine->req_queue.qlen < n) {
+		async_req = crypto_dequeue_request(&pengine->areq_queue);
+		if (!async_req)
+			break;
+		crypto_enqueue_request(&pengine->req_queue, async_req);
+	};
+	last_eng_backlog_req = crypto_get_backlog(&pengine->areq_queue);
+	if (first_eng_backlog_req) {
+		if (!last_eng_backlog_req)
+			last_eng_backlog_req = list_entry(
+				pengine->areq_queue.list.prev,
+				struct crypto_async_request,
+				list);
+		else
+			last_eng_backlog_req = list_prev_entry(
+				last_eng_backlog_req, list);
+	}
+
+	first_cp_backlog_req = crypto_get_backlog(&cp->req_queue);
+	while (pengine->req_queue.qlen < n) {
+		async_req = crypto_dequeue_request(&cp->req_queue);
+		if (!async_req)
+			break;
+		crypto_enqueue_request(&pengine->req_queue, async_req);
+	}
+	last_cp_backlog_req = crypto_get_backlog(&cp->req_queue);
+	if (first_cp_backlog_req) {
+		if (!last_cp_backlog_req)
+			last_cp_backlog_req = list_entry(
+				cp->req_queue.list.prev,
+				struct crypto_async_request,
+				list);
+		else
+			last_cp_backlog_req = list_prev_entry(
+				last_cp_backlog_req, list);
+	}
+
+	spin_unlock_irqrestore(&cp->lock, flags);
+
+	if (first_eng_backlog_req && last_eng_backlog_req)
+		__qcrypto_handle_backlogs(first_eng_backlog_req,
+					  last_eng_backlog_req);
+
+	if (first_cp_backlog_req && last_cp_backlog_req)
+		__qcrypto_handle_backlogs(first_cp_backlog_req,
+					  last_cp_backlog_req);
+}
+
+static int _qcrypto_engine_req(struct crypto_engine *pengine,
+			       struct crypto_async_request *async_req)
+{
+	struct crypto_priv *cp = pengine->pcp;
+	unsigned long flags = 0;
 	u32 type;
 	int ret = 0;
 	struct crypto_stat *pstat;
@@ -2528,62 +2861,26 @@ static int _start_qcrypto_process(struct crypto_priv *cp,
 	struct ablkcipher_request *ablkcipher_req;
 	struct ahash_request *ahash_req;
 	struct aead_request *aead_req;
-	struct qcrypto_resp_ctx *arsp;
+	struct qcrypto_resp_ctx *arsp = NULL;
 	struct qcrypto_req_control *pqcrypto_req_control;
-	unsigned int cpu = MAX_SMP_CPU;
-
-	if (ACCESS_ONCE(cp->ce_req_proc_sts) == STOPPED)
-		return 0;
-
-	if (in_interrupt()) {
-		cpu = smp_processor_id();
-		if (cpu >= MAX_SMP_CPU)
-			cpu = MAX_SMP_CPU - 1;
-	} else
-		cpu = MAX_SMP_CPU;
+	bool need_lock = (cp->poll_ctl_num > 1) ? true : false;
 
 	pstat = &_qcrypto_stat;
-
-again:
-	spin_lock_irqsave(&cp->lock, flags);
-	if (pengine->issue_req ||
-		atomic_read(&pengine->req_count) >= (pengine->max_req)) {
-		spin_unlock_irqrestore(&cp->lock, flags);
-		return 0;
-	}
-
-	backlog_eng = crypto_get_backlog(&pengine->req_queue);
-
-	/* make sure it is in high bandwidth state */
-	if (pengine->bw_state != BUS_HAS_BANDWIDTH) {
-		spin_unlock_irqrestore(&cp->lock, flags);
-		return 0;
-	}
-
-	/* try to get request from request queue of the engine first */
-	async_req = crypto_dequeue_request(&pengine->req_queue);
-	if (!async_req) {
-		/*
-		 * if no request from the engine,
-		 * try to  get from request queue of driver
-		 */
-		backlog_cp = crypto_get_backlog(&cp->req_queue);
-		async_req = crypto_dequeue_request(&cp->req_queue);
-		if (!async_req) {
-			spin_unlock_irqrestore(&cp->lock, flags);
-			return 0;
-		}
-	}
-	pqcrypto_req_control = qcrypto_alloc_req_control(pengine);
-	if (pqcrypto_req_control == NULL) {
-		pr_err("Allocation of request failed\n");
-		spin_unlock_irqrestore(&cp->lock, flags);
-		return 0;
-	}
 
 	/* add associated rsp entry to tfm response queue */
 	type = crypto_tfm_alg_type(async_req->tfm);
 	tfm_ctx = crypto_tfm_ctx(async_req->tfm);
+
+	if (need_lock)
+		spin_lock_irqsave(&cp->lock, flags);
+
+	pqcrypto_req_control = qcrypto_alloc_req_control(pengine);
+	if (pqcrypto_req_control == NULL) {
+		pr_err("Allocation of request failed\n");
+		ret = -ENOMEM;
+		goto err;
+	}
+
 	switch (type) {
 	case CRYPTO_ALG_TYPE_AHASH:
 		ahash_req = container_of(async_req,
@@ -2626,15 +2923,9 @@ again:
 	pengine->active_seq++;
 	pengine->check_flag = true;
 
-	pengine->issue_req = true;
-	cp->cpu_req[cpu]++;
-	smp_mb(); /* make it visible */
+	if (need_lock)
+		spin_unlock_irqrestore(&cp->lock, flags);
 
-	spin_unlock_irqrestore(&cp->lock, flags);
-	if (backlog_eng)
-		backlog_eng->complete(backlog_eng, -EINPROGRESS);
-	if (backlog_cp)
-		backlog_cp->complete(backlog_cp, -EINPROGRESS);
 	switch (type) {
 	case CRYPTO_ALG_TYPE_ABLKCIPHER:
 		ret = _qcrypto_process_ablkcipher(pengine,
@@ -2650,13 +2941,12 @@ again:
 		ret = -EINVAL;
 	};
 
-	pengine->issue_req = false;
-	smp_mb(); /* make it visible */
-
 	pengine->total_req++;
+err:
 	if (ret) {
 		pengine->err_req++;
-		qcrypto_free_req_control(pengine, pqcrypto_req_control);
+		if (pqcrypto_req_control)
+			qcrypto_free_req_control(pengine, pqcrypto_req_control);
 
 		if (type == CRYPTO_ALG_TYPE_ABLKCIPHER)
 			pstat->ablk_cipher_op_fail++;
@@ -2667,97 +2957,61 @@ again:
 				pstat->aead_op_fail++;
 
 		_qcrypto_tfm_complete(pengine, type, tfm_ctx, arsp, ret);
-		goto again;
 	};
 	return ret;
 }
 
-static inline struct crypto_engine *_next_eng(struct crypto_priv *cp,
-		struct crypto_engine *p)
+static int _start_qcrypto_process(struct crypto_priv *cp,
+				  struct crypto_engine *pengine)
 {
+	struct crypto_async_request *async_req = NULL;
 
-	if (p == NULL || list_is_last(&p->elist, &cp->engine_list))
-		p =  list_first_entry(&cp->engine_list, struct crypto_engine,
-			elist);
-	else
-		p = list_entry(p->elist.next, struct crypto_engine, elist);
-	return p;
-}
-static struct crypto_engine *_avail_eng(struct crypto_priv *cp)
-{
-	/* call this function with spinlock set */
-	struct crypto_engine *q = NULL;
-	struct crypto_engine *p = cp->scheduled_eng;
-	struct crypto_engine *q1;
-	int eng_cnt = cp->total_units;
+	if (ACCESS_ONCE(cp->ce_req_proc_sts) == STOPPED)
+		return 0;
 
-	if (unlikely(list_empty(&cp->engine_list))) {
-		pr_err("%s: no valid ce to schedule\n", __func__);
-		return NULL;
+	/* make sure it is in high bandwidth state */
+	if (pengine->bw_state != BUS_HAS_BANDWIDTH)
+		return 0;
+
+	_qcrypto_engine_fill_req_queue(pengine);
+
+	while (pengine->req_count < pengine->max_req) {
+		async_req = crypto_dequeue_request(&pengine->req_queue);
+		if (!async_req)
+			break;
+		_qcrypto_engine_req(pengine, async_req);
 	}
 
-	p = _next_eng(cp, p);
-	q1 = p;
-	while (eng_cnt-- > 0) {
-		if (!p->issue_req && atomic_read(&p->req_count) < p->max_req) {
-			q = p;
-			break;
-		}
-		p = _next_eng(cp, p);
-		if (q1 == p)
-			break;
-	}
-	cp->scheduled_eng = q;
-	return q;
+	return 0;
 }
 
 static int _qcrypto_queue_req(struct crypto_priv *cp,
 				struct crypto_engine *pengine,
 				struct crypto_async_request *req)
 {
+	struct crypto_poll_ctl *ctl = NULL;
 	int ret;
 	unsigned long flags;
+
+	if (list_empty(&cp->poll_ctl_list))
+		return -EBUSY;
 
 	spin_lock_irqsave(&cp->lock, flags);
 
 	if (pengine) {
-		ret = crypto_enqueue_request(&pengine->req_queue, req);
+		ctl = pengine->pctl;
+		ret = crypto_enqueue_request(&pengine->areq_queue, req);
 	} else {
+		ctl = list_first_entry(&cp->poll_ctl_list,
+				       struct crypto_poll_ctl, list);
 		ret = crypto_enqueue_request(&cp->req_queue, req);
-		pengine = _avail_eng(cp);
 		if (cp->req_queue.qlen > cp->max_qlen)
 			cp->max_qlen = cp->req_queue.qlen;
 	}
-	if (pengine) {
-		switch (pengine->bw_state) {
-		case BUS_NO_BANDWIDTH:
-			if (pengine->high_bw_req == false) {
-				qcrypto_ce_bw_allocate_req(pengine);
-				pengine->high_bw_req = true;
-			}
-			pengine = NULL;
-			break;
-		case BUS_HAS_BANDWIDTH:
-			break;
-		case BUS_BANDWIDTH_RELEASING:
-			pengine->high_bw_req = true;
-			pengine = NULL;
-			break;
-		case BUS_BANDWIDTH_ALLOCATING:
-			pengine = NULL;
-			break;
-		case BUS_SUSPENDED:
-		case BUS_SUSPENDING:
-		default:
-			pengine = NULL;
-			break;
-		}
-	} else {
-		cp->no_avail++;
-	}
 	spin_unlock_irqrestore(&cp->lock, flags);
-	if (pengine && (ACCESS_ONCE(cp->ce_req_proc_sts) == IN_PROGRESS))
-		_start_qcrypto_process(cp, pengine);
+
+	qcrypto_poll_ctl_sched(ctl);
+
 	return ret;
 }
 
@@ -5695,7 +5949,7 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	}
 
 	/* open qce */
-	handle = qce_open_poll(pdev, &rc);
+	handle = qce_open(pdev, QCE_OFLAG_POLLING, &rc);
 	if (handle == NULL) {
 		kzfree(pengine);
 		platform_set_drvdata(pdev, NULL);
@@ -5713,12 +5967,10 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	pengine->bw_reaper_timer.function =
 			qcrypto_bw_reaper_timer_callback;
 	INIT_WORK(&pengine->bw_allocate_ws, qcrypto_bw_allocate_work);
-	pengine->high_bw_req = false;
 	pengine->active_seq = 0;
 	pengine->last_active_seq = 0;
 	pengine->check_flag = false;
 	pengine->max_req_used = 0;
-	pengine->issue_req = false;
 
 	crypto_init_queue(&pengine->req_queue, MSM_QCRYPTO_REQ_QUEUE_LENGTH);
 
@@ -5727,9 +5979,6 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	pengine->unit = cp->total_units;
 
 	spin_lock_irqsave(&cp->lock, flags);
-	pengine->first_engine = list_empty(&cp->engine_list);
-	if (pengine->first_engine)
-		cp->first_engine = pengine;
 	list_add_tail(&pengine->elist, &cp->engine_list);
 	cp->next_engine = pengine;
 	spin_unlock_irqrestore(&cp->lock, flags);
@@ -5744,6 +5993,10 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 		goto err;
 	}
 	qcrypto_init_req_control(pengine, pqcrypto_req_control);
+	if (qcrypto_engine_set_polling_cpu(pengine, DEFAULT_POLL_CPU)) {
+		rc = -ENOMEM;
+		goto err;
+	}
 	if (cp->ce_support.bam)	 {
 		cp->platform_support.ce_shared = cp->ce_support.is_shared;
 		cp->platform_support.shared_ce_resource = 0;
@@ -6126,8 +6379,8 @@ static int _qcrypto_engine_in_use(struct crypto_engine *pengine)
 {
 	struct crypto_priv *cp = pengine->pcp;
 
-	if ((atomic_read(&pengine->req_count) > 0) || pengine->req_queue.qlen
-					|| cp->req_queue.qlen)
+	if ((pengine->req_count > 0) || cp->req_queue.qlen ||
+	    pengine->areq_queue.qlen || pengine->req_queue.qlen)
 		return 1;
 	return 0;
 }
@@ -6146,8 +6399,7 @@ static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	int ret = 0;
 	struct crypto_engine *pengine;
-	struct crypto_priv *cp;
-	unsigned long flags;
+	struct crypto_poll_ctl *ctl;
 
 	pengine = platform_get_drvdata(pdev);
 	if (!pengine)
@@ -6157,13 +6409,14 @@ static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
 	 * Check if this platform supports clock management in suspend/resume
 	 * If not, just simply return 0.
 	 */
-	cp = pengine->pcp;
-	if (!cp->ce_support.clk_mgmt_sus_res)
+	if (!pengine->pcp->ce_support.clk_mgmt_sus_res)
 		return 0;
-	spin_lock_irqsave(&cp->lock, flags);
+
+	ctl = pengine->pctl;
+	spin_lock_bh(&ctl->lock);
 	switch (pengine->bw_state) {
 	case BUS_NO_BANDWIDTH:
-		if (pengine->high_bw_req == false)
+		if (__qcrypto_engine_req_queue_empty(pengine))
 			pengine->bw_state = BUS_SUSPENDED;
 		else
 			ret = -EBUSY;
@@ -6173,9 +6426,9 @@ static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
 			ret = -EBUSY;
 		} else {
 			pengine->bw_state = BUS_SUSPENDING;
-			spin_unlock_irqrestore(&cp->lock, flags);
+			spin_unlock_bh(&ctl->lock);
 			_qcrypto_do_suspending(pengine);
-			spin_lock_irqsave(&cp->lock, flags);
+			spin_lock_bh(&ctl->lock);
 			pengine->bw_state = BUS_SUSPENDED;
 		}
 		break;
@@ -6188,7 +6441,7 @@ static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
 			break;
 	}
 
-	spin_unlock_irqrestore(&cp->lock, flags);
+	spin_unlock_bh(&ctl->lock);
 	if (ret)
 		return ret;
 	else {
@@ -6201,37 +6454,33 @@ static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
 static int  _qcrypto_resume(struct platform_device *pdev)
 {
 	struct crypto_engine *pengine;
-	struct crypto_priv *cp;
-	unsigned long flags;
+	struct crypto_poll_ctl *ctl;
 	int ret = 0;
 
 	pengine = platform_get_drvdata(pdev);
 
 	if (!pengine)
 		return -EINVAL;
-	cp = pengine->pcp;
-	if (!cp->ce_support.clk_mgmt_sus_res)
+
+	if (!pengine->pcp->ce_support.clk_mgmt_sus_res)
 		return 0;
-	spin_lock_irqsave(&cp->lock, flags);
+
+	ctl = pengine->pctl;
+	spin_lock_bh(&ctl->lock);
 	if (pengine->bw_state == BUS_SUSPENDED) {
-		spin_unlock_irqrestore(&cp->lock, flags);
+		spin_unlock_bh(&ctl->lock);
 		if (qce_pm_table.resume)
 			qce_pm_table.resume(pengine->qce);
 
-		spin_lock_irqsave(&cp->lock, flags);
+		spin_lock_bh(&ctl->lock);
 		pengine->bw_state = BUS_NO_BANDWIDTH;
 		pengine->active_seq++;
 		pengine->check_flag = false;
-		if (cp->req_queue.qlen || pengine->req_queue.qlen) {
-			if (pengine->high_bw_req == false) {
-				qcrypto_ce_bw_allocate_req(pengine);
-				pengine->high_bw_req = true;
-			}
-		}
+		qcrypto_poll_ctl_sched(ctl);
 	} else
 		ret = -EBUSY;
 
-	spin_unlock_irqrestore(&cp->lock, flags);
+	spin_unlock_bh(&ctl->lock);
 	return ret;
 }
 
@@ -6282,7 +6531,6 @@ static ssize_t _debug_stats_write(struct file *file, const char __user *buf,
 	unsigned long flags;
 	struct crypto_priv *cp = &qcrypto_dev;
 	struct crypto_engine *pe;
-	int i;
 
 	memset((char *)&_qcrypto_stat, 0, sizeof(struct crypto_stat));
 	spin_lock_irqsave(&cp->lock, flags);
@@ -6298,8 +6546,6 @@ static ssize_t _debug_stats_write(struct file *file, const char __user *buf,
 	cp->no_avail = 0;
 	cp->max_resp_qlen = 0;
 	cp->max_reorder_cnt = 0;
-	for (i = 0; i < MAX_SMP_CPU + 1; i++)
-		cp->cpu_req[i] = 0;
 	cp->queue_complete_work = 0;
 	spin_unlock_irqrestore(&cp->lock, flags);
 	return count;
@@ -6350,6 +6596,7 @@ static int __init _qcrypto_init(void)
 		return rc;
 	INIT_LIST_HEAD(&pcp->alg_list);
 	INIT_LIST_HEAD(&pcp->engine_list);
+	INIT_LIST_HEAD(&pcp->poll_ctl_list);
 	init_llist_head(&pcp->ordered_resp_list);
 	spin_lock_init(&pcp->lock);
 	mutex_init(&pcp->engine_lock);
@@ -6363,7 +6610,6 @@ static int __init _qcrypto_init(void)
 	pcp->total_units = 0;
 	pcp->platform_support.bus_scale_table = NULL;
 	pcp->next_engine = NULL;
-	pcp->scheduled_eng = NULL;
 	pcp->ce_req_proc_sts = IN_PROGRESS;
 	crypto_init_queue(&pcp->req_queue, MSM_QCRYPTO_REQ_QUEUE_LENGTH);
 	return platform_driver_register(&_qualcomm_crypto);

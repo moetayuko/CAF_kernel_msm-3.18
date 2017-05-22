@@ -1886,7 +1886,7 @@ static int qcedev_probe(struct platform_device *pdev)
 	tasklet_init(&podev->done_tasklet, req_done, (unsigned long)podev);
 
 	/* open qce */
-	handle = qce_open(pdev, &rc);
+	handle = qce_open(pdev, 0, &rc);
 	if (handle == NULL) {
 		platform_set_drvdata(pdev, NULL);
 		return rc;

@@ -688,7 +688,7 @@ static int qcota_probe(struct platform_device *pdev)
 	tasklet_init(&pqce->done_tasklet, req_done, (unsigned long)pqce);
 
 	/* open qce */
-	handle = qce_open(pdev, &rc);
+	handle = qce_open(pdev, 0, &rc);
 	if (handle == NULL) {
 		pr_err("%s: device %s, can not open qce\n",
 			__func__, pdev->name);

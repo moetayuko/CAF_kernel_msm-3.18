@@ -176,7 +176,9 @@ struct qce_pm_table {
 
 extern struct qce_pm_table qce_pm_table;
 
-void *qce_open(struct platform_device *pdev, int *rc);
+#define QCE_OFLAG_POLLING	1
+
+void *qce_open(struct platform_device *pdev, int flags, int *rc);
 int qce_close(void *handle);
 int qce_aead_req(void *handle, struct qce_req *req);
 int qce_ablk_cipher_req(void *handle, struct qce_req *req);
@@ -186,6 +188,6 @@ int qce_enable_clk(void *handle);
 int qce_disable_clk(void *handle);
 int qce_get_driver_stats(void *handle, char *buf, int buflen);
 void qce_clear_driver_stats(void *handle);
-void *qce_open_poll(struct platform_device *pdev, int *rc);
+int qce_poll_eot(void *handle);
 
 #endif /* __CRYPTO_MSM_QCE_H */

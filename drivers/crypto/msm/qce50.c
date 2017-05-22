@@ -34,6 +34,7 @@
 #include <crypto/hash.h>
 #include <crypto/sha.h>
 #include <soc/qcom/socinfo.h>
+#include <asm/cmpxchg.h>
 
 #include "qce.h"
 #include "qce50.h"
@@ -66,37 +67,10 @@ struct bam_registration_info {
 };
 static LIST_HEAD(qce50_bam_list);
 
-static  int _qce_timer_init;
-
-#define MAX_POLL_CE 8
-
-enum start_timer_workq_sts {
-	NOT_SCHEDULED  = 0,
-	IS_SCHEDULED   = 1,
-};
-
-struct qce_timer_poll {
-	struct tasklet_hrtimer poll_timer;
-	struct qce_device *pce_dev[MAX_POLL_CE];
-	int intr_empty_cnt;
-	struct workqueue_struct *start_timer_wq;
-	struct work_struct start_timer_work;
-	enum start_timer_workq_sts sched_workq_status;
-};
-static struct qce_timer_poll _qce_poll_data;
-static int poll_cpu;
-
-#define MS_TO_NS(x) (x * 1000000)
-#define MICRO_TO_NS(x) (x * 1000)
-
 /* Max number of request supported */
 #define MAX_QCE_BAM_REQ 16
 #define SET_INTR_AT_REQ			(MAX_QCE_BAM_REQ - 2)
 #define MAX_QCE_ALLOC_BAM_REQ		MAX_QCE_BAM_REQ
-/* Delay timer to expire when in bunch mode */
-#define POLL_DELAY_IN_MICROS (200)
-#define MAX_EMPTY_POLL 5
-#define QCE_POLL_CPU 1
 
 #define TOTAL_IOVEC_SPACE_PER_PIPE (QCE_MAX_NUM_DSCR * sizeof(struct sps_iovec))
 
@@ -144,11 +118,10 @@ struct qce_device {
 	struct ce_bam_info ce_bam_info;
 	struct ce_request_info ce_request_info[MAX_QCE_ALLOC_BAM_REQ];
 	unsigned int ce_request_index;
-	atomic_t no_of_queued_req;
+	uint32_t no_of_queued_req;
+	bool use_intr;
 	unsigned int dev_no;
 	struct qce_driver_stats qce_stats;
-	int poll_cfg;
-	int next_poll;
 };
 
 static void print_notify_debug(struct sps_event_notify *notify);
@@ -167,19 +140,32 @@ static uint32_t _std_init_vector_sha256[] = {
 	0x510E527F, 0x9B05688C,	0x1F83D9AB, 0x5BE0CD19
 };
 
+#define IS_WORD_ALIGNED(p)	(((unsigned long)(p) & (sizeof(u32) - 1)) == 0)
+
 static void _byte_stream_to_net_words(uint32_t *iv, unsigned char *b,
 		unsigned int len)
 {
 	unsigned n;
 
-	n = len  / sizeof(uint32_t);
-	for (; n > 0; n--) {
-		*iv =  ((*b << 24)      & 0xff000000) |
-				(((*(b+1)) << 16) & 0xff0000)   |
-				(((*(b+2)) << 8) & 0xff00)     |
-				(*(b+3)          & 0xff);
-		b += sizeof(uint32_t);
-		iv++;
+	n = len / sizeof(uint32_t);
+	if (likely(IS_WORD_ALIGNED(b))) {
+		uint32_t *p = (uint32_t *)b;
+
+		for (; n > 0; n--) {
+			*iv = cpu_to_be32(*p);
+			iv++;
+			p++;
+		}
+		b = (unsigned char *)p;
+	} else {
+		for (; n > 0; n--) {
+			*iv =  ((*b << 24)      & 0xff000000) |
+					(((*(b+1)) << 16) & 0xff0000)   |
+					(((*(b+2)) << 8) & 0xff00)     |
+					(*(b+3)          & 0xff);
+			b += sizeof(uint32_t);
+			iv++;
+		}
 	}
 
 	n = len %  sizeof(uint32_t);
@@ -199,7 +185,8 @@ static void _byte_stream_swap_to_net_words(uint32_t *iv, unsigned char *b,
 		unsigned int len)
 {
 	unsigned i, j;
-	unsigned char swap_iv[AES_IV_LENGTH];
+	u32 swap_iv32[AES_IV_LENGTH/sizeof(u32)];
+	unsigned char *swap_iv = (unsigned char *)swap_iv32;
 
 	memset(swap_iv, 0, AES_IV_LENGTH);
 	for (i = (AES_IV_LENGTH-len), j = len-1;  i < AES_IV_LENGTH; i++, j--)
@@ -2905,8 +2892,7 @@ static inline int qce_alloc_req_info(struct qce_device *pce_dev)
 		}
 	}
 	pr_warn("pcedev %d no reqs available no_of_queued_req %d\n",
-			pce_dev->dev_no, atomic_read(
-					&pce_dev->no_of_queued_req));
+			pce_dev->dev_no, pce_dev->no_of_queued_req);
 	return -EBUSY;
 }
 
@@ -2916,7 +2902,7 @@ static inline void qce_free_req_info(struct qce_device *pce_dev, int req_info,
 	pce_dev->ce_request_info[req_info].xfer_type = QCE_XFER_TYPE_LAST;
 	if (xchg(&pce_dev->ce_request_info[req_info].in_use, false) == true) {
 		if (req_info < MAX_QCE_BAM_REQ && is_complete)
-			atomic_dec(&pce_dev->no_of_queued_req);
+			pce_dev->no_of_queued_req--;
 	} else
 		pr_warn("request info %d free already\n", req_info);
 }
@@ -2962,36 +2948,19 @@ static void _qce_req_complete(struct qce_device *pce_dev, unsigned int req_info)
 	}
 }
 
-static enum hrtimer_restart qce_multireq_timeout(struct hrtimer *timer)
+int qce_poll_eot(void *handle)
 {
-	struct qce_timer_poll *data =
-		container_of(timer, struct qce_timer_poll, poll_timer.timer);
-	struct qce_device *pce_dev;
-	ktime_t ktime;
-	int overall_req = 0;
-	int i;
+	struct qce_device *pce_dev = (struct qce_device *)handle;
 
-	poll_cpu = smp_processor_id();
-	ktime = ktime_set(0, MICRO_TO_NS(POLL_DELAY_IN_MICROS));
-	for (i = 0; i < MAX_POLL_CE; i++) {
-		pce_dev = data->pce_dev[i];
-		if (!pce_dev)
-			continue;
-		pce_dev->qce_stats.no_of_timeouts++;
-		/* poll the producer fifo */
-		if (atomic_read(&pce_dev->no_of_queued_req))
-			sps_poll_fifo_eot(pce_dev->ce_bam_info.producer.pipe);
-		overall_req += atomic_read(&pce_dev->no_of_queued_req);
-		pce_dev->next_poll = 0;
-	}
-	if (overall_req != 0)
-		data->intr_empty_cnt = 0;
-	else if (data->intr_empty_cnt++ > MAX_EMPTY_POLL)
-		goto out;
-	tasklet_hrtimer_start(&data->poll_timer, ktime, HRTIMER_MODE_REL);
-out:
-	return HRTIMER_NORESTART;
+	if (!pce_dev)
+		return -EINVAL;
+
+	if (pce_dev->no_of_queued_req)
+		sps_poll_fifo_eot(pce_dev->ce_bam_info.producer.pipe);
+
+	return 0;
 }
+EXPORT_SYMBOL(qce_poll_eot);
 
 int qce_get_driver_stats(void *handle, char *buf, int buflen)
 {
@@ -3005,19 +2974,13 @@ int qce_get_driver_stats(void *handle, char *buf, int buflen)
 			 pce_dev->qce_stats.no_of_timeouts);
 	len += scnprintf(buf + len, buflen - len,
 		"            outstanding request %d\n",
-			atomic_read(&pce_dev->no_of_queued_req));
+			pce_dev->no_of_queued_req);
 	len += scnprintf(buf + len, buflen - len,
 		"            maximum outstanding requests %d\n",
 			pce_dev->qce_stats.max_outstanding_reqs);
 	len += scnprintf(buf + len, buflen - len,
 		"            total complete requests %llu\n",
 			pce_dev->qce_stats.total_reqs_cmp);
-	len += scnprintf(buf + len, buflen - len,
-		"            timer active %d\n",
-			hrtimer_active(&_qce_poll_data.poll_timer.timer));
-	len += scnprintf(buf + len, buflen - len,
-		"            poll cpu %d\n",
-			poll_cpu);
 	return len;
 }
 EXPORT_SYMBOL(qce_get_driver_stats);
@@ -4525,52 +4488,19 @@ static void _qce_ccm_get_around_output(struct qce_device *pce_dev,
 	}
 }
 
-
-/*
- * Start poll timer from work queue.
- */
-static void _start_timer(struct work_struct *work)
+static inline void select_mode(struct qce_device *pce_dev,
+			       struct ce_request_info *preq_info)
 {
-	struct qce_timer_poll *ptimer = container_of(work,
-				struct qce_timer_poll, start_timer_work);
-	ktime_t ktime = ktime_set(0, MICRO_TO_NS(POLL_DELAY_IN_MICROS));
+	pce_dev->no_of_queued_req++;
+	if (pce_dev->no_of_queued_req > pce_dev->qce_stats.max_outstanding_reqs)
+		pce_dev->qce_stats.max_outstanding_reqs =
+			pce_dev->no_of_queued_req;
 
-	tasklet_hrtimer_start(&ptimer->poll_timer, ktime, HRTIMER_MODE_REL);
-	ptimer->sched_workq_status = NOT_SCHEDULED;
-}
+	if (unlikely(pce_dev->use_intr)) {
+		struct ce_sps_data *pce_sps_data = &preq_info->ce_sps;
 
-static int select_mode(struct qce_device *pce_dev,
-		struct ce_request_info *preq_info)
-{
-	struct ce_sps_data *pce_sps_data = &preq_info->ce_sps;
-	unsigned int no_of_queued_req;
-	struct qce_timer_poll *ptimer;
-
-	no_of_queued_req = atomic_inc_return(&pce_dev->no_of_queued_req);
-	if (no_of_queued_req > pce_dev->qce_stats.max_outstanding_reqs)
-		pce_dev->qce_stats.max_outstanding_reqs = no_of_queued_req;
-	if (!pce_dev->poll_cfg || !pce_dev->no_get_around ||
-						preq_info->req_intr) {
 		_qce_set_flag(&pce_sps_data->out_transfer, SPS_IOVEC_FLAG_INT);
-		return 0;
 	}
-	if (no_of_queued_req >= SET_INTR_AT_REQ &&  !(pce_dev->next_poll)) {
-		_qce_set_flag(&pce_sps_data->out_transfer, SPS_IOVEC_FLAG_INT);
-		pce_dev->next_poll = 1;
-		return 0;
-	}
-	ptimer = &_qce_poll_data;
-	ptimer->intr_empty_cnt = 0;
-	if (!hrtimer_active(&ptimer->poll_timer.timer) &&
-			(cmpxchg(&ptimer->sched_workq_status, NOT_SCHEDULED,
-					IS_SCHEDULED) == NOT_SCHEDULED))
-		/*
-		 * queue work on QCE_POLL_CPU. This is where
-		 * polling is going to happen.
-		 */
-		queue_work_on(QCE_POLL_CPU, ptimer->start_timer_wq,
-						&ptimer->start_timer_work);
-	return 0;
 }
 
 static int _qce_aead_ccm_req(void *handle, struct qce_req *q_req)
@@ -5873,80 +5803,8 @@ int qce_disable_clk(void *handle)
 }
 EXPORT_SYMBOL(qce_disable_clk);
 
-
-static int _init_qce_timer(void)
-{
-	int i;
-	int rc = 0;
-
-	if (_qce_timer_init)
-		goto out;
-	for (i = 0; i < MAX_POLL_CE; i++)
-		_qce_poll_data.pce_dev[i] = NULL;
-	tasklet_hrtimer_init(&_qce_poll_data.poll_timer,
-				qce_multireq_timeout, CLOCK_MONOTONIC,
-							HRTIMER_MODE_REL);
-	_qce_poll_data.sched_workq_status = NOT_SCHEDULED;
-	_qce_poll_data.start_timer_wq = alloc_workqueue("qce50_start_timer_wq",
-			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
-	if (!_qce_poll_data.start_timer_wq) {
-		pr_err("Error allocating workqueue\n");
-		return -ENOMEM;
-	}
-	INIT_WORK(&_qce_poll_data.start_timer_work, _start_timer);
-	_qce_timer_init = 1;
-out:
-	return rc;
-}
-
-static int _add_ce_qce_timer(struct qce_device *pce_dev)
-{
-	int i;
-	int rc = 0;
-
-	for (i = 0; i < MAX_POLL_CE; i++) {
-		if (_qce_poll_data.pce_dev[i] == NULL) {
-			_qce_poll_data.pce_dev[i] = pce_dev;
-			goto out;
-		}
-	}
-	pr_err("out of poll timer entries.\n");
-	rc = -EBUSY;
-out:
-	return rc;
-}
-
-static int _del_ce_qce_timer(struct qce_device *pce_dev)
-{
-	int i;
-	int rc = 0;
-
-	for (i = 0; i < MAX_POLL_CE; i++) {
-		if (_qce_poll_data.pce_dev[i] == pce_dev) {
-			_qce_poll_data.pce_dev[i] = NULL;
-			goto check_total_free;
-		}
-	}
-	pr_err("can not find timer entries %p.\n", pce_dev);
-	rc = -EINVAL;
-	goto out;
-check_total_free:
-	for (i = 0; i < MAX_POLL_CE; i++) {
-		if (_qce_poll_data.pce_dev[i])
-			goto out;
-	}
-	/* all free, no more entries */
-	tasklet_hrtimer_cancel(&_qce_poll_data.poll_timer);
-	cancel_work_sync(&_qce_poll_data.start_timer_work);
-	destroy_workqueue(_qce_poll_data.start_timer_wq);
-	_qce_poll_data.start_timer_wq = NULL;
-	_qce_timer_init = 0;
-out:
-	return rc;
-}
-
 /* crypto engine open function. */
-static void *_qce_open(struct platform_device *pdev, int *rc, int poll)
+void *qce_open(struct platform_device *pdev, int flags, int *rc)
 {
 	struct qce_device *pce_dev;
 	int i;
@@ -5959,10 +5817,8 @@ static void *_qce_open(struct platform_device *pdev, int *rc, int poll)
 		return NULL;
 	}
 	pce_dev->pdev = &pdev->dev;
-
+	pce_dev->use_intr = (flags & QCE_OFLAG_POLLING) ? false : true;
 	mutex_lock(&qce_iomap_mutex);
-	if (_init_qce_timer())
-		goto err_pce_dev;
 	if (pdev->dev.of_node) {
 		*rc = __qce_get_device_tree_data(pdev, pce_dev);
 		if (*rc)
@@ -6012,15 +5868,9 @@ static void *_qce_open(struct platform_device *pdev, int *rc, int poll)
 		goto err;
 	qce_setup_ce_sps_data(pce_dev);
 	qce_disable_clk(pce_dev);
-	atomic_set(&pce_dev->no_of_queued_req, 0);
+	pce_dev->no_of_queued_req = 0;
 	pce_dev->dev_no = pcedev_no;
 	pcedev_no++;
-	if (poll) {
-		if (_add_ce_qce_timer(pce_dev))
-			goto err;
-		pce_dev->poll_cfg = 1;
-	} else
-		pce_dev->poll_cfg = 0;
 	mutex_unlock(&qce_iomap_mutex);
 	return pce_dev;
 err:
@@ -6042,18 +5892,7 @@ err_pce_dev:
 	kfree(pce_dev);
 	return NULL;
 }
-
-void *qce_open(struct platform_device *pdev, int *rc)
-{
-	return _qce_open(pdev, rc, 0);
-}
 EXPORT_SYMBOL(qce_open);
-
-void *qce_open_poll(struct platform_device *pdev, int *rc)
-{
-	return _qce_open(pdev, rc, 1);
-}
-EXPORT_SYMBOL(qce_open_poll);
 
 /* crypto engine close function. */
 int qce_close(void *handle)
@@ -6063,8 +5902,6 @@ int qce_close(void *handle)
 	if (handle == NULL)
 		return -ENODEV;
 	mutex_lock(&qce_iomap_mutex);
-	if (pce_dev->poll_cfg)
-		_del_ce_qce_timer(pce_dev);
 	qce_enable_clk(pce_dev);
 	qce_sps_exit(pce_dev);
 
