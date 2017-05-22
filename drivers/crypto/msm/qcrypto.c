@@ -1633,6 +1633,7 @@ again:
 		rev = t;
 	}
 
+	local_bh_disable();
 	while (rev) {
 		struct qcrypto_resp_ctx *arsp;
 		struct crypto_async_request *areq;
@@ -1641,11 +1642,10 @@ again:
 		rev = llist_next(rev);
 
 		areq = arsp->async_req;
-		local_bh_disable();
 		areq->complete(areq, arsp->res);
-		local_bh_enable();
 		atomic_dec(&cp->resp_cnt);
 	}
+	local_bh_enable();
 
 	if (atomic_read(&cp->resp_cnt) < COMPLETION_CB_BACKLOG_LENGTH_START &&
 		(cmpxchg(&cp->ce_req_proc_sts, STOPPED, IN_PROGRESS)
