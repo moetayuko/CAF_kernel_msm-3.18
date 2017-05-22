@@ -52,7 +52,7 @@
 #include "qce.h"
 
 #define DEBUG_MAX_FNAME  16
-#define DEBUG_MAX_RW_BUF 4096
+#define DEBUG_MAX_RW_BUF (5 * 1024)
 #define QCRYPTO_BIG_NUMBER 9999999 /* a big number */
 
 /*
@@ -177,6 +177,7 @@ struct crypto_engine {
 };
 
 #define MAX_SMP_CPU    8
+#define COMP_WQ_CPU    3
 
 struct crypto_priv {
 	/* CE features supported by target device*/
@@ -225,12 +226,10 @@ struct crypto_priv {
 	unsigned resp_stop;
 	unsigned resp_start;
 	unsigned max_qlen;
-	unsigned int queue_work_eng3;
-	unsigned int queue_work_not_eng3;
-	unsigned int queue_work_not_eng3_nz;
 	unsigned int max_resp_qlen;
 	unsigned int max_reorder_cnt;
-	unsigned int cpu_req[MAX_SMP_CPU+1];
+	u64 cpu_req[MAX_SMP_CPU+1];
+	u64 queue_complete_work;
 };
 static struct crypto_priv qcrypto_dev;
 static struct crypto_engine *_qcrypto_static_assign_engine(
@@ -1315,17 +1314,26 @@ static int _disp_stats(int id)
 			"   AHASH operation fail                : %llu\n",
 					pstat->ahash_op_fail);
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
-			"   resp start, resp stop, max rsp queue reorder-cnt : %u %u %u %u\n",
-					cp->resp_start, cp->resp_stop,
-					cp->max_resp_qlen, cp->max_reorder_cnt);
+			"   resp start                          : %u\n",
+					cp->resp_start);
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
-			"   max queue legnth, no avail          : %u %u\n",
-					cp->max_qlen, cp->no_avail);
+			"   resp stop                           : %u\n",
+					cp->resp_stop);
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
-			"   work queue                          : %u %u %u\n",
-					cp->queue_work_eng3,
-					cp->queue_work_not_eng3,
-					cp->queue_work_not_eng3_nz);
+			"   max rsp queue                       : %u\n",
+					cp->max_resp_qlen);
+	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
+			"   max reorder-cnt                     : %u\n",
+					cp->max_reorder_cnt);
+	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
+			"   max queue length                    : %u\n",
+					cp->max_qlen);
+	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
+			"   not avail                           : %u\n",
+					cp->no_avail);
+	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
+			"   complete work queue scheduling      : %llu\n",
+					cp->queue_complete_work);
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
 			"\n");
 	spin_lock_irqsave(&cp->lock, flags);
@@ -1333,29 +1341,40 @@ static int _disp_stats(int id)
 		len += scnprintf(
 			_debug_read_buf + len,
 			DEBUG_MAX_RW_BUF - len - 1,
-			"   Engine %4d Req max %d          : %llu\n",
+			"   Engine %1d: Total Req             : %llu\n",
 			pe->unit,
-			pe->max_req_used,
 			pe->total_req
 		);
 		len += scnprintf(
 			_debug_read_buf + len,
 			DEBUG_MAX_RW_BUF - len - 1,
-			"   Engine %4d Req Error               : %llu\n",
-			pe->unit,
+			"             Req Error             : %llu\n",
 			pe->err_req
 		);
-		qce_get_driver_stats(pe->qce);
+		len += scnprintf(
+			_debug_read_buf + len,
+			DEBUG_MAX_RW_BUF - len - 1,
+			"             Max Active            : %d\n",
+			pe->max_req_used
+		);
+		len += qce_get_driver_stats(pe->qce, _debug_read_buf + len,
+					DEBUG_MAX_RW_BUF - len - 1);
 	}
 	spin_unlock_irqrestore(&cp->lock, flags);
 
-	for (i = 0; i < MAX_SMP_CPU+1; i++)
+	for (i = 0; i < MAX_SMP_CPU; i++)
 		if (cp->cpu_req[i])
 			len += scnprintf(
 				_debug_read_buf + len,
 				DEBUG_MAX_RW_BUF - len - 1,
-				"CPU %d Issue Req                     : %d\n",
+				"   Req from CPU %1d in ISR Context     : %llu\n",
 				i, cp->cpu_req[i]);
+	if (cp->cpu_req[MAX_SMP_CPU])
+		len += scnprintf(
+				_debug_read_buf + len,
+				DEBUG_MAX_RW_BUF - len - 1,
+				"   Req  in process Context            : %llu\n",
+				 cp->cpu_req[MAX_SMP_CPU]);
 	return len;
 }
 
@@ -1651,8 +1670,6 @@ end:
 		goto end;
 }
 
-#define SCHEUDLE_RSP_QLEN_THRESHOLD 64
-
 static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 					void *tfm_ctx,
 					struct qcrypto_resp_ctx *cur_arsp,
@@ -1706,33 +1723,13 @@ static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 
 retry:
 	if (!llist_empty(&cp->ordered_resp_list)) {
-		unsigned int cpu;
+		unsigned int cpu = COMP_WQ_CPU;
 
-		if (pengine->first_engine) {
-			cpu = WORK_CPU_UNBOUND;
-			cp->queue_work_eng3++;
-		} else {
-			cp->queue_work_not_eng3++;
-			cpu = cp->cpu_getting_irqs_frm_first_ce;
-			/*
-			 * If source not the first engine, and there
-			 * are outstanding requests going on first engine,
-			 * skip scheduling of work queue to anticipate
-			 * more may be coming. If the response queue
-			 * length exceeds threshold, to avoid further
-			 * delay, schedule work queue immediately.
-			 */
-			if (cp->first_engine && atomic_read(
-						&cp->first_engine->req_count)) {
-				if (resp_qlen < SCHEUDLE_RSP_QLEN_THRESHOLD)
-					return;
-				cp->queue_work_not_eng3_nz++;
-			}
-		}
 		if (cmpxchg(&cp->sched_resp_workq_status, NOT_SCHEDULED,
-					IS_SCHEDULED) == NOT_SCHEDULED)
+					IS_SCHEDULED) == NOT_SCHEDULED) {
 			queue_work_on(cpu, cp->resp_wq, &cp->resp_work);
-		else if (cmpxchg(&cp->sched_resp_workq_status, IS_SCHEDULED,
+			cp->queue_complete_work++;
+		} else if (cmpxchg(&cp->sched_resp_workq_status, IS_SCHEDULED,
 					SCHEDULE_AGAIN) == NOT_SCHEDULED)
 			goto retry;
 	}
@@ -5698,7 +5695,7 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	}
 
 	/* open qce */
-	handle = qce_open(pdev, &rc);
+	handle = qce_open_poll(pdev, &rc);
 	if (handle == NULL) {
 		kzfree(pengine);
 		platform_set_drvdata(pdev, NULL);
@@ -6300,12 +6297,10 @@ static ssize_t _debug_stats_write(struct file *file, const char __user *buf,
 	cp->resp_stop = 0;
 	cp->no_avail = 0;
 	cp->max_resp_qlen = 0;
-	cp->queue_work_eng3 = 0;
-	cp->queue_work_not_eng3 = 0;
-	cp->queue_work_not_eng3_nz = 0;
 	cp->max_reorder_cnt = 0;
 	for (i = 0; i < MAX_SMP_CPU + 1; i++)
 		cp->cpu_req[i] = 0;
+	cp->queue_complete_work = 0;
 	spin_unlock_irqrestore(&cp->lock, flags);
 	return count;
 }

@@ -27,6 +27,8 @@
 #include <linux/delay.h>
 #include <linux/crypto.h>
 #include <linux/bitops.h>
+#include <linux/interrupt.h>
+#include <linux/ktime.h>
 #include <linux/clk/msm-clk.h>
 #include <linux/qcrypto.h>
 #include <crypto/hash.h>
@@ -64,12 +66,34 @@ struct bam_registration_info {
 };
 static LIST_HEAD(qce50_bam_list);
 
+static  int _qce_timer_init;
+
+#define MAX_POLL_CE 8
+
+enum start_timer_workq_sts {
+	NOT_SCHEDULED  = 0,
+	IS_SCHEDULED   = 1,
+};
+
+struct qce_timer_poll {
+	struct tasklet_hrtimer poll_timer;
+	struct qce_device *pce_dev[MAX_POLL_CE];
+	int intr_empty_cnt;
+	struct workqueue_struct *start_timer_wq;
+	struct work_struct start_timer_work;
+	enum start_timer_workq_sts sched_workq_status;
+};
+static struct qce_timer_poll _qce_poll_data;
+static int poll_cpu;
+
+#define MS_TO_NS(x) (x * 1000000)
+#define MICRO_TO_NS(x) (x * 1000)
+
 /* Used to determine the mode */
-#define MAX_BUNCH_MODE_REQ 2
+#define MAX_BUNCH_MODE_REQ 3
 /* Max number of request supported */
 #define MAX_QCE_BAM_REQ 8
-/* Interrupt flag will be set for every SET_INTR_AT_REQ request */
-#define SET_INTR_AT_REQ			(MAX_QCE_BAM_REQ / 2)
+#define SET_INTR_AT_REQ			(MAX_QCE_BAM_REQ - 1)
 /* To create extra request space to hold dummy request */
 #define MAX_QCE_BAM_REQ_WITH_DUMMY_REQ	(MAX_QCE_BAM_REQ + 1)
 /* Allocate the memory for MAX_QCE_BAM_REQ  + 1 (for dummy request) */
@@ -77,26 +101,14 @@ static LIST_HEAD(qce50_bam_list);
 /* QCE driver modes */
 #define IN_INTERRUPT_MODE 0
 #define IN_BUNCH_MODE 1
-/* Dummy request data length */
-#define DUMMY_REQ_DATA_LEN 64
 /* Delay timer to expire when in bunch mode */
-#define DELAY_IN_JIFFIES 5
+#define POLL_DELAY_IN_MICROS (100)
+#define MAX_EMPTY_POLL 5
+#define QCE_POLL_CPU 1
 /* Index to point the dummy request */
 #define DUMMY_REQ_INDEX			MAX_QCE_BAM_REQ
 
 #define TOTAL_IOVEC_SPACE_PER_PIPE (QCE_MAX_NUM_DSCR * sizeof(struct sps_iovec))
-
-enum qce_owner {
-	QCE_OWNER_NONE   = 0,
-	QCE_OWNER_CLIENT = 1,
-	QCE_OWNER_TIMEOUT = 2
-};
-
-struct dummy_request {
-	struct qce_sha_req sreq;
-	struct scatterlist sg;
-	struct ahash_request areq;
-};
 
 /*
  * CE HW device structure.
@@ -142,25 +154,17 @@ struct qce_device {
 	struct ce_bam_info ce_bam_info;
 	struct ce_request_info ce_request_info[MAX_QCE_ALLOC_BAM_REQ];
 	unsigned int ce_request_index;
-	enum qce_owner owner;
 	atomic_t no_of_queued_req;
-	struct timer_list timer;
-	struct dummy_request dummyreq;
-	unsigned int mode;
-	unsigned int intr_cadence;
 	unsigned int dev_no;
 	struct qce_driver_stats qce_stats;
-	atomic_t bunch_cmd_seq;
-	atomic_t last_intr_seq;
-	bool cadence_flag;
-	uint8_t *dummyreq_in_buf;
+	int poll_cfg;
+	int next_poll;
 };
 
 static void print_notify_debug(struct sps_event_notify *notify);
 static void _sps_producer_callback(struct sps_event_notify *notify);
-static int qce_dummy_req(struct qce_device *pce_dev);
 
-static int _qce50_disp_stats;
+static int _qce50_disp_stats = 1;
 
 /* Standard initialization vector for SHA-1, source: FIPS 180-2 */
 static uint32_t  _std_init_vector_sha1[] =   {
@@ -2894,14 +2898,19 @@ static inline int qce_alloc_req_info(struct qce_device *pce_dev)
 {
 	int i;
 	int request_index = pce_dev->ce_request_index;
+	struct ce_request_info *preq_info =
+				&pce_dev->ce_request_info[request_index];
 
 	for (i = 0; i < MAX_QCE_BAM_REQ; i++) {
 		request_index++;
-		if (request_index >= MAX_QCE_BAM_REQ)
+		preq_info++;
+		if (request_index >= MAX_QCE_BAM_REQ) {
+			preq_info = &pce_dev->ce_request_info[0];
 			request_index = 0;
-		if (xchg(&pce_dev->ce_request_info[request_index].
-						in_use, true) == false) {
+		}
+		if (xchg(&preq_info->in_use, true) == false) {
 			pce_dev->ce_request_index = request_index;
+			preq_info->req_intr = 0;
 			return request_index;
 		}
 	}
@@ -2939,6 +2948,7 @@ static void _qce_req_complete(struct qce_device *pce_dev, unsigned int req_info)
 	struct ce_request_info *preq_info;
 
 	preq_info = &pce_dev->ce_request_info[req_info];
+	pce_dev->qce_stats.total_reqs_cmp++;
 
 	switch (preq_info->xfer_type) {
 	case QCE_XFER_CIPHERING:
@@ -2962,66 +2972,63 @@ static void _qce_req_complete(struct qce_device *pce_dev, unsigned int req_info)
 	}
 }
 
-static void qce_multireq_timeout(unsigned long data)
+static enum hrtimer_restart qce_multireq_timeout(struct hrtimer *timer)
 {
-	struct qce_device *pce_dev = (struct qce_device *)data;
-	int ret = 0;
-	int last_seq;
-	unsigned long flags;
+	struct qce_timer_poll *data =
+		container_of(timer, struct qce_timer_poll, poll_timer.timer);
+	struct qce_device *pce_dev;
+	ktime_t ktime;
+	int overall_req = 0;
+	int i;
 
-	last_seq = atomic_read(&pce_dev->bunch_cmd_seq);
-	if (last_seq == 0 ||
-		last_seq != atomic_read(&pce_dev->last_intr_seq)) {
-		atomic_set(&pce_dev->last_intr_seq, last_seq);
-		mod_timer(&(pce_dev->timer), (jiffies + DELAY_IN_JIFFIES));
-		return;
+	poll_cpu = smp_processor_id();
+	ktime = ktime_set(0, MICRO_TO_NS(POLL_DELAY_IN_MICROS));
+	for (i = 0; i < MAX_POLL_CE; i++) {
+		pce_dev = data->pce_dev[i];
+		if (!pce_dev)
+			continue;
+		pce_dev->qce_stats.no_of_timeouts++;
+		/* poll the producer fifo */
+		if (atomic_read(&pce_dev->no_of_queued_req))
+			sps_poll_fifo_eot(pce_dev->ce_bam_info.producer.pipe);
+		overall_req += atomic_read(&pce_dev->no_of_queued_req);
+		pce_dev->next_poll = 0;
 	}
-	/* last bunch mode command time out */
-
-	/*
-	 * From here to dummy request finish sps request and set owner back
-	 * to none, we disable interrupt.
-	 * So it won't get preempted or interrupted. If bam inerrupts happen
-	 * between, and completion callback gets called from BAM, a new
-	 * request may be issued by the client driver.  Deadlock may happen.
-	 */
-	local_irq_save(flags);
-	if (cmpxchg(&pce_dev->owner, QCE_OWNER_NONE, QCE_OWNER_TIMEOUT)
-							!= QCE_OWNER_NONE) {
-		local_irq_restore(flags);
-		mod_timer(&(pce_dev->timer), (jiffies + DELAY_IN_JIFFIES));
-		return;
-	}
-
-	ret = qce_dummy_req(pce_dev);
-	if (ret)
-		pr_warn("pcedev %d: Failed to insert dummy req\n",
-				pce_dev->dev_no);
-	del_timer(&(pce_dev->timer));
-	cmpxchg(&pce_dev->owner, QCE_OWNER_TIMEOUT, QCE_OWNER_NONE);
-	pce_dev->mode = IN_INTERRUPT_MODE;
-	local_irq_restore(flags);
-
-	pce_dev->qce_stats.no_of_timeouts++;
-	pr_debug("pcedev %d mode switch to INTR\n", pce_dev->dev_no);
+	if (overall_req != 0)
+		data->intr_empty_cnt = 0;
+	else if (data->intr_empty_cnt++ > MAX_EMPTY_POLL)
+		goto out;
+	tasklet_hrtimer_start(&data->poll_timer, ktime, HRTIMER_MODE_REL);
+out:
+	return HRTIMER_NORESTART;
 }
 
-void qce_get_driver_stats(void *handle)
+int qce_get_driver_stats(void *handle, char *buf, int buflen)
 {
 	struct qce_device *pce_dev = (struct qce_device *) handle;
+	int len = 0;
 
 	if (!_qce50_disp_stats)
-		return;
-	pr_info("Engine %d timeout occuured %d\n", pce_dev->dev_no,
-			pce_dev->qce_stats.no_of_timeouts);
-	pr_info("Engine %d dummy request inserted %d\n", pce_dev->dev_no,
-			pce_dev->qce_stats.no_of_dummy_reqs);
-	if (pce_dev->mode)
-		pr_info("Engine %d is in BUNCH MODE\n", pce_dev->dev_no);
-	else
-		pr_info("Engine %d is in INTERRUPT MODE\n", pce_dev->dev_no);
-	pr_info("Engine %d outstanding request %d\n", pce_dev->dev_no,
+		return 0;
+	len += scnprintf(buf, buflen,
+		"            Engine timeout poll: %d\n",
+			 pce_dev->qce_stats.no_of_timeouts);
+	len += scnprintf(buf + len, buflen - len,
+		"            outstanding request %d\n",
 			atomic_read(&pce_dev->no_of_queued_req));
+	len += scnprintf(buf + len, buflen - len,
+		"            maximum outstanding requests %d\n",
+			pce_dev->qce_stats.max_outstanding_reqs);
+	len += scnprintf(buf + len, buflen - len,
+		"            total complete requests %llu\n",
+			pce_dev->qce_stats.total_reqs_cmp);
+	len += scnprintf(buf + len, buflen - len,
+		"            timer active %d\n",
+			hrtimer_active(&_qce_poll_data.poll_timer.timer));
+	len += scnprintf(buf + len, buflen - len,
+		"            poll cpu %d\n",
+			poll_cpu);
+	return len;
 }
 EXPORT_SYMBOL(qce_get_driver_stats);
 
@@ -3030,7 +3037,8 @@ void qce_clear_driver_stats(void *handle)
 	struct qce_device *pce_dev = (struct qce_device *) handle;
 
 	pce_dev->qce_stats.no_of_timeouts = 0;
-	pce_dev->qce_stats.no_of_dummy_reqs = 0;
+	pce_dev->qce_stats.max_outstanding_reqs = 0;
+	pce_dev->qce_stats.total_reqs_cmp = 0;
 }
 EXPORT_SYMBOL(qce_clear_driver_stats);
 
@@ -4527,24 +4535,18 @@ static void _qce_ccm_get_around_output(struct qce_device *pce_dev,
 	}
 }
 
-/* QCE_DUMMY_REQ */
-static void qce_dummy_complete(void *cookie, unsigned char *digest,
-		unsigned char *authdata, int ret)
-{
-	if (!cookie)
-		pr_err("invalid cookie\n");
-}
 
-static int qce_dummy_req(struct qce_device *pce_dev)
+/*
+ * Start poll timer from work queue.
+ */
+static void _start_timer(struct work_struct *work)
 {
-	int ret = 0;
+	struct qce_timer_poll *ptimer = container_of(work,
+				struct qce_timer_poll, start_timer_work);
+	ktime_t ktime = ktime_set(0, MICRO_TO_NS(POLL_DELAY_IN_MICROS));
 
-	if (!(xchg(&pce_dev->ce_request_info[DUMMY_REQ_INDEX].
-				in_use, true) == false))
-		return -EBUSY;
-	ret = qce_process_sha_req(pce_dev, NULL);
-	pce_dev->qce_stats.no_of_dummy_reqs++;
-	return ret;
+	tasklet_hrtimer_start(&ptimer->poll_timer, ktime, HRTIMER_MODE_REL);
+	ptimer->sched_workq_status = NOT_SCHEDULED;
 }
 
 static int select_mode(struct qce_device *pce_dev,
@@ -4552,57 +4554,32 @@ static int select_mode(struct qce_device *pce_dev,
 {
 	struct ce_sps_data *pce_sps_data = &preq_info->ce_sps;
 	unsigned int no_of_queued_req;
-	unsigned int cadence;
+	struct qce_timer_poll *ptimer;
 
-	if (!pce_dev->no_get_around) {
+	no_of_queued_req = atomic_inc_return(&pce_dev->no_of_queued_req);
+	if (no_of_queued_req > pce_dev->qce_stats.max_outstanding_reqs)
+		pce_dev->qce_stats.max_outstanding_reqs = no_of_queued_req;
+	if (!pce_dev->poll_cfg || !pce_dev->no_get_around ||
+						preq_info->req_intr) {
 		_qce_set_flag(&pce_sps_data->out_transfer, SPS_IOVEC_FLAG_INT);
 		return 0;
 	}
-
-	/*
-	 * claim ownership of device
-	 */
-again:
-	if (cmpxchg(&pce_dev->owner, QCE_OWNER_NONE, QCE_OWNER_CLIENT)
-							!= QCE_OWNER_NONE) {
-		ndelay(40);
-		goto again;
+	if (no_of_queued_req >= SET_INTR_AT_REQ &&  !(pce_dev->next_poll)) {
+		_qce_set_flag(&pce_sps_data->out_transfer, SPS_IOVEC_FLAG_INT);
+		pce_dev->next_poll = 1;
+		return 0;
 	}
-	no_of_queued_req = atomic_inc_return(&pce_dev->no_of_queued_req);
-	if (pce_dev->mode == IN_INTERRUPT_MODE) {
-		if (no_of_queued_req >= MAX_BUNCH_MODE_REQ) {
-			pce_dev->mode = IN_BUNCH_MODE;
-			pr_debug("pcedev %d mode switch to BUNCH\n",
-					pce_dev->dev_no);
-			_qce_set_flag(&pce_sps_data->out_transfer,
-					SPS_IOVEC_FLAG_INT);
-			pce_dev->intr_cadence = 0;
-			atomic_set(&pce_dev->bunch_cmd_seq, 1);
-			atomic_set(&pce_dev->last_intr_seq, 1);
-			mod_timer(&(pce_dev->timer),
-					(jiffies + DELAY_IN_JIFFIES));
-		} else {
-			_qce_set_flag(&pce_sps_data->out_transfer,
-					SPS_IOVEC_FLAG_INT);
-		}
-	} else {
-		pce_dev->intr_cadence++;
-		cadence = (preq_info->req_len >> 7) + 1;
-		if (cadence > SET_INTR_AT_REQ)
-			cadence = SET_INTR_AT_REQ;
-		if (pce_dev->intr_cadence < cadence || ((pce_dev->intr_cadence
-					== cadence) && pce_dev->cadence_flag))
-			atomic_inc(&pce_dev->bunch_cmd_seq);
-		else {
-			_qce_set_flag(&pce_sps_data->out_transfer,
-					SPS_IOVEC_FLAG_INT);
-			pce_dev->intr_cadence = 0;
-			atomic_set(&pce_dev->bunch_cmd_seq, 0);
-			atomic_set(&pce_dev->last_intr_seq, 0);
-			pce_dev->cadence_flag = ~pce_dev->cadence_flag;
-		}
-	}
-
+	ptimer = &_qce_poll_data;
+	ptimer->intr_empty_cnt = 0;
+	if (!hrtimer_active(&ptimer->poll_timer.timer) &&
+			(cmpxchg(&ptimer->sched_workq_status, NOT_SCHEDULED,
+					IS_SCHEDULED) == NOT_SCHEDULED))
+		/*
+		 * queue work on QCE_POLL_CPU. This is where
+		 * polling is going to happen.
+		 */
+		queue_work_on(QCE_POLL_CPU, ptimer->start_timer_wq,
+						&ptimer->start_timer_work);
 	return 0;
 }
 
@@ -4704,6 +4681,9 @@ static int _qce_aead_ccm_req(void *handle, struct qce_req *q_req)
 	if (rc < 0)
 		goto bad;
 
+	if (q_req->mode == QCE_MODE_XTS)
+		preq_info->req_intr = 1;
+
 	preq_info->mode = q_req->mode;
 
 	/* setup for callback, and issue command to bam */
@@ -4801,7 +4781,6 @@ static int _qce_aead_ccm_req(void *handle, struct qce_req *q_req)
 
 		select_mode(pce_dev, preq_info);
 		rc = _qce_sps_transfer(pce_dev, req_info);
-		cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 	}
 	if (rc)
 		goto bad;
@@ -5097,7 +5076,6 @@ int qce_aead_req(void *handle, struct qce_req *q_req)
 		}
 		select_mode(pce_dev, preq_info);
 		rc = _qce_sps_transfer(pce_dev, req_info);
-		cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 	}
 	if (rc)
 		goto bad;
@@ -5225,7 +5203,6 @@ int qce_ablk_cipher_req(void *handle, struct qce_req *c_req)
 
 	select_mode(pce_dev, preq_info);
 	rc = _qce_sps_transfer(pce_dev, req_info);
-	cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 	if (rc)
 		goto bad;
 
@@ -5258,17 +5235,12 @@ int qce_process_sha_req(void *handle, struct qce_sha_req *sreq)
 	int req_info = -1;
 	struct ce_sps_data *pce_sps_data;
 	struct ce_request_info *preq_info;
-	bool is_dummy = false;
 
-	if (!sreq) {
-		sreq = &(pce_dev->dummyreq.sreq);
-		req_info = DUMMY_REQ_INDEX;
-		is_dummy = true;
-	} else {
-		req_info = qce_alloc_req_info(pce_dev);
-		if (req_info < 0)
-			return -EBUSY;
-	}
+	if (!sreq)
+		return -EINVAL;
+	req_info = qce_alloc_req_info(pce_dev);
+	if (req_info < 0)
+		return -EBUSY;
 
 	areq = (struct ahash_request *)sreq->areq;
 	preq_info = &pce_dev->ce_request_info[req_info];
@@ -5326,14 +5298,8 @@ int qce_process_sha_req(void *handle, struct qce_sha_req *sreq)
 					  &pce_sps_data->out_transfer))
 		goto bad;
 
-	if (is_dummy) {
-		_qce_set_flag(&pce_sps_data->out_transfer, SPS_IOVEC_FLAG_INT);
-		rc = _qce_sps_transfer(pce_dev, req_info);
-	} else {
-		select_mode(pce_dev, preq_info);
-		rc = _qce_sps_transfer(pce_dev, req_info);
-		cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
-	}
+	select_mode(pce_dev, preq_info);
+	rc = _qce_sps_transfer(pce_dev, req_info);
 	if (rc)
 		goto bad;
 	return 0;
@@ -5448,7 +5414,6 @@ int qce_f8_req(void *handle, struct qce_f8_req *req,
 
 	select_mode(pce_dev, preq_info);
 	rc = _qce_sps_transfer(pce_dev, req_info);
-	cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 	if (rc)
 		goto bad;
 	return 0;
@@ -5563,7 +5528,6 @@ int qce_f8_multi_pkt_req(void *handle, struct qce_f8_multi_pkt_req *mreq,
 
 	select_mode(pce_dev, preq_info);
 	rc = _qce_sps_transfer(pce_dev, req_info);
-	cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 
 	if (rc == 0)
 		return 0;
@@ -5645,7 +5609,6 @@ int qce_f9_req(void *handle, struct qce_f9_req *req, void *cookie,
 
 	select_mode(pce_dev, preq_info);
 	rc = _qce_sps_transfer(pce_dev, req_info);
-	cmpxchg(&pce_dev->owner, QCE_OWNER_CLIENT, QCE_OWNER_NONE);
 	if (rc)
 		goto bad;
 	return 0;
@@ -5920,39 +5883,80 @@ int qce_disable_clk(void *handle)
 }
 EXPORT_SYMBOL(qce_disable_clk);
 
-/* dummy req setup */
-static int setup_dummy_req(struct qce_device *pce_dev)
+
+static int _init_qce_timer(void)
 {
-	char *input =
-	"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopqopqrpqrs";
-	int len = DUMMY_REQ_DATA_LEN;
+	int i;
+	int rc = 0;
 
-	memcpy(pce_dev->dummyreq_in_buf, input, len);
-	sg_set_buf(&pce_dev->dummyreq.sg, pce_dev->dummyreq_in_buf, len);
-	sg_mark_end(&pce_dev->dummyreq.sg);
+	if (_qce_timer_init)
+		goto out;
+	for (i = 0; i < MAX_POLL_CE; i++)
+		_qce_poll_data.pce_dev[i] = NULL;
+	tasklet_hrtimer_init(&_qce_poll_data.poll_timer,
+				qce_multireq_timeout, CLOCK_MONOTONIC,
+							HRTIMER_MODE_REL);
+	_qce_poll_data.sched_workq_status = NOT_SCHEDULED;
+	_qce_poll_data.start_timer_wq = alloc_workqueue("qce50_start_timer_wq",
+			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
+	if (!_qce_poll_data.start_timer_wq) {
+		pr_err("Error allocating workqueue\n");
+		return -ENOMEM;
+	}
+	INIT_WORK(&_qce_poll_data.start_timer_work, _start_timer);
+	_qce_timer_init = 1;
+out:
+	return rc;
+}
 
-	pce_dev->dummyreq.sreq.alg = QCE_HASH_SHA1;
-	pce_dev->dummyreq.sreq.qce_cb = qce_dummy_complete;
-	pce_dev->dummyreq.sreq.src = &pce_dev->dummyreq.sg;
-	pce_dev->dummyreq.sreq.auth_data[0] = 0;
-	pce_dev->dummyreq.sreq.auth_data[1] = 0;
-	pce_dev->dummyreq.sreq.auth_data[2] = 0;
-	pce_dev->dummyreq.sreq.auth_data[3] = 0;
-	pce_dev->dummyreq.sreq.first_blk = 1;
-	pce_dev->dummyreq.sreq.last_blk = 1;
-	pce_dev->dummyreq.sreq.size = len;
-	pce_dev->dummyreq.sreq.areq = &pce_dev->dummyreq.areq;
-	pce_dev->dummyreq.sreq.flags = 0;
-	pce_dev->dummyreq.sreq.authkey = NULL;
+static int _add_ce_qce_timer(struct qce_device *pce_dev)
+{
+	int i;
+	int rc = 0;
 
-	pce_dev->dummyreq.areq.src = pce_dev->dummyreq.sreq.src;
-	pce_dev->dummyreq.areq.nbytes = pce_dev->dummyreq.sreq.size;
+	for (i = 0; i < MAX_POLL_CE; i++) {
+		if (_qce_poll_data.pce_dev[i] == NULL) {
+			_qce_poll_data.pce_dev[i] = pce_dev;
+			goto out;
+		}
+	}
+	pr_err("out of poll timer entries.\n");
+	rc = -EBUSY;
+out:
+	return rc;
+}
 
-	return 0;
+static int _del_ce_qce_timer(struct qce_device *pce_dev)
+{
+	int i;
+	int rc = 0;
+
+	for (i = 0; i < MAX_POLL_CE; i++) {
+		if (_qce_poll_data.pce_dev[i] == pce_dev) {
+			_qce_poll_data.pce_dev[i] = NULL;
+			goto check_total_free;
+		}
+	}
+	pr_err("can not find timer entries %p.\n", pce_dev);
+	rc = -EINVAL;
+	goto out;
+check_total_free:
+	for (i = 0; i < MAX_POLL_CE; i++) {
+		if (_qce_poll_data.pce_dev[i])
+			goto out;
+	}
+	/* all free, no more entries */
+	tasklet_hrtimer_cancel(&_qce_poll_data.poll_timer);
+	cancel_work_sync(&_qce_poll_data.start_timer_work);
+	destroy_workqueue(_qce_poll_data.start_timer_wq);
+	_qce_poll_data.start_timer_wq = NULL;
+	_qce_timer_init = 0;
+out:
+	return rc;
 }
 
 /* crypto engine open function. */
-void *qce_open(struct platform_device *pdev, int *rc)
+static void *_qce_open(struct platform_device *pdev, int *rc, int poll)
 {
 	struct qce_device *pce_dev;
 	int i;
@@ -5967,6 +5971,8 @@ void *qce_open(struct platform_device *pdev, int *rc)
 	pce_dev->pdev = &pdev->dev;
 
 	mutex_lock(&qce_iomap_mutex);
+	if (_init_qce_timer())
+		goto err_pce_dev;
 	if (pdev->dev.of_node) {
 		*rc = __qce_get_device_tree_data(pdev, pce_dev);
 		if (*rc)
@@ -5997,10 +6003,6 @@ void *qce_open(struct platform_device *pdev, int *rc)
 	if (pce_dev->iovec_vmem == NULL)
 		goto err_mem;
 
-	pce_dev->dummyreq_in_buf = kzalloc(DUMMY_REQ_DATA_LEN, GFP_KERNEL);
-	if (pce_dev->dummyreq_in_buf == NULL)
-		goto err_mem;
-
 	*rc = __qce_init_clk(pce_dev);
 	if (*rc)
 		goto err_mem;
@@ -6020,17 +6022,15 @@ void *qce_open(struct platform_device *pdev, int *rc)
 		goto err;
 	qce_setup_ce_sps_data(pce_dev);
 	qce_disable_clk(pce_dev);
-	setup_dummy_req(pce_dev);
 	atomic_set(&pce_dev->no_of_queued_req, 0);
-	pce_dev->mode = IN_INTERRUPT_MODE;
-	init_timer(&(pce_dev->timer));
-	pce_dev->timer.function = qce_multireq_timeout;
-	pce_dev->timer.data = (unsigned long)pce_dev;
-	pce_dev->timer.expires = jiffies + DELAY_IN_JIFFIES;
-	pce_dev->intr_cadence = 0;
 	pce_dev->dev_no = pcedev_no;
 	pcedev_no++;
-	pce_dev->owner = QCE_OWNER_NONE;
+	if (poll) {
+		if (_add_ce_qce_timer(pce_dev))
+			goto err;
+		pce_dev->poll_cfg = 1;
+	} else
+		pce_dev->poll_cfg = 0;
 	mutex_unlock(&qce_iomap_mutex);
 	return pce_dev;
 err:
@@ -6040,7 +6040,6 @@ err_enable_clk:
 	__qce_deinit_clk(pce_dev);
 
 err_mem:
-	kfree(pce_dev->dummyreq_in_buf);
 	kfree(pce_dev->iovec_vmem);
 	if (pce_dev->coh_vmem)
 		dma_free_coherent(pce_dev->pdev, pce_dev->memsize,
@@ -6053,7 +6052,18 @@ err_pce_dev:
 	kfree(pce_dev);
 	return NULL;
 }
+
+void *qce_open(struct platform_device *pdev, int *rc)
+{
+	return _qce_open(pdev, rc, 0);
+}
 EXPORT_SYMBOL(qce_open);
+
+void *qce_open_poll(struct platform_device *pdev, int *rc)
+{
+	return _qce_open(pdev, rc, 1);
+}
+EXPORT_SYMBOL(qce_open_poll);
 
 /* crypto engine close function. */
 int qce_close(void *handle)
@@ -6062,8 +6072,9 @@ int qce_close(void *handle)
 
 	if (handle == NULL)
 		return -ENODEV;
-
 	mutex_lock(&qce_iomap_mutex);
+	if (pce_dev->poll_cfg)
+		_del_ce_qce_timer(pce_dev);
 	qce_enable_clk(pce_dev);
 	qce_sps_exit(pce_dev);
 
@@ -6072,7 +6083,6 @@ int qce_close(void *handle)
 	if (pce_dev->coh_vmem)
 		dma_free_coherent(pce_dev->pdev, pce_dev->memsize,
 				pce_dev->coh_vmem, pce_dev->coh_pmem);
-	kfree(pce_dev->dummyreq_in_buf);
 	kfree(pce_dev->iovec_vmem);
 
 	qce_disable_clk(pce_dev);

@@ -1,6 +1,6 @@
 /* Qualcomm Crypto Engine driver API
  *
- * Copyright (c) 2010-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -184,7 +184,8 @@ int qce_hw_support(void *handle, struct ce_hw_support *support);
 int qce_process_sha_req(void *handle, struct qce_sha_req *s_req);
 int qce_enable_clk(void *handle);
 int qce_disable_clk(void *handle);
-void qce_get_driver_stats(void *handle);
+int qce_get_driver_stats(void *handle, char *buf, int buflen);
 void qce_clear_driver_stats(void *handle);
+void *qce_open_poll(struct platform_device *pdev, int *rc);
 
 #endif /* __CRYPTO_MSM_QCE_H */
