@@ -54,7 +54,7 @@ extern const struct qed_common_ops qed_common_ops_pass;
 
 #define QED_MAJOR_VERSION               8
 #define QED_MINOR_VERSION               10
-#define QED_REVISION_VERSION            10
+#define QED_REVISION_VERSION            11
 #define QED_ENGINEERING_VERSION 21
 
 #define QED_VERSION						 \
@@ -92,7 +92,7 @@ enum qed_mcp_protocol_type;
 
 #define QED_MFW_SET_FIELD(name, field, value)				       \
 	do {								       \
-		(name)	&= ~((field ## _MASK) << (field ## _SHIFT));	       \
+		(name)	&= ~(field ## _MASK);	       \
 		(name)	|= (((value) << (field ## _SHIFT)) & (field ## _MASK));\
 	} while (0)
 
