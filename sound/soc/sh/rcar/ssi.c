@@ -302,7 +302,7 @@ static void rsnd_ssi_config_init(struct rsnd_mod *mod,
 	 * always use 32bit system word.
 	 * see also rsnd_ssi_master_clk_enable()
 	 */
-	cr_own = FORCE | SWL_32 | PDTA;
+	cr_own = FORCE | SWL_32;
 
 	if (rdai->bit_clk_inv)
 		cr_own |= SCKP;
@@ -709,6 +709,11 @@ static int rsnd_ssi_dma_remove(struct rsnd_mod *mod,
 			       struct rsnd_priv *priv)
 {
 	struct rsnd_ssi *ssi = rsnd_mod_to_ssi(mod);
+	struct rsnd_mod *ssi_parent_mod = rsnd_io_to_mod_ssip(io);
+
+	/* Do nothing for SSI parent mod */
+	if (ssi_parent_mod == mod)
+		return 0;
 
 	/* PIO will request IRQ again */
 	free_irq(ssi->irq, mod);
