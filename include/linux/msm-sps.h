@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1003,6 +1003,23 @@ int sps_register_event(struct sps_pipe *h, struct sps_register_event *reg);
 int sps_transfer_one(struct sps_pipe *h, phys_addr_t addr, u32 size,
 		     void *user, u32 flags);
 
+
+/**
+ *
+ * This function process the complete fifo entries with EOT and DESC_DONE set
+ * if the pipe connection option is set with SPS_O_EOT on.
+ * The pipe connection option should not have
+ * SPS_O_ACK_TRANSFERS | SPS_O_LATE_EOT |  SPS_O_NO_Q set.
+ * The event callback to the client is performed same as under BAM interrupt.
+ *
+ * @h - client context for SPS connection end point
+ *
+ * @return 0 on success, negative value on error
+ *
+ */
+int sps_poll_fifo_eot(struct sps_pipe *h);
+
+
 /**
  * Read event queue for an SPS connection end point
  *
@@ -1491,6 +1508,11 @@ static inline int sps_transfer_one(struct sps_pipe *h, phys_addr_t addr,
 {
 	return -EPERM;
 }
+
+static inline int sps_poll_fifo_eot(struct sps_pipe *h)
+{
+	return -EPERM;
+};
 
 static inline int sps_get_event(struct sps_pipe *h,
 				struct sps_event_notify *event)
