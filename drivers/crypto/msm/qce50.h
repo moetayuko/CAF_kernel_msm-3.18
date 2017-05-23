@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -233,13 +233,14 @@ struct ce_request_info {
 	dma_addr_t phy_ota_dst;
 	unsigned int ota_size;
 	unsigned int req_len;
+	int req_intr;
 };
 
 struct qce_driver_stats {
 	int no_of_timeouts;
-	int no_of_dummy_reqs;
 	int current_mode;
-	int outstanding_reqs;
+	u64 total_reqs_cmp;
+	int max_outstanding_reqs;
 };
 
 #endif /* _DRIVERS_CRYPTO_MSM_QCE50_H */
