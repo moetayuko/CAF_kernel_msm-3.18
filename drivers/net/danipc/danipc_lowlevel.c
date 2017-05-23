@@ -424,8 +424,6 @@ static int danipc_cdev_recv(struct danipc_cdev *cdev, uint8_t hwfifo)
 		hdr = buf_vaddr(buf);
 		ipc_msg_hdr_cache_invalid(hdr);
 
-		/* TODO: invalid cache here */
-
 		if (!valid_ipc_msg_hdr(cdev, hdr)) {
 			cdev->status.rx_drop++;
 			dev_dbg(cdev->dev,
@@ -445,78 +443,21 @@ static int danipc_cdev_recv(struct danipc_cdev *cdev, uint8_t hwfifo)
 
 	danipc_cdev_refill_rx_b_fifo(cdev, prio);
 
-	if (n)
-		danipc_cdev_enqueue_kmem_recvq(cdev, prio);
-	return n;
-}
-
-int danipc_cdev_enqueue_kmem_recvq(struct danipc_cdev *cdev,
-				   enum ipc_trns_prio pri)
-{
-	struct rx_queue *pq;
-	struct shm_buf *kmembuf, *buf;
-	int n = 0;
-
-	if (unlikely(!valid_ipc_prio(pri)))
-		return -EINVAL;
-
-	pq = &cdev->rx_queue[pri];
-	spin_lock(&cdev->rx_lock);
-	while (pq->recvq.count) {
-		kmembuf = shm_bufpool_get_buf(&pq->kmem_freeq);
-		if (kmembuf == NULL) {
-			while (1) {
-				buf = shm_bufpool_get_buf(&pq->recvq);
-				if (buf == NULL)
-					break;
-				dev_dbg(cdev->dev,
-					"%s: out of buffer, drop msg(%p)\n",
-					__func__, buf);
-				shm_bufpool_put_buf(&pq->freeq, buf);
-				cdev->status.rx_no_buf++;
-			}
-			break;
-		}
-
-		buf = shm_bufpool_get_buf(&pq->recvq);
-		BUG_ON(buf == NULL);
-		spin_unlock(&cdev->rx_lock);
-
-		ipc_msg_copy(
-			buf_vaddr(kmembuf),
-			ipc_to_virt(cdev->fifo->node_id, pri, buf_paddr(buf)),
-			kmembuf->region->buf_sz,
-			true);
-
-		spin_lock(&cdev->rx_lock);
-		shm_bufpool_put_buf(&pq->freeq, buf);
-		shm_bufpool_put_buf(&pq->kmem_recvq, kmembuf);
-		n++;
-	}
-
-	if (n) {
-		if (pq->kmem_recvq.count > pq->status.kmem_recvq_hi)
-			pq->status.kmem_recvq_hi = pq->kmem_recvq.count;
-		if (pq->kmem_freeq.count < pq->status.kmem_freeq_lo)
-			pq->status.kmem_freeq_lo = pq->kmem_freeq.count;
-	}
-
-	danipc_cdev_refill_rx_b_fifo(cdev, pri);
-
-	spin_unlock(&cdev->rx_lock);
-
 	return n;
 }
 
 static void danipc_cdev_rx_poll(unsigned long data)
 {
 	struct danipc_cdev *cdev = (struct danipc_cdev *)data;
+	unsigned long flags;
 	int n;
 
 	cdev->status.rx_poll++;
 
+	spin_lock_irqsave(&cdev->rx_lock, flags);
 	n = danipc_cdev_recv(cdev, 0);
 	n += danipc_cdev_recv(cdev, 2);
+	spin_unlock_irqrestore(&cdev->rx_lock, flags);
 
 	if (n)
 		wake_up(&cdev->rx_wq);

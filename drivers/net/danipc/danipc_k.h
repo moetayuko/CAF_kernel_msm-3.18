@@ -233,16 +233,12 @@ struct packet_proc {
 #define DANIPC_CDEV_DEFAULT_RX_POLL_INTERVAL_IN_US	500
 
 struct rx_queue_status {
-	uint32_t	kmem_recvq_hi;
-	uint32_t	kmem_freeq_lo;
 	uint32_t	recvq_hi;
 	uint32_t	freeq_lo;
 	uint32_t	bq_lo;
 };
 
 struct rx_queue {
-	struct shm_bufpool	kmem_recvq;
-	struct shm_bufpool	kmem_freeq;
 	struct shm_bufpool	recvq;
 	struct shm_bufpool	freeq;
 	struct shm_bufpool	bq;
@@ -286,18 +282,11 @@ struct danipc_cdev_status {
 	uint32_t	rx_poll;
 };
 
-struct rx_kmem_region {
-	void			*kmem;
-	uint32_t		kmem_sz;
-	struct shm_region	*region;
-};
-
 struct danipc_cdev {
 	struct danipc_drvr	*drvr;
 	struct device		*dev;
 	struct danipc_fifo	*fifo;
 
-	struct rx_kmem_region	rx_kmem_region;
 	struct shm_region	*rx_region;
 	struct vm_area_struct	*rx_vma;
 	atomic_t		rx_vma_ref;
@@ -461,11 +450,6 @@ int danipc_cdev_mapped_tx_get_buf(struct danipc_cdev *cdev,
 
 int danipc_cdev_mapped_tx_put_buf(struct danipc_cdev *cdev,
 				  struct danipc_bufs *bufs);
-
-int danipc_cdev_enqueue_kmem_recvq(struct danipc_cdev *cdev,
-				   enum ipc_trns_prio pri);
-
-int ipc_msg_copy(void *dst, const void *src, size_t size, bool adj_offset);
 
 static inline bool local_fifo_owner(struct danipc_fifo *fifo, void *owner)
 {
