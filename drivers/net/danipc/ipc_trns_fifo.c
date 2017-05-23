@@ -61,29 +61,20 @@ void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo)
 	int		num_bufs;
 	int		buf;
 	uint32_t	buff_addr;
-	uint32_t	m_fifo_addr[] = {0, 0};
-	uint32_t	b_fifo_addr[] = {0, 0};
-	int		fifo_idx;
-	struct danipc_if *intf = NULL;
+	uint32_t	m_fifo_addr[] = {
+		TCSR_IPC_FIFO_RD_IN_LOW_ADDR(fifo->node_id),
+		TCSR_IPC_FIFO_RD_IN_HIGH_ADDR(fifo->node_id)};
+	uint32_t	b_fifo_addr[] = {
+		IPC_FIFO_WR_OUT_LOW_ADDR(fifo->node_id),
+		IPC_FIFO_WR_OUT_HIGH_ADDR(fifo->node_id)};
+	enum ipc_trns_prio pri;
 
-	if (fifo->owner_type == DANIPC_FIFO_OWNER_TYPE_NETDEV)
-		intf = (struct danipc_if *)(fifo->owner);
-	else
-		return;
-
-	if (intf->pproc[ipc_trns_prio_1].rxproc_type != rx_proc_default) {
-		m_fifo_addr[0] = TCSR_IPC_FIFO_RD_IN_HIGH_ADDR(fifo->node_id);
-		b_fifo_addr[0] = IPC_FIFO_WR_OUT_HIGH_ADDR(fifo->node_id);
-	}
-
-	if (intf->pproc[ipc_trns_prio_0].rxproc_type != rx_proc_default) {
-		m_fifo_addr[1] = TCSR_IPC_FIFO_RD_IN_LOW_ADDR(fifo->node_id);
-		b_fifo_addr[1] = IPC_FIFO_WR_OUT_LOW_ADDR(fifo->node_id);
-	}
-
-	for (fifo_idx = 0; fifo_idx < sizeof(b_fifo_addr)/sizeof(uint32_t);
-	     fifo_idx++) {
-		if (m_fifo_addr[0] == 0)
+	for (pri = ipc_trns_prio_0; pri < max_ipc_prio; pri++) {
+		if ((pri == ipc_trns_prio_0) &&
+		    (fifo->flag & DANIPC_FIFO_F_NO_LO_PRIO))
+			continue;
+		if ((pri == ipc_trns_prio_1) &&
+		    (fifo->flag & DANIPC_FIFO_F_NO_HI_PRIO))
 			continue;
 
 		num_bufs = 0;
@@ -91,7 +82,7 @@ void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo)
 		for (buf = 0; buf < IPC_FIFO_BUF_NUM_HIGH; buf++) {
 			buff_addr =
 				__raw_readl_no_log((void *)
-						    m_fifo_addr[fifo_idx]);
+						    m_fifo_addr[pri]);
 
 			if (buff_addr != 0) {
 				bufs[num_bufs] =  buff_addr;
@@ -102,7 +93,7 @@ void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo)
 		for (buf = 0; buf < num_bufs; buf++)
 			__raw_writel_no_log(
 				bufs[buf],
-				(void *)b_fifo_addr[fifo_idx]);
+				(void *)b_fifo_addr[pri]);
 	}
 }
 

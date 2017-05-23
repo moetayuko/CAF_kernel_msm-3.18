@@ -147,7 +147,7 @@ static int init_local_fifo(struct platform_device *pdev,
 	fifo->probe_info = info;
 	fifo->node_id = nodeid;
 	fifo->owner = NULL;
-	fifo->flag = 0;
+	fifo->flag = info->flags;
 	fifo->idx = pdrv->num_lfifo;
 	ret = init_own_ipc_to_virt_map(fifo);
 	if (ret)
@@ -617,10 +617,10 @@ static int probe_local_fifo(struct platform_device *pdev,
 }
 
 static struct danipc_probe_info danipc_probe_list[DANIPC_MAX_LFIFO] = {
-	{"apps_ipc_data", "danipc", 256},
-	{"apps_ipc_pcap", "danipc-pcap", 0},
-	{"apps_hex_ipc_log", "danipc-hex2log", 0},
-	{"apps_hex_ipc_log", "danipc-hex3log", 0},
+	{"apps_ipc_data", "danipc", 256, 0},
+	{"apps_ipc_pcap", "danipc-pcap", 0, 0},
+	{"apps_hex_ipc_log", "danipc-hex2log", 0, DANIPC_FIFO_F_NO_LO_PRIO},
+	{"apps_hex_ipc_log", "danipc-hex3log", 0, DANIPC_FIFO_F_NO_LO_PRIO},
 };
 
 static int danipc_probe_lfifo(struct platform_device *pdev, const char *regs[])
@@ -2032,6 +2032,7 @@ static void danipc_cdev_show_status(struct seq_file *s)
 	seq_printf(s, "%-25s: %u\n", "rx_oversize_msg", stats->rx_oversize_msg);
 	seq_printf(s, "%-25s: %u\n", "rx_invalid_aid_msg", stats->rx_inval_msg);
 	seq_printf(s, "%-25s: %u\n", "rx_chained_msg", stats->rx_chained_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_poll", stats->rx_poll);
 
 	seq_printf(s, "%-25s: %u\n", "mmap_rx", stats->mmap_rx);
 	seq_printf(s, "%-25s: %u\n", "mmap_rx_done", stats->mmap_rx_done);

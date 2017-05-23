@@ -511,29 +511,26 @@ int danipc_cdev_enqueue_kmem_recvq(struct danipc_cdev *cdev,
 static void danipc_cdev_rx_poll(unsigned long data)
 {
 	struct danipc_cdev *cdev = (struct danipc_cdev *)data;
-	struct danipc_fifo *fifo = cdev->fifo;
-	const unsigned	base_addr = ipc_regs[fifo->node_id];
-	int n = 0;
-	uint32_t intval = IPC_INTR(IPC_INT0_FIFO_AF) |
-		(IPC_INTR(IPC_INT0_FIFO_AF) << FIFO_SHIFT(2));
+	int n;
+
+	cdev->status.rx_poll++;
 
 	n = danipc_cdev_recv(cdev, 0);
 	n += danipc_cdev_recv(cdev, 2);
 
-	if (!n) {
-		__raw_writel_no_log(intval,
-				    (void *)(base_addr + CDU_INT0_CLEAR_F0));
-		n = danipc_cdev_recv(cdev, 0);
-		n += danipc_cdev_recv(cdev, 2);
-	}
-
-	if (n) {
-		tasklet_schedule(&cdev->rx_work);
+	if (n)
 		wake_up(&cdev->rx_wq);
-	} else {
-		__raw_writel_no_log(~intval,
-				    (void *)(base_addr + CDU_INT0_MASK_F0));
-	}
+}
+
+enum hrtimer_restart danipc_cdev_rx_timer_timeout(struct hrtimer *timer)
+{
+	struct danipc_cdev *cdev = container_of(timer,
+						struct danipc_cdev, rx_timer);
+
+	hrtimer_forward_now(timer, cdev->rx_poll_interval);
+	tasklet_schedule(&cdev->rx_work);
+
+	return HRTIMER_RESTART;
 }
 
 irqreturn_t danipc_cdev_interrupt(int irq, void *data)
@@ -545,25 +542,34 @@ irqreturn_t danipc_cdev_interrupt(int irq, void *data)
 	dev_dbg(cdev->dev, "%s: receive danipc IRQ, base_addr = 0x%x\n",
 		__func__, base_addr);
 
-	/* Mask all IPC interrupts. */
+	/* Mask all IPC interrupts and start the polling */
 	__raw_writel_no_log(~0, (void *)(base_addr + CDU_INT0_MASK_F0));
-	tasklet_schedule(&cdev->rx_work);
+	hrtimer_start(&cdev->rx_timer, cdev->rx_poll_interval,
+		      HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
 
 	return IRQ_HANDLED;
 }
 
 void danipc_cdev_init_rx_work(struct danipc_cdev *cdev)
 {
-	if (likely(cdev))
+	if (likely(cdev)) {
 		tasklet_init(&cdev->rx_work,
 			     danipc_cdev_rx_poll,
 			     (unsigned long)cdev);
+		hrtimer_init(&cdev->rx_timer, CLOCK_MONOTONIC,
+			     HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
+		cdev->rx_timer.function = danipc_cdev_rx_timer_timeout;
+		cdev->rx_poll_interval = ns_to_ktime(
+			DANIPC_CDEV_DEFAULT_RX_POLL_INTERVAL_IN_US * 1000);
+	}
 }
 
 void danipc_cdev_stop_rx_work(struct danipc_cdev *cdev)
 {
-	if (likely(cdev))
+	if (likely(cdev)) {
+		hrtimer_cancel(&cdev->rx_timer);
 		tasklet_kill(&cdev->rx_work);
+	}
 }
 
 irqreturn_t danipc_interrupt(int irq, void *data)

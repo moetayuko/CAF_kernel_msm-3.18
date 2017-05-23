@@ -142,11 +142,14 @@ struct danipc_probe_info {
 	const char	*res_name;
 	const char	*ifname;
 	const uint16_t	poolsz;
+	const uint32_t	flags;
 };
 
 #define DANIPC_MAX_LFIFO	4
 #define DANIPC_FIFO_F_INIT	1
 #define DANIPC_FIFO_F_INUSE	2
+#define DANIPC_FIFO_F_NO_HI_PRIO	4
+#define DANIPC_FIFO_F_NO_LO_PRIO	8
 
 #define DANIPC_FIFO_OWNER_TYPE_NETDEV	0
 #define DANIPC_FIFO_OWNER_TYPE_CDEV	1
@@ -227,6 +230,8 @@ struct packet_proc {
 #define DANIPC_CDEV_NAME	"danipc"
 #define DANIPC_MAX_CDEV		1
 
+#define DANIPC_CDEV_DEFAULT_RX_POLL_INTERVAL_IN_US	500
+
 struct rx_queue_status {
 	uint32_t	kmem_recvq_hi;
 	uint32_t	kmem_freeq_lo;
@@ -277,6 +282,8 @@ struct danipc_cdev_status {
 	uint32_t	mmap_tx_nobuf;
 	uint32_t	mmap_tx_error;
 	uint32_t	mmap_tx_bad_buf;
+
+	uint32_t	rx_poll;
 };
 
 struct rx_kmem_region {
@@ -296,6 +303,8 @@ struct danipc_cdev {
 	atomic_t		rx_vma_ref;
 	struct rx_queue		rx_queue[max_ipc_prio];
 	struct tasklet_struct	rx_work;
+	struct hrtimer		rx_timer;
+	ktime_t			rx_poll_interval;
 	spinlock_t		rx_lock;	/* sync access to HW FIFO */
 	wait_queue_head_t	rx_wq;
 
