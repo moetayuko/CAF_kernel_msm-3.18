@@ -2480,9 +2480,7 @@ static int _qce_sps_transfer(struct qce_device *pce_dev, int req_info)
 	pce_sps_data->out_transfer.user =
 		(void *)((uintptr_t)(CRYPTO_REQ_USER_PAT |
 					(unsigned int) req_info));
-	pce_sps_data->in_transfer.user =
-		(void *)((uintptr_t)(CRYPTO_REQ_USER_PAT |
-					(unsigned int) req_info));
+	pce_sps_data->in_transfer.user = NULL;
 	_qce_dump_descr_fifos_dbg(pce_dev, req_info);
 
 	if (pce_sps_data->in_transfer.iovec_count) {
@@ -2577,8 +2575,12 @@ static int qce_sps_init_ep_conn(struct qce_device *pce_dev,
 		sps_connect_info->destination = pce_dev->ce_bam_info.bam_handle;
 		sps_connect_info->mode = SPS_MODE_DEST;
 		sps_connect_info->options =
-			SPS_O_AUTO_ENABLE;
+			SPS_O_AUTO_ENABLE | SPS_O_NO_Q;
 	}
+
+	if (!pce_dev->use_intr)
+		sps_connect_info->options |=
+			SPS_O_NO_LOCK | SPS_O_XFER_NO_EOT_CHK;
 
 	/* Producer pipe index */
 	sps_connect_info->src_pipe_index =
