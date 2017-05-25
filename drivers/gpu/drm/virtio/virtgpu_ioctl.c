@@ -130,7 +130,7 @@ static int virtio_gpu_execbuffer_ioctl(struct drm_device *dev, void *data,
 		if (!in_fence)
 			return -EINVAL;
 
-		if (in_fence->context == vgdev->fence_drv.context) {
+		if (in_fence->context != vgdev->fence_drv.context) {
 			dma_fence_put(in_fence);
 			return -EINVAL;
 		}
