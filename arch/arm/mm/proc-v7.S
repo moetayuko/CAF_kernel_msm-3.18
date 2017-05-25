@@ -286,14 +286,11 @@ __v7_ca17mp_setup:
 	stmia	r12, {r1-r6, lr}		@ v7_invalidate_l1 touches r0-r6
 	bl      v7_invalidate_l1
 	ldmia	r12, {r1-r6, lr}
-#ifdef CONFIG_SMP
+	mrc	p15, 0, r0, c1, c0, 1
 	orr	r10, r10, #(1 << 6)		@ Enable SMP/nAMP mode
-	ALT_SMP(mrc	p15, 0, r0, c1, c0, 1)
-	ALT_UP(mov	r0, r10)		@ fake it for UP
 	orr	r10, r10, r0			@ Set required bits
 	teq	r10, r0				@ Were they already set?
 	mcrne	p15, 0, r10, c1, c0, 1		@ No, update register
-#endif
 	b	__v7_setup_cont
 
 /*
