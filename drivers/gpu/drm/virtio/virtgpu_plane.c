@@ -43,6 +43,7 @@ static const uint32_t virtio_gpu_cursor_formats[] = {
 	DRM_FORMAT_BGRA8888,
 #else
 	DRM_FORMAT_ARGB8888,
+	DRM_FORMAT_ABGR8888,
 #endif
 };
 
