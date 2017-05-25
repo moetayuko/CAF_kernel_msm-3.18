@@ -591,6 +591,7 @@ static bool max98927_volatile_reg(struct device *dev, unsigned int reg)
 	case MAX98927_R004E_MEAS_ADC_CH2_READ:
 	case MAX98927_R0051_BROWNOUT_STATUS:
 	case MAX98927_R0087_ENV_TRACK_BOOST_VOUT_READ:
+	case MAX98927_R0100_SOFT_RESET:
 	case MAX98927_R01FF_REV_ID:
 		return true;
 	default:
@@ -908,6 +909,27 @@ static int max98927_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
+
+#ifdef CONFIG_PM_SLEEP
+static int max98927_resume(struct device *dev)
+{
+	struct max98927_priv *max98927 = dev_get_drvdata(dev);
+
+	regcache_mark_dirty(max98927->regmap);
+	regmap_write(max98927->regmap,
+		MAX98927_R0100_SOFT_RESET, MAX98927_SOFT_RESET);
+	regmap_write(max98927->regmap,
+		MAX98927_R0044_MEAS_ADC_BASE_MSB,
+		0x00);
+	regcache_sync(max98927->regmap);
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops max98927_pm = {
+	SET_SYSTEM_SLEEP_PM_OPS(NULL, max98927_resume)
+};
+
 static const struct i2c_device_id max98927_i2c_id[] = {
 	{ "max98927", 0},
 	{ },
@@ -936,7 +958,7 @@ static struct i2c_driver max98927_i2c_driver = {
 		.name = "max98927",
 		.of_match_table = of_match_ptr(max98927_of_match),
 		.acpi_match_table = ACPI_PTR(max98927_acpi_match),
-		.pm = NULL,
+		.pm = &max98927_pm,
 	},
 	.probe  = max98927_i2c_probe,
 	.remove = max98927_i2c_remove,
