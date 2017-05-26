@@ -1600,7 +1600,8 @@ static int soft_offline_huge_page(struct page *page, int flags)
 		 * only one hugepage pointed to by hpage, so we need not
 		 * run through the pagelist here.
 		 */
-		putback_active_hugepage(hpage);
+		if (!list_empty(&pagelist))
+			putback_movable_pages(&pagelist);
 		if (ret > 0)
 			ret = -EIO;
 	} else {
