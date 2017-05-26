@@ -142,11 +142,14 @@ struct danipc_probe_info {
 	const char	*res_name;
 	const char	*ifname;
 	const uint16_t	poolsz;
+	const uint32_t	flags;
 };
 
 #define DANIPC_MAX_LFIFO	4
 #define DANIPC_FIFO_F_INIT	1
 #define DANIPC_FIFO_F_INUSE	2
+#define DANIPC_FIFO_F_NO_HI_PRIO	4
+#define DANIPC_FIFO_F_NO_LO_PRIO	8
 
 #define DANIPC_FIFO_OWNER_TYPE_NETDEV	0
 #define DANIPC_FIFO_OWNER_TYPE_CDEV	1
@@ -227,17 +230,15 @@ struct packet_proc {
 #define DANIPC_CDEV_NAME	"danipc"
 #define DANIPC_MAX_CDEV		1
 
+#define DANIPC_CDEV_DEFAULT_RX_POLL_INTERVAL_IN_US	500
+
 struct rx_queue_status {
-	uint32_t	kmem_recvq_hi;
-	uint32_t	kmem_freeq_lo;
 	uint32_t	recvq_hi;
 	uint32_t	freeq_lo;
 	uint32_t	bq_lo;
 };
 
 struct rx_queue {
-	struct shm_bufpool	kmem_recvq;
-	struct shm_bufpool	kmem_freeq;
 	struct shm_bufpool	recvq;
 	struct shm_bufpool	freeq;
 	struct shm_bufpool	bq;
@@ -277,12 +278,8 @@ struct danipc_cdev_status {
 	uint32_t	mmap_tx_nobuf;
 	uint32_t	mmap_tx_error;
 	uint32_t	mmap_tx_bad_buf;
-};
 
-struct rx_kmem_region {
-	void			*kmem;
-	uint32_t		kmem_sz;
-	struct shm_region	*region;
+	uint32_t	rx_poll;
 };
 
 struct danipc_cdev {
@@ -290,12 +287,13 @@ struct danipc_cdev {
 	struct device		*dev;
 	struct danipc_fifo	*fifo;
 
-	struct rx_kmem_region	rx_kmem_region;
 	struct shm_region	*rx_region;
 	struct vm_area_struct	*rx_vma;
 	atomic_t		rx_vma_ref;
 	struct rx_queue		rx_queue[max_ipc_prio];
 	struct tasklet_struct	rx_work;
+	struct hrtimer		rx_timer;
+	ktime_t			rx_poll_interval;
 	spinlock_t		rx_lock;	/* sync access to HW FIFO */
 	wait_queue_head_t	rx_wq;
 
@@ -452,11 +450,6 @@ int danipc_cdev_mapped_tx_get_buf(struct danipc_cdev *cdev,
 
 int danipc_cdev_mapped_tx_put_buf(struct danipc_cdev *cdev,
 				  struct danipc_bufs *bufs);
-
-int danipc_cdev_enqueue_kmem_recvq(struct danipc_cdev *cdev,
-				   enum ipc_trns_prio pri);
-
-int ipc_msg_copy(void *dst, const void *src, size_t size, bool adj_offset);
 
 static inline bool local_fifo_owner(struct danipc_fifo *fifo, void *owner)
 {
