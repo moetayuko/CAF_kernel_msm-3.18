@@ -2598,9 +2598,9 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 
 	/*
 	 * We still want to slightly prefer slab over inactive, so if the
-	 * inactive on this node is large enough and what is pushing us into
-	 * reclaim terretitory then limit our flushing to the inactive list for
-	 * the first go around.
+	 * inactive on this node is large enough and is pushing us into reclaim
+	 * terrtitory then limit our flushing to the inactive list for the first
+	 * go around.
 	 *
 	 * The idea is that with a memcg configured system we will still reclaim
 	 * memcg aware shrinkers, which includes the super block shrinkers.  So
