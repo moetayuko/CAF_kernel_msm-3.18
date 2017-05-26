@@ -482,8 +482,6 @@ struct wm_coeff_ctl_ops {
 		    struct snd_ctl_elem_value *ucontrol);
 	int (*xput)(struct snd_kcontrol *kcontrol,
 		    struct snd_ctl_elem_value *ucontrol);
-	int (*xinfo)(struct snd_kcontrol *kcontrol,
-		     struct snd_ctl_elem_info *uinfo);
 };
 
 struct wm_coeff_ctl {
@@ -2654,7 +2652,7 @@ int wm_adsp2_preloader_put(struct snd_kcontrol *kcontrol,
 		(struct soc_mixer_control *)kcontrol->private_value;
 	char preload[32];
 
-	snprintf(preload, ARRAY_SIZE(preload), "DSP%d Preload", mc->shift);
+	snprintf(preload, ARRAY_SIZE(preload), "DSP%u Preload", mc->shift);
 
 	dsp->preloaded = ucontrol->value.integer.value[0];
 
