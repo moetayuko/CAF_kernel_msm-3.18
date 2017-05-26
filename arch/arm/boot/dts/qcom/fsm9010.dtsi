@@ -1095,6 +1095,7 @@
 		reg = <0xe6000000 0x1000>,
 		      <0xe4000000 0x20000>;
 		qcom,id = <0>;
+		qcom,num-queue = <2>;
 		qcom,nss-ctrl = <1>;
 		qcom,ipv4-enabled;
 		qcom,ipv4-reasm-enabled;
