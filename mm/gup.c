@@ -408,6 +408,7 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	ret = handle_mm_fault(vma, address, fault_flags);
 	if (ret & VM_FAULT_ERROR) {
 		int err = vm_fault_to_errno(ret, *flags);
+
 		if (err)
 			return err;
 		BUG();
