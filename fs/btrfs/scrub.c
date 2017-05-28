@@ -289,10 +289,6 @@ static void scrub_remap_extent(struct btrfs_fs_info *fs_info,
 			       u64 *extent_physical,
 			       struct btrfs_device **extent_dev,
 			       int *extent_mirror_num);
-static int scrub_setup_wr_ctx(struct scrub_wr_ctx *wr_ctx,
-			      struct btrfs_device *dev,
-			      int is_dev_replace);
-static void scrub_free_wr_ctx(struct scrub_wr_ctx *wr_ctx);
 static int scrub_add_page_to_wr_bio(struct scrub_ctx *sctx,
 				    struct scrub_page *spage);
 static void scrub_wr_submit(struct scrub_ctx *sctx);
@@ -643,8 +639,6 @@ static noinline_for_stack void scrub_free_ctx(struct scrub_ctx *sctx)
 	if (!sctx)
 		return;
 
-	scrub_free_wr_ctx(&sctx->wr_ctx);
-
 	/* this can happen when scrub is cancelled */
 	if (sctx->curr != -1) {
 		struct scrub_bio *sbio = sctx->bios[sctx->curr];
@@ -664,6 +658,7 @@ static noinline_for_stack void scrub_free_ctx(struct scrub_ctx *sctx)
 		kfree(sbio);
 	}
 
+	kfree(sctx->wr_ctx.wr_curr_bio);
 	scrub_free_csums(sctx);
 	kfree(sctx);
 }
@@ -680,7 +675,6 @@ struct scrub_ctx *scrub_setup_ctx(struct btrfs_device *dev, int is_dev_replace)
 	struct scrub_ctx *sctx;
 	int		i;
 	struct btrfs_fs_info *fs_info = dev->fs_info;
-	int ret;
 
 	sctx = kzalloc(sizeof(*sctx), GFP_KERNEL);
 	if (!sctx)
@@ -722,12 +716,16 @@ struct scrub_ctx *scrub_setup_ctx(struct btrfs_device *dev, int is_dev_replace)
 	spin_lock_init(&sctx->stat_lock);
 	init_waitqueue_head(&sctx->list_wait);
 
-	ret = scrub_setup_wr_ctx(&sctx->wr_ctx,
-				 fs_info->dev_replace.tgtdev, is_dev_replace);
-	if (ret) {
-		scrub_free_ctx(sctx);
-		return ERR_PTR(ret);
+	WARN_ON(sctx->wr_ctx.wr_curr_bio != NULL);
+	mutex_init(&sctx->wr_ctx.wr_lock);
+	sctx->wr_ctx.wr_curr_bio = NULL;
+	if (is_dev_replace) {
+		WARN_ON(!dev->bdev);
+		sctx->wr_ctx.pages_per_wr_bio = SCRUB_PAGES_PER_WR_BIO;
+		sctx->wr_ctx.tgtdev = dev;
+		atomic_set(&sctx->wr_ctx.flush_all_writes, 0);
 	}
+
 	return sctx;
 
 nomem:
@@ -954,7 +952,7 @@ static int scrub_fixup_readpage(u64 inum, u64 offset, u64 root, void *fixup_ctx)
 			ret = -EIO;
 			goto out;
 		}
-		ret = repair_io_failure(BTRFS_I(inode), offset, PAGE_SIZE,
+		ret = repair_io_failure(fs_info, inum, offset, PAGE_SIZE,
 					fixup->logical, page,
 					offset - page_offset(page),
 					fixup->mirror_num);
@@ -4335,32 +4333,6 @@ static void scrub_remap_extent(struct btrfs_fs_info *fs_info,
 	*extent_mirror_num = bbio->mirror_num;
 	*extent_dev = bbio->stripes[0].dev;
 	btrfs_put_bbio(bbio);
-}
-
-static int scrub_setup_wr_ctx(struct scrub_wr_ctx *wr_ctx,
-			      struct btrfs_device *dev,
-			      int is_dev_replace)
-{
-	WARN_ON(wr_ctx->wr_curr_bio != NULL);
-
-	mutex_init(&wr_ctx->wr_lock);
-	wr_ctx->wr_curr_bio = NULL;
-	if (!is_dev_replace)
-		return 0;
-
-	WARN_ON(!dev->bdev);
-	wr_ctx->pages_per_wr_bio = SCRUB_PAGES_PER_WR_BIO;
-	wr_ctx->tgtdev = dev;
-	atomic_set(&wr_ctx->flush_all_writes, 0);
-	return 0;
-}
-
-static void scrub_free_wr_ctx(struct scrub_wr_ctx *wr_ctx)
-{
-	mutex_lock(&wr_ctx->wr_lock);
-	kfree(wr_ctx->wr_curr_bio);
-	wr_ctx->wr_curr_bio = NULL;
-	mutex_unlock(&wr_ctx->wr_lock);
 }
 
 static int copy_nocow_pages(struct scrub_ctx *sctx, u64 logical, u64 len,
