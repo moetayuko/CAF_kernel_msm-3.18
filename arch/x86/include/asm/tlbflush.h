@@ -307,10 +307,14 @@ static inline void flush_tlb_kernel_range(unsigned long start,
 		flush_tlb_mm_range(vma->vm_mm, start, end, vma->vm_flags)
 
 extern void flush_tlb_all(void);
-extern void flush_tlb_page(struct vm_area_struct *, unsigned long);
 extern void flush_tlb_mm_range(struct mm_struct *mm, unsigned long start,
 				unsigned long end, unsigned long vmflag);
 extern void flush_tlb_kernel_range(unsigned long start, unsigned long end);
+
+static inline void flush_tlb_page(struct vm_area_struct *vma, unsigned long a)
+{
+	flush_tlb_mm_range(vma->vm_mm, a, a + PAGE_SIZE, VM_NONE);
+}
 
 void native_flush_tlb_others(const struct cpumask *cpumask,
 				struct mm_struct *mm,
@@ -324,6 +328,14 @@ static inline void reset_lazy_tlbstate(void)
 	this_cpu_write(cpu_tlbstate.state, 0);
 	this_cpu_write(cpu_tlbstate.active_mm, &init_mm);
 }
+
+static inline void arch_tlbbatch_add_mm(struct arch_tlbflush_unmap_batch *batch,
+					struct mm_struct *mm)
+{
+	cpumask_or(&batch->cpumask, &batch->cpumask, mm_cpumask(mm));
+}
+
+extern void arch_tlbbatch_flush(struct arch_tlbflush_unmap_batch *batch);
 
 #endif	/* SMP */
 
