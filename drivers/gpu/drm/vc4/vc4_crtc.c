@@ -32,13 +32,13 @@
  * ones that set the clock.
  */
 
-#include "drm_atomic.h"
-#include "drm_atomic_helper.h"
-#include "drm_crtc_helper.h"
-#include "linux/clk.h"
-#include "drm_fb_cma_helper.h"
-#include "linux/component.h"
-#include "linux/of_device.h"
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
+#include <linux/clk.h>
+#include <drm/drm_fb_cma_helper.h>
+#include <linux/component.h>
+#include <linux/of_device.h>
 #include "vc4_drv.h"
 #include "vc4_regs.h"
 
@@ -345,12 +345,16 @@ static u32 vc4_get_fifo_full_level(u32 format)
 static struct drm_encoder *vc4_get_crtc_encoder(struct drm_crtc *crtc)
 {
 	struct drm_connector *connector;
+	struct drm_connector_list_iter conn_iter;
 
-	drm_for_each_connector(connector, crtc->dev) {
+	drm_connector_list_iter_begin(crtc->dev, &conn_iter);
+	drm_for_each_connector_iter(connector, &conn_iter) {
 		if (connector->state->crtc == crtc) {
+			drm_connector_list_iter_end(&conn_iter);
 			return connector->encoder;
 		}
 	}
+	drm_connector_list_iter_end(&conn_iter);
 
 	return NULL;
 }
