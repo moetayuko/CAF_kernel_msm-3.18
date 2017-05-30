@@ -340,6 +340,30 @@ static int device_area_is_invalid(struct dm_target *ti, struct dm_dev *dev,
 		return 1;
 	}
 
+	/*
+	 * If the target is mapped to zoned block device(s), check
+	 * that the zones are not partially mapped.
+	 */
+	if (bdev_zoned_model(bdev) != BLK_ZONED_NONE) {
+		unsigned int zone_sectors = bdev_zone_sectors(bdev);
+
+		if (start & (zone_sectors - 1)) {
+			DMWARN("%s: start=%llu not aligned to h/w zone size %u of %s",
+			       dm_device_name(ti->table->md),
+			       (unsigned long long)start,
+			       zone_sectors, bdevname(bdev, b));
+			return 1;
+		}
+
+		if (len & (zone_sectors - 1)) {
+			DMWARN("%s: len=%llu not aligned to h/w zone size %u of %s",
+			       dm_device_name(ti->table->md),
+			       (unsigned long long)len,
+			       zone_sectors, bdevname(bdev, b));
+			return 1;
+		}
+	}
+
 	return 0;
 }
 
@@ -455,6 +479,8 @@ static int dm_set_device_limits(struct dm_target *ti, struct dm_dev *dev,
 		       q->limits.logical_block_size,
 		       q->limits.alignment_offset,
 		       (unsigned long long) start << SECTOR_SHIFT);
+
+	limits->zoned = blk_queue_zoned_model(q);
 
 	return 0;
 }
@@ -1346,6 +1372,87 @@ bool dm_table_has_no_data_devices(struct dm_table *table)
 	return true;
 }
 
+static int device_is_zoned_model(struct dm_target *ti, struct dm_dev *dev,
+				 sector_t start, sector_t len, void *data)
+{
+	struct request_queue *q = bdev_get_queue(dev->bdev);
+	enum blk_zoned_model *zoned_model = data;
+
+	return q && blk_queue_zoned_model(q) == *zoned_model;
+}
+
+static bool dm_table_supports_zoned_model(struct dm_table *t,
+					  enum blk_zoned_model zoned_model)
+{
+	struct dm_target *ti;
+	unsigned i;
+
+	for (i = 0; i < dm_table_get_num_targets(t); i++) {
+		ti = dm_table_get_target(t, i);
+
+		if (zoned_model == BLK_ZONED_HM &&
+		    !dm_target_supports_zoned_hm(ti->type))
+			return false;
+
+		if (!ti->type->iterate_devices ||
+		    !ti->type->iterate_devices(ti, device_is_zoned_model, &zoned_model))
+			return false;
+	}
+
+	return true;
+}
+
+static int device_matches_zone_sectors(struct dm_target *ti, struct dm_dev *dev,
+				       sector_t start, sector_t len, void *data)
+{
+	struct request_queue *q = bdev_get_queue(dev->bdev);
+	unsigned int *zone_sectors = data;
+
+	return q && blk_queue_zone_sectors(q) == *zone_sectors;
+}
+
+static bool dm_table_matches_zone_sectors(struct dm_table *t,
+					  unsigned int zone_sectors)
+{
+	struct dm_target *ti;
+	unsigned i;
+
+	for (i = 0; i < dm_table_get_num_targets(t); i++) {
+		ti = dm_table_get_target(t, i);
+
+		if (!ti->type->iterate_devices ||
+		    !ti->type->iterate_devices(ti, device_matches_zone_sectors, &zone_sectors))
+			return false;
+	}
+
+	return true;
+}
+
+static int validate_hardware_zoned_model(struct dm_table *table,
+					 enum blk_zoned_model zoned_model,
+					 unsigned int zone_sectors)
+{
+	if (!dm_table_supports_zoned_model(table, zoned_model)) {
+		DMERR("%s: zoned model is inconsistent across all devices",
+		      dm_device_name(table->md));
+		return -EINVAL;
+	}
+
+	if (zoned_model != BLK_ZONED_NONE) {
+		/* Check zone size validity and compatibility */
+		if (!zone_sectors || !is_power_of_2(zone_sectors))
+			return -EINVAL;
+
+		if (!dm_table_matches_zone_sectors(table, zone_sectors)) {
+			DMERR("%s: zone sectors is inconsistent across all devices",
+			      dm_device_name(table->md));
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Establish the new table's queue_limits and validate them.
  */
@@ -1355,6 +1462,8 @@ int dm_calculate_queue_limits(struct dm_table *table,
 	struct dm_target *ti;
 	struct queue_limits ti_limits;
 	unsigned i;
+	enum blk_zoned_model zoned_model = BLK_ZONED_NONE;
+	unsigned int zone_sectors = 0;
 
 	blk_set_stacking_limits(limits);
 
@@ -1371,6 +1480,15 @@ int dm_calculate_queue_limits(struct dm_table *table,
 		 */
 		ti->type->iterate_devices(ti, dm_set_device_limits,
 					  &ti_limits);
+
+		if (zoned_model == BLK_ZONED_NONE && ti_limits.zoned != BLK_ZONED_NONE) {
+			/*
+			 * After stacking all limits, validate all devices
+			 * in table support this zoned model and zone sectors.
+			 */
+			zoned_model = ti_limits.zoned;
+			zone_sectors = ti_limits.chunk_sectors;
+		}
 
 		/* Set I/O hints portion of queue limits */
 		if (ti->type->io_hints)
@@ -1397,6 +1515,20 @@ combine_limits:
 			       (unsigned long long) ti->begin,
 			       (unsigned long long) ti->len);
 	}
+
+	/*
+	 * Verify that the zoned model and zone sectors, as determined before
+	 * any .io_hints override, are the same across all devices in the table.
+	 * - but if limits->zoned is not BLK_ZONED_NONE validate match for it
+	 * - simillarly, check all devices conform to limits->chunk_sectors if
+	 *   .io_hints altered them
+	 */
+	if (limits->zoned != BLK_ZONED_NONE)
+		zoned_model = limits->zoned;
+	if (limits->chunk_sectors != zone_sectors)
+		zone_sectors = limits->chunk_sectors;
+	if (validate_hardware_zoned_model(table, zoned_model, zone_sectors))
+		return -EINVAL;
 
 	return validate_hardware_logical_block_alignment(table, limits);
 }
