@@ -1595,11 +1595,6 @@ static int soft_offline_huge_page(struct page *page, int flags)
 	if (ret) {
 		pr_info("soft offline: %#lx: migration failed %d, type %lx (%pGp)\n",
 			pfn, ret, page->flags, &page->flags);
-		/*
-		 * We know that soft_offline_huge_page() tries to migrate
-		 * only one hugepage pointed to by hpage, so we need not
-		 * run through the pagelist here.
-		 */
 		if (!list_empty(&pagelist))
 			putback_movable_pages(&pagelist);
 		if (ret > 0)
