@@ -115,11 +115,6 @@
  */
 #define ESDHC_FLAG_MULTIBLK_NO_INT	BIT(1)
 /*
- * The flag enables the workaround for ESDHC errata ENGcm07207 which
- * affects i.MX25 and i.MX35.
- */
-#define ESDHC_FLAG_ENGCM07207		BIT(2)
-/*
  * The flag tells that the ESDHC controller is an USDHC block that is
  * integrated on the i.MX6 series.
  */
@@ -149,11 +144,11 @@ struct esdhc_soc_data {
 };
 
 static struct esdhc_soc_data esdhc_imx25_data = {
-	.flags = ESDHC_FLAG_ENGCM07207,
+	.flags = ESDHC_FLAG_ERR004536,
 };
 
 static struct esdhc_soc_data esdhc_imx35_data = {
-	.flags = ESDHC_FLAG_ENGCM07207,
+	.flags = ESDHC_FLAG_ERR004536,
 };
 
 static struct esdhc_soc_data esdhc_imx51_data = {
@@ -579,7 +574,7 @@ static void esdhc_writeb_le(struct sdhci_host *host, u8 val, int reg)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct pltfm_imx_data *imx_data = sdhci_pltfm_priv(pltfm_host);
-	u32 new_val;
+	u32 new_val = 0;
 	u32 mask;
 
 	switch (reg) {
@@ -610,29 +605,46 @@ static void esdhc_writeb_le(struct sdhci_host *host, u8 val, int reg)
 
 		esdhc_clrset_le(host, mask, new_val, reg);
 		return;
+	case SDHCI_SOFTWARE_RESET:
+		if (val & SDHCI_RESET_DATA)
+			new_val = readl(host->ioaddr + SDHCI_HOST_CONTROL);
+		break;
 	}
 	esdhc_clrset_le(host, 0xff, val, reg);
 
-	/*
-	 * The esdhc has a design violation to SDHC spec which tells
-	 * that software reset should not affect card detection circuit.
-	 * But esdhc clears its SYSCTL register bits [0..2] during the
-	 * software reset.  This will stop those clocks that card detection
-	 * circuit relies on.  To work around it, we turn the clocks on back
-	 * to keep card detection circuit functional.
-	 */
-	if ((reg == SDHCI_SOFTWARE_RESET) && (val & 1)) {
-		esdhc_clrset_le(host, 0x7, 0x7, ESDHC_SYSTEM_CONTROL);
-		/*
-		 * The reset on usdhc fails to clear MIX_CTRL register.
-		 * Do it manually here.
-		 */
-		if (esdhc_is_usdhc(imx_data)) {
-			/* the tuning bits should be kept during reset */
-			new_val = readl(host->ioaddr + ESDHC_MIX_CTRL);
-			writel(new_val & ESDHC_MIX_CTRL_TUNING_MASK,
-					host->ioaddr + ESDHC_MIX_CTRL);
-			imx_data->is_ddr = 0;
+	if (reg == SDHCI_SOFTWARE_RESET) {
+		if (val & SDHCI_RESET_ALL) {
+			/*
+			 * The esdhc has a design violation to SDHC spec which
+			 * tells that software reset should not affect card
+			 * detection circuit. But esdhc clears its SYSCTL
+			 * register bits [0..2] during the software reset. This
+			 * will stop those clocks that card detection circuit
+			 * relies on. To work around it, we turn the clocks on
+			 * back to keep card detection circuit functional.
+			 */
+			esdhc_clrset_le(host, 0x7, 0x7, ESDHC_SYSTEM_CONTROL);
+			/*
+			 * The reset on usdhc fails to clear MIX_CTRL register.
+			 * Do it manually here.
+			 */
+			if (esdhc_is_usdhc(imx_data)) {
+				/*
+				 * the tuning bits should be kept during reset
+				 */
+				new_val = readl(host->ioaddr + ESDHC_MIX_CTRL);
+				writel(new_val & ESDHC_MIX_CTRL_TUNING_MASK,
+						host->ioaddr + ESDHC_MIX_CTRL);
+				imx_data->is_ddr = 0;
+			}
+		} else if (val & SDHCI_RESET_DATA) {
+			/*
+			 * The eSDHC DAT line software reset clears at least the
+			 * data transfer width on i.MX25, so make sure that the
+			 * Host Control register is unaffected.
+			 */
+			esdhc_clrset_le(host, 0xff, new_val,
+					SDHCI_HOST_CONTROL);
 		}
 	}
 }
@@ -657,7 +669,8 @@ static inline void esdhc_pltfm_set_clock(struct sdhci_host *host,
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct pltfm_imx_data *imx_data = sdhci_pltfm_priv(pltfm_host);
 	unsigned int host_clock = pltfm_host->clock;
-	int pre_div = 2;
+	int ddr_pre_div = imx_data->is_ddr ? 2 : 1;
+	int pre_div = 1;
 	int div = 1;
 	u32 temp, val;
 
@@ -672,28 +685,23 @@ static inline void esdhc_pltfm_set_clock(struct sdhci_host *host,
 		return;
 	}
 
-	if (esdhc_is_usdhc(imx_data) && !imx_data->is_ddr)
-		pre_div = 1;
-
 	temp = sdhci_readl(host, ESDHC_SYSTEM_CONTROL);
 	temp &= ~(ESDHC_CLOCK_IPGEN | ESDHC_CLOCK_HCKEN | ESDHC_CLOCK_PEREN
 		| ESDHC_CLOCK_MASK);
 	sdhci_writel(host, temp, ESDHC_SYSTEM_CONTROL);
 
-	while (host_clock / pre_div / 16 > clock && pre_div < 256)
+	while (host_clock / (16 * pre_div * ddr_pre_div) > clock &&
+			pre_div < 256)
 		pre_div *= 2;
 
-	while (host_clock / pre_div / div > clock && div < 16)
+	while (host_clock / (div * pre_div * ddr_pre_div) > clock && div < 16)
 		div++;
 
-	host->mmc->actual_clock = host_clock / pre_div / div;
+	host->mmc->actual_clock = host_clock / (div * pre_div * ddr_pre_div);
 	dev_dbg(mmc_dev(host->mmc), "desired SD clock: %d, actual: %d\n",
 		clock, host->mmc->actual_clock);
 
-	if (imx_data->is_ddr)
-		pre_div >>= 2;
-	else
-		pre_div >>= 1;
+	pre_div >>= 1;
 	div--;
 
 	temp = sdhci_readl(host, ESDHC_SYSTEM_CONTROL);
@@ -1250,25 +1258,26 @@ static int sdhci_esdhc_imx_probe(struct platform_device *pdev)
 
 	pltfm_host->clk = imx_data->clk_per;
 	pltfm_host->clock = clk_get_rate(pltfm_host->clk);
-	clk_prepare_enable(imx_data->clk_per);
-	clk_prepare_enable(imx_data->clk_ipg);
-	clk_prepare_enable(imx_data->clk_ahb);
+	err = clk_prepare_enable(imx_data->clk_per);
+	if (err)
+		goto free_sdhci;
+	err = clk_prepare_enable(imx_data->clk_ipg);
+	if (err)
+		goto disable_per_clk;
+	err = clk_prepare_enable(imx_data->clk_ahb);
+	if (err)
+		goto disable_ipg_clk;
 
 	imx_data->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(imx_data->pinctrl)) {
 		err = PTR_ERR(imx_data->pinctrl);
-		goto disable_clk;
+		goto disable_ahb_clk;
 	}
 
 	imx_data->pins_default = pinctrl_lookup_state(imx_data->pinctrl,
 						PINCTRL_STATE_DEFAULT);
 	if (IS_ERR(imx_data->pins_default))
 		dev_warn(mmc_dev(host->mmc), "could not get default state\n");
-
-	if (imx_data->socdata->flags & ESDHC_FLAG_ENGCM07207)
-		/* Fix errata ENGcm07207 present on i.MX25 and i.MX35 */
-		host->quirks |= SDHCI_QUIRK_NO_MULTIBLOCK
-			| SDHCI_QUIRK_BROKEN_ADMA;
 
 	if (esdhc_is_usdhc(imx_data)) {
 		host->quirks2 |= SDHCI_QUIRK2_PRESET_VALUE_BROKEN;
@@ -1297,13 +1306,13 @@ static int sdhci_esdhc_imx_probe(struct platform_device *pdev)
 	else
 		err = sdhci_esdhc_imx_probe_nondt(pdev, host, imx_data);
 	if (err)
-		goto disable_clk;
+		goto disable_ahb_clk;
 
 	sdhci_esdhc_imx_hwinit(host);
 
 	err = sdhci_add_host(host);
 	if (err)
-		goto disable_clk;
+		goto disable_ahb_clk;
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 50);
@@ -1313,10 +1322,12 @@ static int sdhci_esdhc_imx_probe(struct platform_device *pdev)
 
 	return 0;
 
-disable_clk:
-	clk_disable_unprepare(imx_data->clk_per);
-	clk_disable_unprepare(imx_data->clk_ipg);
+disable_ahb_clk:
 	clk_disable_unprepare(imx_data->clk_ahb);
+disable_ipg_clk:
+	clk_disable_unprepare(imx_data->clk_ipg);
+disable_per_clk:
+	clk_disable_unprepare(imx_data->clk_per);
 free_sdhci:
 	sdhci_pltfm_free(pdev);
 	return err;
@@ -1393,14 +1404,34 @@ static int sdhci_esdhc_runtime_resume(struct device *dev)
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct pltfm_imx_data *imx_data = sdhci_pltfm_priv(pltfm_host);
+	int err;
 
 	if (!sdhci_sdio_irq_enabled(host)) {
-		clk_prepare_enable(imx_data->clk_per);
-		clk_prepare_enable(imx_data->clk_ipg);
+		err = clk_prepare_enable(imx_data->clk_per);
+		if (err)
+			return err;
+		err = clk_prepare_enable(imx_data->clk_ipg);
+		if (err)
+			goto disable_per_clk;
 	}
-	clk_prepare_enable(imx_data->clk_ahb);
+	err = clk_prepare_enable(imx_data->clk_ahb);
+	if (err)
+		goto disable_ipg_clk;
+	err = sdhci_runtime_resume_host(host);
+	if (err)
+		goto disable_ahb_clk;
 
-	return sdhci_runtime_resume_host(host);
+	return 0;
+
+disable_ahb_clk:
+	clk_disable_unprepare(imx_data->clk_ahb);
+disable_ipg_clk:
+	if (!sdhci_sdio_irq_enabled(host))
+		clk_disable_unprepare(imx_data->clk_ipg);
+disable_per_clk:
+	if (!sdhci_sdio_irq_enabled(host))
+		clk_disable_unprepare(imx_data->clk_per);
+	return err;
 }
 #endif
 
