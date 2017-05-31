@@ -151,25 +151,6 @@ static inline u32 free_space_bitmap_size(u64 size, u32 sectorsize)
 	return DIV_ROUND_UP((u32)div_u64(size, sectorsize), BITS_PER_BYTE);
 }
 
-static u8 *alloc_bitmap(u32 bitmap_size)
-{
-	void *mem;
-
-	/*
-	 * The allocation size varies, observed numbers were < 4K up to 16K.
-	 * Using vmalloc unconditionally would be too heavy, we'll try
-	 * contiguous allocations first.
-	 */
-	if  (bitmap_size <= PAGE_SIZE)
-		return kzalloc(bitmap_size, GFP_NOFS);
-
-	mem = kzalloc(bitmap_size, GFP_NOFS | __GFP_NOWARN);
-	if (mem)
-		return mem;
-
-	return __vmalloc(bitmap_size, GFP_NOFS | __GFP_ZERO, PAGE_KERNEL);
-}
-
 int convert_free_space_to_bitmaps(struct btrfs_trans_handle *trans,
 				  struct btrfs_fs_info *fs_info,
 				  struct btrfs_block_group_cache *block_group,
@@ -189,7 +170,7 @@ int convert_free_space_to_bitmaps(struct btrfs_trans_handle *trans,
 
 	bitmap_size = free_space_bitmap_size(block_group->key.offset,
 					     fs_info->sectorsize);
-	bitmap = alloc_bitmap(bitmap_size);
+	bitmap = kvzalloc(bitmap_size, GFP_NOFS);
 	if (!bitmap) {
 		ret = -ENOMEM;
 		goto out;
@@ -330,7 +311,7 @@ int convert_free_space_to_extents(struct btrfs_trans_handle *trans,
 
 	bitmap_size = free_space_bitmap_size(block_group->key.offset,
 					     fs_info->sectorsize);
-	bitmap = alloc_bitmap(bitmap_size);
+	bitmap = kvzalloc(bitmap_size, GFP_NOFS);
 	if (!bitmap) {
 		ret = -ENOMEM;
 		goto out;
