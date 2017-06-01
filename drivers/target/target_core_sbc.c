@@ -71,14 +71,8 @@ sbc_emulate_readcapacity(struct se_cmd *cmd)
 	else
 		blocks = (u32)blocks_long;
 
-	buf[0] = (blocks >> 24) & 0xff;
-	buf[1] = (blocks >> 16) & 0xff;
-	buf[2] = (blocks >> 8) & 0xff;
-	buf[3] = blocks & 0xff;
-	buf[4] = (dev->dev_attrib.block_size >> 24) & 0xff;
-	buf[5] = (dev->dev_attrib.block_size >> 16) & 0xff;
-	buf[6] = (dev->dev_attrib.block_size >> 8) & 0xff;
-	buf[7] = dev->dev_attrib.block_size & 0xff;
+	put_unaligned_be32(blocks, &buf[0]);
+	put_unaligned_be32(dev->dev_attrib.block_size, &buf[4]);
 
 	rbuf = transport_kmap_data_sg(cmd);
 	if (rbuf) {
@@ -102,18 +96,8 @@ sbc_emulate_readcapacity_16(struct se_cmd *cmd)
 	unsigned long long blocks = dev->transport->get_blocks(dev);
 
 	memset(buf, 0, sizeof(buf));
-	buf[0] = (blocks >> 56) & 0xff;
-	buf[1] = (blocks >> 48) & 0xff;
-	buf[2] = (blocks >> 40) & 0xff;
-	buf[3] = (blocks >> 32) & 0xff;
-	buf[4] = (blocks >> 24) & 0xff;
-	buf[5] = (blocks >> 16) & 0xff;
-	buf[6] = (blocks >> 8) & 0xff;
-	buf[7] = blocks & 0xff;
-	buf[8] = (dev->dev_attrib.block_size >> 24) & 0xff;
-	buf[9] = (dev->dev_attrib.block_size >> 16) & 0xff;
-	buf[10] = (dev->dev_attrib.block_size >> 8) & 0xff;
-	buf[11] = dev->dev_attrib.block_size & 0xff;
+	put_unaligned_be64(blocks, &buf[0]);
+	put_unaligned_be32(dev->dev_attrib.block_size, &buf[8]);
 	/*
 	 * Set P_TYPE and PROT_EN bits for DIF support
 	 */
@@ -134,8 +118,8 @@ sbc_emulate_readcapacity_16(struct se_cmd *cmd)
 
 	if (dev->transport->get_alignment_offset_lbas) {
 		u16 lalba = dev->transport->get_alignment_offset_lbas(dev);
-		buf[14] = (lalba >> 8) & 0x3f;
-		buf[15] = lalba & 0xff;
+
+		put_unaligned_be16(lalba, &buf[14]);
 	}
 
 	/*
@@ -262,18 +246,17 @@ static inline u32 transport_get_sectors_6(unsigned char *cdb)
 
 static inline u32 transport_get_sectors_10(unsigned char *cdb)
 {
-	return (u32)(cdb[7] << 8) + cdb[8];
+	return get_unaligned_be16(&cdb[7]);
 }
 
 static inline u32 transport_get_sectors_12(unsigned char *cdb)
 {
-	return (u32)(cdb[6] << 24) + (cdb[7] << 16) + (cdb[8] << 8) + cdb[9];
+	return get_unaligned_be32(&cdb[6]);
 }
 
 static inline u32 transport_get_sectors_16(unsigned char *cdb)
 {
-	return (u32)(cdb[10] << 24) + (cdb[11] << 16) +
-		    (cdb[12] << 8) + cdb[13];
+	return get_unaligned_be32(&cdb[10]);
 }
 
 /*
@@ -281,29 +264,23 @@ static inline u32 transport_get_sectors_16(unsigned char *cdb)
  */
 static inline u32 transport_get_sectors_32(unsigned char *cdb)
 {
-	return (u32)(cdb[28] << 24) + (cdb[29] << 16) +
-		    (cdb[30] << 8) + cdb[31];
+	return get_unaligned_be32(&cdb[28]);
 
 }
 
 static inline u32 transport_lba_21(unsigned char *cdb)
 {
-	return ((cdb[1] & 0x1f) << 16) | (cdb[2] << 8) | cdb[3];
+	return get_unaligned_be24(&cdb[1]) & 0x1fffff;
 }
 
 static inline u32 transport_lba_32(unsigned char *cdb)
 {
-	return (cdb[2] << 24) | (cdb[3] << 16) | (cdb[4] << 8) | cdb[5];
+	return get_unaligned_be32(&cdb[2]);
 }
 
 static inline unsigned long long transport_lba_64(unsigned char *cdb)
 {
-	unsigned int __v1, __v2;
-
-	__v1 = (cdb[2] << 24) | (cdb[3] << 16) | (cdb[4] << 8) | cdb[5];
-	__v2 = (cdb[6] << 24) | (cdb[7] << 16) | (cdb[8] << 8) | cdb[9];
-
-	return ((unsigned long long)__v2) | (unsigned long long)__v1 << 32;
+	return get_unaligned_be64(&cdb[2]);
 }
 
 /*
@@ -311,12 +288,7 @@ static inline unsigned long long transport_lba_64(unsigned char *cdb)
  */
 static inline unsigned long long transport_lba_64_ext(unsigned char *cdb)
 {
-	unsigned int __v1, __v2;
-
-	__v1 = (cdb[12] << 24) | (cdb[13] << 16) | (cdb[14] << 8) | cdb[15];
-	__v2 = (cdb[16] << 24) | (cdb[17] << 16) | (cdb[18] << 8) | cdb[19];
-
-	return ((unsigned long long)__v2) | (unsigned long long)__v1 << 32;
+	return get_unaligned_be64(&cdb[12]);
 }
 
 static sense_reason_t
@@ -831,12 +803,72 @@ sbc_check_dpofua(struct se_device *dev, struct se_cmd *cmd, unsigned char *cdb)
 	return 0;
 }
 
+/**
+ * sbc_parse_verify - parse VERIFY, VERIFY_16 and WRITE VERIFY commands
+ * @cmd:     (in)  structure that describes the SCSI command to be parsed.
+ * @sectors: (out) Number of logical blocks on the storage medium that will be
+ *           affected by the SCSI command.
+ * @bufflen: (out) Expected length of the SCSI Data-Out buffer.
+ */
+static sense_reason_t sbc_parse_verify(struct se_cmd *cmd, int *sectors,
+				       u32 *bufflen)
+{
+	struct se_device *dev = cmd->se_dev;
+	u8 *cdb = cmd->t_task_cdb;
+	u8 bytchk = (cdb[1] >> 1) & 3;
+	sense_reason_t ret;
+
+	switch (cdb[0]) {
+	case VERIFY:
+	case WRITE_VERIFY:
+		*sectors = transport_get_sectors_10(cdb);
+		cmd->t_task_lba = transport_lba_32(cdb);
+		break;
+	case VERIFY_12:
+	case WRITE_VERIFY_12:
+		*sectors = transport_get_sectors_12(cdb);
+		cmd->t_task_lba = transport_lba_32(cdb);
+		break;
+	case VERIFY_16:
+	case WRITE_VERIFY_16:
+		*sectors = transport_get_sectors_16(cdb);
+		cmd->t_task_lba = transport_lba_64(cdb);
+		break;
+	default:
+		WARN_ON_ONCE(true);
+		return TCM_UNSUPPORTED_SCSI_OPCODE;
+	}
+
+	if (sbc_check_dpofua(dev, cmd, cdb))
+		return TCM_INVALID_CDB_FIELD;
+
+	ret = sbc_check_prot(dev, cmd, cdb, *sectors, true);
+	if (ret)
+		return ret;
+
+	switch (bytchk) {
+	case 0:
+		*bufflen = 0;
+		break;
+	case 1:
+		*bufflen = sbc_get_size(cmd, *sectors);
+		cmd->se_cmd_flags |= SCF_SCSI_DATA_CDB;
+		break;
+	default:
+		pr_err("Unsupported BYTCHK value %d for SCSI opcode %#x\n",
+		       bytchk, cdb[0]);
+		return TCM_INVALID_CDB_FIELD;
+	}
+	return TCM_NO_SENSE;
+}
+
 sense_reason_t
 sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 {
+	enum { INVALID_SIZE = 1 };
 	struct se_device *dev = cmd->se_dev;
 	unsigned char *cdb = cmd->t_task_cdb;
-	unsigned int size;
+	unsigned int size = INVALID_SIZE;
 	u32 sectors = 0;
 	sense_reason_t ret;
 
@@ -898,7 +930,6 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		cmd->execute_cmd = sbc_execute_rw;
 		break;
 	case WRITE_10:
-	case WRITE_VERIFY:
 		sectors = transport_get_sectors_10(cdb);
 		cmd->t_task_lba = transport_lba_32(cdb);
 
@@ -912,6 +943,14 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		cmd->se_cmd_flags |= SCF_SCSI_DATA_CDB;
 		cmd->execute_cmd = sbc_execute_rw;
 		break;
+	case WRITE_VERIFY:
+	case WRITE_VERIFY_12:
+	case WRITE_VERIFY_16:
+		ret = sbc_parse_verify(cmd, &sectors, &size);
+		if (ret)
+			return ret;
+		cmd->execute_cmd = sbc_execute_rw;
+		goto check_lba;
 	case WRITE_12:
 		sectors = transport_get_sectors_12(cdb);
 		cmd->t_task_lba = transport_lba_32(cdb);
@@ -927,7 +966,6 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		cmd->execute_cmd = sbc_execute_rw;
 		break;
 	case WRITE_16:
-	case WRITE_VERIFY_16:
 		sectors = transport_get_sectors_16(cdb);
 		cmd->t_task_lba = transport_lba_64(cdb);
 
@@ -1045,8 +1083,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 				cmd->t_task_cdb[1] & 0x1f);
 			return TCM_INVALID_CDB_FIELD;
 		}
-		size = (cdb[10] << 24) | (cdb[11] << 16) |
-		       (cdb[12] << 8) | cdb[13];
+		size = get_unaligned_be32(&cdb[10]);
 		break;
 	case SYNCHRONIZE_CACHE:
 	case SYNCHRONIZE_CACHE_16:
@@ -1109,15 +1146,11 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 			return ret;
 		break;
 	case VERIFY:
+	case VERIFY_12:
 	case VERIFY_16:
-		size = 0;
-		if (cdb[0] == VERIFY) {
-			sectors = transport_get_sectors_10(cdb);
-			cmd->t_task_lba = transport_lba_32(cdb);
-		} else {
-			sectors = transport_get_sectors_16(cdb);
-			cmd->t_task_lba = transport_lba_64(cdb);
-		}
+		ret = sbc_parse_verify(cmd, &sectors, &size);
+		if (ret)
+			return ret;
 		cmd->execute_cmd = sbc_emulate_noop;
 		goto check_lba;
 	case REZERO_UNIT:
@@ -1158,7 +1191,7 @@ check_lba:
 			return TCM_ADDRESS_OUT_OF_RANGE;
 		}
 
-		if (!(cmd->se_cmd_flags & SCF_COMPARE_AND_WRITE))
+		if (size == INVALID_SIZE)
 			size = sbc_get_size(cmd, sectors);
 	}
 

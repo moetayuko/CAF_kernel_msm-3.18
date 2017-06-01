@@ -678,7 +678,6 @@ struct qla_tgt_func_tmpl {
 	int (*handle_tmr)(struct qla_tgt_mgmt_cmd *, uint32_t, uint16_t,
 			uint32_t);
 	void (*free_cmd)(struct qla_tgt_cmd *);
-	void (*free_mcmd)(struct qla_tgt_mgmt_cmd *);
 	void (*free_session)(struct fc_port *);
 
 	int (*check_initiator_node_acl)(struct scsi_qla_host *, unsigned char *,
@@ -878,7 +877,6 @@ struct qla_tgt_cmd {
 	unsigned int cmd_in_wq:1;
 	unsigned int aborted:1;
 	unsigned int data_work:1;
-	unsigned int data_work_free:1;
 
 	struct scatterlist *sg;	/* cmd data buffer SG vector */
 	int sg_cnt;		/* SG segments count */
@@ -939,7 +937,6 @@ struct qla_tgt_mgmt_cmd {
 	uint8_t fc_tm_rsp;
 	struct fc_port *sess;
 	struct se_cmd se_cmd;
-	struct work_struct free_work;
 	unsigned int flags;
 	uint32_t reset_count;
 #define QLA24XX_MGMT_SEND_NACK	1

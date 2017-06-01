@@ -762,7 +762,6 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	dev->prot_length = sizeof(struct t10_pi_tuple);
 	dev->hba_index = hba->hba_index;
 
-	INIT_LIST_HEAD(&dev->dev_list);
 	INIT_LIST_HEAD(&dev->dev_sep_list);
 	INIT_LIST_HEAD(&dev->dev_tmr_list);
 	INIT_LIST_HEAD(&dev->delayed_cmd_list);
@@ -961,6 +960,18 @@ out:
 	return ret;
 }
 
+int target_get_device(struct se_device *dev)
+{
+	return config_item_get_unless_zero(&dev->dev_group.cg_item) != NULL;
+}
+EXPORT_SYMBOL(target_get_device);
+
+void target_put_device(struct se_device *dev)
+{
+	config_item_put(&dev->dev_group.cg_item);
+}
+EXPORT_SYMBOL(target_put_device);
+
 void target_free_device(struct se_device *dev)
 {
 	struct se_hba *hba = dev->se_hba;
@@ -1087,19 +1098,19 @@ passthrough_parse_cdb(struct se_cmd *cmd,
 	      TRANSPORT_FLAG_PASSTHROUGH_PGR)) {
 		if (cdb[0] == PERSISTENT_RESERVE_IN) {
 			cmd->execute_cmd = target_scsi3_emulate_pr_in;
-			size = (cdb[7] << 8) + cdb[8];
+			size = get_unaligned_be16(&cdb[7]);
 			return target_cmd_size_check(cmd, size);
 		}
 		if (cdb[0] == PERSISTENT_RESERVE_OUT) {
 			cmd->execute_cmd = target_scsi3_emulate_pr_out;
-			size = (cdb[7] << 8) + cdb[8];
+			size = get_unaligned_be16(&cdb[7]);
 			return target_cmd_size_check(cmd, size);
 		}
 
 		if (cdb[0] == RELEASE || cdb[0] == RELEASE_10) {
 			cmd->execute_cmd = target_scsi2_reservation_release;
 			if (cdb[0] == RELEASE_10)
-				size = (cdb[7] << 8) | cdb[8];
+				size = get_unaligned_be16(&cdb[7]);
 			else
 				size = cmd->data_length;
 			return target_cmd_size_check(cmd, size);
@@ -1107,7 +1118,7 @@ passthrough_parse_cdb(struct se_cmd *cmd,
 		if (cdb[0] == RESERVE || cdb[0] == RESERVE_10) {
 			cmd->execute_cmd = target_scsi2_reservation_reserve;
 			if (cdb[0] == RESERVE_10)
-				size = (cdb[7] << 8) | cdb[8];
+				size = get_unaligned_be16(&cdb[7]);
 			else
 				size = cmd->data_length;
 			return target_cmd_size_check(cmd, size);
@@ -1126,7 +1137,7 @@ passthrough_parse_cdb(struct se_cmd *cmd,
 	case WRITE_16:
 	case WRITE_VERIFY:
 	case WRITE_VERIFY_12:
-	case 0x8e: /* WRITE_VERIFY_16 */
+	case WRITE_VERIFY_16:
 	case COMPARE_AND_WRITE:
 	case XDWRITEREAD_10:
 		cmd->se_cmd_flags |= SCF_SCSI_DATA_CDB;

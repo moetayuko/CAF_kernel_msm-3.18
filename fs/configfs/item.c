@@ -138,6 +138,12 @@ struct config_item *config_item_get(struct config_item *item)
 }
 EXPORT_SYMBOL(config_item_get);
 
+struct config_item *config_item_get_unless_zero(struct config_item *item)
+{
+	return item && kref_get_unless_zero(&item->ci_kref) ? item : NULL;
+}
+EXPORT_SYMBOL(config_item_get_unless_zero);
+
 static void config_item_cleanup(struct config_item *item)
 {
 	struct config_item_type *t = item->ci_type;

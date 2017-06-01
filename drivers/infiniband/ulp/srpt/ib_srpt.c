@@ -1157,8 +1157,8 @@ static int srpt_abort_cmd(struct srpt_send_ioctx *ioctx)
 	}
 	spin_unlock_irqrestore(&ioctx->spinlock, flags);
 
-	pr_debug("Aborting cmd with state %d and tag %lld\n", state,
-		 ioctx->cmd.tag);
+	pr_debug("Aborting cmd with state %d -> %d and tag %lld\n", state,
+		 ioctx->state, ioctx->cmd.tag);
 
 	switch (state) {
 	case SRPT_STATE_NEW:
@@ -1376,7 +1376,7 @@ static void srpt_handle_cmd(struct srpt_rdma_ch *ch,
 			pr_err("0x%llx: parsing SRP descriptor table failed.\n",
 			       srp_cmd->tag);
 		}
-		goto release_ioctx;
+		goto busy;
 	}
 
 	rc = target_submit_cmd_map_sgls(cmd, ch->sess, srp_cmd->cdb,
@@ -1387,13 +1387,12 @@ static void srpt_handle_cmd(struct srpt_rdma_ch *ch,
 	if (rc != 0) {
 		pr_debug("target_submit_cmd() returned %d for tag %#llx\n", rc,
 			 srp_cmd->tag);
-		goto release_ioctx;
+		goto busy;
 	}
 	return;
 
-release_ioctx:
-	send_ioctx->state = SRPT_STATE_DONE;
-	srpt_release_cmd(cmd);
+busy:
+	target_send_busy(cmd);
 }
 
 static int srp_tmr_to_tcm(int fn)
@@ -1450,11 +1449,9 @@ static void srpt_handle_tsk_mgmt(struct srpt_rdma_ch *ch,
 			       TARGET_SCF_ACK_KREF);
 	if (rc != 0) {
 		send_ioctx->cmd.se_tmr_req->response = TMR_FUNCTION_REJECTED;
-		goto fail;
+		cmd->se_tfo->queue_tm_rsp(cmd);
 	}
 	return;
-fail:
-	transport_send_check_condition_and_sense(cmd, 0, 0); // XXX:
 }
 
 /**

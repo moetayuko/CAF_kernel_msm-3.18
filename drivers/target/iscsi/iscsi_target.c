@@ -372,6 +372,9 @@ struct iscsi_np *iscsit_add_np(
 	init_completion(&np->np_restart_comp);
 	INIT_LIST_HEAD(&np->np_list);
 
+	setup_timer(&np->np_login_timer, iscsi_handle_login_thread_timeout,
+		    (unsigned long)np);
+
 	ret = iscsi_target_setup_login_socket(np, sockaddr);
 	if (ret != 0) {
 		kfree(np);
@@ -488,20 +491,18 @@ EXPORT_SYMBOL(iscsit_queue_rsp);
 
 void iscsit_aborted_task(struct iscsi_conn *conn, struct iscsi_cmd *cmd)
 {
-	bool scsi_cmd = (cmd->iscsi_opcode == ISCSI_OP_SCSI_CMD);
-
 	spin_lock_bh(&conn->cmd_lock);
 	if (!list_empty(&cmd->i_conn_node) &&
 	    !(cmd->se_cmd.transport_state & CMD_T_FABRIC_STOP))
 		list_del_init(&cmd->i_conn_node);
 	spin_unlock_bh(&conn->cmd_lock);
 
-	__iscsit_free_cmd(cmd, scsi_cmd, true);
+	__iscsit_free_cmd(cmd, true);
 }
 EXPORT_SYMBOL(iscsit_aborted_task);
 
 static void iscsit_do_crypto_hash_buf(struct ahash_request *, const void *,
-				      u32, u32, u8 *, u8 *);
+				      u32, u32, const void *, void *);
 static void iscsit_tx_thread_wait_for_tcp(struct iscsi_conn *);
 
 static int
@@ -522,7 +523,7 @@ iscsit_xmit_nondatain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 
 		iscsit_do_crypto_hash_buf(conn->conn_tx_hash, hdr,
 					  ISCSI_HDR_LEN, 0, NULL,
-					  (u8 *)header_digest);
+					  header_digest);
 
 		iov[0].iov_len += ISCSI_CRC_LEN;
 		tx_size += ISCSI_CRC_LEN;
@@ -549,9 +550,8 @@ iscsit_xmit_nondatain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 		if (conn->conn_ops->DataDigest) {
 			iscsit_do_crypto_hash_buf(conn->conn_tx_hash,
 						  data_buf, data_buf_len,
-						  padding,
-						  (u8 *)&cmd->pad_bytes,
-						  (u8 *)&cmd->data_crc);
+						  padding, &cmd->pad_bytes,
+						  &cmd->data_crc);
 
 			iov[niov].iov_base = &cmd->data_crc;
 			iov[niov++].iov_len = ISCSI_CRC_LEN;
@@ -574,7 +574,8 @@ iscsit_xmit_nondatain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 	return 0;
 }
 
-static int iscsit_map_iovec(struct iscsi_cmd *, struct kvec *, u32, u32);
+static int iscsit_map_iovec(struct iscsi_cmd *cmd, struct kvec *iov, int nvec,
+			    u32 data_offset, u32 data_length);
 static void iscsit_unmap_iovec(struct iscsi_cmd *);
 static u32 iscsit_do_crypto_hash_sg(struct ahash_request *, struct iscsi_cmd *,
 				    u32, u32, u32, u8 *);
@@ -596,7 +597,7 @@ iscsit_xmit_datain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 
 		iscsit_do_crypto_hash_buf(conn->conn_tx_hash, cmd->pdu,
 					  ISCSI_HDR_LEN, 0, NULL,
-					  (u8 *)header_digest);
+					  header_digest);
 
 		iov[0].iov_len += ISCSI_CRC_LEN;
 		tx_size += ISCSI_CRC_LEN;
@@ -605,7 +606,8 @@ iscsit_xmit_datain_pdu(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 			 *header_digest);
 	}
 
-	iov_ret = iscsit_map_iovec(cmd, &cmd->iov_data[1],
+	iov_ret = iscsit_map_iovec(cmd, &cmd->iov_data[iov_count],
+				   cmd->orig_iov_data_count - (iov_count + 2),
 				   datain->offset, datain->length);
 	if (iov_ret < 0)
 		return -1;
@@ -888,13 +890,10 @@ EXPORT_SYMBOL(iscsit_reject_cmd);
  * Map some portion of the allocated scatterlist to an iovec, suitable for
  * kernel sockets to copy data in/out.
  */
-static int iscsit_map_iovec(
-	struct iscsi_cmd *cmd,
-	struct kvec *iov,
-	u32 data_offset,
-	u32 data_length)
+static int iscsit_map_iovec(struct iscsi_cmd *cmd, struct kvec *iov, int nvec,
+			    u32 data_offset, u32 data_length)
 {
-	u32 i = 0;
+	u32 i = 0, orig_data_length = data_length;
 	struct scatterlist *sg;
 	unsigned int page_off;
 
@@ -903,9 +902,12 @@ static int iscsit_map_iovec(
 	 */
 	u32 ent = data_offset / PAGE_SIZE;
 
+	if (!data_length)
+		return 0;
+
 	if (ent >= cmd->se_cmd.t_data_nents) {
 		pr_err("Initial page entry out-of-bounds\n");
-		return -1;
+		goto overflow;
 	}
 
 	sg = &cmd->se_cmd.t_data_sg[ent];
@@ -915,7 +917,12 @@ static int iscsit_map_iovec(
 	cmd->first_data_sg_off = page_off;
 
 	while (data_length) {
-		u32 cur_len = min_t(u32, data_length, sg->length - page_off);
+		u32 cur_len;
+
+		if (WARN_ON_ONCE(!sg || i >= nvec))
+			goto overflow;
+
+		cur_len = min_t(u32, data_length, sg->length - page_off);
 
 		iov[i].iov_base = kmap(sg_page(sg)) + sg->offset + page_off;
 		iov[i].iov_len = cur_len;
@@ -929,6 +936,16 @@ static int iscsit_map_iovec(
 	cmd->kmapped_nents = i;
 
 	return i;
+
+overflow:
+	pr_err("offset %d + length %d overflow; %d/%d; sg-list:\n",
+	       data_offset, orig_data_length, i, nvec);
+	for_each_sg(cmd->se_cmd.t_data_sg, sg,
+		    cmd->se_cmd.t_data_nents, i) {
+		pr_err("[%d] off %d len %d\n",
+		       i, sg->offset, sg->length);
+	}
+	return -1;
 }
 
 static void iscsit_unmap_iovec(struct iscsi_cmd *cmd)
@@ -1251,12 +1268,8 @@ int iscsit_process_scsi_cmd(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 	 * execution.  These exceptions are processed in CmdSN order using
 	 * iscsit_check_received_cmdsn() in iscsit_get_immediate_data() below.
 	 */
-	if (cmd->sense_reason) {
-		if (cmd->reject_reason)
-			return 0;
-
+	if (cmd->sense_reason)
 		return 1;
-	}
 	/*
 	 * Call directly into transport_generic_new_cmd() to perform
 	 * the backend memory allocation.
@@ -1401,13 +1414,9 @@ static u32 iscsit_do_crypto_hash_sg(
 	return data_crc;
 }
 
-static void iscsit_do_crypto_hash_buf(
-	struct ahash_request *hash,
-	const void *buf,
-	u32 payload_length,
-	u32 padding,
-	u8 *pad_bytes,
-	u8 *data_crc)
+static void iscsit_do_crypto_hash_buf(struct ahash_request *hash,
+	const void *buf, u32 payload_length, u32 padding,
+	const void *pad_bytes, void *data_crc)
 {
 	struct scatterlist sg[2];
 
@@ -1570,14 +1579,16 @@ iscsit_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 {
 	struct kvec *iov;
 	u32 checksum, iov_count = 0, padding = 0, rx_got = 0, rx_size = 0;
-	u32 payload_length = ntoh24(hdr->dlength);
+	u32 payload_length;
 	int iov_ret, data_crc_failed = 0;
 
+	payload_length = min_t(u32, cmd->se_cmd.data_length,
+			       ntoh24(hdr->dlength));
 	rx_size += payload_length;
 	iov = &cmd->iov_data[0];
 
-	iov_ret = iscsit_map_iovec(cmd, iov, be32_to_cpu(hdr->offset),
-				   payload_length);
+	iov_ret = iscsit_map_iovec(cmd, iov, cmd->orig_iov_data_count - 2,
+				   be32_to_cpu(hdr->offset), payload_length);
 	if (iov_ret < 0)
 		return -1;
 
@@ -1597,6 +1608,7 @@ iscsit_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 		rx_size += ISCSI_CRC_LEN;
 	}
 
+	WARN_ON_ONCE(iov_count > cmd->orig_iov_data_count);
 	rx_got = rx_data(conn, &cmd->iov_data[0], iov_count, rx_size);
 
 	iscsit_unmap_iovec(cmd);
@@ -1862,6 +1874,7 @@ static int iscsit_handle_nop_out(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 			rx_size += ISCSI_CRC_LEN;
 		}
 
+		WARN_ON_ONCE(niov > ARRAY_SIZE(cmd->iov_misc));
 		rx_got = rx_data(conn, &cmd->iov_misc[0], niov, rx_size);
 		if (rx_got != rx_size) {
 			ret = -1;
@@ -1869,10 +1882,9 @@ static int iscsit_handle_nop_out(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 		}
 
 		if (conn->conn_ops->DataDigest) {
-			iscsit_do_crypto_hash_buf(conn->conn_rx_hash,
-					ping_data, payload_length,
-					padding, cmd->pad_bytes,
-					(u8 *)&data_crc);
+			iscsit_do_crypto_hash_buf(conn->conn_rx_hash, ping_data,
+						  payload_length, padding,
+						  cmd->pad_bytes, &data_crc);
 
 			if (checksum != data_crc) {
 				pr_err("Ping data CRC32C DataDigest"
@@ -2244,43 +2256,40 @@ iscsit_handle_text_cmd(struct iscsi_conn *conn, struct iscsi_cmd *cmd,
 	rx_size = payload_length;
 	if (payload_length) {
 		u32 checksum = 0, data_crc = 0;
-		u32 padding = 0, pad_bytes = 0;
+		u32 padding = 0;
 		int niov = 0, rx_got;
-		struct kvec iov[3];
+		struct kvec iov[2];
 
-		text_in = kzalloc(payload_length, GFP_KERNEL);
+		rx_size = ALIGN(payload_length, 4);
+		text_in = kzalloc(rx_size, GFP_KERNEL);
 		if (!text_in)
 			goto reject;
 
 		cmd->text_in_ptr = text_in;
 
-		memset(iov, 0, 3 * sizeof(struct kvec));
+		memset(iov, 0, sizeof(iov));
 		iov[niov].iov_base	= text_in;
-		iov[niov++].iov_len	= payload_length;
+		iov[niov++].iov_len	= rx_size;
 
-		padding = ((-payload_length) & 3);
-		if (padding != 0) {
-			iov[niov].iov_base = &pad_bytes;
-			iov[niov++].iov_len  = padding;
-			rx_size += padding;
+		padding = rx_size - payload_length;
+		if (padding)
 			pr_debug("Receiving %u additional bytes"
 					" for padding.\n", padding);
-		}
 		if (conn->conn_ops->DataDigest) {
 			iov[niov].iov_base	= &checksum;
 			iov[niov++].iov_len	= ISCSI_CRC_LEN;
 			rx_size += ISCSI_CRC_LEN;
 		}
 
+		WARN_ON_ONCE(niov > ARRAY_SIZE(iov));
 		rx_got = rx_data(conn, &iov[0], niov, rx_size);
 		if (rx_got != rx_size)
 			goto reject;
 
 		if (conn->conn_ops->DataDigest) {
 			iscsit_do_crypto_hash_buf(conn->conn_rx_hash,
-					text_in, payload_length,
-					padding, (u8 *)&pad_bytes,
-					(u8 *)&data_crc);
+						  text_in, rx_size, 0, NULL,
+						  &data_crc);
 
 			if (checksum != data_crc) {
 				pr_err("Text data CRC32C DataDigest"
@@ -2583,14 +2592,34 @@ static int iscsit_handle_immediate_data(
 	u32 checksum, iov_count = 0, padding = 0;
 	struct iscsi_conn *conn = cmd->conn;
 	struct kvec *iov;
+	void *overflow_buf = NULL;
 
-	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data, cmd->write_data_done, length);
+	BUG_ON(cmd->write_data_done > cmd->se_cmd.data_length);
+	rx_size = min(cmd->se_cmd.data_length - cmd->write_data_done, length);
+	iov_ret = iscsit_map_iovec(cmd, cmd->iov_data,
+				   cmd->orig_iov_data_count - 2,
+				   cmd->write_data_done, rx_size);
 	if (iov_ret < 0)
 		return IMMEDIATE_DATA_CANNOT_RECOVER;
 
-	rx_size = length;
 	iov_count = iov_ret;
 	iov = &cmd->iov_data[0];
+	if (rx_size < length) {
+		/*
+		 * Special case: length of immediate data exceeds the data
+		 * buffer size derived from the CDB (overflow).
+		 */
+		overflow_buf = kmalloc(length - rx_size, GFP_KERNEL);
+		if (!overflow_buf) {
+			iscsit_unmap_iovec(cmd);
+			return IMMEDIATE_DATA_CANNOT_RECOVER;
+		}
+		cmd->overflow_buf = overflow_buf;
+		iov[iov_count].iov_base = overflow_buf;
+		iov[iov_count].iov_len = length - rx_size;
+		iov_count++;
+		rx_size = length;
+	}
 
 	padding = ((-length) & 3);
 	if (padding != 0) {
@@ -2605,6 +2634,7 @@ static int iscsit_handle_immediate_data(
 		rx_size += ISCSI_CRC_LEN;
 	}
 
+	WARN_ON_ONCE(iov_count > cmd->orig_iov_data_count);
 	rx_got = rx_data(conn, &cmd->iov_data[0], iov_count, rx_size);
 
 	iscsit_unmap_iovec(cmd);
@@ -3959,9 +3989,9 @@ static void iscsit_get_rx_pdu(struct iscsi_conn *conn)
 				return;
 			}
 
-			iscsit_do_crypto_hash_buf(conn->conn_rx_hash,
-					buffer, ISCSI_HDR_LEN,
-					0, NULL, (u8 *)&checksum);
+			iscsit_do_crypto_hash_buf(conn->conn_rx_hash, buffer,
+						  ISCSI_HDR_LEN, 0, NULL,
+						  &checksum);
 
 			if (digest != checksum) {
 				pr_err("HeaderDigest CRC32C failed,"

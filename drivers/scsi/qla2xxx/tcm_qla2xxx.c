@@ -257,25 +257,6 @@ static u32 tcm_qla2xxx_tpg_get_inst_index(struct se_portal_group *se_tpg)
 	return tpg->lport_tpgt;
 }
 
-static void tcm_qla2xxx_complete_mcmd(struct work_struct *work)
-{
-	struct qla_tgt_mgmt_cmd *mcmd = container_of(work,
-			struct qla_tgt_mgmt_cmd, free_work);
-
-	transport_generic_free_cmd(&mcmd->se_cmd, 0);
-}
-
-/*
- * Called from qla_target_template->free_mcmd(), and will call
- * tcm_qla2xxx_release_cmd() via normal struct target_core_fabric_ops
- * release callback.  qla_hw_data->hardware_lock is expected to be held
- */
-static void tcm_qla2xxx_free_mcmd(struct qla_tgt_mgmt_cmd *mcmd)
-{
-	INIT_WORK(&mcmd->free_work, tcm_qla2xxx_complete_mcmd);
-	queue_work(tcm_qla2xxx_free_wq, &mcmd->free_work);
-}
-
 static void tcm_qla2xxx_complete_free(struct work_struct *work)
 {
 	struct qla_tgt_cmd *cmd = container_of(work, struct qla_tgt_cmd, work);
@@ -416,21 +397,14 @@ static int tcm_qla2xxx_write_pending(struct se_cmd *se_cmd)
 static int tcm_qla2xxx_write_pending_status(struct se_cmd *se_cmd)
 {
 	unsigned long flags;
-	/*
-	 * Check for WRITE_PENDING status to determine if we need to wait for
-	 * CTIO aborts to be posted via hardware in tcm_qla2xxx_handle_data().
-	 */
+	bool wp;
+
 	spin_lock_irqsave(&se_cmd->t_state_lock, flags);
-	if (se_cmd->t_state == TRANSPORT_WRITE_PENDING ||
-	    se_cmd->t_state == TRANSPORT_COMPLETE_QF_WP) {
-		spin_unlock_irqrestore(&se_cmd->t_state_lock, flags);
-		wait_for_completion_timeout(&se_cmd->t_transport_stop_comp,
-						50);
-		return 0;
-	}
+	wp = se_cmd->t_state == TRANSPORT_WRITE_PENDING ||
+		se_cmd->t_state == TRANSPORT_COMPLETE_QF_WP;
 	spin_unlock_irqrestore(&se_cmd->t_state_lock, flags);
 
-	return 0;
+	return wp;
 }
 
 static void tcm_qla2xxx_set_default_node_attrs(struct se_node_acl *nacl)
@@ -512,7 +486,6 @@ static void tcm_qla2xxx_handle_data_work(struct work_struct *work)
 	spin_lock_irqsave(&cmd->cmd_lock, flags);
 	cmd->data_work = 1;
 	if (cmd->aborted) {
-		cmd->data_work_free = 1;
 		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
 
 		tcm_qla2xxx_free_cmd(cmd);
@@ -522,15 +495,6 @@ static void tcm_qla2xxx_handle_data_work(struct work_struct *work)
 
 	cmd->vha->tgt_counters.qla_core_ret_ctio++;
 	if (!cmd->write_data_transferred) {
-		/*
-		 * Check if se_cmd has already been aborted via LUN_RESET, and
-		 * waiting upon completion in tcm_qla2xxx_write_pending_status()
-		 */
-		if (cmd->se_cmd.transport_state & CMD_T_ABORTED) {
-			complete(&cmd->se_cmd.t_transport_stop_comp);
-			return;
-		}
-
 		switch (cmd->dif_err_code) {
 		case DIF_ERR_GRD:
 			cmd->se_cmd.pi_err =
@@ -749,33 +713,16 @@ static void tcm_qla2xxx_queue_tm_rsp(struct se_cmd *se_cmd)
 	 * CTIO response packet.
 	 */
 	qlt_xmit_tm_rsp(mcmd);
+
+	transport_generic_free_cmd(&mcmd->se_cmd, 0);
 }
 
-#define DATA_WORK_NOT_FREE(_cmd) (_cmd->data_work && !_cmd->data_work_free)
 static void tcm_qla2xxx_aborted_task(struct se_cmd *se_cmd)
 {
 	struct qla_tgt_cmd *cmd = container_of(se_cmd,
 				struct qla_tgt_cmd, se_cmd);
-	unsigned long flags;
 
-	if (qlt_abort_cmd(cmd))
-		return;
-
-	spin_lock_irqsave(&cmd->cmd_lock, flags);
-	if ((cmd->state == QLA_TGT_STATE_NEW)||
-	    ((cmd->state == QLA_TGT_STATE_DATA_IN) &&
-		DATA_WORK_NOT_FREE(cmd))) {
-		cmd->data_work_free = 1;
-		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
-		/*
-		 * cmd has not reached fw, Use this trigger to free it.
-		 */
-		tcm_qla2xxx_free_cmd(cmd);
-		return;
-	}
-	spin_unlock_irqrestore(&cmd->cmd_lock, flags);
-	return;
-
+	WARN_ON_ONCE(qlt_abort_cmd(cmd) != 0);
 }
 
 static void tcm_qla2xxx_clear_sess_lookup(struct tcm_qla2xxx_lport *,
@@ -1628,7 +1575,6 @@ static struct qla_tgt_func_tmpl tcm_qla2xxx_template = {
 	.handle_data		= tcm_qla2xxx_handle_data,
 	.handle_tmr		= tcm_qla2xxx_handle_tmr,
 	.free_cmd		= tcm_qla2xxx_free_cmd,
-	.free_mcmd		= tcm_qla2xxx_free_mcmd,
 	.free_session		= tcm_qla2xxx_free_session,
 	.update_sess		= tcm_qla2xxx_update_sess,
 	.check_initiator_node_acl = tcm_qla2xxx_check_initiator_node_acl,
