@@ -3262,7 +3262,7 @@ static int binder_ioctl_write_read(struct binder_proc *proc,
 	struct binder_thread *thread;
 	struct binder_write_read bwr;
 	int rd_ret = 0, wr_ret = 0, ret = 0;
-	bool binder_unlocked = false;
+	bool binder_unlocked = true;
 
 	if (size != sizeof(struct binder_write_read))
 		return -EINVAL;
@@ -3270,7 +3270,14 @@ static int binder_ioctl_write_read(struct binder_proc *proc,
 	if (copy_from_user(&bwr, ubuf, sizeof(bwr)))
 		return -EFAULT;
 
-	binder_lock(__func__);
+	ret = binder_lock_interruptible(__func__);
+	if (ret) {
+		if (ret == -EINTR)
+			ret = -ERESTARTSYS;
+		goto out;
+	}
+
+	binder_unlocked = false;
 
 	thread = binder_get_thread(proc, true);
 	if (!thread) {
