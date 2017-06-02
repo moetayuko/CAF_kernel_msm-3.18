@@ -32,6 +32,7 @@
 #include <linux/writeback.h>
 #include <linux/bit_spinlock.h>
 #include <linux/slab.h>
+#include <linux/sched/mm.h>
 #include "ctree.h"
 #include "disk-io.h"
 #include "transaction.h"
@@ -42,48 +43,7 @@
 #include "extent_io.h"
 #include "extent_map.h"
 
-struct compressed_bio {
-	/* number of bios pending for this compressed extent */
-	refcount_t pending_bios;
-
-	/* the pages with the compressed data on them */
-	struct page **compressed_pages;
-
-	/* inode that owns this data */
-	struct inode *inode;
-
-	/* starting offset in the inode for our pages */
-	u64 start;
-
-	/* number of bytes in the inode we're working on */
-	unsigned long len;
-
-	/* number of bytes on disk */
-	unsigned long compressed_len;
-
-	/* the compression algorithm for this bio */
-	int compress_type;
-
-	/* number of compressed pages in the array */
-	unsigned long nr_pages;
-
-	/* IO errors */
-	int errors;
-	int mirror_num;
-
-	/* for reads, this is the bio we are copying the data into */
-	struct bio *orig_bio;
-
-	/*
-	 * the start of a variable length array of checksums only
-	 * used by reads
-	 */
-	u32 sums;
-};
-
-static int btrfs_decompress_bio(int type, struct page **pages_in,
-				   u64 disk_start, struct bio *orig_bio,
-				   size_t srclen);
+static int btrfs_decompress_bio(struct compressed_bio *cb);
 
 static inline int compressed_bio_size(struct btrfs_fs_info *fs_info,
 				      unsigned long disk_size)
@@ -173,11 +133,8 @@ static void end_compressed_bio_read(struct bio *bio)
 	/* ok, we're the last bio for this extent, lets start
 	 * the decompression.
 	 */
-	ret = btrfs_decompress_bio(cb->compress_type,
-				      cb->compressed_pages,
-				      cb->start,
-				      cb->orig_bio,
-				      cb->compressed_len);
+	ret = btrfs_decompress_bio(cb);
+
 csum_failed:
 	if (ret)
 		cb->errors = 1;
@@ -801,6 +758,7 @@ static struct list_head *find_workspace(int type)
 	struct list_head *workspace;
 	int cpus = num_online_cpus();
 	int idx = type - 1;
+	unsigned nofs_flag;
 
 	struct list_head *idle_ws	= &btrfs_comp_ws[idx].idle_ws;
 	spinlock_t *ws_lock		= &btrfs_comp_ws[idx].ws_lock;
@@ -830,7 +788,15 @@ again:
 	atomic_inc(total_ws);
 	spin_unlock(ws_lock);
 
+	/*
+	 * Allocation helpers call vmalloc that can't use GFP_NOFS, so we have
+	 * to turn it off here because we might get called from the restricted
+	 * context of btrfs_compress_bio/btrfs_compress_pages
+	 */
+	nofs_flag = memalloc_nofs_save();
 	workspace = btrfs_compress_op[idx]->alloc_workspace();
+	memalloc_nofs_restore(nofs_flag);
+
 	if (IS_ERR(workspace)) {
 		atomic_dec(total_ws);
 		wake_up(ws_wait);
@@ -961,19 +927,16 @@ int btrfs_compress_pages(int type, struct address_space *mapping,
  * be contiguous.  They all correspond to the range of bytes covered by
  * the compressed extent.
  */
-static int btrfs_decompress_bio(int type, struct page **pages_in,
-				   u64 disk_start, struct bio *orig_bio,
-				   size_t srclen)
+static int btrfs_decompress_bio(struct compressed_bio *cb)
 {
 	struct list_head *workspace;
 	int ret;
+	int type = cb->compress_type;
 
 	workspace = find_workspace(type);
-
-	ret = btrfs_compress_op[type-1]->decompress_bio(workspace, pages_in,
-							 disk_start, orig_bio,
-							 srclen);
+	ret = btrfs_compress_op[type - 1]->decompress_bio(workspace, cb);
 	free_workspace(type, workspace);
+
 	return ret;
 }
 
