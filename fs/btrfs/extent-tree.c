@@ -9875,6 +9875,7 @@ int btrfs_free_block_groups(struct btrfs_fs_info *info)
 			    space_info->bytes_reserved > 0 ||
 			    space_info->bytes_may_use > 0))
 			dump_space_info(info, space_info, 0, 0);
+		WARN_ON(percpu_counter_sum(&space_info->total_bytes_pinned) != 0);
 		list_del(&space_info->list);
 		for (i = 0; i < BTRFS_NR_RAID_TYPES; i++) {
 			struct kobject *kobj;
