@@ -116,6 +116,18 @@ config SUN8I_A33_CCU
 	default MACH_SUN8I
 	depends on MACH_SUN8I || COMPILE_TEST
 
+config SUN8I_A83T_CCU
+	bool "Support for the Allwinner A83T CCU"
+	select SUNXI_CCU_DIV
+	select SUNXI_CCU_GATE
+	select SUNXI_CCU_MP
+	select SUNXI_CCU_MULT
+	select SUNXI_CCU_MUX
+	select SUNXI_CCU_NKMP
+	select SUNXI_CCU_NM
+	select SUNXI_CCU_PHASE
+	default MACH_SUN8I
+
 config SUN8I_H3_CCU
 	bool "Support for the Allwinner H3 CCU"
 	select SUNXI_CCU_DIV
@@ -140,6 +152,11 @@ config SUN8I_V3S_CCU
 	default MACH_SUN8I
 	depends on MACH_SUN8I || COMPILE_TEST
 
+config SUN8I_DE2_CCU
+	bool "Support for the Allwinner SoCs DE2 CCU"
+	select SUNXI_CCU_DIV
+	select SUNXI_CCU_GATE
+
 config SUN9I_A80_CCU
 	bool "Support for the Allwinner A80 CCU"
 	select SUNXI_CCU_DIV
@@ -156,6 +173,7 @@ config SUN8I_R_CCU
 	bool "Support for Allwinner SoCs' PRCM CCUs"
 	select SUNXI_CCU_DIV
 	select SUNXI_CCU_GATE
+	select SUNXI_CCU_MP
 	default MACH_SUN8I || (ARCH_SUNXI && ARM64)
 
 endif
