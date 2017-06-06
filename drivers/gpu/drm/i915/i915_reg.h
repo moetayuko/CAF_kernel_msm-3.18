@@ -2626,9 +2626,10 @@ enum skl_disp_power_wells {
 #define   GMBUS_PIN_DPB		5 /* SDVO, HDMIB */
 #define   GMBUS_PIN_DPD		6 /* HDMID */
 #define   GMBUS_PIN_RESERVED	7 /* 7 reserved */
-#define   GMBUS_PIN_1_BXT	1
+#define   GMBUS_PIN_1_BXT	1 /* BXT+ (atom) and CNP+ (big core) */
 #define   GMBUS_PIN_2_BXT	2
 #define   GMBUS_PIN_3_BXT	3
+#define   GMBUS_PIN_4_CNP	4
 #define   GMBUS_NUM_PINS	7 /* including 0 */
 #define GMBUS1			_MMIO(dev_priv->gpio_mmio_base + 0x5104) /* command/status */
 #define   GMBUS_SW_CLR_INT	(1<<31)
@@ -6838,6 +6839,10 @@ enum {
 #define  FDL_TP2_TIMER_SHIFT    10
 #define  FDL_TP2_TIMER_MASK     (3<<10)
 #define  RAWCLK_FREQ_MASK       0x3ff
+#define  CNP_RAWCLK_DIV_MASK	(0x3ff << 16)
+#define  CNP_RAWCLK_DIV(div)	((div) << 16)
+#define  CNP_RAWCLK_FRAC_MASK	(0xf << 26)
+#define  CNP_RAWCLK_FRAC(frac)	((frac) << 26)
 
 #define PCH_DPLL_TMR_CFG        _MMIO(0xc6208)
 
@@ -7792,13 +7797,6 @@ enum {
 #define  SKL_FUSE_PG1_DIST_STATUS              (1<<26)
 #define  SKL_FUSE_PG2_DIST_STATUS              (1<<25)
 
-/* Decoupled MMIO register pair for kernel driver */
-#define GEN9_DECOUPLED_REG0_DW0			_MMIO(0xF00)
-#define GEN9_DECOUPLED_REG0_DW1			_MMIO(0xF04)
-#define GEN9_DECOUPLED_DW1_GO			(1<<31)
-#define GEN9_DECOUPLED_PD_SHIFT			28
-#define GEN9_DECOUPLED_OP_SHIFT			24
-
 /* Per-pipe DDI Function Control */
 #define _TRANS_DDI_FUNC_CTL_A		0x60400
 #define _TRANS_DDI_FUNC_CTL_B		0x61400
@@ -8148,6 +8146,7 @@ enum {
 /* SFUSE_STRAP */
 #define SFUSE_STRAP			_MMIO(0xc2014)
 #define  SFUSE_STRAP_FUSE_LOCK		(1<<13)
+#define  SFUSE_STRAP_RAW_FREQUENCY	(1<<8)
 #define  SFUSE_STRAP_DISPLAY_DISABLED	(1<<7)
 #define  SFUSE_STRAP_CRT_DISABLED	(1<<6)
 #define  SFUSE_STRAP_DDIB_DETECTED	(1<<2)
