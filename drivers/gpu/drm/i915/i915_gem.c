@@ -143,9 +143,9 @@ i915_gem_get_aperture_ioctl(struct drm_device *dev, void *data,
 	struct i915_ggtt *ggtt = &dev_priv->ggtt;
 	struct drm_i915_gem_get_aperture *args = data;
 	struct i915_vma *vma;
-	size_t pinned;
+	u64 pinned;
 
-	pinned = 0;
+	pinned = ggtt->base.reserved;
 	mutex_lock(&dev->struct_mutex);
 	list_for_each_entry(vma, &ggtt->base.active_list, vm_link)
 		if (i915_vma_is_pinned(vma))
@@ -3347,6 +3347,10 @@ static int wait_for_engines(struct drm_i915_private *i915)
 int i915_gem_wait_for_idle(struct drm_i915_private *i915, unsigned int flags)
 {
 	int ret;
+
+	/* If the device is asleep, we have no requests outstanding */
+	if (!READ_ONCE(i915->gt.awake))
+		return 0;
 
 	if (flags & I915_WAIT_LOCKED) {
 		struct i915_gem_timeline *tl;
