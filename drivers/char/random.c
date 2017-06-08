@@ -1481,9 +1481,14 @@ void get_random_bytes(void *buf, int nbytes)
 	__u8 tmp[CHACHA20_BLOCK_SIZE];
 
 #ifdef CONFIG_WARN_UNSEEDED_RANDOM
-	if (!crng_ready())
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+
+	if (!crng_ready() && (READ_ONCE(previous) != caller)) {
 		printk(KERN_NOTICE "random: %pF get_random_bytes called "
-		       "with crng_init = %d\n", (void *) _RET_IP_, crng_init);
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
 #endif
 	trace_get_random_bytes(nbytes, _RET_IP_);
 
@@ -2064,6 +2069,10 @@ u64 get_random_u64(void)
 	bool use_lock = crng_init < 2;
 	unsigned long flags;
 	struct batched_entropy *batch;
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+#endif
 
 #if BITS_PER_LONG == 64
 	if (arch_get_random_long((unsigned long *)&ret))
@@ -2075,9 +2084,11 @@ u64 get_random_u64(void)
 #endif
 
 #ifdef CONFIG_WARN_UNSEEDED_RANDOM
-	if (!crng_ready())
+	if (!crng_ready() && (READ_ONCE(previous) != caller))  {
 		printk(KERN_NOTICE "random: %pF get_random_u64 called "
-		       "with crng_init = %d\n", (void *) _RET_IP_, crng_init);
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
 #endif
 
 	batch = &get_cpu_var(batched_entropy_u64);
@@ -2102,14 +2113,20 @@ u32 get_random_u32(void)
 	bool use_lock = crng_init < 2;
 	unsigned long flags;
 	struct batched_entropy *batch;
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+#endif
 
 	if (arch_get_random_int(&ret))
 		return ret;
 
 #ifdef CONFIG_WARN_UNSEEDED_RANDOM
-	if (!crng_ready())
+	if (!crng_ready() && READ_ONCE(previous) != caller) {
 		printk(KERN_NOTICE "random: %pF get_random_u32 called "
-		       "with crng_init = %d\n", (void *) _RET_IP_, crng_init);
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
 #endif
 
 	batch = &get_cpu_var(batched_entropy_u32);
