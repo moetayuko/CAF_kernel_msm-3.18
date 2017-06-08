@@ -204,7 +204,7 @@ config FW_CFG_SYSFS_CMDLINE
 
 config QCOM_SCM
 	bool
-	depends on ARM || ARM64
+	depends on ARM || ARM64 || COMPILE_TEST
 	select RESET_CONTROLLER
 
 config QCOM_SCM_32
