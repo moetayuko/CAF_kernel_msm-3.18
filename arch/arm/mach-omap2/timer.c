@@ -68,6 +68,9 @@
 static struct omap_dm_timer clkev;
 static struct clock_event_device clockevent_gpt;
 
+/* Clockevent hwmod for am335x and am437x suspend */
+static struct omap_hwmod *clockevent_gpt_hwmod;
+
 #ifdef CONFIG_SOC_HAS_REALTIME_COUNTER
 static unsigned long arch_timer_freq;
 
@@ -123,6 +126,23 @@ static int omap2_gp_timer_set_periodic(struct clock_event_device *evt)
 				   OMAP_TIMER_CTRL_AR | OMAP_TIMER_CTRL_ST,
 				   0xffffffff - period, OMAP_TIMER_POSTED);
 	return 0;
+}
+
+static void omap_clkevt_idle(struct clock_event_device *unused)
+{
+	if (!clockevent_gpt_hwmod)
+		return;
+
+	omap_hwmod_idle(clockevent_gpt_hwmod);
+}
+
+static void omap_clkevt_unidle(struct clock_event_device *unused)
+{
+	if (!clockevent_gpt_hwmod)
+		return;
+
+	omap_hwmod_enable(clockevent_gpt_hwmod);
+	__omap_dm_timer_int_enable(&clkev, OMAP_TIMER_INT_OVERFLOW);
 }
 
 static struct clock_event_device clockevent_gpt = {
@@ -255,6 +275,8 @@ static int __init omap_dm_timer_init_one(struct omap_dm_timer *timer,
 
 		timer->io_base = of_iomap(np, 0);
 
+		timer->fclk = of_clk_get_by_name(np, "fck");
+
 		of_node_put(np);
 	} else {
 		if (omap_dm_timer_reserve_systimer(timer->id))
@@ -292,7 +314,8 @@ static int __init omap_dm_timer_init_one(struct omap_dm_timer *timer,
 	omap_hwmod_setup_one(oh_name);
 
 	/* After the dmtimer is using hwmod these clocks won't be needed */
-	timer->fclk = clk_get(NULL, omap_hwmod_get_main_clk(oh));
+	if (IS_ERR_OR_NULL(timer->fclk))
+		timer->fclk = clk_get(NULL, omap_hwmod_get_main_clk(oh));
 	if (IS_ERR(timer->fclk))
 		return PTR_ERR(timer->fclk);
 
@@ -357,6 +380,14 @@ static void __init omap2_gp_clockevent_init(int gptimer_id,
 	clockevents_config_and_register(&clockevent_gpt, clkev.rate,
 					3, /* Timer internal resynch latency */
 					0xffffffff);
+
+	if (soc_is_am33xx() || soc_is_am43xx()) {
+		clockevent_gpt.suspend = omap_clkevt_idle;
+		clockevent_gpt.resume = omap_clkevt_unidle;
+
+		clockevent_gpt_hwmod =
+			omap_hwmod_lookup(clockevent_gpt.name);
+	}
 
 	pr_info("OMAP clockevent source: %s at %lu Hz\n", clockevent_gpt.name,
 		clkev.rate);
