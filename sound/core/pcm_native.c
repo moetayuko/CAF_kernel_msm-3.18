@@ -37,6 +37,18 @@
 #include <sound/minors.h>
 #include <linux/uio.h>
 
+#include "pcm_local.h"
+
+#ifdef CONFIG_SND_DEBUG
+#define CREATE_TRACE_POINTS
+#include "pcm_param_trace.h"
+#else
+#define trace_hw_mask_param_enabled()		0
+#define trace_hw_interval_param_enabled()	0
+#define trace_hw_mask_param(substream, type, index, prev, curr)
+#define trace_hw_interval_param(substream, type, index, prev, curr)
+#endif
+
 /*
  *  Compatibility
  */
@@ -181,20 +193,6 @@ void snd_pcm_stream_unlock_irqrestore(struct snd_pcm_substream *substream,
 }
 EXPORT_SYMBOL_GPL(snd_pcm_stream_unlock_irqrestore);
 
-static inline mm_segment_t snd_enter_user(void)
-{
-	mm_segment_t fs = get_fs();
-	set_fs(get_ds());
-	return fs;
-}
-
-static inline void snd_leave_user(mm_segment_t fs)
-{
-	set_fs(fs);
-}
-
-
-
 int snd_pcm_info(struct snd_pcm_substream *substream, struct snd_pcm_info *info)
 {
 	struct snd_pcm_runtime *runtime;
@@ -255,41 +253,200 @@ static bool hw_support_mmap(struct snd_pcm_substream *substream)
 	return true;
 }
 
-#undef RULES_DEBUG
+static int constrain_mask_params(struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params)
+{
+	struct snd_pcm_hw_constraints *constrs =
+					&substream->runtime->hw_constraints;
+	struct snd_mask *m;
+	unsigned int k;
+	struct snd_mask old_mask;
+	int changed;
 
-#ifdef RULES_DEBUG
-#define HW_PARAM(v) [SNDRV_PCM_HW_PARAM_##v] = #v
-static const char * const snd_pcm_hw_param_names[] = {
-	HW_PARAM(ACCESS),
-	HW_PARAM(FORMAT),
-	HW_PARAM(SUBFORMAT),
-	HW_PARAM(SAMPLE_BITS),
-	HW_PARAM(FRAME_BITS),
-	HW_PARAM(CHANNELS),
-	HW_PARAM(RATE),
-	HW_PARAM(PERIOD_TIME),
-	HW_PARAM(PERIOD_SIZE),
-	HW_PARAM(PERIOD_BYTES),
-	HW_PARAM(PERIODS),
-	HW_PARAM(BUFFER_TIME),
-	HW_PARAM(BUFFER_SIZE),
-	HW_PARAM(BUFFER_BYTES),
-	HW_PARAM(TICK_TIME),
-};
-#endif
+	for (k = SNDRV_PCM_HW_PARAM_FIRST_MASK; k <= SNDRV_PCM_HW_PARAM_LAST_MASK; k++) {
+		m = hw_param_mask(params, k);
+		if (snd_mask_empty(m))
+			return -EINVAL;
 
-int snd_pcm_hw_refine(struct snd_pcm_substream *substream, 
+		/* This parameter is not requested to change by a caller. */
+		if (!(params->rmask & (1 << k)))
+			continue;
+
+		if (trace_hw_mask_param_enabled())
+			old_mask = *m;
+
+		changed = snd_mask_refine(m, constrs_mask(constrs, k));
+
+		trace_hw_mask_param(substream, k, 0, &old_mask, m);
+
+		/* Set corresponding flag so that the caller gets it. */
+		if (changed)
+			params->cmask |= 1 << k;
+		if (changed < 0)
+			return changed;
+	}
+
+	return 0;
+}
+
+static int constrain_interval_params(struct snd_pcm_substream *substream,
+				     struct snd_pcm_hw_params *params)
+{
+	struct snd_pcm_hw_constraints *constrs =
+					&substream->runtime->hw_constraints;
+	struct snd_interval *i;
+	unsigned int k;
+	struct snd_interval old_interval;
+	int changed;
+
+	for (k = SNDRV_PCM_HW_PARAM_FIRST_INTERVAL; k <= SNDRV_PCM_HW_PARAM_LAST_INTERVAL; k++) {
+		i = hw_param_interval(params, k);
+		if (snd_interval_empty(i))
+			return -EINVAL;
+
+		/* This parameter is not requested to change by a caller. */
+		if (!(params->rmask & (1 << k)))
+			continue;
+
+		if (trace_hw_interval_param_enabled())
+			old_interval = *i;
+
+		changed = snd_interval_refine(i, constrs_interval(constrs, k));
+
+		trace_hw_interval_param(substream, k, 0, &old_interval, i);
+
+		/* Set corresponding flag so that the caller gets it. */
+		if (changed)
+			params->cmask |= 1 << k;
+		if (changed < 0)
+			return changed;
+	}
+
+	return 0;
+}
+
+static int constrain_params_by_rules(struct snd_pcm_substream *substream,
+				     struct snd_pcm_hw_params *params)
+{
+	struct snd_pcm_hw_constraints *constrs =
+					&substream->runtime->hw_constraints;
+	unsigned int k;
+	unsigned int rstamps[constrs->rules_num];
+	unsigned int vstamps[SNDRV_PCM_HW_PARAM_LAST_INTERVAL + 1];
+	unsigned int stamp;
+	struct snd_pcm_hw_rule *r;
+	unsigned int d;
+	struct snd_mask old_mask;
+	struct snd_interval old_interval;
+	bool again;
+	int changed;
+
+	/*
+	 * Each application of rule has own sequence number.
+	 *
+	 * Each member of 'rstamps' array represents the sequence number of
+	 * recent application of corresponding rule.
+	 */
+	for (k = 0; k < constrs->rules_num; k++)
+		rstamps[k] = 0;
+
+	/*
+	 * Each member of 'vstamps' array represents the sequence number of
+	 * recent application of rule in which corresponding parameters were
+	 * changed.
+	 *
+	 * In initial state, elements corresponding to parameters requested by
+	 * a caller is 1. For unrequested parameters, corresponding members
+	 * have 0 so that the parameters are never changed anymore.
+	 */
+	for (k = 0; k <= SNDRV_PCM_HW_PARAM_LAST_INTERVAL; k++)
+		vstamps[k] = (params->rmask & (1 << k)) ? 1 : 0;
+
+	/* Due to the above design, actual sequence number starts at 2. */
+	stamp = 2;
+retry:
+	/* Apply all rules in order. */
+	again = false;
+	for (k = 0; k < constrs->rules_num; k++) {
+		r = &constrs->rules[k];
+
+		/*
+		 * Check condition bits of this rule. When the rule has
+		 * some condition bits, parameter without the bits is
+		 * never processed. SNDRV_PCM_HW_PARAMS_NO_PERIOD_WAKEUP
+		 * is an example of the condition bits.
+		 */
+		if (r->cond && !(r->cond & params->flags))
+			continue;
+
+		/*
+		 * The 'deps' array includes maximum three dependencies
+		 * to SNDRV_PCM_HW_PARAM_XXXs for this rule. The fourth
+		 * member of this array is a sentinel and should be
+		 * negative value.
+		 *
+		 * This rule should be processed in this time when dependent
+		 * parameters were changed at former applications of the other
+		 * rules.
+		 */
+		for (d = 0; r->deps[d] >= 0; d++) {
+			if (vstamps[r->deps[d]] > rstamps[k])
+				break;
+		}
+		if (r->deps[d] < 0)
+			continue;
+
+		if (trace_hw_mask_param_enabled()) {
+			if (hw_is_mask(r->var))
+				old_mask = *hw_param_mask(params, r->var);
+		}
+		if (trace_hw_interval_param_enabled()) {
+			if (hw_is_interval(r->var))
+				old_interval = *hw_param_interval(params, r->var);
+		}
+
+		changed = r->func(params, r);
+
+		if (hw_is_mask(r->var)) {
+			trace_hw_mask_param(substream, r->var, k + 1,
+				&old_mask, hw_param_mask(params, r->var));
+		}
+		if (hw_is_interval(r->var)) {
+			trace_hw_interval_param(substream, r->var, k + 1,
+				&old_interval, hw_param_interval(params, r->var));
+		}
+
+		rstamps[k] = stamp;
+
+		/*
+		 * When the parameters is changed, notify it to the caller
+		 * by corresponding returned bit, then preparing for next
+		 * iteration.
+		 */
+		if (changed && r->var >= 0) {
+			params->cmask |= (1 << r->var);
+			vstamps[r->var] = stamp;
+			again = true;
+		}
+		if (changed < 0)
+			return changed;
+		stamp++;
+	}
+
+	/* Iterate to evaluate all rules till no parameters are changed. */
+	if (again)
+		goto retry;
+
+	return 0;
+}
+
+int snd_pcm_hw_refine(struct snd_pcm_substream *substream,
 		      struct snd_pcm_hw_params *params)
 {
-	unsigned int k;
 	struct snd_pcm_hardware *hw;
 	struct snd_interval *i = NULL;
 	struct snd_mask *m = NULL;
-	struct snd_pcm_hw_constraints *constrs = &substream->runtime->hw_constraints;
-	unsigned int rstamps[constrs->rules_num];
-	unsigned int vstamps[SNDRV_PCM_HW_PARAM_LAST_INTERVAL + 1];
-	unsigned int stamp = 2;
-	int changed, again;
+	int err;
 
 	params->info = 0;
 	params->fifo_size = 0;
@@ -300,123 +457,18 @@ int snd_pcm_hw_refine(struct snd_pcm_substream *substream,
 		params->rate_den = 0;
 	}
 
-	for (k = SNDRV_PCM_HW_PARAM_FIRST_MASK; k <= SNDRV_PCM_HW_PARAM_LAST_MASK; k++) {
-		m = hw_param_mask(params, k);
-		if (snd_mask_empty(m))
-			return -EINVAL;
-		if (!(params->rmask & (1 << k)))
-			continue;
-#ifdef RULES_DEBUG
-		pr_debug("%s = ", snd_pcm_hw_param_names[k]);
-		pr_cont("%04x%04x%04x%04x -> ", m->bits[3], m->bits[2], m->bits[1], m->bits[0]);
-#endif
-		changed = snd_mask_refine(m, constrs_mask(constrs, k));
-#ifdef RULES_DEBUG
-		pr_cont("%04x%04x%04x%04x\n", m->bits[3], m->bits[2], m->bits[1], m->bits[0]);
-#endif
-		if (changed)
-			params->cmask |= 1 << k;
-		if (changed < 0)
-			return changed;
-	}
+	err = constrain_mask_params(substream, params);
+	if (err < 0)
+		return err;
 
-	for (k = SNDRV_PCM_HW_PARAM_FIRST_INTERVAL; k <= SNDRV_PCM_HW_PARAM_LAST_INTERVAL; k++) {
-		i = hw_param_interval(params, k);
-		if (snd_interval_empty(i))
-			return -EINVAL;
-		if (!(params->rmask & (1 << k)))
-			continue;
-#ifdef RULES_DEBUG
-		pr_debug("%s = ", snd_pcm_hw_param_names[k]);
-		if (i->empty)
-			pr_cont("empty");
-		else
-			pr_cont("%c%u %u%c",
-			       i->openmin ? '(' : '[', i->min,
-			       i->max, i->openmax ? ')' : ']');
-		pr_cont(" -> ");
-#endif
-		changed = snd_interval_refine(i, constrs_interval(constrs, k));
-#ifdef RULES_DEBUG
-		if (i->empty)
-			pr_cont("empty\n");
-		else 
-			pr_cont("%c%u %u%c\n",
-			       i->openmin ? '(' : '[', i->min,
-			       i->max, i->openmax ? ')' : ']');
-#endif
-		if (changed)
-			params->cmask |= 1 << k;
-		if (changed < 0)
-			return changed;
-	}
+	err = constrain_interval_params(substream, params);
+	if (err < 0)
+		return err;
 
-	for (k = 0; k < constrs->rules_num; k++)
-		rstamps[k] = 0;
-	for (k = 0; k <= SNDRV_PCM_HW_PARAM_LAST_INTERVAL; k++) 
-		vstamps[k] = (params->rmask & (1 << k)) ? 1 : 0;
-	do {
-		again = 0;
-		for (k = 0; k < constrs->rules_num; k++) {
-			struct snd_pcm_hw_rule *r = &constrs->rules[k];
-			unsigned int d;
-			int doit = 0;
-			if (r->cond && !(r->cond & params->flags))
-				continue;
-			for (d = 0; r->deps[d] >= 0; d++) {
-				if (vstamps[r->deps[d]] > rstamps[k]) {
-					doit = 1;
-					break;
-				}
-			}
-			if (!doit)
-				continue;
-#ifdef RULES_DEBUG
-			pr_debug("Rule %d [%p]: ", k, r->func);
-			if (r->var >= 0) {
-				pr_cont("%s = ", snd_pcm_hw_param_names[r->var]);
-				if (hw_is_mask(r->var)) {
-					m = hw_param_mask(params, r->var);
-					pr_cont("%x", *m->bits);
-				} else {
-					i = hw_param_interval(params, r->var);
-					if (i->empty)
-						pr_cont("empty");
-					else
-						pr_cont("%c%u %u%c",
-						       i->openmin ? '(' : '[', i->min,
-						       i->max, i->openmax ? ')' : ']');
-				}
-			}
-#endif
-			changed = r->func(params, r);
-#ifdef RULES_DEBUG
-			if (r->var >= 0) {
-				pr_cont(" -> ");
-				if (hw_is_mask(r->var))
-					pr_cont("%x", *m->bits);
-				else {
-					if (i->empty)
-						pr_cont("empty");
-					else
-						pr_cont("%c%u %u%c",
-						       i->openmin ? '(' : '[', i->min,
-						       i->max, i->openmax ? ')' : ']');
-				}
-			}
-			pr_cont("\n");
-#endif
-			rstamps[k] = stamp;
-			if (changed && r->var >= 0) {
-				params->cmask |= (1 << r->var);
-				vstamps[r->var] = stamp;
-				again = 1;
-			}
-			if (changed < 0)
-				return changed;
-			stamp++;
-		}
-	} while (again);
+	err = constrain_params_by_rules(substream, params);
+	if (err < 0)
+		return err;
+
 	if (!params->msbits) {
 		i = hw_param_interval(params, SNDRV_PCM_HW_PARAM_SAMPLE_BITS);
 		if (snd_interval_single(i))
@@ -442,18 +494,16 @@ int snd_pcm_hw_refine(struct snd_pcm_substream *substream,
 	if (!params->fifo_size) {
 		m = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
 		i = hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS);
-		if (snd_mask_min(m) == snd_mask_max(m) &&
-                    snd_interval_min(i) == snd_interval_max(i)) {
-			changed = substream->ops->ioctl(substream,
+		if (snd_mask_single(m) && snd_interval_single(i)) {
+			err = substream->ops->ioctl(substream,
 					SNDRV_PCM_IOCTL1_FIFO_SIZE, params);
-			if (changed < 0)
-				return changed;
+			if (err < 0)
+				return err;
 		}
 	}
 	params->rmask = 0;
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_pcm_hw_refine);
 
 static int snd_pcm_hw_refine_user(struct snd_pcm_substream *substream,
@@ -1081,11 +1131,19 @@ static const struct action_ops snd_pcm_action_start = {
  * @substream: the PCM substream instance
  *
  * Return: Zero if successful, or a negative error code.
+ * The stream lock must be acquired before calling this function.
  */
 int snd_pcm_start(struct snd_pcm_substream *substream)
 {
 	return snd_pcm_action(&snd_pcm_action_start, substream,
 			      SNDRV_PCM_STATE_RUNNING);
+}
+
+/* take the stream lock and start the streams */
+static int snd_pcm_start_lock_irq(struct snd_pcm_substream *substream)
+{
+	return snd_pcm_action_lock_irq(&snd_pcm_action_start, substream,
+				       SNDRV_PCM_STATE_RUNNING);
 }
 
 /*
@@ -1940,7 +1998,8 @@ static int snd_pcm_hw_rule_format(struct snd_pcm_hw_params *params,
 				  struct snd_pcm_hw_rule *rule)
 {
 	unsigned int k;
-	struct snd_interval *i = hw_param_interval(params, rule->deps[0]);
+	const struct snd_interval *i =
+				hw_param_interval_c(params, rule->deps[0]);
 	struct snd_mask m;
 	struct snd_mask *mask = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
 	snd_mask_any(&m);
@@ -1986,8 +2045,10 @@ static int snd_pcm_hw_rule_sample_bits(struct snd_pcm_hw_params *params,
 #error "Change this table"
 #endif
 
-static unsigned int rates[] = { 5512, 8000, 11025, 16000, 22050, 32000, 44100,
-                                 48000, 64000, 88200, 96000, 176400, 192000 };
+static const unsigned int rates[] = {
+	5512, 8000, 11025, 16000, 22050, 32000, 44100,
+	48000, 64000, 88200, 96000, 176400, 192000
+};
 
 const struct snd_pcm_hw_constraint_list snd_pcm_known_rates = {
 	.count = ARRAY_SIZE(rates),
@@ -2428,50 +2489,105 @@ static int snd_pcm_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+/* check and update PCM state; return 0 or a negative error
+ * call this inside PCM lock
+ */
+static int do_pcm_hwsync(struct snd_pcm_substream *substream)
+{
+	switch (substream->runtime->status->state) {
+	case SNDRV_PCM_STATE_DRAINING:
+		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
+			return -EBADFD;
+		/* Fall through */
+	case SNDRV_PCM_STATE_RUNNING:
+		return snd_pcm_update_hw_ptr(substream);
+	case SNDRV_PCM_STATE_PREPARED:
+	case SNDRV_PCM_STATE_PAUSED:
+		return 0;
+	case SNDRV_PCM_STATE_SUSPENDED:
+		return -ESTRPIPE;
+	case SNDRV_PCM_STATE_XRUN:
+		return -EPIPE;
+	default:
+		return -EBADFD;
+	}
+}
+
+/* update to the given appl_ptr and call ack callback if needed;
+ * when an error is returned, take back to the original value
+ */
+static int apply_appl_ptr(struct snd_pcm_substream *substream,
+			  snd_pcm_uframes_t appl_ptr)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	snd_pcm_uframes_t old_appl_ptr = runtime->control->appl_ptr;
+	int ret;
+
+	runtime->control->appl_ptr = appl_ptr;
+	if (substream->ops->ack) {
+		ret = substream->ops->ack(substream);
+		if (ret < 0) {
+			runtime->control->appl_ptr = old_appl_ptr;
+			return ret;
+		}
+	}
+	return 0;
+}
+
+/* increase the appl_ptr; returns the processed frames or a negative error */
+static snd_pcm_sframes_t forward_appl_ptr(struct snd_pcm_substream *substream,
+					  snd_pcm_uframes_t frames,
+					   snd_pcm_sframes_t avail)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	snd_pcm_sframes_t appl_ptr;
+	int ret;
+
+	if (avail <= 0)
+		return 0;
+	if (frames > (snd_pcm_uframes_t)avail)
+		frames = avail;
+	appl_ptr = runtime->control->appl_ptr + frames;
+	if (appl_ptr >= (snd_pcm_sframes_t)runtime->boundary)
+		appl_ptr -= runtime->boundary;
+	ret = apply_appl_ptr(substream, appl_ptr);
+	return ret < 0 ? ret : frames;
+}
+
+/* decrease the appl_ptr; returns the processed frames or a negative error */
+static snd_pcm_sframes_t rewind_appl_ptr(struct snd_pcm_substream *substream,
+					 snd_pcm_uframes_t frames,
+					 snd_pcm_sframes_t avail)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	snd_pcm_sframes_t appl_ptr;
+	int ret;
+
+	if (avail <= 0)
+		return 0;
+	if (frames > (snd_pcm_uframes_t)avail)
+		frames = avail;
+	appl_ptr = runtime->control->appl_ptr - frames;
+	if (appl_ptr < 0)
+		appl_ptr += runtime->boundary;
+	ret = apply_appl_ptr(substream, appl_ptr);
+	return ret < 0 ? ret : frames;
+}
+
 static snd_pcm_sframes_t snd_pcm_playback_rewind(struct snd_pcm_substream *substream,
 						 snd_pcm_uframes_t frames)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	snd_pcm_sframes_t appl_ptr;
 	snd_pcm_sframes_t ret;
-	snd_pcm_sframes_t hw_avail;
 
 	if (frames == 0)
 		return 0;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_PREPARED:
-		break;
-	case SNDRV_PCM_STATE_DRAINING:
-	case SNDRV_PCM_STATE_RUNNING:
-		if (snd_pcm_update_hw_ptr(substream) >= 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_XRUN:
-		ret = -EPIPE;
-		goto __end;
-	case SNDRV_PCM_STATE_SUSPENDED:
-		ret = -ESTRPIPE;
-		goto __end;
-	default:
-		ret = -EBADFD;
-		goto __end;
-	}
-
-	hw_avail = snd_pcm_playback_hw_avail(runtime);
-	if (hw_avail <= 0) {
-		ret = 0;
-		goto __end;
-	}
-	if (frames > (snd_pcm_uframes_t)hw_avail)
-		frames = hw_avail;
-	appl_ptr = runtime->control->appl_ptr - frames;
-	if (appl_ptr < 0)
-		appl_ptr += runtime->boundary;
-	runtime->control->appl_ptr = appl_ptr;
-	ret = frames;
- __end:
+	ret = do_pcm_hwsync(substream);
+	if (!ret)
+		ret = rewind_appl_ptr(substream, frames,
+				      snd_pcm_playback_hw_avail(runtime));
 	snd_pcm_stream_unlock_irq(substream);
 	return ret;
 }
@@ -2480,46 +2596,16 @@ static snd_pcm_sframes_t snd_pcm_capture_rewind(struct snd_pcm_substream *substr
 						snd_pcm_uframes_t frames)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	snd_pcm_sframes_t appl_ptr;
 	snd_pcm_sframes_t ret;
-	snd_pcm_sframes_t hw_avail;
 
 	if (frames == 0)
 		return 0;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_PREPARED:
-	case SNDRV_PCM_STATE_DRAINING:
-		break;
-	case SNDRV_PCM_STATE_RUNNING:
-		if (snd_pcm_update_hw_ptr(substream) >= 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_XRUN:
-		ret = -EPIPE;
-		goto __end;
-	case SNDRV_PCM_STATE_SUSPENDED:
-		ret = -ESTRPIPE;
-		goto __end;
-	default:
-		ret = -EBADFD;
-		goto __end;
-	}
-
-	hw_avail = snd_pcm_capture_hw_avail(runtime);
-	if (hw_avail <= 0) {
-		ret = 0;
-		goto __end;
-	}
-	if (frames > (snd_pcm_uframes_t)hw_avail)
-		frames = hw_avail;
-	appl_ptr = runtime->control->appl_ptr - frames;
-	if (appl_ptr < 0)
-		appl_ptr += runtime->boundary;
-	runtime->control->appl_ptr = appl_ptr;
-	ret = frames;
- __end:
+	ret = do_pcm_hwsync(substream);
+	if (!ret)
+		ret = rewind_appl_ptr(substream, frames,
+				      snd_pcm_capture_hw_avail(runtime));
 	snd_pcm_stream_unlock_irq(substream);
 	return ret;
 }
@@ -2528,47 +2614,16 @@ static snd_pcm_sframes_t snd_pcm_playback_forward(struct snd_pcm_substream *subs
 						  snd_pcm_uframes_t frames)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	snd_pcm_sframes_t appl_ptr;
 	snd_pcm_sframes_t ret;
-	snd_pcm_sframes_t avail;
 
 	if (frames == 0)
 		return 0;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_PREPARED:
-	case SNDRV_PCM_STATE_PAUSED:
-		break;
-	case SNDRV_PCM_STATE_DRAINING:
-	case SNDRV_PCM_STATE_RUNNING:
-		if (snd_pcm_update_hw_ptr(substream) >= 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_XRUN:
-		ret = -EPIPE;
-		goto __end;
-	case SNDRV_PCM_STATE_SUSPENDED:
-		ret = -ESTRPIPE;
-		goto __end;
-	default:
-		ret = -EBADFD;
-		goto __end;
-	}
-
-	avail = snd_pcm_playback_avail(runtime);
-	if (avail <= 0) {
-		ret = 0;
-		goto __end;
-	}
-	if (frames > (snd_pcm_uframes_t)avail)
-		frames = avail;
-	appl_ptr = runtime->control->appl_ptr + frames;
-	if (appl_ptr >= (snd_pcm_sframes_t)runtime->boundary)
-		appl_ptr -= runtime->boundary;
-	runtime->control->appl_ptr = appl_ptr;
-	ret = frames;
- __end:
+	ret = do_pcm_hwsync(substream);
+	if (!ret)
+		ret = forward_appl_ptr(substream, frames,
+				       snd_pcm_playback_avail(runtime));
 	snd_pcm_stream_unlock_irq(substream);
 	return ret;
 }
@@ -2577,123 +2632,47 @@ static snd_pcm_sframes_t snd_pcm_capture_forward(struct snd_pcm_substream *subst
 						 snd_pcm_uframes_t frames)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	snd_pcm_sframes_t appl_ptr;
 	snd_pcm_sframes_t ret;
-	snd_pcm_sframes_t avail;
 
 	if (frames == 0)
 		return 0;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_PREPARED:
-	case SNDRV_PCM_STATE_DRAINING:
-	case SNDRV_PCM_STATE_PAUSED:
-		break;
-	case SNDRV_PCM_STATE_RUNNING:
-		if (snd_pcm_update_hw_ptr(substream) >= 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_XRUN:
-		ret = -EPIPE;
-		goto __end;
-	case SNDRV_PCM_STATE_SUSPENDED:
-		ret = -ESTRPIPE;
-		goto __end;
-	default:
-		ret = -EBADFD;
-		goto __end;
-	}
-
-	avail = snd_pcm_capture_avail(runtime);
-	if (avail <= 0) {
-		ret = 0;
-		goto __end;
-	}
-	if (frames > (snd_pcm_uframes_t)avail)
-		frames = avail;
-	appl_ptr = runtime->control->appl_ptr + frames;
-	if (appl_ptr >= (snd_pcm_sframes_t)runtime->boundary)
-		appl_ptr -= runtime->boundary;
-	runtime->control->appl_ptr = appl_ptr;
-	ret = frames;
- __end:
+	ret = do_pcm_hwsync(substream);
+	if (!ret)
+		ret = forward_appl_ptr(substream, frames,
+				       snd_pcm_capture_avail(runtime));
 	snd_pcm_stream_unlock_irq(substream);
 	return ret;
 }
 
 static int snd_pcm_hwsync(struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime = substream->runtime;
 	int err;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_DRAINING:
-		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-			goto __badfd;
-		/* Fall through */
-	case SNDRV_PCM_STATE_RUNNING:
-		if ((err = snd_pcm_update_hw_ptr(substream)) < 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_PREPARED:
-		err = 0;
-		break;
-	case SNDRV_PCM_STATE_SUSPENDED:
-		err = -ESTRPIPE;
-		break;
-	case SNDRV_PCM_STATE_XRUN:
-		err = -EPIPE;
-		break;
-	default:
-	      __badfd:
-		err = -EBADFD;
-		break;
-	}
+	err = do_pcm_hwsync(substream);
 	snd_pcm_stream_unlock_irq(substream);
 	return err;
 }
 		
-static int snd_pcm_delay(struct snd_pcm_substream *substream,
-			 snd_pcm_sframes_t __user *res)
+static snd_pcm_sframes_t snd_pcm_delay(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	int err;
 	snd_pcm_sframes_t n = 0;
 
 	snd_pcm_stream_lock_irq(substream);
-	switch (runtime->status->state) {
-	case SNDRV_PCM_STATE_DRAINING:
-		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-			goto __badfd;
-		/* Fall through */
-	case SNDRV_PCM_STATE_RUNNING:
-		if ((err = snd_pcm_update_hw_ptr(substream)) < 0)
-			break;
-		/* Fall through */
-	case SNDRV_PCM_STATE_PREPARED:
-	case SNDRV_PCM_STATE_SUSPENDED:
-		err = 0;
+	err = do_pcm_hwsync(substream);
+	if (!err) {
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			n = snd_pcm_playback_hw_avail(runtime);
 		else
 			n = snd_pcm_capture_avail(runtime);
 		n += runtime->delay;
-		break;
-	case SNDRV_PCM_STATE_XRUN:
-		err = -EPIPE;
-		break;
-	default:
-	      __badfd:
-		err = -EBADFD;
-		break;
 	}
 	snd_pcm_stream_unlock_irq(substream);
-	if (!err)
-		if (put_user(n, res))
-			err = -EFAULT;
-	return err;
+	return err < 0 ? err : n;
 }
 		
 static int snd_pcm_sync_ptr(struct snd_pcm_substream *substream,
@@ -2718,10 +2697,15 @@ static int snd_pcm_sync_ptr(struct snd_pcm_substream *substream,
 			return err;
 	}
 	snd_pcm_stream_lock_irq(substream);
-	if (!(sync_ptr.flags & SNDRV_PCM_SYNC_PTR_APPL))
-		control->appl_ptr = sync_ptr.c.control.appl_ptr;
-	else
+	if (!(sync_ptr.flags & SNDRV_PCM_SYNC_PTR_APPL)) {
+		err = apply_appl_ptr(substream, sync_ptr.c.control.appl_ptr);
+		if (err < 0) {
+			snd_pcm_stream_unlock_irq(substream);
+			return err;
+		}
+	} else {
 		sync_ptr.c.control.appl_ptr = control->appl_ptr;
+	}
 	if (!(sync_ptr.flags & SNDRV_PCM_SYNC_PTR_AVAIL_MIN))
 		control->avail_min = sync_ptr.c.control.avail_min;
 	else
@@ -2781,7 +2765,7 @@ static int snd_pcm_common_ioctl1(struct file *file,
 	case SNDRV_PCM_IOCTL_RESET:
 		return snd_pcm_reset(substream);
 	case SNDRV_PCM_IOCTL_START:
-		return snd_pcm_action_lock_irq(&snd_pcm_action_start, substream, SNDRV_PCM_STATE_RUNNING);
+		return snd_pcm_start_lock_irq(substream);
 	case SNDRV_PCM_IOCTL_LINK:
 		return snd_pcm_link(substream, (int)(unsigned long) arg);
 	case SNDRV_PCM_IOCTL_UNLINK:
@@ -2793,7 +2777,16 @@ static int snd_pcm_common_ioctl1(struct file *file,
 	case SNDRV_PCM_IOCTL_HWSYNC:
 		return snd_pcm_hwsync(substream);
 	case SNDRV_PCM_IOCTL_DELAY:
-		return snd_pcm_delay(substream, arg);
+	{
+		snd_pcm_sframes_t delay = snd_pcm_delay(substream);
+		snd_pcm_sframes_t __user *res = arg;
+
+		if (delay < 0)
+			return delay;
+		if (put_user(delay, res))
+			return -EFAULT;
+		return 0;
+	}
 	case SNDRV_PCM_IOCTL_SYNC_PTR:
 		return snd_pcm_sync_ptr(substream, arg);
 #ifdef CONFIG_SND_SUPPORT_OLD_API
@@ -3007,30 +3000,55 @@ static long snd_pcm_capture_ioctl(struct file *file, unsigned int cmd,
 				      (void __user *)arg);
 }
 
+/**
+ * snd_pcm_kernel_ioctl - Execute PCM ioctl in the kernel-space
+ * @substream: PCM substream
+ * @cmd: IOCTL cmd
+ * @arg: IOCTL argument
+ *
+ * The function is provided primarily for OSS layer and USB gadget drivers,
+ * and it allows only the limited set of ioctls (hw_params, sw_params,
+ * prepare, start, drain, drop, forward).
+ */
 int snd_pcm_kernel_ioctl(struct snd_pcm_substream *substream,
 			 unsigned int cmd, void *arg)
 {
-	mm_segment_t fs;
-	int result;
+	snd_pcm_uframes_t *frames = arg;
+	snd_pcm_sframes_t result;
 	
-	fs = snd_enter_user();
-	switch (substream->stream) {
-	case SNDRV_PCM_STREAM_PLAYBACK:
-		result = snd_pcm_playback_ioctl1(NULL, substream, cmd,
-						 (void __user *)arg);
-		break;
-	case SNDRV_PCM_STREAM_CAPTURE:
-		result = snd_pcm_capture_ioctl1(NULL, substream, cmd,
-						(void __user *)arg);
-		break;
-	default:
-		result = -EINVAL;
-		break;
+	switch (cmd) {
+	case SNDRV_PCM_IOCTL_FORWARD:
+	{
+		/* provided only for OSS; capture-only and no value returned */
+		if (substream->stream != SNDRV_PCM_STREAM_CAPTURE)
+			return -EINVAL;
+		result = snd_pcm_capture_forward(substream, *frames);
+		return result < 0 ? result : 0;
 	}
-	snd_leave_user(fs);
-	return result;
+	case SNDRV_PCM_IOCTL_HW_PARAMS:
+		return snd_pcm_hw_params(substream, arg);
+	case SNDRV_PCM_IOCTL_SW_PARAMS:
+		return snd_pcm_sw_params(substream, arg);
+	case SNDRV_PCM_IOCTL_PREPARE:
+		return snd_pcm_prepare(substream, NULL);
+	case SNDRV_PCM_IOCTL_START:
+		return snd_pcm_start_lock_irq(substream);
+	case SNDRV_PCM_IOCTL_DRAIN:
+		return snd_pcm_drain(substream, NULL);
+	case SNDRV_PCM_IOCTL_DROP:
+		return snd_pcm_drop(substream);
+	case SNDRV_PCM_IOCTL_DELAY:
+	{
+		result = snd_pcm_delay(substream);
+		if (result < 0)
+			return result;
+		*frames = result;
+		return 0;
+	}
+	default:
+		return -EINVAL;
+	}
 }
-
 EXPORT_SYMBOL(snd_pcm_kernel_ioctl);
 
 static ssize_t snd_pcm_read(struct file *file, char __user *buf, size_t count,
