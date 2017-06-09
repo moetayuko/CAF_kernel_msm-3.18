@@ -1025,6 +1025,8 @@ next:
 	list_for_each_entry_safe(dc, tmp, wait_list, list) {
 		if (!wait_cond || (dc->state == D_DONE && !dc->ref)) {
 			wait_for_completion_io(&dc->wait);
+			if (dc->state == D_DONE && dc->ref)
+				dc->ref--;
 			__remove_discard_cmd(sbi, dc);
 		} else {
 			dc->ref++;
