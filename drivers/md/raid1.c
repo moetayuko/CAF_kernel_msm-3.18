@@ -1327,6 +1327,7 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 	    (mddev_is_clustered(mddev) &&
 	     md_cluster_ops->area_resyncing(mddev, WRITE,
 		     bio->bi_iter.bi_sector, bio_end_sector(bio)))) {
+		long remaining = -1;
 
 		/*
 		 * As the suspend_* range is controlled by userspace, we want
@@ -1346,10 +1347,19 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 				break;
 			sigfillset(&full);
 			sigprocmask(SIG_BLOCK, &full, &old);
-			schedule();
+			remaining = schedule_timeout(MD_SUSPEND_TIMEOUT);
 			sigprocmask(SIG_SETMASK, &old, NULL);
+			if (remaining == 0)
+				break;
 		}
 		finish_wait(&conf->wait_barrier, &w);
+		if (remaining == 0) {
+			pr_err("md/raid1:%s: suspend range is locked\n",
+				mdname(mddev));
+			bio->bi_error = -ETIMEDOUT;
+			bio_endio(bio);
+			return;
+		}
 	}
 	wait_barrier(conf, bio->bi_iter.bi_sector);
 

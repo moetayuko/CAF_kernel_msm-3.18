@@ -5688,6 +5688,7 @@ static bool raid5_make_request(struct mddev *mddev, struct bio * bi)
 			if (rw == WRITE &&
 			    logical_sector >= mddev->suspend_lo &&
 			    logical_sector < mddev->suspend_hi) {
+				long remaining = -1;
 				raid5_release_stripe(sh);
 				/* As the suspend_* range is controlled by
 				 * userspace, we want an interruptible
@@ -5700,9 +5701,16 @@ static bool raid5_make_request(struct mddev *mddev, struct bio * bi)
 					sigset_t full, old;
 					sigfillset(&full);
 					sigprocmask(SIG_BLOCK, &full, &old);
-					schedule();
+					remaining = schedule_timeout(
+							MD_SUSPEND_TIMEOUT);
 					sigprocmask(SIG_SETMASK, &old, NULL);
 					do_prepare = true;
+				}
+				if (remaining == 0) {
+					pr_err("md/raid5:%s: suspend range is locked\n",
+						mdname(mddev));
+					bi->bi_error = -ETIMEDOUT;
+					break;
 				}
 				goto retry;
 			}

@@ -29,6 +29,7 @@
 
 #define MaxSector (~(sector_t)0)
 
+#define MD_SUSPEND_TIMEOUT (120 * HZ)
 /*
  * These flags should really be called "NO_RETRY" rather than
  * "FAILFAST" because they don't make any promise about time lapse,
