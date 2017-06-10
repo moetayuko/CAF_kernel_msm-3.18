@@ -47,6 +47,7 @@ extern int of_property_notify(int action, struct device_node *np,
 extern void of_node_release(struct kobject *kobj);
 extern int __of_changeset_apply(struct of_changeset *ocs);
 extern int __of_changeset_revert(struct of_changeset *ocs);
+extern int __of_add_phandle_sysfs(struct device_node *np);
 #else /* CONFIG_OF_DYNAMIC */
 static inline int of_property_notify(int action, struct device_node *np,
 				     struct property *prop, struct property *old_prop)

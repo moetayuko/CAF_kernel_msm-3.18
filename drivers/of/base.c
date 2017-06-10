@@ -116,6 +116,19 @@ static ssize_t of_node_property_read(struct file *filp, struct kobject *kobj,
 	return memory_read_from_buffer(buf, count, &offset, pp->value, pp->length);
 }
 
+static ssize_t of_node_phandle_read(struct file *filp, struct kobject *kobj,
+				struct bin_attribute *bin_attr, char *buf,
+				loff_t offset, size_t count)
+{
+	phandle phandle;
+	struct device_node *np;
+
+	np = container_of(bin_attr, struct device_node, attr_phandle);
+	phandle = cpu_to_be32(np->phandle);
+	return memory_read_from_buffer(buf, count, &offset, &phandle,
+				       sizeof(phandle));
+}
+
 /* always return newly allocated name, caller must free after use */
 static const char *safe_name(struct kobject *kobj, const char *orig_name)
 {
@@ -164,6 +177,35 @@ int __of_add_property_sysfs(struct device_node *np, struct property *pp)
 	return rc;
 }
 
+/*
+ * In the imported device tree (fdt), phandle is a property.  In the
+ * internal data structure it is instead stored in the struct device_node.
+ * Make phandle visible in sysfs as if it was a property.
+ */
+int __of_add_phandle_sysfs(struct device_node *np)
+{
+	int rc;
+
+	if (!IS_ENABLED(CONFIG_SYSFS))
+		return 0;
+
+	if (!of_kset || !of_node_is_attached(np))
+		return 0;
+
+	if (!np->phandle || np->phandle == 0xffffffff)
+		return 0;
+
+	sysfs_bin_attr_init(&np->attr_phandle);
+	np->attr_phandle.attr.name = "phandle";
+	np->attr_phandle.attr.mode = 0444;
+	np->attr_phandle.size = sizeof(np->phandle);
+	np->attr_phandle.read = of_node_phandle_read;
+
+	rc = sysfs_create_bin_file(&np->kobj, &np->attr_phandle);
+	WARN(rc, "error adding attribute phandle to node %s\n", np->full_name);
+	return rc;
+}
+
 int __of_attach_node_sysfs(struct device_node *np)
 {
 	const char *name;
@@ -192,6 +234,8 @@ int __of_attach_node_sysfs(struct device_node *np)
 	kfree(name);
 	if (rc)
 		return rc;
+
+	__of_add_phandle_sysfs(np);
 
 	for_each_property_of_node(np, pp)
 		__of_add_property_sysfs(np, pp);
@@ -2128,9 +2172,7 @@ void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
 		int id, len;
 
 		/* Skip those we do not want to proceed */
-		if (!strcmp(pp->name, "name") ||
-		    !strcmp(pp->name, "phandle") ||
-		    !strcmp(pp->name, "linux,phandle"))
+		if (!strcmp(pp->name, "name"))
 			continue;
 
 		np = of_find_node_by_path(pp->value);
