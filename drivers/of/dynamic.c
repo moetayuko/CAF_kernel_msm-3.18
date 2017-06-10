@@ -218,19 +218,6 @@ int of_property_notify(int action, struct device_node *np,
 
 void __of_attach_node(struct device_node *np)
 {
-	const __be32 *phandle;
-	int sz;
-
-	np->name = __of_get_property(np, "name", NULL) ? : "<NULL>";
-	np->type = __of_get_property(np, "device_type", NULL) ? : "<NULL>";
-
-	phandle = __of_get_property(np, "phandle", &sz);
-	if (!phandle)
-		phandle = __of_get_property(np, "linux,phandle", &sz);
-	if (IS_ENABLED(CONFIG_PPC_PSERIES) && !phandle)
-		phandle = __of_get_property(np, "ibm,phandle", &sz);
-	np->phandle = (phandle && (sz >= 4)) ? be32_to_cpup(phandle) : 0;
-
 	np->child = NULL;
 	np->sibling = np->parent->child;
 	np->parent->child = np;
@@ -243,10 +230,47 @@ void __of_attach_node(struct device_node *np)
 int of_attach_node(struct device_node *np)
 {
 	struct of_reconfig_data rd;
+	struct property *prev;
+	struct property *prop;
+	struct property *save_next;
 	unsigned long flags;
+	const __be32 *phandle;
+	int sz;
 
 	memset(&rd, 0, sizeof(rd));
 	rd.dn = np;
+
+	/* use "<NULL>" to be consistent with populate_node() */
+	np->name = __of_get_property(np, "name", NULL) ? : "<NULL>";
+	np->type = __of_get_property(np, "device_type", NULL) ? : "<NULL>";
+
+	phandle = __of_get_property(np, "phandle", &sz);
+	if (!phandle)
+		phandle = __of_get_property(np, "linux,phandle", &sz);
+	if (IS_ENABLED(CONFIG_PPC_PSERIES) && !phandle)
+		phandle = __of_get_property(np, "ibm,phandle", &sz);
+	np->phandle = (phandle && (sz >= 4)) ? be32_to_cpup(phandle) : 0;
+
+	/* remove phandle properties from node */
+	prev = NULL;
+	for (prop = np->properties; prop != NULL; ) {
+		save_next = prop->next;
+		if (!strcmp(prop->name, "phandle") ||
+		    !strcmp(prop->name, "ibm,phandle") ||
+		    !strcmp(prop->name, "linux,phandle")) {
+			if (prev)
+				prev->next = prop->next;
+			else
+				np->properties = prop->next;
+			prop->next = np->deadprops;
+			np->deadprops = prop;
+		} else {
+			prev = prop;
+		}
+		prop = save_next;
+	}
+
+	__of_add_phandle_sysfs(np);
 
 	mutex_lock(&of_mutex);
 	raw_spin_lock_irqsave(&devtree_lock, flags);
@@ -429,6 +453,7 @@ struct device_node *__of_node_dup(const struct device_node *np, const char *fmt,
 	/* Iterate over and duplicate all properties */
 	if (np) {
 		struct property *pp, *new_pp;
+		node->phandle = np->phandle;
 		for_each_property_of_node(np, pp) {
 			new_pp = __of_prop_dup(pp, GFP_KERNEL);
 			if (!new_pp)
@@ -441,6 +466,10 @@ struct device_node *__of_node_dup(const struct device_node *np, const char *fmt,
 			}
 		}
 	}
+
+	node->name = __of_get_property(node, "name", NULL) ? : "<NULL>";
+	node->type = __of_get_property(node, "device_type", NULL) ? : "<NULL>";
+
 	return node;
 
  err_prop:

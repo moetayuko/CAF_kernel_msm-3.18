@@ -71,29 +71,10 @@ static void adjust_overlay_phandles(struct device_node *overlay,
 		int phandle_delta)
 {
 	struct device_node *child;
-	struct property *prop;
-	phandle phandle;
 
 	/* adjust node's phandle in node */
 	if (overlay->phandle != 0 && overlay->phandle != OF_PHANDLE_ILLEGAL)
 		overlay->phandle += phandle_delta;
-
-	/* copy adjusted phandle into *phandle properties */
-	for_each_property_of_node(overlay, prop) {
-
-		if (of_prop_cmp(prop->name, "phandle") &&
-		    of_prop_cmp(prop->name, "linux,phandle"))
-			continue;
-
-		if (prop->length < 4)
-			continue;
-
-		phandle = be32_to_cpup(prop->value);
-		if (phandle == OF_PHANDLE_ILLEGAL)
-			continue;
-
-		*(__be32 *)prop->value = cpu_to_be32(overlay->phandle);
-	}
 
 	for_each_child_of_node(overlay, child)
 		adjust_overlay_phandles(child, phandle_delta);
@@ -197,9 +178,7 @@ static int adjust_local_phandle_references(struct device_node *local_fixups,
 	for_each_property_of_node(local_fixups, prop_fix) {
 
 		/* skip properties added automatically */
-		if (!of_prop_cmp(prop_fix->name, "name") ||
-		    !of_prop_cmp(prop_fix->name, "phandle") ||
-		    !of_prop_cmp(prop_fix->name, "linux,phandle"))
+		if (!of_prop_cmp(prop_fix->name, "name"))
 			continue;
 
 		if ((prop_fix->length % 4) != 0 || prop_fix->length == 0)
