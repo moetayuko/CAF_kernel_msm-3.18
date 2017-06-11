@@ -4392,7 +4392,9 @@ module_init(slab_proc_init);
 
 #ifdef CONFIG_HARDENED_USERCOPY
 /*
- * Rejects objects that are incorrectly sized.
+ * Rejects incorrectly sized objects and objects that are to be copied
+ * to/from userspace but do not fall entirely within the containing slab
+ * cache's usercopy region.
  *
  * Returns NULL if check passes, otherwise const char * to name of cache
  * to indicate an error.
@@ -4412,11 +4414,29 @@ int __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 	/* Find offset within object. */
 	offset = ptr - index_to_obj(cachep, page, objnr) - obj_offset(cachep);
 
-	/* Allow address range falling entirely within object size. */
-	if (offset <= cachep->object_size && n <= cachep->object_size - offset)
-		return 0;
+	/* Make sure object falls entirely within cache's usercopy region. */
+	if (offset < cachep->useroffset ||
+	    offset - cachep->useroffset > cachep->usersize ||
+	    n > cachep->useroffset - offset + cachep->usersize) {
+		/*
+		 * If the copy is still within the allocated object, produce
+		 * a warning instead of rejecting the copy. This is intended
+		 * to be a temporary method to find any missing usercopy
+		 * whitelists.
+		 */
+		if (offset <= cachep->object_size &&
+		    n <= cachep->object_size - offset) {
+			WARN_ONCE(1, "unexpected usercopy %s with bad or missing whitelist with SLAB object '%s' (offset %lu, size %lu)",
+				  to_user ? "exposure" : "overwrite",
+				  cachep->name, offset, n);
+			return 0;
+		}
 
-	return report_usercopy("SLAB object", cachep->name, to_user, offset, n);
+		return report_usercopy("SLAB object", cachep->name, to_user,
+				       offset, n);
+	}
+
+	return 0;
 }
 #endif /* CONFIG_HARDENED_USERCOPY */
 
