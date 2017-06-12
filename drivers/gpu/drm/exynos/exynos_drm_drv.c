@@ -69,7 +69,7 @@ static void exynos_atomic_commit_complete(struct exynos_atomic_commit *commit)
 
 	drm_atomic_helper_cleanup_planes(dev, state);
 
-	drm_atomic_state_free(state);
+	drm_atomic_state_put(state);
 
 	spin_lock(&priv->lock);
 	priv->pending &= ~commit->crtcs;
@@ -186,7 +186,7 @@ err_free_private:
 	return ret;
 }
 
-static int exynos_drm_unload(struct drm_device *dev)
+static void exynos_drm_unload(struct drm_device *dev)
 {
 	exynos_drm_device_subdrv_remove(dev);
 
@@ -200,8 +200,6 @@ static int exynos_drm_unload(struct drm_device *dev)
 
 	kfree(dev->dev_private);
 	dev->dev_private = NULL;
-
-	return 0;
 }
 
 static int commit_is_pending(struct exynos_drm_private *priv, u32 crtcs)
@@ -254,6 +252,7 @@ int exynos_atomic_commit(struct drm_device *dev, struct drm_atomic_state *state,
 
 	drm_atomic_helper_swap_state(state, true);
 
+	drm_atomic_state_get(state);
 	if (nonblock)
 		schedule_work(&commit->work);
 	else
@@ -365,9 +364,7 @@ static const struct file_operations exynos_drm_driver_fops = {
 	.poll		= drm_poll,
 	.read		= drm_read,
 	.unlocked_ioctl	= drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl = drm_compat_ioctl,
-#endif
 	.release	= drm_release,
 };
 
@@ -380,7 +377,6 @@ static struct drm_driver exynos_drm_driver = {
 	.preclose		= exynos_drm_preclose,
 	.lastclose		= exynos_drm_lastclose,
 	.postclose		= exynos_drm_postclose,
-	.get_vblank_counter	= drm_vblank_no_hw_counter,
 	.enable_vblank		= exynos_drm_crtc_enable_vblank,
 	.disable_vblank		= exynos_drm_crtc_disable_vblank,
 	.gem_free_object_unlocked = exynos_drm_gem_free_object,

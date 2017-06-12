@@ -226,23 +226,18 @@
 	INTEL_VGA_DEVICE(0x162A, info), /* Server */ \
 	INTEL_VGA_DEVICE(0x162D, info)  /* Workstation */
 
-#define INTEL_BDW_RSVDM_IDS(info) \
+#define INTEL_BDW_RSVD_IDS(info) \
 	INTEL_VGA_DEVICE(0x1632, info), /* ULT */ \
 	INTEL_VGA_DEVICE(0x1636, info), /* ULT */ \
 	INTEL_VGA_DEVICE(0x163B, info), /* Iris */ \
-	INTEL_VGA_DEVICE(0x163E, info)  /* ULX */
-
-#define INTEL_BDW_RSVDD_IDS(info) \
+	INTEL_VGA_DEVICE(0x163E, info), /* ULX */ \
 	INTEL_VGA_DEVICE(0x163A, info), /* Server */ \
 	INTEL_VGA_DEVICE(0x163D, info)  /* Workstation */
 
 #define INTEL_BDW_IDS(info) \
 	INTEL_BDW_GT12_IDS(info), \
 	INTEL_BDW_GT3_IDS(info), \
-	INTEL_BDW_RSVDM_IDS(info), \
-	INTEL_BDW_GT12_IDS(info), \
-	INTEL_BDW_GT3_IDS(info), \
-	INTEL_BDW_RSVDD_IDS(info)
+	INTEL_BDW_RSVD_IDS(info)
 
 #define INTEL_CHV_IDS(info) \
 	INTEL_VGA_DEVICE(0x22b0, info), \
@@ -291,6 +286,10 @@
 	INTEL_VGA_DEVICE(0x1A85, info), \
 	INTEL_VGA_DEVICE(0x5A84, info), /* APL HD Graphics 505 */ \
 	INTEL_VGA_DEVICE(0x5A85, info)  /* APL HD Graphics 500 */
+
+#define INTEL_GLK_IDS(info) \
+	INTEL_VGA_DEVICE(0x3184, info), \
+	INTEL_VGA_DEVICE(0x3185, info)
 
 #define INTEL_KBL_GT1_IDS(info)	\
 	INTEL_VGA_DEVICE(0x5913, info), /* ULT GT1.5 */ \

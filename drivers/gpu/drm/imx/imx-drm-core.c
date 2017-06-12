@@ -204,7 +204,7 @@ static void imx_drm_atomic_commit_tail(struct drm_atomic_state *state)
 	drm_atomic_helper_cleanup_planes(dev, state);
 }
 
-static struct drm_mode_config_helper_funcs imx_drm_mode_config_helpers = {
+static const struct drm_mode_config_helper_funcs imx_drm_mode_config_helpers = {
 	.atomic_commit_tail = imx_drm_atomic_commit_tail,
 };
 
@@ -316,7 +316,6 @@ static struct drm_driver imx_drm_driver = {
 	.gem_prime_vmap		= drm_gem_cma_prime_vmap,
 	.gem_prime_vunmap	= drm_gem_cma_prime_vunmap,
 	.gem_prime_mmap		= drm_gem_cma_prime_mmap,
-	.get_vblank_counter	= drm_vblank_no_hw_counter,
 	.enable_vblank		= imx_drm_enable_vblank,
 	.disable_vblank		= imx_drm_disable_vblank,
 	.ioctls			= imx_drm_ioctls,
@@ -417,8 +416,7 @@ static int imx_drm_bind(struct device *dev)
 		dev_warn(dev, "Invalid legacyfb_depth.  Defaulting to 16bpp\n");
 		legacyfb_depth = 16;
 	}
-	imxdrm->fbhelper = drm_fbdev_cma_init(drm, legacyfb_depth,
-				drm->mode_config.num_crtc, MAX_CRTC);
+	imxdrm->fbhelper = drm_fbdev_cma_init(drm, legacyfb_depth, MAX_CRTC);
 	if (IS_ERR(imxdrm->fbhelper)) {
 		ret = PTR_ERR(imxdrm->fbhelper);
 		imxdrm->fbhelper = NULL;
