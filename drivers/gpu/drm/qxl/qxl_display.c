@@ -218,7 +218,8 @@ static void qxl_crtc_destroy(struct drm_crtc *crtc)
 static int qxl_crtc_page_flip(struct drm_crtc *crtc,
                               struct drm_framebuffer *fb,
                               struct drm_pending_vblank_event *event,
-                              uint32_t page_flip_flags)
+                              uint32_t page_flip_flags,
+			      struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_device *dev = crtc->dev;
 	struct qxl_device *qdev = dev->dev_private;
@@ -584,7 +585,7 @@ qxl_framebuffer_init(struct drm_device *dev,
 		qfb->obj = NULL;
 		return ret;
 	}
-	drm_helper_mode_fill_fb_struct(&qfb->base, mode_cmd);
+	drm_helper_mode_fill_fb_struct(dev, &qfb->base, mode_cmd);
 	return 0;
 }
 

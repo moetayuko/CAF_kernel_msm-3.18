@@ -435,7 +435,6 @@ static void atmel_hlcdc_fb_output_poll_changed(struct drm_device *dev)
 		drm_fbdev_cma_hotplug_event(dc->fbdev);
 	} else {
 		dc->fbdev = drm_fbdev_cma_init(dev, 24,
-				dev->mode_config.num_crtc,
 				dev->mode_config.num_connector);
 		if (IS_ERR(dc->fbdev))
 			dc->fbdev = NULL;
@@ -464,7 +463,7 @@ atmel_hlcdc_dc_atomic_complete(struct atmel_hlcdc_dc_commit *commit)
 
 	drm_atomic_helper_cleanup_planes(dev, old_state);
 
-	drm_atomic_state_free(old_state);
+	drm_atomic_state_put(old_state);
 
 	/* Complete the commit, wake up any waiter. */
 	spin_lock(&dc->commit.wait.lock);
@@ -521,6 +520,7 @@ static int atmel_hlcdc_dc_atomic_commit(struct drm_device *dev,
 	/* Swap the state, this is the point of no return. */
 	drm_atomic_helper_swap_state(state, true);
 
+	drm_atomic_state_get(state);
 	if (async)
 		queue_work(dc->wq, &commit->work);
 	else
@@ -748,9 +748,7 @@ static const struct file_operations fops = {
 	.open               = drm_open,
 	.release            = drm_release,
 	.unlocked_ioctl     = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl       = drm_compat_ioctl,
-#endif
 	.poll               = drm_poll,
 	.read               = drm_read,
 	.llseek             = no_llseek,
@@ -766,7 +764,6 @@ static struct drm_driver atmel_hlcdc_dc_driver = {
 	.irq_preinstall = atmel_hlcdc_dc_irq_uninstall,
 	.irq_postinstall = atmel_hlcdc_dc_irq_postinstall,
 	.irq_uninstall = atmel_hlcdc_dc_irq_uninstall,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank = atmel_hlcdc_dc_enable_vblank,
 	.disable_vblank = atmel_hlcdc_dc_disable_vblank,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,

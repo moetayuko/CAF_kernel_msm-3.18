@@ -608,17 +608,16 @@ static void ade_rdma_set(void __iomem *base, struct drm_framebuffer *fb,
 			 u32 ch, u32 y, u32 in_h, u32 fmt)
 {
 	struct drm_gem_cma_object *obj = drm_fb_cma_get_gem_obj(fb, 0);
-	char *format_name;
+	struct drm_format_name_buf format_name;
 	u32 reg_ctrl, reg_addr, reg_size, reg_stride, reg_space, reg_en;
 	u32 stride = fb->pitches[0];
 	u32 addr = (u32)obj->paddr + y * stride;
 
 	DRM_DEBUG_DRIVER("rdma%d: (y=%d, height=%d), stride=%d, paddr=0x%x\n",
 			 ch + 1, y, in_h, stride, (u32)obj->paddr);
-	format_name = drm_get_format_name(fb->pixel_format);
 	DRM_DEBUG_DRIVER("addr=0x%x, fb:%dx%d, pixel_format=%d(%s)\n",
-			 addr, fb->width, fb->height, fmt, format_name);
-	kfree(format_name);
+			 addr, fb->width, fb->height, fmt,
+			 drm_get_format_name(fb->format->format, &format_name));
 
 	/* get reg offset */
 	reg_ctrl = RD_CH_CTRL(ch);
@@ -774,7 +773,7 @@ static void ade_update_channel(struct ade_plane *aplane,
 {
 	struct ade_hw_ctx *ctx = aplane->ctx;
 	void __iomem *base = ctx->base;
-	u32 fmt = ade_get_format(fb->pixel_format);
+	u32 fmt = ade_get_format(fb->format->format);
 	u32 ch = aplane->ch;
 	u32 in_w;
 	u32 in_h;
@@ -836,7 +835,7 @@ static int ade_plane_atomic_check(struct drm_plane *plane,
 	if (!crtc || !fb)
 		return 0;
 
-	fmt = ade_get_format(fb->pixel_format);
+	fmt = ade_get_format(fb->format->format);
 	if (fmt == ADE_FORMAT_UNSUPPORT)
 		return -EINVAL;
 
@@ -1028,7 +1027,6 @@ static int ade_drm_init(struct drm_device *dev)
 			       IRQF_SHARED, dev->driver->name, acrtc);
 	if (ret)
 		return ret;
-	dev->driver->get_vblank_counter = drm_vblank_no_hw_counter;
 	dev->driver->enable_vblank = ade_enable_vblank;
 	dev->driver->disable_vblank = ade_disable_vblank;
 
