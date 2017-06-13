@@ -312,7 +312,6 @@ void mmc_cleanup_queue(struct mmc_queue *mq)
 	q->queuedata = NULL;
 	blk_start_queue(q);
 	spin_unlock_irqrestore(q->queue_lock, flags);
-	blk_cleanup_queue(mq->queue);
 
 	mq->card = NULL;
 }
