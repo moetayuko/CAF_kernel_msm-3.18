@@ -29,8 +29,9 @@
 #include <linux/export.h>
 #include <linux/dma-buf.h>
 #include <linux/rbtree.h>
-#include <drm/drmP.h>
+#include <drm/drm_prime.h>
 #include <drm/drm_gem.h>
+#include <drm/drmP.h>
 
 #include "drm_internal.h"
 
@@ -290,7 +291,8 @@ static void drm_gem_unmap_dma_buf(struct dma_buf_attachment *attach,
  *
  * This wraps dma_buf_export() for use by generic GEM drivers that are using
  * drm_gem_dmabuf_release(). In addition to calling dma_buf_export(), we take
- * a reference to the drm_device which is released by drm_gem_dmabuf_release().
+ * a reference to the &drm_device and the exported &drm_gem_object (stored in
+ * exp_info->priv) which is released by drm_gem_dmabuf_release().
  *
  * Returns the new dmabuf.
  */
@@ -300,8 +302,11 @@ struct dma_buf *drm_gem_dmabuf_export(struct drm_device *dev,
 	struct dma_buf *dma_buf;
 
 	dma_buf = dma_buf_export(exp_info);
-	if (!IS_ERR(dma_buf))
-		drm_dev_ref(dev);
+	if (IS_ERR(dma_buf))
+		return dma_buf;
+
+	drm_dev_ref(dev);
+	drm_gem_object_get(exp_info->priv);
 
 	return dma_buf;
 }
@@ -322,7 +327,7 @@ void drm_gem_dmabuf_release(struct dma_buf *dma_buf)
 	struct drm_device *dev = obj->dev;
 
 	/* drop the reference on the export fd holds */
-	drm_gem_object_unreference_unlocked(obj);
+	drm_gem_object_put_unlocked(obj);
 
 	drm_dev_unref(dev);
 }
@@ -472,8 +477,6 @@ static struct dma_buf *export_and_register_object(struct drm_device *dev,
 	 */
 	obj->dma_buf = dmabuf;
 	get_dma_buf(obj->dma_buf);
-	/* Grab a new ref since the callers is now used by the dma-buf */
-	drm_gem_object_reference(obj);
 
 	return dmabuf;
 }
@@ -570,7 +573,7 @@ out_have_handle:
 fail_put_dmabuf:
 	dma_buf_put(dmabuf);
 out:
-	drm_gem_object_unreference_unlocked(obj);
+	drm_gem_object_put_unlocked(obj);
 out_unlock:
 	mutex_unlock(&file_priv->prime.lock);
 
@@ -601,7 +604,7 @@ struct drm_gem_object *drm_gem_prime_import(struct drm_device *dev,
 			 * Importing dmabuf exported from out own gem increases
 			 * refcount on gem itself instead of f_count of dmabuf.
 			 */
-			drm_gem_object_reference(obj);
+			drm_gem_object_get(obj);
 			return obj;
 		}
 	}
@@ -689,7 +692,7 @@ int drm_gem_prime_fd_to_handle(struct drm_device *dev,
 
 	/* _handle_create_tail unconditionally unlocks dev->object_name_lock. */
 	ret = drm_gem_handle_create_tail(file_priv, obj, handle);
-	drm_gem_object_unreference_unlocked(obj);
+	drm_gem_object_put_unlocked(obj);
 	if (ret)
 		goto out_put;
 

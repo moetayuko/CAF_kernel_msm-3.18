@@ -248,7 +248,8 @@ static int vmw_sou_backing_alloc(struct vmw_private *dev_priv,
 	return ret;
 }
 
-static int vmw_sou_crtc_set_config(struct drm_mode_set *set)
+static int vmw_sou_crtc_set_config(struct drm_mode_set *set,
+				   struct drm_modeset_acquire_ctx *ctx)
 {
 	struct vmw_private *dev_priv;
 	struct vmw_screen_object_unit *sou;
@@ -395,7 +396,8 @@ static int vmw_sou_crtc_set_config(struct drm_mode_set *set)
 static int vmw_sou_crtc_page_flip(struct drm_crtc *crtc,
 				  struct drm_framebuffer *fb,
 				  struct drm_pending_vblank_event *event,
-				  uint32_t flags)
+				  uint32_t flags,
+				  struct drm_modeset_acquire_ctx *ctx)
 {
 	struct vmw_private *dev_priv = vmw_priv(crtc->dev);
 	struct drm_framebuffer *old_fb = crtc->primary->fb;
@@ -598,7 +600,7 @@ static int do_dmabuf_define_gmrfb(struct vmw_private *dev_priv,
 	struct vmw_dma_buffer *buf =
 		container_of(framebuffer, struct vmw_framebuffer_dmabuf,
 			     base)->buffer;
-	int depth = framebuffer->base.depth;
+	int depth = framebuffer->base.format->depth;
 	struct {
 		uint32_t header;
 		SVGAFifoCmdDefineGMRFB body;
@@ -618,7 +620,7 @@ static int do_dmabuf_define_gmrfb(struct vmw_private *dev_priv,
 	}
 
 	cmd->header = SVGA_CMD_DEFINE_GMRFB;
-	cmd->body.format.bitsPerPixel = framebuffer->base.bits_per_pixel;
+	cmd->body.format.bitsPerPixel = framebuffer->base.format->cpp[0] * 8;
 	cmd->body.format.colorDepth = depth;
 	cmd->body.format.reserved = 0;
 	cmd->body.bytesPerLine = framebuffer->base.pitches[0];

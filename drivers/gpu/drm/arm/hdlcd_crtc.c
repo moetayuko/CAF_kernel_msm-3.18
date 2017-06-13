@@ -64,7 +64,7 @@ static int hdlcd_set_pxl_fmt(struct drm_crtc *crtc)
 	struct simplefb_format *format = NULL;
 	int i;
 
-	pixel_format = crtc->primary->state->fb->pixel_format;
+	pixel_format = crtc->primary->state->fb->format->format;
 
 	for (i = 0; i < ARRAY_SIZE(supported_formats); i++) {
 		if (supported_formats[i].fourcc == pixel_format)
@@ -222,14 +222,12 @@ static void hdlcd_plane_atomic_update(struct drm_plane *plane,
 {
 	struct hdlcd_drm_private *hdlcd;
 	struct drm_gem_cma_object *gem;
-	unsigned int depth, bpp;
 	u32 src_w, src_h, dest_w, dest_h;
 	dma_addr_t scanout_start;
 
 	if (!plane->state->fb)
 		return;
 
-	drm_fb_get_bpp_depth(plane->state->fb->pixel_format, &depth, &bpp);
 	src_w = plane->state->src_w >> 16;
 	src_h = plane->state->src_h >> 16;
 	dest_w = plane->state->crtc_w;
@@ -237,7 +235,8 @@ static void hdlcd_plane_atomic_update(struct drm_plane *plane,
 	gem = drm_fb_cma_get_gem_obj(plane->state->fb, 0);
 	scanout_start = gem->paddr + plane->state->fb->offsets[0] +
 		plane->state->crtc_y * plane->state->fb->pitches[0] +
-		plane->state->crtc_x * bpp / 8;
+		plane->state->crtc_x *
+		plane->state->fb->format->cpp[0];
 
 	hdlcd = plane->dev->dev_private;
 	hdlcd_write(hdlcd, HDLCD_REG_FB_LINE_LENGTH, plane->state->fb->pitches[0]);

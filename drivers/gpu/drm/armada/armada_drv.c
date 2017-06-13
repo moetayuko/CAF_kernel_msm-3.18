@@ -132,7 +132,7 @@ static int armada_drm_load(struct drm_device *dev, unsigned long flags)
 	return ret;
 }
 
-static int armada_drm_unload(struct drm_device *dev)
+static void armada_drm_unload(struct drm_device *dev)
 {
 	struct armada_private *priv = dev->dev_private;
 
@@ -146,7 +146,7 @@ static int armada_drm_unload(struct drm_device *dev)
 	flush_work(&priv->fb_unref_work);
 	dev->dev_private = NULL;
 
-	return 0;
+	return;
 }
 
 /* These are called under the vbl_lock. */
@@ -189,7 +189,6 @@ static struct drm_driver armada_drm_driver = {
 	.load			= armada_drm_load,
 	.lastclose		= armada_drm_lastclose,
 	.unload			= armada_drm_unload,
-	.get_vblank_counter	= drm_vblank_no_hw_counter,
 	.enable_vblank		= armada_drm_enable_vblank,
 	.disable_vblank		= armada_drm_disable_vblank,
 #ifdef CONFIG_DEBUG_FS
@@ -254,7 +253,7 @@ static void armada_add_endpoints(struct device *dev,
 			continue;
 		}
 
-		component_match_add(dev, match, compare_of, remote);
+		drm_of_component_match_add(dev, match, compare_of, remote);
 		of_node_put(remote);
 	}
 }
