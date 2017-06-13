@@ -670,7 +670,7 @@ int mwifiex_process_sta_event(struct mwifiex_private *priv)
 		adapter->dbg.num_event_deauth++;
 		if (priv->media_connected) {
 			reason_code =
-				le16_to_cpu(*(__le16 *)adapter->event_body);
+				get_unaligned_le16(adapter->event_body);
 			mwifiex_reset_connect_state(priv, reason_code, true);
 		}
 		break;
@@ -685,7 +685,7 @@ int mwifiex_process_sta_event(struct mwifiex_private *priv)
 		adapter->dbg.num_event_disassoc++;
 		if (priv->media_connected) {
 			reason_code =
-				le16_to_cpu(*(__le16 *)adapter->event_body);
+				get_unaligned_le16(adapter->event_body);
 			mwifiex_reset_connect_state(priv, reason_code, true);
 		}
 		break;
@@ -695,7 +695,7 @@ int mwifiex_process_sta_event(struct mwifiex_private *priv)
 		adapter->dbg.num_event_link_lost++;
 		if (priv->media_connected) {
 			reason_code =
-				le16_to_cpu(*(__le16 *)adapter->event_body);
+				get_unaligned_le16(adapter->event_body);
 			mwifiex_reset_connect_state(priv, reason_code, true);
 		}
 		break;
@@ -923,7 +923,7 @@ int mwifiex_process_sta_event(struct mwifiex_private *priv)
 					      adapter->event_body);
 		break;
 	case EVENT_AMSDU_AGGR_CTRL:
-		ctrl = le16_to_cpu(*(__le16 *)adapter->event_body);
+		ctrl = get_unaligned_le16(adapter->event_body);
 		mwifiex_dbg(adapter, EVENT,
 			    "event: AMSDU_AGGR_CTRL %d\n", ctrl);
 
@@ -1008,6 +1008,10 @@ int mwifiex_process_sta_event(struct mwifiex_private *priv)
 		mwifiex_11n_rxba_sync_event(priv, adapter->event_body,
 					    adapter->event_skb->len -
 					    sizeof(eventcause));
+		break;
+	/* Debugging event; not used, but let's not print an ERROR for it. */
+	case EVENT_UNKNOWN_DEBUG:
+		mwifiex_dbg(adapter, EVENT, "event: debug\n");
 		break;
 	default:
 		mwifiex_dbg(adapter, ERROR, "event: unknown event id: %#x\n",
