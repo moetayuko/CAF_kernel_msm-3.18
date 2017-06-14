@@ -84,16 +84,9 @@ endif
 # If the user is running make -s (silent mode), suppress echoing of
 # commands
 
-ifneq ($(filter 4.%,$(MAKE_VERSION)),)	# make-4
-ifneq ($(filter %s ,$(firstword x$(MAKEFLAGS))),)
+ifneq ($(findstring s,$(filter-out --%,$(MAKEFLAGS))),)
   quiet=silent_
   tools_silent=s
-endif
-else					# make-3.8x
-ifneq ($(filter s% -s%,$(MAKEFLAGS)),)
-  quiet=silent_
-  tools_silent=-s
-endif
 endif
 
 export quiet Q KBUILD_VERBOSE
@@ -388,12 +381,10 @@ USERINCLUDE    := \
 # Needed to be compatible with the O= option
 LINUXINCLUDE    := \
 		-I$(srctree)/arch/$(hdr-arch)/include \
-		-I$(objtree)/arch/$(hdr-arch)/include/generated/uapi \
 		-I$(objtree)/arch/$(hdr-arch)/include/generated \
 		$(if $(KBUILD_SRC), -I$(srctree)/include) \
-		-I$(objtree)/include
-
-LINUXINCLUDE	+= $(filter-out $(LINUXINCLUDE),$(USERINCLUDE))
+		-I$(objtree)/include \
+		$(USERINCLUDE)
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
