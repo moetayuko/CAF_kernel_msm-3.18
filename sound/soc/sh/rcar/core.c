@@ -310,6 +310,24 @@ u32 rsnd_get_dalign(struct rsnd_mod *mod, struct rsnd_dai_stream *io)
 	u32 val = 0x76543210;
 	u32 mask = ~0;
 
+	/*
+	 * *Hardware* L/R and *Software* L/R are inverted.
+	 * We need to care about inversion timing to control
+	 * Playback/Capture correctly.
+	 * The point is [DVC] needs *Hardware* L/R, [MEM] needs *Software* L/R
+	 *
+	 * sL/R : software L/R
+	 * hL/R : hardware L/R
+	 * (*)  : conversion timing
+	 *
+	 * Playback
+	 *	     sL/R (*) hL/R     hL/R     hL/R      hL/R     hL/R
+	 *	[MEM] -> [SRC] -> [DVC] -> [CMD] -> [SSIU] -> [SSI] -> codec
+	 *
+	 * Capture
+	 *	     hL/R     hL/R      hL/R     hL/R     hL/R (*) sL/R
+	 *	codec -> [SSI] -> [SSIU] -> [SRC] -> [DVC] -> [CMD] -> [MEM]
+	 */
 	if (rsnd_io_is_play(io)) {
 		struct rsnd_mod *src = rsnd_io_to_mod_src(io);
 
@@ -470,8 +488,7 @@ static int rsnd_status_update(u32 *status,
 
 #define rsnd_dai_call(fn, io, param...)					\
 ({									\
-	struct rsnd_priv *priv = rsnd_io_to_priv(io);			\
-	struct device *dev = rsnd_priv_to_dev(priv);			\
+	struct device *dev = rsnd_priv_to_dev(rsnd_io_to_priv(io));	\
 	struct rsnd_mod *mod;						\
 	int is_play = rsnd_io_is_play(io);				\
 	int ret = 0, i;							\
@@ -551,40 +568,6 @@ static struct rsnd_dai *rsnd_dai_to_rdai(struct snd_soc_dai *dai)
 /*
  *	rsnd_soc_dai functions
  */
-int rsnd_dai_pointer_offset(struct rsnd_dai_stream *io, int additional)
-{
-	struct snd_pcm_substream *substream = io->substream;
-	struct snd_pcm_runtime *runtime = substream->runtime;
-	int pos = io->byte_pos + additional;
-
-	pos %= (runtime->periods * io->byte_per_period);
-
-	return pos;
-}
-
-bool rsnd_dai_pointer_update(struct rsnd_dai_stream *io, int byte)
-{
-	io->byte_pos += byte;
-
-	if (io->byte_pos >= io->next_period_byte) {
-		struct snd_pcm_substream *substream = io->substream;
-		struct snd_pcm_runtime *runtime = substream->runtime;
-
-		io->period_pos++;
-		io->next_period_byte += io->byte_per_period;
-
-		if (io->period_pos >= runtime->periods) {
-			io->byte_pos = 0;
-			io->period_pos = 0;
-			io->next_period_byte = io->byte_per_period;
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
 void rsnd_dai_period_elapsed(struct rsnd_dai_stream *io)
 {
 	struct snd_pcm_substream *substream = io->substream;
@@ -602,15 +585,7 @@ void rsnd_dai_period_elapsed(struct rsnd_dai_stream *io)
 static void rsnd_dai_stream_init(struct rsnd_dai_stream *io,
 				struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime = substream->runtime;
-
 	io->substream		= substream;
-	io->byte_pos		= 0;
-	io->period_pos		= 0;
-	io->byte_per_period	= runtime->period_size *
-				  runtime->channels *
-				  samples_to_bytes(runtime, 1);
-	io->next_period_byte	= io->byte_per_period;
 }
 
 static void rsnd_dai_stream_quit(struct rsnd_dai_stream *io)
@@ -765,18 +740,25 @@ static int rsnd_soc_dai_startup(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
 	struct rsnd_dai *rdai = rsnd_dai_to_rdai(dai);
+	struct rsnd_priv *priv = rsnd_rdai_to_priv(rdai);
 	struct rsnd_dai_stream *io = rsnd_rdai_to_io(rdai, substream);
+	int ret;
 
 	/*
 	 * call rsnd_dai_call without spinlock
 	 */
-	return rsnd_dai_call(nolock_start, io, priv);
+	ret = rsnd_dai_call(nolock_start, io, priv);
+	if (ret < 0)
+		rsnd_dai_call(nolock_stop, io, priv);
+
+	return ret;
 }
 
 static void rsnd_soc_dai_shutdown(struct snd_pcm_substream *substream,
 				  struct snd_soc_dai *dai)
 {
 	struct rsnd_dai *rdai = rsnd_dai_to_rdai(dai);
+	struct rsnd_priv *priv = rsnd_rdai_to_priv(rdai);
 	struct rsnd_dai_stream *io = rsnd_rdai_to_io(rdai, substream);
 
 	/*
@@ -820,32 +802,131 @@ void rsnd_parse_connect_common(struct rsnd_dai *rdai,
 	of_node_put(node);
 }
 
+static struct device_node *rsnd_dai_of_node(struct rsnd_priv *priv,
+					    int *is_graph)
+{
+	struct device *dev = rsnd_priv_to_dev(priv);
+	struct device_node *np = dev->of_node;
+	struct device_node *dai_node;
+	struct device_node *ret;
+
+	*is_graph = 0;
+
+	/*
+	 * parse both previous dai (= rcar_sound,dai), and
+	 * graph dai (= ports/port)
+	 */
+	dai_node = of_get_child_by_name(np, RSND_NODE_DAI);
+	if (dai_node) {
+		ret = dai_node;
+		goto of_node_compatible;
+	}
+
+	ret = np;
+
+	dai_node = of_graph_get_next_endpoint(np, NULL);
+	if (dai_node)
+		goto of_node_graph;
+
+	return NULL;
+
+of_node_graph:
+	*is_graph = 1;
+of_node_compatible:
+	of_node_put(dai_node);
+
+	return ret;
+}
+
+static void __rsnd_dai_probe(struct rsnd_priv *priv,
+			     struct device_node *dai_np,
+			     int dai_i, int is_graph)
+{
+	struct device_node *playback, *capture;
+	struct rsnd_dai_stream *io_playback;
+	struct rsnd_dai_stream *io_capture;
+	struct snd_soc_dai_driver *drv;
+	struct rsnd_dai *rdai;
+	struct device *dev = rsnd_priv_to_dev(priv);
+	int io_i;
+
+	rdai		= rsnd_rdai_get(priv, dai_i);
+	drv		= priv->daidrv + dai_i;
+	io_playback	= &rdai->playback;
+	io_capture	= &rdai->capture;
+
+	snprintf(rdai->name, RSND_DAI_NAME_SIZE, "rsnd-dai.%d", dai_i);
+
+	rdai->priv	= priv;
+	drv->name	= rdai->name;
+	drv->ops	= &rsnd_soc_dai_ops;
+
+	snprintf(rdai->playback.name, RSND_DAI_NAME_SIZE,
+		 "DAI%d Playback", dai_i);
+	drv->playback.rates		= RSND_RATES;
+	drv->playback.formats		= RSND_FMTS;
+	drv->playback.channels_min	= 2;
+	drv->playback.channels_max	= 6;
+	drv->playback.stream_name	= rdai->playback.name;
+
+	snprintf(rdai->capture.name, RSND_DAI_NAME_SIZE,
+		 "DAI%d Capture", dai_i);
+	drv->capture.rates		= RSND_RATES;
+	drv->capture.formats		= RSND_FMTS;
+	drv->capture.channels_min	= 2;
+	drv->capture.channels_max	= 6;
+	drv->capture.stream_name	= rdai->capture.name;
+
+	rdai->playback.rdai		= rdai;
+	rdai->capture.rdai		= rdai;
+	rsnd_set_slot(rdai, 2, 1); /* default */
+
+	for (io_i = 0;; io_i++) {
+		playback = of_parse_phandle(dai_np, "playback", io_i);
+		capture  = of_parse_phandle(dai_np, "capture", io_i);
+
+		if (!playback && !capture)
+			break;
+
+		rsnd_parse_connect_ssi(rdai, playback, capture);
+		rsnd_parse_connect_src(rdai, playback, capture);
+		rsnd_parse_connect_ctu(rdai, playback, capture);
+		rsnd_parse_connect_mix(rdai, playback, capture);
+		rsnd_parse_connect_dvc(rdai, playback, capture);
+
+		of_node_put(playback);
+		of_node_put(capture);
+	}
+
+	dev_dbg(dev, "%s (%s/%s)\n", rdai->name,
+		rsnd_io_to_mod_ssi(io_playback) ? "play"    : " -- ",
+		rsnd_io_to_mod_ssi(io_capture) ? "capture" : "  --   ");
+}
+
 static int rsnd_dai_probe(struct rsnd_priv *priv)
 {
 	struct device_node *dai_node;
 	struct device_node *dai_np;
-	struct device_node *playback, *capture;
-	struct rsnd_dai_stream *io_playback;
-	struct rsnd_dai_stream *io_capture;
-	struct snd_soc_dai_driver *rdrv, *drv;
-	struct rsnd_dai *rdai;
+	struct snd_soc_dai_driver *rdrv;
 	struct device *dev = rsnd_priv_to_dev(priv);
-	int nr, dai_i, io_i;
-	int ret;
+	struct rsnd_dai *rdai;
+	int nr;
+	int is_graph;
+	int dai_i;
 
-	dai_node = rsnd_dai_of_node(priv);
-	nr = of_get_child_count(dai_node);
-	if (!nr) {
-		ret = -EINVAL;
-		goto rsnd_dai_probe_done;
-	}
+	dai_node = rsnd_dai_of_node(priv, &is_graph);
+	if (is_graph)
+		nr = of_graph_get_endpoint_count(dai_node);
+	else
+		nr = of_get_child_count(dai_node);
+
+	if (!nr)
+		return -EINVAL;
 
 	rdrv = devm_kzalloc(dev, sizeof(*rdrv) * nr, GFP_KERNEL);
 	rdai = devm_kzalloc(dev, sizeof(*rdai) * nr, GFP_KERNEL);
-	if (!rdrv || !rdai) {
-		ret = -ENOMEM;
-		goto rsnd_dai_probe_done;
-	}
+	if (!rdrv || !rdai)
+		return -ENOMEM;
 
 	priv->rdai_nr	= nr;
 	priv->daidrv	= rdrv;
@@ -855,68 +936,18 @@ static int rsnd_dai_probe(struct rsnd_priv *priv)
 	 * parse all dai
 	 */
 	dai_i = 0;
-	for_each_child_of_node(dai_node, dai_np) {
-		rdai		= rsnd_rdai_get(priv, dai_i);
-		drv		= rdrv + dai_i;
-		io_playback	= &rdai->playback;
-		io_capture	= &rdai->capture;
-
-		snprintf(rdai->name, RSND_DAI_NAME_SIZE, "rsnd-dai.%d", dai_i);
-
-		rdai->priv	= priv;
-		drv->name	= rdai->name;
-		drv->ops	= &rsnd_soc_dai_ops;
-
-		snprintf(rdai->playback.name, RSND_DAI_NAME_SIZE,
-			 "DAI%d Playback", dai_i);
-		drv->playback.rates		= RSND_RATES;
-		drv->playback.formats		= RSND_FMTS;
-		drv->playback.channels_min	= 2;
-		drv->playback.channels_max	= 6;
-		drv->playback.stream_name	= rdai->playback.name;
-
-		snprintf(rdai->capture.name, RSND_DAI_NAME_SIZE,
-			 "DAI%d Capture", dai_i);
-		drv->capture.rates		= RSND_RATES;
-		drv->capture.formats		= RSND_FMTS;
-		drv->capture.channels_min	= 2;
-		drv->capture.channels_max	= 6;
-		drv->capture.stream_name	= rdai->capture.name;
-
-		rdai->playback.rdai		= rdai;
-		rdai->capture.rdai		= rdai;
-		rsnd_set_slot(rdai, 2, 1); /* default */
-
-		for (io_i = 0;; io_i++) {
-			playback = of_parse_phandle(dai_np, "playback", io_i);
-			capture  = of_parse_phandle(dai_np, "capture", io_i);
-
-			if (!playback && !capture)
-				break;
-
-			rsnd_parse_connect_ssi(rdai, playback, capture);
-			rsnd_parse_connect_src(rdai, playback, capture);
-			rsnd_parse_connect_ctu(rdai, playback, capture);
-			rsnd_parse_connect_mix(rdai, playback, capture);
-			rsnd_parse_connect_dvc(rdai, playback, capture);
-
-			of_node_put(playback);
-			of_node_put(capture);
+	if (is_graph) {
+		for_each_endpoint_of_node(dai_node, dai_np) {
+			__rsnd_dai_probe(priv, dai_np, dai_i, is_graph);
+			rsnd_ssi_parse_hdmi_connection(priv, dai_np, dai_i);
+			dai_i++;
 		}
-
-		dai_i++;
-
-		dev_dbg(dev, "%s (%s/%s)\n", rdai->name,
-			rsnd_io_to_mod_ssi(io_playback) ? "play"    : " -- ",
-			rsnd_io_to_mod_ssi(io_capture) ? "capture" : "  --   ");
+	} else {
+		for_each_child_of_node(dai_node, dai_np)
+			__rsnd_dai_probe(priv, dai_np, dai_i++, is_graph);
 	}
 
-	ret = 0;
-
-rsnd_dai_probe_done:
-	of_node_put(dai_node);
-
-	return ret;
+	return 0;
 }
 
 /*
@@ -965,12 +996,14 @@ static int rsnd_hw_params(struct snd_pcm_substream *substream,
 
 static snd_pcm_uframes_t rsnd_pointer(struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_dai *dai = rsnd_substream_to_dai(substream);
 	struct rsnd_dai *rdai = rsnd_dai_to_rdai(dai);
 	struct rsnd_dai_stream *io = rsnd_rdai_to_io(rdai, substream);
+	snd_pcm_uframes_t pointer = 0;
 
-	return bytes_to_frames(runtime, io->byte_pos);
+	rsnd_dai_call(pointer, io, &pointer);
+
+	return pointer;
 }
 
 static struct snd_pcm_ops rsnd_pcm_ops = {
@@ -1033,6 +1066,9 @@ static int rsnd_kctrl_put(struct snd_kcontrol *kctrl,
 	struct rsnd_kctrl_cfg *cfg = kcontrol_to_cfg(kctrl);
 	int i, change = 0;
 
+	if (!cfg->accept(cfg->io))
+		return 0;
+
 	for (i = 0; i < cfg->size; i++) {
 		if (cfg->texts) {
 			change |= (uc->value.enumerated.item[i] != cfg->val[i]);
@@ -1047,6 +1083,18 @@ static int rsnd_kctrl_put(struct snd_kcontrol *kctrl,
 		cfg->update(cfg->io, mod);
 
 	return change;
+}
+
+int rsnd_kctrl_accept_anytime(struct rsnd_dai_stream *io)
+{
+	return 1;
+}
+
+int rsnd_kctrl_accept_runtime(struct rsnd_dai_stream *io)
+{
+	struct snd_pcm_runtime *runtime = rsnd_io_to_runtime(io);
+
+	return !!runtime;
 }
 
 struct rsnd_kctrl_cfg *rsnd_kctrl_init_m(struct rsnd_kctrl_cfg_m *cfg)
@@ -1067,6 +1115,7 @@ int rsnd_kctrl_new(struct rsnd_mod *mod,
 		   struct rsnd_dai_stream *io,
 		   struct snd_soc_pcm_runtime *rtd,
 		   const unsigned char *name,
+		   int (*accept)(struct rsnd_dai_stream *io),
 		   void (*update)(struct rsnd_dai_stream *io,
 				  struct rsnd_mod *mod),
 		   struct rsnd_kctrl_cfg *cfg,
@@ -1101,6 +1150,7 @@ int rsnd_kctrl_new(struct rsnd_mod *mod,
 	cfg->texts	= texts;
 	cfg->max	= max;
 	cfg->size	= size;
+	cfg->accept	= accept;
 	cfg->update	= update;
 	cfg->card	= card;
 	cfg->kctrl	= kctrl;
