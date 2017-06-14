@@ -5976,10 +5976,20 @@ static void intel_connector_verify_state(struct drm_crtc_state *crtc_state,
 
 int intel_connector_init(struct intel_connector *connector)
 {
-	drm_atomic_helper_connector_reset(&connector->base);
+	struct intel_digital_connector_state *conn_state;
 
-	if (!connector->base.state)
+	/*
+	 * Allocate enough memory to hold intel_digital_connector_state,
+	 * This might be a few bytes too many, but for connectors that don't
+	 * need it we'll free the state and allocate a smaller one on the first
+	 * succesful commit anyway.
+	 */
+	conn_state = kzalloc(sizeof(*conn_state), GFP_KERNEL);
+	if (!conn_state)
 		return -ENOMEM;
+
+	__drm_atomic_helper_connector_reset(&connector->base,
+					    &conn_state->base);
 
 	return 0;
 }
@@ -8864,6 +8874,22 @@ static int haswell_crtc_compute_clock(struct intel_crtc *crtc,
 	return 0;
 }
 
+static void cannonlake_get_ddi_pll(struct drm_i915_private *dev_priv,
+				   enum port port,
+				   struct intel_crtc_state *pipe_config)
+{
+	enum intel_dpll_id id;
+	u32 temp;
+
+	temp = I915_READ(DPCLKA_CFGCR0) & DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(port);
+	id = temp >> (port * 2);
+
+	if (WARN_ON(id < SKL_DPLL0 || id > SKL_DPLL2))
+		return;
+
+	pipe_config->shared_dpll = intel_get_shared_dpll_by_id(dev_priv, id);
+}
+
 static void bxt_get_ddi_pll(struct drm_i915_private *dev_priv,
 				enum port port,
 				struct intel_crtc_state *pipe_config)
@@ -9051,7 +9077,9 @@ static void haswell_get_ddi_port_state(struct intel_crtc *crtc,
 
 	port = (tmp & TRANS_DDI_PORT_MASK) >> TRANS_DDI_PORT_SHIFT;
 
-	if (IS_GEN9_BC(dev_priv))
+	if (IS_CANNONLAKE(dev_priv))
+		cannonlake_get_ddi_pll(dev_priv, port, pipe_config);
+	else if (IS_GEN9_BC(dev_priv))
 		skylake_get_ddi_pll(dev_priv, port, pipe_config);
 	else if (IS_GEN9_LP(dev_priv))
 		bxt_get_ddi_pll(dev_priv, port, pipe_config);
@@ -11185,6 +11213,9 @@ static int intel_crtc_atomic_check(struct drm_crtc *crtc,
 			ret = skl_update_scaler_crtc(pipe_config);
 
 		if (!ret)
+			ret = skl_check_pipe_max_pixel_rate(intel_crtc,
+							    pipe_config);
+		if (!ret)
 			ret = intel_atomic_setup_scalers(dev_priv, intel_crtc,
 							 pipe_config);
 	}
@@ -13117,8 +13148,16 @@ static void intel_atomic_commit_tail(struct drm_atomic_state *state)
 
 	drm_atomic_helper_commit_hw_done(state);
 
-	if (intel_state->modeset)
+	if (intel_state->modeset) {
+		/* As one of the primary mmio accessors, KMS has a high
+		 * likelihood of triggering bugs in unclaimed access. After we
+		 * finish modesetting, see if an error has been flagged, and if
+		 * so enable debugging for the next modeset - and hope we catch
+		 * the culprit.
+		 */
+		intel_uncore_arm_unclaimed_mmio_detection(dev_priv);
 		intel_display_power_put(dev_priv, POWER_DOMAIN_MODESET);
+	}
 
 	mutex_lock(&dev->struct_mutex);
 	drm_atomic_helper_cleanup_planes(dev, state);
@@ -13127,19 +13166,6 @@ static void intel_atomic_commit_tail(struct drm_atomic_state *state)
 	drm_atomic_helper_commit_cleanup_done(state);
 
 	drm_atomic_state_put(state);
-
-	/* As one of the primary mmio accessors, KMS has a high likelihood
-	 * of triggering bugs in unclaimed access. After we finish
-	 * modesetting, see if an error has been flagged, and if so
-	 * enable debugging for the next modeset - and hope we catch
-	 * the culprit.
-	 *
-	 * XXX note that we assume display power is on at this point.
-	 * This might hold true now but we need to add pm helper to check
-	 * unclaimed only when the hardware is on, as atomic commits
-	 * can happen also when the device is completely off.
-	 */
-	intel_uncore_arm_unclaimed_mmio_detection(dev_priv);
 
 	intel_atomic_helper_free_state(dev_priv);
 }
@@ -13270,43 +13296,6 @@ static int intel_atomic_commit(struct drm_device *dev,
 	}
 
 	return 0;
-}
-
-void intel_crtc_restore_mode(struct drm_crtc *crtc)
-{
-	struct drm_device *dev = crtc->dev;
-	struct drm_atomic_state *state;
-	struct drm_crtc_state *crtc_state;
-	int ret;
-
-	state = drm_atomic_state_alloc(dev);
-	if (!state) {
-		DRM_DEBUG_KMS("[CRTC:%d:%s] crtc restore failed, out of memory",
-			      crtc->base.id, crtc->name);
-		return;
-	}
-
-	state->acquire_ctx = crtc->dev->mode_config.acquire_ctx;
-
-retry:
-	crtc_state = drm_atomic_get_crtc_state(state, crtc);
-	ret = PTR_ERR_OR_ZERO(crtc_state);
-	if (!ret) {
-		if (!crtc_state->active)
-			goto out;
-
-		crtc_state->mode_changed = true;
-		ret = drm_atomic_commit(state);
-	}
-
-	if (ret == -EDEADLK) {
-		drm_atomic_state_clear(state);
-		drm_modeset_backoff(state->acquire_ctx);
-		goto retry;
-	}
-
-out:
-	drm_atomic_state_put(state);
 }
 
 static const struct drm_crtc_funcs intel_crtc_funcs = {
