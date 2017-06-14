@@ -44,9 +44,11 @@ obj-$(CONFIG_VIDEO_STI_HDMI_CEC) 	+= sti/cec/
 
 obj-$(CONFIG_VIDEO_STI_DELTA)		+= sti/delta/
 
-obj-$(CONFIG_BLACKFIN)                  += blackfin/
+obj-y 					+= stm32/
 
-obj-$(CONFIG_ARCH_DAVINCI)		+= davinci/
+obj-y                                   += blackfin/
+
+obj-y					+= davinci/
 
 obj-$(CONFIG_VIDEO_SH_VOU)		+= sh_vou.o
 
@@ -67,6 +69,8 @@ obj-$(CONFIG_VIDEO_RCAR_VIN)		+= rcar-vin/
 
 obj-$(CONFIG_VIDEO_ATMEL_ISC)		+= atmel/
 obj-$(CONFIG_VIDEO_ATMEL_ISI)		+= atmel/
+
+obj-$(CONFIG_VIDEO_STM32_DCMI)		+= stm32/
 
 ccflags-y += -I$(srctree)/drivers/media/i2c
 
