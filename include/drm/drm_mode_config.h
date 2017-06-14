@@ -449,6 +449,16 @@ struct drm_mode_config {
 	 */
 	struct drm_property *plane_type_property;
 	/**
+	 * @content_protection_property: Current request state of content
+	 * protection from userspace.
+	 */
+	struct drm_property *content_protection_property;
+	/**
+	 * @content_protection_ksv_property: 40-bit Receiver/Repeater KSV
+	 * or similarly unique sink identifier, if not using HDCP.
+	 */
+	struct drm_property *content_protection_ksv_property;
+	/**
 	 * @prop_src_x: Default atomic plane property for the plane source
 	 * position in the connected &drm_framebuffer.
 	 */
