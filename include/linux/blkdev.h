@@ -55,7 +55,7 @@ struct blk_stat_callback;
  */
 #define BLKCG_MAX_POLS		3
 
-typedef void (rq_end_io_fn)(struct request *, int);
+typedef void (rq_end_io_fn)(struct request *, blk_status_t);
 
 #define BLK_RL_SYNCFULL		(1U << 0)
 #define BLK_RL_ASYNCFULL	(1U << 1)
@@ -618,6 +618,7 @@ struct request_queue {
 #define QUEUE_FLAG_STATS       27	/* track rq completion times */
 #define QUEUE_FLAG_POLL_STATS  28	/* collecting stats for hybrid polling */
 #define QUEUE_FLAG_REGISTERED  29	/* queue has been registered to a disk */
+#define QUEUE_FLAG_SCSI_PASSTHROUGH 30	/* queue supports SCSI commands */
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -708,6 +709,8 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_queue_secure_erase(q) \
 	(test_bit(QUEUE_FLAG_SECERASE, &(q)->queue_flags))
 #define blk_queue_dax(q)	test_bit(QUEUE_FLAG_DAX, &(q)->queue_flags)
+#define blk_queue_scsi_passthrough(q)	\
+	test_bit(QUEUE_FLAG_SCSI_PASSTHROUGH, &(q)->queue_flags)
 
 #define blk_noretry_request(rq) \
 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
@@ -937,7 +940,7 @@ extern int blk_rq_prep_clone(struct request *rq, struct request *rq_src,
 			     int (*bio_ctr)(struct bio *, struct bio *, void *),
 			     void *data);
 extern void blk_rq_unprep_clone(struct request *rq);
-extern int blk_insert_cloned_request(struct request_queue *q,
+extern blk_status_t blk_insert_cloned_request(struct request_queue *q,
 				     struct request *rq);
 extern int blk_rq_append_bio(struct request *rq, struct bio *bio);
 extern void blk_delay_queue(struct request_queue *, unsigned long);
@@ -976,6 +979,9 @@ extern void blk_execute_rq(struct request_queue *, struct gendisk *,
 			  struct request *, int);
 extern void blk_execute_rq_nowait(struct request_queue *, struct gendisk *,
 				  struct request *, int, rq_end_io_fn *);
+
+int blk_status_to_errno(blk_status_t status);
+blk_status_t errno_to_blk_status(int errno);
 
 bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie);
 
@@ -1109,16 +1115,16 @@ extern struct request *blk_fetch_request(struct request_queue *q);
  * blk_end_request() for parts of the original function.
  * This prevents code duplication in drivers.
  */
-extern bool blk_update_request(struct request *rq, int error,
+extern bool blk_update_request(struct request *rq, blk_status_t error,
 			       unsigned int nr_bytes);
-extern void blk_finish_request(struct request *rq, int error);
-extern bool blk_end_request(struct request *rq, int error,
+extern void blk_finish_request(struct request *rq, blk_status_t error);
+extern bool blk_end_request(struct request *rq, blk_status_t error,
 			    unsigned int nr_bytes);
-extern void blk_end_request_all(struct request *rq, int error);
-extern bool __blk_end_request(struct request *rq, int error,
+extern void blk_end_request_all(struct request *rq, blk_status_t error);
+extern bool __blk_end_request(struct request *rq, blk_status_t error,
 			      unsigned int nr_bytes);
-extern void __blk_end_request_all(struct request *rq, int error);
-extern bool __blk_end_request_cur(struct request *rq, int error);
+extern void __blk_end_request_all(struct request *rq, blk_status_t error);
+extern bool __blk_end_request_cur(struct request *rq, blk_status_t error);
 
 extern void blk_complete_request(struct request *);
 extern void __blk_complete_request(struct request *);
@@ -1776,7 +1782,7 @@ struct blk_integrity_iter {
 	const char		*disk_name;
 };
 
-typedef int (integrity_processing_fn) (struct blk_integrity_iter *);
+typedef blk_status_t (integrity_processing_fn) (struct blk_integrity_iter *);
 
 struct blk_integrity_profile {
 	integrity_processing_fn		*generate_fn;

@@ -32,7 +32,7 @@ struct scm_request {
 	struct aob *aob;
 	struct list_head list;
 	u8 retries;
-	int error;
+	blk_status_t error;
 };
 
 #define to_aobrq(rq) container_of((void *) rq, struct aob_rq_header, data)
@@ -40,7 +40,7 @@ struct scm_request {
 int scm_blk_dev_setup(struct scm_blk_dev *, struct scm_device *);
 void scm_blk_dev_cleanup(struct scm_blk_dev *);
 void scm_blk_set_available(struct scm_blk_dev *);
-void scm_blk_irq(struct scm_device *, void *, int);
+void scm_blk_irq(struct scm_device *, void *, blk_status_t);
 
 struct aidaw *scm_aidaw_fetch(struct scm_request *scmrq, unsigned int bytes);
 
