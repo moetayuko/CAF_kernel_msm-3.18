@@ -47,7 +47,7 @@ static int asoc_simple_card_startup(struct snd_pcm_substream *substream)
 	struct asoc_simple_dai *dai_props =
 		simple_priv_to_props(priv, rtd->num);
 
-	return clk_prepare_enable(dai_props->clk);
+	return asoc_simple_card_clk_enable(dai_props);
 }
 
 static void asoc_simple_card_shutdown(struct snd_pcm_substream *substream)
@@ -57,7 +57,7 @@ static void asoc_simple_card_shutdown(struct snd_pcm_substream *substream)
 	struct asoc_simple_dai *dai_props =
 		simple_priv_to_props(priv, rtd->num);
 
-	clk_disable_unprepare(dai_props->clk);
+	asoc_simple_card_clk_disable(dai_props);
 }
 
 static const struct snd_soc_ops asoc_simple_card_ops = {
@@ -171,11 +171,7 @@ static int asoc_simple_card_dai_link_of(struct device_node *np,
 					      PREFIX "prefix");
 	}
 
-	ret = snd_soc_of_parse_tdm_slot(np,
-					&dai_props->tx_slot_mask,
-					&dai_props->rx_slot_mask,
-					&dai_props->slots,
-					&dai_props->slot_width);
+	ret = asoc_simple_card_of_parse_tdm(np, dai_props);
 	if (ret)
 		return ret;
 

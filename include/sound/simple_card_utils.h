@@ -45,6 +45,8 @@ int asoc_simple_card_parse_clk(struct device *dev,
 			       struct device_node *dai_of_node,
 			       struct asoc_simple_dai *simple_dai,
 			       const char *name);
+int asoc_simple_card_clk_enable(struct asoc_simple_dai *dai);
+void asoc_simple_card_clk_disable(struct asoc_simple_dai *dai);
 
 #define asoc_simple_card_parse_cpu(node, dai_link,				\
 				   list_name, cells_name, is_single_link)	\
@@ -72,6 +74,12 @@ int asoc_simple_card_parse_dai(struct device_node *node,
 int asoc_simple_card_parse_graph_dai(struct device_node *ep,
 				     struct device_node **endpoint_np,
 				     const char **dai_name);
+
+#define asoc_simple_card_of_parse_tdm(np, dai)			\
+	snd_soc_of_parse_tdm_slot(np,	&(dai)->tx_slot_mask,	\
+					&(dai)->rx_slot_mask,	\
+					&(dai)->slots,		\
+					&(dai)->slot_width);
 
 int asoc_simple_card_init_dai(struct snd_soc_dai *dai,
 			      struct asoc_simple_dai *simple_dai);
