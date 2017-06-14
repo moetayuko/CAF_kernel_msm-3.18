@@ -139,9 +139,7 @@ static const struct reg_default ak4613_reg[] = {
 #define AUDIO_IFACE(b, fmt) { b, SND_SOC_DAIFMT_##fmt }
 static const struct ak4613_interface ak4613_iface[] = {
 	/* capture */				/* playback */
-	[0] = {	AUDIO_IFACE(24, LEFT_J),	AUDIO_IFACE(16, RIGHT_J) },
-	[1] = {	AUDIO_IFACE(24, LEFT_J),	AUDIO_IFACE(20, RIGHT_J) },
-	[2] = {	AUDIO_IFACE(24, LEFT_J),	AUDIO_IFACE(24, RIGHT_J) },
+	/* [0] - [2] are not supported */
 	[3] = {	AUDIO_IFACE(24, LEFT_J),	AUDIO_IFACE(24, LEFT_J) },
 	[4] = {	AUDIO_IFACE(24, I2S),		AUDIO_IFACE(24, I2S) },
 };
@@ -254,6 +252,17 @@ static void ak4613_dai_shutdown(struct snd_pcm_substream *substream,
 	mutex_unlock(&priv->lock);
 }
 
+static int ak4613_dai_startup(struct snd_pcm_substream *substream,
+			      struct snd_soc_dai *dai)
+{
+	struct snd_soc_codec *codec = dai->codec;
+	struct ak4613_priv *priv = snd_soc_codec_get_drvdata(codec);
+
+	priv->cnt++;
+
+	return 0;
+}
+
 static int ak4613_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
 	struct snd_soc_codec *codec = dai->codec;
@@ -262,11 +271,9 @@ static int ak4613_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 	fmt &= SND_SOC_DAIFMT_FORMAT_MASK;
 
 	switch (fmt) {
-	case SND_SOC_DAIFMT_RIGHT_J:
 	case SND_SOC_DAIFMT_LEFT_J:
 	case SND_SOC_DAIFMT_I2S:
 		priv->fmt = fmt;
-
 		break;
 	default:
 		return -EINVAL;
@@ -286,13 +293,8 @@ static bool ak4613_dai_fmt_matching(const struct ak4613_interface *iface,
 	if (fmts->fmt != fmt)
 		return false;
 
-	if (fmt == SND_SOC_DAIFMT_RIGHT_J) {
-		if (fmts->width != width)
-			return false;
-	} else {
-		if (fmts->width < width)
-			return false;
-	}
+	if (fmts->width != width)
+		return false;
 
 	return true;
 }
@@ -319,6 +321,7 @@ static int ak4613_dai_hw_params(struct snd_pcm_substream *substream,
 	case 48000:
 		ctrl2 = DFS_NORMAL_SPEED;
 		break;
+	case 64000:
 	case 88200:
 	case 96000:
 		ctrl2 = DFS_DOUBLE_SPEED;
@@ -358,7 +361,6 @@ static int ak4613_dai_hw_params(struct snd_pcm_substream *substream,
 	if ((priv->iface == NULL) ||
 	    (priv->iface == iface)) {
 		priv->iface = iface;
-		priv->cnt++;
 		ret = 0;
 	}
 	mutex_unlock(&priv->lock);
@@ -407,6 +409,7 @@ static int ak4613_set_bias_level(struct snd_soc_codec *codec,
 }
 
 static const struct snd_soc_dai_ops ak4613_dai_ops = {
+	.startup	= ak4613_dai_startup,
 	.shutdown	= ak4613_dai_shutdown,
 	.set_fmt	= ak4613_dai_set_fmt,
 	.hw_params	= ak4613_dai_hw_params,
@@ -420,8 +423,7 @@ static const struct snd_soc_dai_ops ak4613_dai_ops = {
 				 SNDRV_PCM_RATE_96000  |\
 				 SNDRV_PCM_RATE_176400 |\
 				 SNDRV_PCM_RATE_192000)
-#define AK4613_PCM_FMTBIT	(SNDRV_PCM_FMTBIT_S16_LE |\
-				 SNDRV_PCM_FMTBIT_S24_LE)
+#define AK4613_PCM_FMTBIT	(SNDRV_PCM_FMTBIT_S24_LE)
 
 static struct snd_soc_dai_driver ak4613_dai = {
 	.name = "ak4613-hifi",
