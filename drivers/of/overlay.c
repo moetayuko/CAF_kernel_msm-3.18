@@ -101,9 +101,7 @@ static int of_overlay_apply_single_property(struct of_overlay *ov,
 	tprop = of_find_property(target, prop->name, NULL);
 
 	/* special properties are not meant to be updated (silent NOP) */
-	if (of_prop_cmp(prop->name, "name") == 0 ||
-	    of_prop_cmp(prop->name, "phandle") == 0 ||
-	    of_prop_cmp(prop->name, "linux,phandle") == 0)
+	if (!of_prop_cmp(prop->name, "name"))
 		return 0;
 
 	propn = __of_prop_dup(prop, GFP_KERNEL);
@@ -132,6 +130,10 @@ static int of_overlay_apply_single_device_node(struct of_overlay *ov,
 	/* NOTE: Multiple mods of created nodes not supported */
 	tchild = of_get_child_by_name(target, cname);
 	if (tchild != NULL) {
+		/* new overlay phandle value conflicts with existing value */
+		if (child->phandle)
+			return -EINVAL;
+
 		/* apply overlay recursively */
 		ret = of_overlay_apply_one(ov, tchild, child);
 		of_node_put(tchild);
