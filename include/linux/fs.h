@@ -2523,6 +2523,7 @@ extern int filemap_fdatawrite_range(struct address_space *mapping,
 extern int filemap_check_errors(struct address_space *mapping);
 
 extern int __must_check filemap_report_wb_err(struct file *file);
+extern void __filemap_set_wb_err(struct address_space *mapping, int err);
 
 /**
  * filemap_set_wb_err - set a writeback error on an address_space
@@ -2542,7 +2543,9 @@ extern int __must_check filemap_report_wb_err(struct file *file);
  */
 static inline void filemap_set_wb_err(struct address_space *mapping, int err)
 {
-	errseq_set(&mapping->wb_err, err);
+	/* Fastpath for common case of no error */
+	if (unlikely(err))
+		__filemap_set_wb_err(mapping, err);
 }
 
 /**

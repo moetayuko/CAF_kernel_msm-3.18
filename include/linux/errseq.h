@@ -5,7 +5,7 @@
 
 typedef u32	errseq_t;
 
-void __errseq_set(errseq_t *eseq, int err);
+errseq_t __errseq_set(errseq_t *eseq, int err);
 static inline void errseq_set(errseq_t *eseq, int err)
 {
 	/* Optimize for the common case of no error */
