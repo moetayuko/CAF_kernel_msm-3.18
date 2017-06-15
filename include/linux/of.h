@@ -61,6 +61,7 @@ struct device_node {
 	struct	kobject kobj;
 	unsigned long _flags;
 	void	*data;
+	struct bin_attribute attr_phandle;
 #if defined(CONFIG_SPARC)
 	const char *path_component_name;
 	unsigned int unique_id;
@@ -623,6 +624,12 @@ static inline struct device_node *of_get_child_by_name(
 
 static inline int of_device_is_compatible(const struct device_node *device,
 					  const char *name)
+{
+	return 0;
+}
+
+static inline  int of_device_compatible_match(struct device_node *device,
+					      const char *const *compat)
 {
 	return 0;
 }
