@@ -870,6 +870,7 @@ struct file {
 	struct list_head	f_tfile_llink;
 #endif /* #ifdef CONFIG_EPOLL */
 	struct address_space	*f_mapping;
+	errseq_t		f_md_wb_err; /* metadata wb error tracking */
 } __attribute__((aligned(4)));	/* lest something weird decides that 2 is OK */
 
 struct file_handle {
@@ -2523,6 +2524,8 @@ extern int filemap_fdatawrite_range(struct address_space *mapping,
 extern int filemap_check_errors(struct address_space *mapping);
 
 extern int __must_check filemap_report_wb_err(struct file *file);
+extern int __must_check filemap_report_md_wb_err(struct file *file,
+					struct address_space *mapping);
 extern void __filemap_set_wb_err(struct address_space *mapping, int err);
 
 /**

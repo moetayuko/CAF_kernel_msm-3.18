@@ -582,25 +582,47 @@ EXPORT_SYMBOL(__filemap_set_wb_err);
  * value is protected by the f_lock since we must ensure that it reflects
  * the latest value swapped in for this file descriptor.
  */
-int filemap_report_wb_err(struct file *file)
+static int __filemap_report_wb_err(errseq_t *cursor, spinlock_t *lock,
+				struct address_space *mapping)
 {
 	int err = 0;
-	errseq_t old = READ_ONCE(file->f_wb_err);
-	struct address_space *mapping = file->f_mapping;
+	errseq_t old = READ_ONCE(*cursor);
 
 	/* Locklessly handle the common case where nothing has changed */
 	if (errseq_check(&mapping->wb_err, old)) {
 		/* Something changed, must use slow path */
-		spin_lock(&file->f_lock);
-		old = file->f_wb_err;
-		err = errseq_check_and_advance(&mapping->wb_err,
-						&file->f_wb_err);
-		trace_filemap_report_wb_err(file, old);
-		spin_unlock(&file->f_lock);
+		spin_lock(lock);
+		old = *cursor;
+		err = errseq_check_and_advance(&mapping->wb_err, cursor);
+		trace_filemap_report_wb_err(mapping, old, *cursor);
+		spin_unlock(lock);
 	}
 	return err;
 }
+EXPORT_SYMBOL(__filemap_report_wb_err);
+
+int filemap_report_wb_err(struct file *file)
+{
+	return __filemap_report_wb_err(&file->f_wb_err, &file->f_lock,
+					file->f_mapping);
+}
 EXPORT_SYMBOL(filemap_report_wb_err);
+
+/**
+ * filemap_report_md_wb_err - report wb error (if any) that was previously set
+ * @file: struct file on which the error is being reported
+ * @mapping: pointer to metadata mapping to check
+ *
+ * Many filesystems keep inode metadata in the pagecache, and will use the
+ * cache to write it back to the backing store. This function is for these
+ * callers to track metadata writeback.
+ */
+int filemap_report_md_wb_err(struct file *file, struct address_space *mapping)
+{
+	return __filemap_report_wb_err(&file->f_md_wb_err, &file->f_lock,
+					mapping);
+}
+EXPORT_SYMBOL(filemap_report_md_wb_err);
 
 /**
  * replace_page_cache_page - replace a pagecache page with a new one
