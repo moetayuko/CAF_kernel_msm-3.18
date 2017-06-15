@@ -793,8 +793,10 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 		if (!cpu_has_mips_r6)
 			goto sigill_r6;
 		/* Compact branch: BNEZC || JIALC */
-		if (insn.i_format.rs)
+		if (!insn.i_format.rs) {
+			/* JIALC: set $31/ra */
 			regs->regs[31] = epc + 4;
+		}
 		regs->cp0_epc += 8;
 		break;
 #endif
