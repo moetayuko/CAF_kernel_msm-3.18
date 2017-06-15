@@ -5224,6 +5224,7 @@ xlog_do_recovery_pass(
 	int			error2 = 0;
 	int			bblks, split_bblks;
 	int			hblks, split_hblks, wrapped_hblks;
+	int			i;
 	struct hlist_head	rhash[XLOG_RHASH_SIZE];
 	LIST_HEAD		(buffer_list);
 
@@ -5465,6 +5466,19 @@ xlog_do_recovery_pass(
 
 	if (error && first_bad)
 		*first_bad = rhead_blk;
+
+	/*
+	 * Transactions are freed at commit time but transactions without commit
+	 * records on disk are never committed. Free any that may be left in the
+	 * hash table.
+	 */
+	for (i = 0; i < XLOG_RHASH_SIZE; i++) {
+		struct hlist_node	*tmp;
+		struct xlog_recover	*trans;
+
+		hlist_for_each_entry_safe(trans, tmp, &rhash[i], r_list)
+			xlog_recover_free_trans(trans);
+	}
 
 	return error ? error : error2;
 }
