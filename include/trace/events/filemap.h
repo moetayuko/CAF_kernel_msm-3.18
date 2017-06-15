@@ -79,12 +79,12 @@ TRACE_EVENT(filemap_set_wb_err,
 );
 
 TRACE_EVENT(filemap_report_wb_err,
-		TP_PROTO(struct file *file, errseq_t old),
+		TP_PROTO(struct address_space *mapping, errseq_t old,
+				errseq_t new),
 
-		TP_ARGS(file, old),
+		TP_ARGS(mapping, old, new),
 
 		TP_STRUCT__entry(
-			__field(struct file *, file);
 			__field(unsigned long, i_ino)
 			__field(dev_t, s_dev)
 			__field(errseq_t, old)
@@ -92,22 +92,18 @@ TRACE_EVENT(filemap_report_wb_err,
 		),
 
 		TP_fast_assign(
-			__entry->file = file;
-			__entry->i_ino = file->f_mapping->host->i_ino;
-			if (file->f_mapping->host->i_sb)
-				__entry->s_dev =
-					file->f_mapping->host->i_sb->s_dev;
+			__entry->i_ino = mapping->host->i_ino;
+			if (mapping->host->i_sb)
+				__entry->s_dev = mapping->host->i_sb->s_dev;
 			else
-				__entry->s_dev =
-					file->f_mapping->host->i_rdev;
+				__entry->s_dev = mapping->host->i_rdev;
 			__entry->old = old;
-			__entry->new = file->f_wb_err;
+			__entry->new = new;
 		),
 
-		TP_printk("file=%p dev=%d:%d ino=0x%lx old=0x%x new=0x%x",
-			__entry->file, MAJOR(__entry->s_dev),
-			MINOR(__entry->s_dev), __entry->i_ino, __entry->old,
-			__entry->new)
+		TP_printk("dev=%d:%d ino=0x%lx old=0x%x new=0x%x",
+			MAJOR(__entry->s_dev), MINOR(__entry->s_dev),
+			__entry->i_ino, __entry->old, __entry->new)
 );
 #endif /* _TRACE_FILEMAP_H */
 
