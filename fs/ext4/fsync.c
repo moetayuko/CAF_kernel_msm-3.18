@@ -161,10 +161,23 @@ issue_flush:
 			ret = err;
 	}
 out:
+	/*
+	 * Was there a metadata writeback error since last fsync?
+	 *
+	 * FIXME: ext4 tracks metadata with a whole-block device mapping. If
+	 * there is any sort of metadata writeback error, we'll report an
+	 * error on all open fds, even ones not associated with this inode.
+	 */
+	err = filemap_report_md_wb_err(file,
+				inode->i_sb->s_bdev->bd_inode->i_mapping);
+	if (!ret)
+		ret = err;
+
 	/* Was there a writeback error of the data since last fsync? */
 	err = filemap_report_wb_err(file);
 	if (!ret)
 		ret = err;
+
 	trace_ext4_sync_file_exit(inode, ret);
 	return ret;
 }
