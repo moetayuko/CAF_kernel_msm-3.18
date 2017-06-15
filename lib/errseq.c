@@ -52,10 +52,14 @@
  *
  * Most callers will want to use the errseq_set inline wrapper to efficiently
  * handle the common case where err is 0.
+ *
+ * We do return an errseq_t here, primarily for debugging purposes. The return
+ * value should not be used as a previously sampled value in later calls as it
+ * will not have the SEEN flag set.
  */
-void __errseq_set(errseq_t *eseq, int err)
+errseq_t __errseq_set(errseq_t *eseq, int err)
 {
-	errseq_t old;
+	errseq_t cur, old;
 
 	/* MAX_ERRNO must be able to serve as a mask */
 	BUILD_BUG_ON_NOT_POWER_OF_2(MAX_ERRNO + 1);
@@ -66,13 +70,14 @@ void __errseq_set(errseq_t *eseq, int err)
 	 * also don't accept zero here as that would effectively clear a
 	 * previous error.
 	 */
+	old = READ_ONCE(*eseq);
+
 	if (WARN(unlikely(err == 0 || (unsigned int)-err > MAX_ERRNO),
 				"err = %d\n", err))
-		return;
+		return old;
 
-	old = READ_ONCE(*eseq);
 	for (;;) {
-		errseq_t new, cur;
+		errseq_t new;
 
 		/* Clear out error bits and set new error */
 		new = (old & ~(MAX_ERRNO|ERRSEQ_SEEN)) | -err;
@@ -82,8 +87,10 @@ void __errseq_set(errseq_t *eseq, int err)
 			new += ERRSEQ_CTR_INC;
 
 		/* If there would be no change, then call it done */
-		if (new == old)
+		if (new == old) {
+			cur = new;
 			break;
+		}
 
 		/* Try to swap the new value into place */
 		cur = cmpxchg(eseq, old, new);
@@ -98,6 +105,7 @@ void __errseq_set(errseq_t *eseq, int err)
 		/* Raced with an update, try again */
 		old = cur;
 	}
+	return cur;
 }
 EXPORT_SYMBOL(__errseq_set);
 

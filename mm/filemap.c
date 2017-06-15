@@ -553,6 +553,14 @@ int filemap_write_and_wait_range(struct address_space *mapping,
 }
 EXPORT_SYMBOL(filemap_write_and_wait_range);
 
+void __filemap_set_wb_err(struct address_space *mapping, int err)
+{
+	errseq_t eseq = __errseq_set(&mapping->wb_err, err);
+
+	trace_filemap_set_wb_err(mapping, eseq);
+}
+EXPORT_SYMBOL(__filemap_set_wb_err);
+
 /**
  * filemap_report_wb_err - report wb error (if any) that was previously set
  * @file: struct file on which the error is being reported
@@ -577,14 +585,17 @@ EXPORT_SYMBOL(filemap_write_and_wait_range);
 int filemap_report_wb_err(struct file *file)
 {
 	int err = 0;
+	errseq_t old = READ_ONCE(file->f_wb_err);
 	struct address_space *mapping = file->f_mapping;
 
 	/* Locklessly handle the common case where nothing has changed */
-	if (errseq_check(&mapping->wb_err, READ_ONCE(file->f_wb_err))) {
+	if (errseq_check(&mapping->wb_err, old)) {
 		/* Something changed, must use slow path */
 		spin_lock(&file->f_lock);
+		old = file->f_wb_err;
 		err = errseq_check_and_advance(&mapping->wb_err,
 						&file->f_wb_err);
+		trace_filemap_report_wb_err(file, old);
 		spin_unlock(&file->f_lock);
 	}
 	return err;
