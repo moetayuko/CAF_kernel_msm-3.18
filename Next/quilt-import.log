@@ -1,0 +1,19 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 4.12-rc4
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 3c2993b8c6143d8a5793746a54eba8f86f95240f
+HEAD is now at 3c2993b8c614 Linux 4.12-rc4
+$ git am --patch-format=mbox ../quilt/dmi/dmi-look-for-SM3-first.patch
+Applying: firmware: dmi_scan: Look for SMBIOS 3 entry point first
+$ git am --patch-format=mbox ../quilt/dmi/dmi-make-dmi_walk-and-dmi_walk_early-return-real-error.patch
+Applying: firmware: dmi_scan: Make dmi_walk and dmi_walk_early return real error codes
+$ git am --patch-format=mbox ../quilt/dmi/dmi-fix-product_family-permissions.patch
+Applying: firmware: dmi: Fix permissions of product_family
+$ git am --patch-format=mbox ../quilt/dmi/dmi-check-length-before-saving.patch
+Applying: firmware: dmi_scan: Check DMI structure length
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+ + bf0324625630...8efa050f19fe master     -> dmi/master  (forced update)
