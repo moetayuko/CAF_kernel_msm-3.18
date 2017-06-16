@@ -116,8 +116,9 @@ static enum vmpressure_levels vmpressure_calc_level(unsigned long scanned,
 
 	/*
 	 * reclaimed can be greater than scanned in cases
-	 * like THP, where the scanned is 1 and reclaimed
-	 * could be 512
+	 * like reclaimed slab pages, shrink_node just add
+	 * reclaimed page without a related increment to
+	 * scanned pages.
 	 */
 	if (reclaimed >= scanned)
 		goto out;
