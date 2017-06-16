@@ -151,6 +151,7 @@ struct tpm_chip *tpm_chip_alloc(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&chip->tpm_mutex);
+	mutex_init(&chip->resume_mutex);
 	init_rwsem(&chip->ops_sem);
 
 	chip->ops = ops;
@@ -281,8 +282,6 @@ static int tpm1_chip_register(struct tpm_chip *chip)
 	if (chip->flags & TPM_CHIP_FLAG_TPM2)
 		return 0;
 
-	tpm_sysfs_add_device(chip);
-
 	chip->bios_dir = tpm_bios_log_setup(dev_name(&chip->dev));
 
 	return 0;
@@ -301,7 +300,7 @@ static void tpm_del_legacy_sysfs(struct tpm_chip *chip)
 {
 	struct attribute **i;
 
-	if (chip->flags & (TPM_CHIP_FLAG_TPM2 | TPM_CHIP_FLAG_VIRTUAL))
+	if (chip->flags & TPM_CHIP_FLAG_VIRTUAL)
 		return;
 
 	sysfs_remove_link(&chip->dev.parent->kobj, "ppi");
@@ -319,7 +318,7 @@ static int tpm_add_legacy_sysfs(struct tpm_chip *chip)
 	struct attribute **i;
 	int rc;
 
-	if (chip->flags & (TPM_CHIP_FLAG_TPM2 | TPM_CHIP_FLAG_VIRTUAL))
+	if (chip->flags & TPM_CHIP_FLAG_VIRTUAL)
 		return 0;
 
 	rc = __compat_only_sysfs_link_entry_to_kobj(
@@ -339,6 +338,7 @@ static int tpm_add_legacy_sysfs(struct tpm_chip *chip)
 
 	return 0;
 }
+
 /*
  * tpm_chip_register() - create a character device for the TPM chip
  * @chip: TPM chip to use.
@@ -362,6 +362,8 @@ int tpm_chip_register(struct tpm_chip *chip)
 		if (rc)
 			return rc;
 	}
+
+	tpm_sysfs_add_device(chip);
 
 	rc = tpm1_chip_register(chip);
 	if (rc)
