@@ -115,10 +115,9 @@ static enum vmpressure_levels vmpressure_calc_level(unsigned long scanned,
 	unsigned long pressure = 0;
 
 	/*
-	 * reclaimed can be greater than scanned in cases
-	 * like reclaimed slab pages, shrink_node just add
-	 * reclaimed page without a related increment to
-	 * scanned pages.
+	 * reclaimed can be greater than scanned for things such as reclaimed
+	 * slab pages. shrink_node() just adds reclaimed pages without a
+	 * related increment to scanned pages.
 	 */
 	if (reclaimed >= scanned)
 		goto out;
