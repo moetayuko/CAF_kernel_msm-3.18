@@ -968,6 +968,7 @@ __lpfc_sli_get_els_sglq(struct lpfc_hba *phba, struct lpfc_iocbq *piocbq)
 			list_remove_head(lpfc_els_sgl_list, sglq,
 						struct lpfc_sglq, list);
 			if (sglq == start_sglq) {
+				list_add_tail(&sglq->list, lpfc_els_sgl_list);
 				sglq = NULL;
 				break;
 			} else
@@ -7512,7 +7513,8 @@ lpfc_sli_issue_mbox_s3(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmbox,
 				"(%d):0308 Mbox cmd issue - BUSY Data: "
 				"x%x x%x x%x x%x\n",
 				pmbox->vport ? pmbox->vport->vpi : 0xffffff,
-				mbx->mbxCommand, phba->pport->port_state,
+				mbx->mbxCommand,
+				phba->pport ? phba->pport->port_state : 0xff,
 				psli->sli_flag, flag);
 
 		psli->slistat.mbox_busy++;
@@ -7564,7 +7566,8 @@ lpfc_sli_issue_mbox_s3(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmbox,
 			"(%d):0309 Mailbox cmd x%x issue Data: x%x x%x "
 			"x%x\n",
 			pmbox->vport ? pmbox->vport->vpi : 0,
-			mbx->mbxCommand, phba->pport->port_state,
+			mbx->mbxCommand,
+			phba->pport ? phba->pport->port_state : 0xff,
 			psli->sli_flag, flag);
 
 	if (mbx->mbxCommand != MBX_HEARTBEAT) {
@@ -10950,6 +10953,7 @@ lpfc_sli_abort_iocb(struct lpfc_vport *vport, struct lpfc_sli_ring *pring,
 	struct lpfc_hba *phba = vport->phba;
 	struct lpfc_iocbq *iocbq;
 	struct lpfc_iocbq *abtsiocb;
+	struct lpfc_sli_ring *pring_s4;
 	IOCB_t *cmd = NULL;
 	int errcnt = 0, ret_val = 0;
 	int i;
@@ -11003,8 +11007,15 @@ lpfc_sli_abort_iocb(struct lpfc_vport *vport, struct lpfc_sli_ring *pring,
 
 		/* Setup callback routine and issue the command. */
 		abtsiocb->iocb_cmpl = lpfc_sli_abort_fcp_cmpl;
-		ret_val = lpfc_sli_issue_iocb(phba, pring->ringno,
-					      abtsiocb, 0);
+		if (phba->sli_rev == LPFC_SLI_REV4) {
+			pring_s4 = lpfc_sli4_calc_ring(phba, iocbq);
+			if (!pring_s4)
+				continue;
+			ret_val = lpfc_sli_issue_iocb(phba, pring_s4->ringno,
+						      abtsiocb, 0);
+		} else
+			ret_val = lpfc_sli_issue_iocb(phba, pring->ringno,
+						      abtsiocb, 0);
 		if (ret_val == IOCB_ERROR) {
 			lpfc_sli_release_iocbq(phba, abtsiocb);
 			errcnt++;
@@ -13256,6 +13267,7 @@ lpfc_sli4_nvmet_handle_rcqe(struct lpfc_hba *phba, struct lpfc_queue *cq,
 	case FC_STATUS_RQ_BUF_LEN_EXCEEDED:
 		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
 				"6126 Receive Frame Truncated!!\n");
+		/* Drop thru */
 	case FC_STATUS_RQ_SUCCESS:
 		lpfc_sli4_rq_release(hrq, drq);
 		spin_lock_irqsave(&phba->hbalock, iflags);
@@ -13466,6 +13478,7 @@ process_cq:
 	/* Track the max number of CQEs processed in 1 EQ */
 	if (ecount > cq->CQ_max_cqe)
 		cq->CQ_max_cqe = ecount;
+	cq->assoc_qp->EQ_cqe_cnt += ecount;
 
 	/* Catch the no cq entry condition */
 	if (unlikely(ecount == 0))
@@ -13557,6 +13570,7 @@ lpfc_sli4_fof_handle_eqe(struct lpfc_hba *phba, struct lpfc_eqe *eqe)
 	/* Track the max number of CQEs processed in 1 EQ */
 	if (ecount > cq->CQ_max_cqe)
 		cq->CQ_max_cqe = ecount;
+	cq->assoc_qp->EQ_cqe_cnt += ecount;
 
 	/* Catch the no cq entry condition */
 	if (unlikely(ecount == 0))
@@ -13617,7 +13631,6 @@ lpfc_sli4_fof_intr_handler(int irq, void *dev_id)
 
 	/* Check device state for handling interrupt */
 	if (unlikely(lpfc_intr_state_check(phba))) {
-		eq->EQ_badstate++;
 		/* Check again for link_state with lock held */
 		spin_lock_irqsave(&phba->hbalock, iflag);
 		if (phba->link_state < LPFC_LINK_DOWN)
@@ -13729,7 +13742,6 @@ lpfc_sli4_hba_intr_handler(int irq, void *dev_id)
 
 	/* Check device state for handling interrupt */
 	if (unlikely(lpfc_intr_state_check(phba))) {
-		fpeq->EQ_badstate++;
 		/* Check again for link_state with lock held */
 		spin_lock_irqsave(&phba->hbalock, iflag);
 		if (phba->link_state < LPFC_LINK_DOWN)
@@ -13988,14 +14000,15 @@ lpfc_dual_chute_pci_bar_map(struct lpfc_hba *phba, uint16_t pci_barset)
  * fails this function will return -ENXIO.
  **/
 int
-lpfc_modify_hba_eq_delay(struct lpfc_hba *phba, uint32_t startq)
+lpfc_modify_hba_eq_delay(struct lpfc_hba *phba, uint32_t startq,
+			 uint32_t numq, uint32_t imax)
 {
 	struct lpfc_mbx_modify_eq_delay *eq_delay;
 	LPFC_MBOXQ_t *mbox;
 	struct lpfc_queue *eq;
 	int cnt, rc, length, status = 0;
 	uint32_t shdr_status, shdr_add_status;
-	uint32_t result;
+	uint32_t result, val;
 	int qidx;
 	union lpfc_sli4_cfg_shdr *shdr;
 	uint16_t dmult;
@@ -14014,22 +14027,45 @@ lpfc_modify_hba_eq_delay(struct lpfc_hba *phba, uint32_t startq)
 	eq_delay = &mbox->u.mqe.un.eq_delay;
 
 	/* Calculate delay multiper from maximum interrupt per second */
-	result = phba->cfg_fcp_imax / phba->io_channel_irqs;
+	result = imax / phba->io_channel_irqs;
 	if (result > LPFC_DMULT_CONST || result == 0)
 		dmult = 0;
 	else
 		dmult = LPFC_DMULT_CONST/result - 1;
+	if (dmult > LPFC_DMULT_MAX)
+		dmult = LPFC_DMULT_MAX;
 
 	cnt = 0;
 	for (qidx = startq; qidx < phba->io_channel_irqs; qidx++) {
 		eq = phba->sli4_hba.hba_eq[qidx];
 		if (!eq)
 			continue;
+		eq->q_mode = imax;
 		eq_delay->u.request.eq[cnt].eq_id = eq->queue_id;
 		eq_delay->u.request.eq[cnt].phase = 0;
 		eq_delay->u.request.eq[cnt].delay_multi = dmult;
 		cnt++;
-		if (cnt >= LPFC_MAX_EQ_DELAY_EQID_CNT)
+
+		/* q_mode is only used for auto_imax */
+		if (phba->sli.sli_flag & LPFC_SLI_USE_EQDR) {
+			/* Use EQ Delay Register method for q_mode */
+
+			/* Convert for EQ Delay register */
+			val =  phba->cfg_fcp_imax;
+			if (val) {
+				/* First, interrupts per sec per EQ */
+				val = phba->cfg_fcp_imax /
+					phba->io_channel_irqs;
+
+				/* us delay between each interrupt */
+				val = LPFC_SEC_TO_USEC / val;
+			}
+			eq->q_mode = val;
+		} else {
+			eq->q_mode = imax;
+		}
+
+		if (cnt >= numq)
 			break;
 	}
 	eq_delay->u.request.num_eq = cnt;
@@ -16126,9 +16162,6 @@ lpfc_sli4_post_scsi_sgl_block(struct lpfc_hba *phba,
 	return rc;
 }
 
-static char *lpfc_rctl_names[] = FC_RCTL_NAMES_INIT;
-static char *lpfc_type_names[] = FC_TYPE_NAMES_INIT;
-
 /**
  * lpfc_fc_frame_check - Check that this frame is a valid frame to handle
  * @phba: pointer to lpfc_hba struct that the frame was received on
@@ -16203,22 +16236,18 @@ lpfc_fc_frame_check(struct lpfc_hba *phba, struct fc_frame_header *fc_hdr)
 	}
 
 	lpfc_printf_log(phba, KERN_INFO, LOG_ELS,
-			"2538 Received frame rctl:%s (x%x), type:%s (x%x), "
+			"2538 Received frame rctl:x%x, type:x%x, "
 			"frame Data:%08x %08x %08x %08x %08x %08x %08x\n",
-			(fc_hdr->fh_r_ctl == FC_RCTL_MDS_DIAGS) ? "MDS Diags" :
-			lpfc_rctl_names[fc_hdr->fh_r_ctl], fc_hdr->fh_r_ctl,
-			(fc_hdr->fh_type == FC_TYPE_VENDOR_UNIQUE) ?
-			"Vendor Unique" : lpfc_type_names[fc_hdr->fh_type],
-			fc_hdr->fh_type, be32_to_cpu(header[0]),
-			be32_to_cpu(header[1]), be32_to_cpu(header[2]),
-			be32_to_cpu(header[3]), be32_to_cpu(header[4]),
-			be32_to_cpu(header[5]), be32_to_cpu(header[6]));
+			fc_hdr->fh_r_ctl, fc_hdr->fh_type,
+			be32_to_cpu(header[0]), be32_to_cpu(header[1]),
+			be32_to_cpu(header[2]), be32_to_cpu(header[3]),
+			be32_to_cpu(header[4]), be32_to_cpu(header[5]),
+			be32_to_cpu(header[6]));
 	return 0;
 drop:
 	lpfc_printf_log(phba, KERN_WARNING, LOG_ELS,
-			"2539 Dropped frame rctl:%s type:%s\n",
-			lpfc_rctl_names[fc_hdr->fh_r_ctl],
-			lpfc_type_names[fc_hdr->fh_type]);
+			"2539 Dropped frame rctl:x%x type:x%x\n",
+			fc_hdr->fh_r_ctl, fc_hdr->fh_type);
 	return 1;
 }
 
