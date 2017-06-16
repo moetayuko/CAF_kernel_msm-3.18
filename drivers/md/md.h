@@ -29,6 +29,7 @@
 
 #define MaxSector (~(sector_t)0)
 
+#define MD_SUSPEND_TIMEOUT (120 * HZ)
 /*
  * These flags should really be called "NO_RETRY" rather than
  * "FAILFAST" because they don't make any promise about time lapse,
@@ -510,7 +511,7 @@ struct md_personality
 	int level;
 	struct list_head list;
 	struct module *owner;
-	void (*make_request)(struct mddev *mddev, struct bio *bio);
+	bool (*make_request)(struct mddev *mddev, struct bio *bio);
 	int (*run)(struct mddev *mddev);
 	void (*free)(struct mddev *mddev, void *priv);
 	void (*status)(struct seq_file *seq, struct mddev *mddev);
@@ -649,7 +650,7 @@ extern void md_wakeup_thread(struct md_thread *thread);
 extern void md_check_recovery(struct mddev *mddev);
 extern void md_reap_sync_thread(struct mddev *mddev);
 extern int mddev_init_writes_pending(struct mddev *mddev);
-extern void md_write_start(struct mddev *mddev, struct bio *bi);
+extern bool md_write_start(struct mddev *mddev, struct bio *bi);
 extern void md_write_inc(struct mddev *mddev, struct bio *bi);
 extern void md_write_end(struct mddev *mddev);
 extern void md_done_sync(struct mddev *mddev, int blocks, int ok);
