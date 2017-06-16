@@ -130,6 +130,8 @@ else
 obj-y					+= unwind_guess.o
 endif
 
+obj-$(CONFIG_ALT_SYSCALL)		+= alt-syscall.o
+
 ###
 # 64 bit specific files
 ifeq ($(CONFIG_X86_64),y)
