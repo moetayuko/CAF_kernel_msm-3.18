@@ -288,7 +288,6 @@
 #define SEC_XFER_SIZE		512
 #define EXTRACT_SIZE		10
 
-#define DEBUG_RANDOM_BOOT 0
 
 #define LONGS(x) (((x) + sizeof(unsigned long) - 1)/sizeof(unsigned long))
 
@@ -849,11 +848,6 @@ static void crng_reseed(struct crng_state *crng, struct entropy_store *r)
 		pr_notice("random: crng init done\n");
 	}
 	spin_unlock_irqrestore(&primary_crng.lock, flags);
-}
-
-static inline void crng_wait_ready(void)
-{
-	wait_event_interruptible(crng_init_wait, crng_ready());
 }
 
 static void _extract_crng(struct crng_state *crng,
@@ -1477,16 +1471,24 @@ static ssize_t extract_entropy_user(struct entropy_store *r, void __user *buf,
  * number of good random numbers, suitable for key generation, seeding
  * TCP sequence numbers, etc.  It does not rely on the hardware random
  * number generator.  For random bytes direct from the hardware RNG
- * (when available), use get_random_bytes_arch().
+ * (when available), use get_random_bytes_arch(). In order to ensure
+ * that the randomness provided by this function is okay, the function
+ * wait_for_random_bytes() should be called and return 0 at least once
+ * at any point prior.
  */
 void get_random_bytes(void *buf, int nbytes)
 {
 	__u8 tmp[CHACHA20_BLOCK_SIZE];
 
-#if DEBUG_RANDOM_BOOT > 0
-	if (!crng_ready())
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+
+	if (!crng_ready() && (READ_ONCE(previous) != caller)) {
 		printk(KERN_NOTICE "random: %pF get_random_bytes called "
-		       "with crng_init = %d\n", (void *) _RET_IP_, crng_init);
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
 #endif
 	trace_get_random_bytes(nbytes, _RET_IP_);
 
@@ -1505,6 +1507,24 @@ void get_random_bytes(void *buf, int nbytes)
 	memzero_explicit(tmp, sizeof(tmp));
 }
 EXPORT_SYMBOL(get_random_bytes);
+
+/*
+ * Wait for the urandom pool to be seeded and thus guaranteed to supply
+ * cryptographically secure random numbers. This applies to: the /dev/urandom
+ * device, the get_random_bytes function, and the get_random_{u32,u64,int,long}
+ * family of functions. Using any of these functions without first calling
+ * this function forfeits the guarantee of security.
+ *
+ * Returns: 0 if the urandom pool has been seeded.
+ *          -ERESTARTSYS if the function was interrupted by a signal.
+ */
+int wait_for_random_bytes(void)
+{
+	if (likely(crng_ready()))
+		return 0;
+	return wait_event_interruptible(crng_init_wait, crng_ready());
+}
+EXPORT_SYMBOL(wait_for_random_bytes);
 
 /*
  * Add a callback function that will be invoked when the nonblocking
@@ -1860,6 +1880,8 @@ const struct file_operations urandom_fops = {
 SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
 		unsigned int, flags)
 {
+	int ret;
+
 	if (flags & ~(GRND_NONBLOCK|GRND_RANDOM))
 		return -EINVAL;
 
@@ -1872,9 +1894,9 @@ SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
 	if (!crng_ready()) {
 		if (flags & GRND_NONBLOCK)
 			return -EAGAIN;
-		crng_wait_ready();
-		if (signal_pending(current))
-			return -ERESTARTSYS;
+		ret = wait_for_random_bytes();
+		if (unlikely(ret))
+			return ret;
 	}
 	return urandom_read(NULL, buf, count, NULL);
 }
@@ -2035,7 +2057,10 @@ static rwlock_t batched_entropy_reset_lock = __RW_LOCK_UNLOCKED(batched_entropy_
 /*
  * Get a random word for internal kernel use only. The quality of the random
  * number is either as good as RDRAND or as good as /dev/urandom, with the
- * goal of being quite fast and not depleting entropy.
+ * goal of being quite fast and not depleting entropy. In order to ensure
+ * that the randomness provided by this function is okay, the function
+ * wait_for_random_bytes() should be called and return 0 at least once
+ * at any point prior.
  */
 static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u64);
 u64 get_random_u64(void)
@@ -2044,6 +2069,10 @@ u64 get_random_u64(void)
 	bool use_lock = crng_init < 2;
 	unsigned long flags;
 	struct batched_entropy *batch;
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+#endif
 
 #if BITS_PER_LONG == 64
 	if (arch_get_random_long((unsigned long *)&ret))
@@ -2052,6 +2081,14 @@ u64 get_random_u64(void)
 	if (arch_get_random_long((unsigned long *)&ret) &&
 	    arch_get_random_long((unsigned long *)&ret + 1))
 	    return ret;
+#endif
+
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	if (!crng_ready() && (READ_ONCE(previous) != caller))  {
+		printk(KERN_NOTICE "random: %pF get_random_u64 called "
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
 #endif
 
 	batch = &get_cpu_var(batched_entropy_u64);
@@ -2076,9 +2113,21 @@ u32 get_random_u32(void)
 	bool use_lock = crng_init < 2;
 	unsigned long flags;
 	struct batched_entropy *batch;
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	static void *previous = NULL;
+	void *caller = (void *) _RET_IP_;
+#endif
 
 	if (arch_get_random_int(&ret))
 		return ret;
+
+#ifdef CONFIG_WARN_UNSEEDED_RANDOM
+	if (!crng_ready() && READ_ONCE(previous) != caller) {
+		printk(KERN_NOTICE "random: %pF get_random_u32 called "
+		       "with crng_init=%d\n", caller, crng_init);
+		WRITE_ONCE(previous, caller);
+	}
+#endif
 
 	batch = &get_cpu_var(batched_entropy_u32);
 	if (use_lock)
