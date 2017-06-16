@@ -38,11 +38,11 @@ static void mga_crtc_load_lut(struct drm_crtc *crtc)
 
 	WREG8(DAC_INDEX + MGA1064_INDEX, 0);
 
-	if (fb && fb->bits_per_pixel == 16) {
-		int inc = (fb->depth == 15) ? 8 : 4;
+	if (fb && fb->format->cpp[0] * 8 == 16) {
+		int inc = (fb->format->depth == 15) ? 8 : 4;
 		u8 r, b;
 		for (i = 0; i < MGAG200_LUT_SIZE; i += inc) {
-			if (fb->depth == 16) {
+			if (fb->format->depth == 16) {
 				if (i > (MGAG200_LUT_SIZE >> 1)) {
 					r = b = 0;
 				} else {
@@ -195,7 +195,7 @@ static int mga_g200se_set_plls(struct mga_device *mdev, long clock)
 	}
 
 	if (delta > permitteddelta) {
-		printk(KERN_WARNING "PLL delta too large\n");
+		pr_warn("PLL delta too large\n");
 		return 1;
 	}
 
@@ -902,7 +902,7 @@ static int mga_crtc_mode_set(struct drm_crtc *crtc,
 		/* 0x48: */        0,    0,    0,    0,    0,    0,    0,    0
 	};
 
-	bppshift = mdev->bpp_shifts[(crtc->primary->fb->bits_per_pixel >> 3) - 1];
+	bppshift = mdev->bpp_shifts[crtc->primary->fb->format->cpp[0] - 1];
 
 	switch (mdev->type) {
 	case G200_SE_A:
@@ -941,12 +941,12 @@ static int mga_crtc_mode_set(struct drm_crtc *crtc,
 		break;
 	}
 
-	switch (crtc->primary->fb->bits_per_pixel) {
+	switch (crtc->primary->fb->format->cpp[0] * 8) {
 	case 8:
 		dacvalue[MGA1064_MUL_CTL] = MGA1064_MUL_CTL_8bits;
 		break;
 	case 16:
-		if (crtc->primary->fb->depth == 15)
+		if (crtc->primary->fb->format->depth == 15)
 			dacvalue[MGA1064_MUL_CTL] = MGA1064_MUL_CTL_15bits;
 		else
 			dacvalue[MGA1064_MUL_CTL] = MGA1064_MUL_CTL_16bits;
@@ -997,8 +997,8 @@ static int mga_crtc_mode_set(struct drm_crtc *crtc,
 	WREG_SEQ(3, 0);
 	WREG_SEQ(4, 0xe);
 
-	pitch = crtc->primary->fb->pitches[0] / (crtc->primary->fb->bits_per_pixel / 8);
-	if (crtc->primary->fb->bits_per_pixel == 24)
+	pitch = crtc->primary->fb->pitches[0] / crtc->primary->fb->format->cpp[0];
+	if (crtc->primary->fb->format->cpp[0] * 8 == 24)
 		pitch = (pitch * 3) >> (4 - bppshift);
 	else
 		pitch = pitch >> (4 - bppshift);
@@ -1075,7 +1075,7 @@ static int mga_crtc_mode_set(struct drm_crtc *crtc,
 		((vdisplay & 0xc00) >> 7) |
 		((vsyncstart & 0xc00) >> 5) |
 		((vdisplay & 0x400) >> 3);
-	if (crtc->primary->fb->bits_per_pixel == 24)
+	if (crtc->primary->fb->format->cpp[0] * 8 == 24)
 		ext_vga[3] = (((1 << bppshift) * 3) - 1) | 0x80;
 	else
 		ext_vga[3] = ((1 << bppshift) - 1) | 0x80;
@@ -1138,9 +1138,9 @@ static int mga_crtc_mode_set(struct drm_crtc *crtc,
 			u32 bpp;
 			u32 mb;
 
-			if (crtc->primary->fb->bits_per_pixel > 16)
+			if (crtc->primary->fb->format->cpp[0] * 8 > 16)
 				bpp = 32;
-			else if (crtc->primary->fb->bits_per_pixel > 8)
+			else if (crtc->primary->fb->format->cpp[0] * 8 > 8)
 				bpp = 16;
 			else
 				bpp = 8;
@@ -1353,7 +1353,8 @@ static void mga_crtc_commit(struct drm_crtc *crtc)
  * but it's a requirement that we provide the function
  */
 static int mga_crtc_gamma_set(struct drm_crtc *crtc, u16 *red, u16 *green,
-			      u16 *blue, uint32_t size)
+			      u16 *blue, uint32_t size,
+			      struct drm_modeset_acquire_ctx *ctx)
 {
 	struct mga_crtc *mga_crtc = to_mga_crtc(crtc);
 	int i;
@@ -1658,12 +1659,6 @@ static struct drm_encoder *mga_connector_best_encoder(struct drm_connector
 	return NULL;
 }
 
-static enum drm_connector_status mga_vga_detect(struct drm_connector
-						   *connector, bool force)
-{
-	return connector_status_connected;
-}
-
 static void mga_connector_destroy(struct drm_connector *connector)
 {
 	struct mga_connector *mga_connector = to_mga_connector(connector);
@@ -1680,7 +1675,6 @@ static const struct drm_connector_helper_funcs mga_vga_connector_helper_funcs = 
 
 static const struct drm_connector_funcs mga_vga_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.detect = mga_vga_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = mga_connector_destroy,
 };

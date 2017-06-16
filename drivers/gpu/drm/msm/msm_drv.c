@@ -15,6 +15,8 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <drm/drm_of.h>
+
 #include "msm_drv.h"
 #include "msm_debugfs.h"
 #include "msm_fence.h"
@@ -123,7 +125,7 @@ u32 msm_readl(const void __iomem *addr)
 {
 	u32 val = readl(addr);
 	if (reglog)
-		printk(KERN_ERR "IO:R %p %08x\n", addr, val);
+		pr_err("IO:R %p %08x\n", addr, val);
 	return val;
 }
 
@@ -766,9 +768,7 @@ static const struct file_operations fops = {
 	.open               = drm_open,
 	.release            = drm_release,
 	.unlocked_ioctl     = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl       = drm_compat_ioctl,
-#endif
 	.poll               = drm_poll,
 	.read               = drm_read,
 	.llseek             = no_llseek,
@@ -789,7 +789,6 @@ static struct drm_driver msm_driver = {
 	.irq_preinstall     = msm_irq_preinstall,
 	.irq_postinstall    = msm_irq_postinstall,
 	.irq_uninstall      = msm_irq_uninstall,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank      = msm_enable_vblank,
 	.disable_vblank     = msm_disable_vblank,
 	.gem_free_object    = msm_gem_free_object,
@@ -919,8 +918,8 @@ static int add_components_mdp(struct device *mdp_dev,
 			continue;
 		}
 
-		component_match_add(master_dev, matchptr, compare_of, intf);
-
+		drm_of_component_match_add(master_dev, matchptr, compare_of,
+					   intf);
 		of_node_put(intf);
 		of_node_put(ep_node);
 	}
@@ -962,8 +961,8 @@ static int add_display_components(struct device *dev,
 		put_device(mdp_dev);
 
 		/* add the MDP component itself */
-		component_match_add(dev, matchptr, compare_of,
-				    mdp_dev->of_node);
+		drm_of_component_match_add(dev, matchptr, compare_of,
+					   mdp_dev->of_node);
 	} else {
 		/* MDP4 */
 		mdp_dev = dev;
@@ -996,7 +995,7 @@ static int add_gpu_components(struct device *dev,
 	if (!np)
 		return 0;
 
-	component_match_add(dev, matchptr, compare_of, np);
+	drm_of_component_match_add(dev, matchptr, compare_of, np);
 
 	of_node_put(np);
 

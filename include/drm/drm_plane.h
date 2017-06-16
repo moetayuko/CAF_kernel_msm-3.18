@@ -28,6 +28,8 @@
 #include <drm/drm_mode_object.h>
 
 struct drm_crtc;
+struct drm_printer;
+struct drm_modeset_acquire_ctx;
 
 /**
  * struct drm_plane_state - mutable plane state
@@ -65,7 +67,7 @@ struct drm_plane_state {
 
 	struct drm_crtc *crtc;   /* do not write directly, use drm_atomic_set_crtc_for_plane() */
 	struct drm_framebuffer *fb;  /* do not write directly, use drm_atomic_set_fb_for_plane() */
-	struct fence *fence;
+	struct dma_fence *fence; /* do not write directly, use drm_atomic_set_fence_for_plane() */
 
 	/* Signed dest location allows it to be partially off screen */
 	int32_t crtc_x, crtc_y;
@@ -94,6 +96,29 @@ struct drm_plane_state {
 	struct drm_atomic_state *state;
 };
 
+static inline struct drm_rect
+drm_plane_state_src(const struct drm_plane_state *state)
+{
+	struct drm_rect src = {
+		.x1 = state->src_x,
+		.y1 = state->src_y,
+		.x2 = state->src_x + state->src_w,
+		.y2 = state->src_y + state->src_h,
+	};
+	return src;
+}
+
+static inline struct drm_rect
+drm_plane_state_dest(const struct drm_plane_state *state)
+{
+	struct drm_rect dest = {
+		.x1 = state->crtc_x,
+		.y1 = state->crtc_y,
+		.x2 = state->crtc_x + state->crtc_w,
+		.y2 = state->crtc_y + state->crtc_h,
+	};
+	return dest;
+}
 
 /**
  * struct drm_plane_funcs - driver plane control functions
@@ -130,7 +155,8 @@ struct drm_plane_funcs {
 			    int crtc_x, int crtc_y,
 			    unsigned int crtc_w, unsigned int crtc_h,
 			    uint32_t src_x, uint32_t src_y,
-			    uint32_t src_w, uint32_t src_h);
+			    uint32_t src_w, uint32_t src_h,
+			    struct drm_modeset_acquire_ctx *ctx);
 
 	/**
 	 * @disable_plane:
@@ -147,7 +173,8 @@ struct drm_plane_funcs {
 	 *
 	 * 0 on success or a negative error code on failure.
 	 */
-	int (*disable_plane)(struct drm_plane *plane);
+	int (*disable_plane)(struct drm_plane *plane,
+			     struct drm_modeset_acquire_ctx *ctx);
 
 	/**
 	 * @destroy:
@@ -323,6 +350,18 @@ struct drm_plane_funcs {
 	 * before data structures are torndown.
 	 */
 	void (*early_unregister)(struct drm_plane *plane);
+
+	/**
+	 * @atomic_print_state:
+	 *
+	 * If driver subclasses struct &drm_plane_state, it should implement
+	 * this optional hook for printing additional driver specific state.
+	 *
+	 * Do not call this directly, use drm_atomic_plane_print_state()
+	 * instead.
+	 */
+	void (*atomic_print_state)(struct drm_printer *p,
+				   const struct drm_plane_state *state);
 };
 
 /**
@@ -392,6 +431,7 @@ enum drm_plane_type {
  * @type: type of plane (overlay, primary, cursor)
  * @state: current atomic state for this plane
  * @zpos_property: zpos property for this plane
+ * @rotation_property: rotation property for this plane
  * @helper_private: mid-layer private data
  */
 struct drm_plane {
@@ -438,26 +478,27 @@ struct drm_plane {
 	struct drm_plane_state *state;
 
 	struct drm_property *zpos_property;
+	struct drm_property *rotation_property;
 };
 
 #define obj_to_plane(x) container_of(x, struct drm_plane, base)
 
-extern __printf(8, 9)
+__printf(8, 9)
 int drm_universal_plane_init(struct drm_device *dev,
 			     struct drm_plane *plane,
-			     unsigned long possible_crtcs,
+			     uint32_t possible_crtcs,
 			     const struct drm_plane_funcs *funcs,
 			     const uint32_t *formats,
 			     unsigned int format_count,
 			     enum drm_plane_type type,
 			     const char *name, ...);
-extern int drm_plane_init(struct drm_device *dev,
-			  struct drm_plane *plane,
-			  unsigned long possible_crtcs,
-			  const struct drm_plane_funcs *funcs,
-			  const uint32_t *formats, unsigned int format_count,
-			  bool is_primary);
-extern void drm_plane_cleanup(struct drm_plane *plane);
+int drm_plane_init(struct drm_device *dev,
+		   struct drm_plane *plane,
+		   uint32_t possible_crtcs,
+		   const struct drm_plane_funcs *funcs,
+		   const uint32_t *formats, unsigned int format_count,
+		   bool is_primary);
+void drm_plane_cleanup(struct drm_plane *plane);
 
 /**
  * drm_plane_index - find the index of a registered plane
@@ -470,8 +511,8 @@ static inline unsigned int drm_plane_index(struct drm_plane *plane)
 {
 	return plane->index;
 }
-extern struct drm_plane * drm_plane_from_index(struct drm_device *dev, int idx);
-extern void drm_plane_force_disable(struct drm_plane *plane);
+struct drm_plane * drm_plane_from_index(struct drm_device *dev, int idx);
+void drm_plane_force_disable(struct drm_plane *plane);
 
 int drm_mode_plane_set_obj_prop(struct drm_plane *plane,
 				       struct drm_property *property,

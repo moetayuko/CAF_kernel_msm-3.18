@@ -32,6 +32,7 @@
 #include <drm/drmP.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_atomic.h>
 
 #include "nouveau_reg.h"
 #include "nouveau_drv.h"

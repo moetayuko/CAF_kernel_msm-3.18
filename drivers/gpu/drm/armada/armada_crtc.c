@@ -169,12 +169,12 @@ static unsigned armada_drm_crtc_calc_fb(struct drm_framebuffer *fb,
 {
 	struct armada_gem_object *obj = drm_fb_obj(fb);
 	unsigned pitch = fb->pitches[0];
-	unsigned offset = y * pitch + x * fb->bits_per_pixel / 8;
+	unsigned offset = y * pitch + x * fb->format->cpp[0];
 	uint32_t addr_odd, addr_even;
 	unsigned i = 0;
 
 	DRM_DEBUG_DRIVER("pitch %u x %d y %d bpp %d\n",
-		pitch, x, y, fb->bits_per_pixel);
+		pitch, x, y, fb->format->cpp[0] * 8);
 
 	addr_odd = addr_even = obj->dev_addr + offset;
 
@@ -988,7 +988,8 @@ static void armada_drm_crtc_destroy(struct drm_crtc *crtc)
  * and a mode_set.
  */
 static int armada_drm_crtc_page_flip(struct drm_crtc *crtc,
-	struct drm_framebuffer *fb, struct drm_pending_vblank_event *event, uint32_t page_flip_flags)
+	struct drm_framebuffer *fb, struct drm_pending_vblank_event *event, uint32_t page_flip_flags,
+	struct drm_modeset_acquire_ctx *ctx)
 {
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 	struct armada_frame_work *work;
@@ -996,7 +997,7 @@ static int armada_drm_crtc_page_flip(struct drm_crtc *crtc,
 	int ret;
 
 	/* We don't support changing the pixel format */
-	if (fb->pixel_format != crtc->primary->fb->pixel_format)
+	if (fb->format != crtc->primary->fb->format)
 		return -EINVAL;
 
 	work = kmalloc(sizeof(*work), GFP_KERNEL);

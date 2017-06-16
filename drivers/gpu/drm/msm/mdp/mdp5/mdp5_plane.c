@@ -75,15 +75,11 @@ static void mdp5_plane_install_rotation_property(struct drm_device *dev,
 		!(mdp5_plane->caps & MDP_PIPE_CAP_VFLIP))
 		return;
 
-	if (!dev->mode_config.rotation_property)
-		dev->mode_config.rotation_property =
-			drm_mode_create_rotation_property(dev,
-				DRM_ROTATE_0 | DRM_REFLECT_X | DRM_REFLECT_Y);
-
-	if (dev->mode_config.rotation_property)
-		drm_object_attach_property(&plane->base,
-			dev->mode_config.rotation_property,
-			DRM_ROTATE_0);
+	drm_plane_create_rotation_property(plane,
+					   DRM_ROTATE_0,
+					   DRM_ROTATE_0 |
+					   DRM_REFLECT_X |
+					   DRM_REFLECT_Y);
 }
 
 /* helper to install properties which are common to planes and crtcs */
@@ -320,7 +316,7 @@ static int mdp5_plane_atomic_check(struct drm_plane *plane,
 	if (plane_enabled(state) && plane_enabled(old_state)) {
 		/* we cannot change SMP block configuration during scanout: */
 		bool full_modeset = false;
-		if (state->fb->pixel_format != old_state->fb->pixel_format) {
+		if (state->fb->format->format != old_state->fb->format->format) {
 			DBG("%s: pixel_format change!", mdp5_plane->name);
 			full_modeset = true;
 		}
@@ -682,7 +678,7 @@ static int mdp5_plane_mode_set(struct drm_plane *plane,
 	unsigned long flags;
 	int ret;
 
-	nplanes = drm_format_num_planes(fb->pixel_format);
+	nplanes = fb->format->num_planes;
 
 	/* bad formats should already be rejected: */
 	if (WARN_ON(nplanes > pipe2nclients(pipe)))

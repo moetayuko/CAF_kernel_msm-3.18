@@ -95,7 +95,8 @@ static int
 armada_ovl_plane_update(struct drm_plane *plane, struct drm_crtc *crtc,
 	struct drm_framebuffer *fb,
 	int crtc_x, int crtc_y, unsigned crtc_w, unsigned crtc_h,
-	uint32_t src_x, uint32_t src_y, uint32_t src_w, uint32_t src_h)
+	uint32_t src_x, uint32_t src_y, uint32_t src_w, uint32_t src_h,
+	struct drm_modeset_acquire_ctx *ctx)
 {
 	struct armada_ovl_plane *dplane = drm_to_armada_ovl_plane(plane);
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
@@ -182,9 +183,9 @@ armada_ovl_plane_update(struct drm_plane *plane, struct drm_crtc *crtc,
 		src_y = src.y1 >> 16;
 		src_x = src.x1 >> 16;
 
-		pixel_format = fb->pixel_format;
+		pixel_format = fb->format->format;
 		hsub = drm_format_horz_chroma_subsampling(pixel_format);
-		num_planes = drm_format_num_planes(pixel_format);
+		num_planes = fb->format->num_planes;
 
 		/*
 		 * Annoyingly, shifting a YUYV-format image by one pixel
@@ -260,7 +261,8 @@ armada_ovl_plane_update(struct drm_plane *plane, struct drm_crtc *crtc,
 	return 0;
 }
 
-static int armada_ovl_plane_disable(struct drm_plane *plane)
+static int armada_ovl_plane_disable(struct drm_plane *plane,
+				    struct drm_modeset_acquire_ctx *ctx)
 {
 	struct armada_ovl_plane *dplane = drm_to_armada_ovl_plane(plane);
 	struct drm_framebuffer *fb;

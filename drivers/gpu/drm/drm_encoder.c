@@ -110,11 +110,9 @@ int drm_encoder_init(struct drm_device *dev,
 {
 	int ret;
 
-	drm_modeset_lock_all(dev);
-
-	ret = drm_mode_object_get(dev, &encoder->base, DRM_MODE_OBJECT_ENCODER);
+	ret = drm_mode_object_add(dev, &encoder->base, DRM_MODE_OBJECT_ENCODER);
 	if (ret)
-		goto out_unlock;
+		return ret;
 
 	encoder->dev = dev;
 	encoder->encoder_type = encoder_type;
@@ -142,9 +140,6 @@ out_put:
 	if (ret)
 		drm_mode_object_unregister(dev, &encoder->base);
 
-out_unlock:
-	drm_modeset_unlock_all(dev);
-
 	return ret;
 }
 EXPORT_SYMBOL(drm_encoder_init);
@@ -164,12 +159,10 @@ void drm_encoder_cleanup(struct drm_encoder *encoder)
 	 * the indices on the drm_encoder after us in the encoder_list.
 	 */
 
-	drm_modeset_lock_all(dev);
 	drm_mode_object_unregister(dev, &encoder->base);
 	kfree(encoder->name);
 	list_del(&encoder->head);
 	dev->mode_config.num_encoder--;
-	drm_modeset_unlock_all(dev);
 
 	memset(encoder, 0, sizeof(*encoder));
 }
@@ -180,10 +173,12 @@ static struct drm_crtc *drm_encoder_get_crtc(struct drm_encoder *encoder)
 	struct drm_connector *connector;
 	struct drm_device *dev = encoder->dev;
 	bool uses_atomic = false;
+	struct drm_connector_list_iter conn_iter;
 
 	/* For atomic drivers only state objects are synchronously updated and
 	 * protected by modeset locks, so check those first. */
-	drm_for_each_connector(connector, dev) {
+	drm_connector_list_iter_begin(dev, &conn_iter);
+	drm_for_each_connector_iter(connector, &conn_iter) {
 		if (!connector->state)
 			continue;
 
@@ -192,8 +187,10 @@ static struct drm_crtc *drm_encoder_get_crtc(struct drm_encoder *encoder)
 		if (connector->state->best_encoder != encoder)
 			continue;
 
+		drm_connector_list_iter_end(&conn_iter);
 		return connector->state->crtc;
 	}
+	drm_connector_list_iter_end(&conn_iter);
 
 	/* Don't return stale data (e.g. pending async disable). */
 	if (uses_atomic)

@@ -143,8 +143,6 @@ static int tilcdc_commit(struct drm_device *dev,
 
 	drm_atomic_helper_cleanup_planes(dev, state);
 
-	drm_atomic_state_free(state);
-
 	return 0;
 }
 
@@ -196,7 +194,7 @@ static int cpufreq_transition(struct notifier_block *nb,
  * DRM operations:
  */
 
-static int tilcdc_unload(struct drm_device *dev)
+static void tilcdc_unload(struct drm_device *dev)
 {
 	struct tilcdc_drm_private *priv = dev->dev_private;
 
@@ -227,7 +225,7 @@ static int tilcdc_unload(struct drm_device *dev)
 
 	pm_runtime_disable(dev->dev);
 
-	return 0;
+	return;
 }
 
 static int tilcdc_load(struct drm_device *dev, unsigned long flags)
@@ -395,7 +393,6 @@ static int tilcdc_load(struct drm_device *dev, unsigned long flags)
 	drm_mode_config_reset(dev);
 
 	priv->fbdev = drm_fbdev_cma_init(dev, bpp,
-			dev->mode_config.num_crtc,
 			dev->mode_config.num_connector);
 	if (IS_ERR(priv->fbdev)) {
 		ret = PTR_ERR(priv->fbdev);
@@ -527,7 +524,9 @@ static int tilcdc_mm_show(struct seq_file *m, void *arg)
 {
 	struct drm_info_node *node = (struct drm_info_node *) m->private;
 	struct drm_device *dev = node->minor->dev;
-	return drm_mm_dump_table(m, &dev->vma_offset_manager->vm_addr_space_mm);
+	struct drm_printer p = drm_seq_file_printer(m);
+	drm_mm_print(&dev->vma_offset_manager->vm_addr_space_mm, &p);
+	return 0;
 }
 
 static struct drm_info_list tilcdc_debugfs_list[] = {
@@ -575,9 +574,7 @@ static const struct file_operations fops = {
 	.open               = drm_open,
 	.release            = drm_release,
 	.unlocked_ioctl     = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl       = drm_compat_ioctl,
-#endif
 	.poll               = drm_poll,
 	.read               = drm_read,
 	.llseek             = no_llseek,
@@ -591,7 +588,6 @@ static struct drm_driver tilcdc_driver = {
 	.unload             = tilcdc_unload,
 	.lastclose          = tilcdc_lastclose,
 	.irq_handler        = tilcdc_irq,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank      = tilcdc_enable_vblank,
 	.disable_vblank     = tilcdc_disable_vblank,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,

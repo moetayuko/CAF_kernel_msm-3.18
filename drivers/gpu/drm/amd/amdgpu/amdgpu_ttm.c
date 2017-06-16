@@ -268,7 +268,7 @@ static int amdgpu_move_blit(struct ttm_buffer_object *bo,
 	struct amdgpu_device *adev;
 	struct amdgpu_ring *ring;
 	uint64_t old_start, new_start;
-	struct fence *fence;
+	struct dma_fence *fence;
 	int r;
 
 	adev = amdgpu_get_adev(bo->bdev);
@@ -316,7 +316,7 @@ static int amdgpu_move_blit(struct ttm_buffer_object *bo,
 		return r;
 
 	r = ttm_bo_pipeline_move(bo, fence, evict, new_mem);
-	fence_put(fence);
+	dma_fence_put(fence);
 	return r;
 }
 
@@ -1247,7 +1247,7 @@ int amdgpu_copy_buffer(struct amdgpu_ring *ring,
 		       uint64_t dst_offset,
 		       uint32_t byte_count,
 		       struct reservation_object *resv,
-		       struct fence **fence, bool direct_submit)
+		       struct dma_fence **fence, bool direct_submit)
 {
 	struct amdgpu_device *adev = ring->adev;
 	struct amdgpu_job *job;
@@ -1294,7 +1294,7 @@ int amdgpu_copy_buffer(struct amdgpu_ring *ring,
 	if (direct_submit) {
 		r = amdgpu_ib_schedule(ring, job->num_ibs, job->ibs,
 				       NULL, NULL, fence);
-		job->fence = fence_get(*fence);
+		job->fence = dma_fence_get(*fence);
 		if (r)
 			DRM_ERROR("Error scheduling IBs (%d)\n", r);
 		amdgpu_job_free(job);
@@ -1315,7 +1315,7 @@ error_free:
 int amdgpu_fill_buffer(struct amdgpu_bo *bo,
 		uint32_t src_data,
 		struct reservation_object *resv,
-		struct fence **fence)
+		struct dma_fence **fence)
 {
 	struct amdgpu_device *adev = bo->adev;
 	struct amdgpu_job *job;
@@ -1383,18 +1383,18 @@ static int amdgpu_mm_dump_table(struct seq_file *m, void *data)
 	struct drm_device *dev = node->minor->dev;
 	struct amdgpu_device *adev = dev->dev_private;
 	struct drm_mm *mm = (struct drm_mm *)adev->mman.bdev.man[ttm_pl].priv;
-	int ret;
 	struct ttm_bo_global *glob = adev->mman.bdev.glob;
+	struct drm_printer p = drm_seq_file_printer(m);
 
 	spin_lock(&glob->lru_lock);
-	ret = drm_mm_dump_table(m, mm);
+	drm_mm_print(mm, &p);
 	spin_unlock(&glob->lru_lock);
 	if (ttm_pl == TTM_PL_VRAM)
 		seq_printf(m, "man size:%llu pages, ram usage:%lluMB, vis usage:%lluMB\n",
 			   adev->mman.bdev.man[ttm_pl].size,
 			   (u64)atomic64_read(&adev->vram_usage) >> 20,
 			   (u64)atomic64_read(&adev->vram_vis_usage) >> 20);
-	return ret;
+	return 0;
 }
 
 static int ttm_pl_vram = TTM_PL_VRAM;

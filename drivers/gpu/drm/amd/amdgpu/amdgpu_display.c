@@ -35,29 +35,29 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_edid.h>
 
-static void amdgpu_flip_callback(struct fence *f, struct fence_cb *cb)
+static void amdgpu_flip_callback(struct dma_fence *f, struct dma_fence_cb *cb)
 {
 	struct amdgpu_flip_work *work =
 		container_of(cb, struct amdgpu_flip_work, cb);
 
-	fence_put(f);
+	dma_fence_put(f);
 	schedule_work(&work->flip_work.work);
 }
 
 static bool amdgpu_flip_handle_fence(struct amdgpu_flip_work *work,
-				     struct fence **f)
+				     struct dma_fence **f)
 {
-	struct fence *fence= *f;
+	struct dma_fence *fence= *f;
 
 	if (fence == NULL)
 		return false;
 
 	*f = NULL;
 
-	if (!fence_add_callback(fence, &work->cb, amdgpu_flip_callback))
+	if (!dma_fence_add_callback(fence, &work->cb, amdgpu_flip_callback))
 		return true;
 
-	fence_put(fence);
+	dma_fence_put(fence);
 	return false;
 }
 
@@ -141,7 +141,8 @@ static void amdgpu_unpin_work_func(struct work_struct *__work)
 int amdgpu_crtc_page_flip_target(struct drm_crtc *crtc,
 				 struct drm_framebuffer *fb,
 				 struct drm_pending_vblank_event *event,
-				 uint32_t page_flip_flags, uint32_t target)
+				 uint32_t page_flip_flags, uint32_t target,
+				 struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_device *dev = crtc->dev;
 	struct amdgpu_device *adev = dev->dev_private;
@@ -244,16 +245,17 @@ unreserve:
 
 cleanup:
 	amdgpu_bo_unref(&work->old_abo);
-	fence_put(work->excl);
+	dma_fence_put(work->excl);
 	for (i = 0; i < work->shared_count; ++i)
-		fence_put(work->shared[i]);
+		dma_fence_put(work->shared[i]);
 	kfree(work->shared);
 	kfree(work);
 
 	return r;
 }
 
-int amdgpu_crtc_set_config(struct drm_mode_set *set)
+int amdgpu_crtc_set_config(struct drm_mode_set *set,
+			   struct drm_modeset_acquire_ctx *ctx)
 {
 	struct drm_device *dev;
 	struct amdgpu_device *adev;
@@ -270,7 +272,7 @@ int amdgpu_crtc_set_config(struct drm_mode_set *set)
 	if (ret < 0)
 		return ret;
 
-	ret = drm_crtc_helper_set_config(set);
+	ret = drm_crtc_helper_set_config(set, ctx);
 
 	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head)
 		if (crtc->enabled)
@@ -508,7 +510,7 @@ amdgpu_framebuffer_init(struct drm_device *dev,
 {
 	int ret;
 	rfb->obj = obj;
-	drm_helper_mode_fill_fb_struct(&rfb->base, mode_cmd);
+	drm_helper_mode_fill_fb_struct(dev, &rfb->base, mode_cmd);
 	ret = drm_framebuffer_init(dev, &rfb->base, &amdgpu_fb_funcs);
 	if (ret) {
 		rfb->obj = NULL;

@@ -17,12 +17,11 @@
 static int armada_gem_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct armada_gem_object *obj = drm_to_armada_gem(vma->vm_private_data);
-	unsigned long addr = (unsigned long)vmf->virtual_address;
 	unsigned long pfn = obj->phys_addr >> PAGE_SHIFT;
 	int ret;
 
-	pfn += (addr - vma->vm_start) >> PAGE_SHIFT;
-	ret = vm_insert_pfn(vma, addr, pfn);
+	pfn += (vmf->address - vma->vm_start) >> PAGE_SHIFT;
+	ret = vm_insert_pfn(vma, vmf->address, pfn);
 
 	switch (ret) {
 	case 0:
@@ -149,8 +148,8 @@ armada_gem_linear_back(struct drm_device *dev, struct armada_gem_object *obj)
 			return -ENOSPC;
 
 		mutex_lock(&priv->linear_lock);
-		ret = drm_mm_insert_node(&priv->linear, node, size, align,
-					 DRM_MM_SEARCH_DEFAULT);
+		ret = drm_mm_insert_node_generic(&priv->linear, node,
+						 size, align, 0, 0);
 		mutex_unlock(&priv->linear_lock);
 		if (ret) {
 			kfree(node);

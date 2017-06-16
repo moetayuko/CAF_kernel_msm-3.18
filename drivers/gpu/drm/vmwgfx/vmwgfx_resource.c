@@ -736,14 +736,14 @@ int vmw_user_dmabuf_lookup(struct ttm_object_file *tfile,
 
 	base = ttm_base_object_lookup(tfile, handle);
 	if (unlikely(base == NULL)) {
-		printk(KERN_ERR "Invalid buffer object handle 0x%08lx.\n",
+		pr_err("Invalid buffer object handle 0x%08lx\n",
 		       (unsigned long)handle);
 		return -ESRCH;
 	}
 
 	if (unlikely(ttm_base_object_type(base) != ttm_buffer_type)) {
 		ttm_base_object_unref(&base);
-		printk(KERN_ERR "Invalid buffer object handle 0x%08lx.\n",
+		pr_err("Invalid buffer object handle 0x%08lx\n",
 		       (unsigned long)handle);
 		return -EINVAL;
 	}
@@ -1454,7 +1454,7 @@ void vmw_fence_single_bo(struct ttm_buffer_object *bo,
 	if (fence == NULL) {
 		vmw_execbuf_fence_commands(NULL, dev_priv, &fence, NULL);
 		reservation_object_add_excl_fence(bo->resv, &fence->base);
-		fence_put(&fence->base);
+		dma_fence_put(&fence->base);
 	} else
 		reservation_object_add_excl_fence(bo->resv, &fence->base);
 }

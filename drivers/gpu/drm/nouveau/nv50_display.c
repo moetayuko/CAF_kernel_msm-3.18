@@ -445,7 +445,7 @@ evo_wait(void *evoc, int nr)
 				break;
 		) < 0) {
 			mutex_unlock(&dmac->lock);
-			printk(KERN_ERR "nouveau: evo channel stalled\n");
+			pr_err("nouveau: evo channel stalled\n");
 			return NULL;
 		}
 
@@ -469,12 +469,12 @@ evo_kick(u32 *push, void *evoc)
 #else
 #define evo_mthd(p,m,s) do {                                                   \
 	const u32 _m = (m), _s = (s);                                          \
-	printk(KERN_ERR "%04x %d %s\n", _m, _s, __func__);                     \
+	pr_err("%04x %d %s\n", _m, _s, __func__);                              \
 	*((p)++) = ((_s << 18) | _m);                                          \
 } while(0)
 #define evo_data(p,d) do {                                                     \
 	const u32 _d = (d);                                                    \
-	printk(KERN_ERR "\t%08x\n", _d);                                       \
+	pr_err("\t%08x\n", _d);                                                \
 	*((p)++) = _d;                                                         \
 } while(0)
 #endif
@@ -710,7 +710,7 @@ nv50_crtc_set_dither(struct nouveau_crtc *nv_crtc, bool update)
 	nv_connector = nouveau_crtc_connector_get(nv_crtc);
 	connector = &nv_connector->base;
 	if (nv_connector->dithering_mode == DITHERING_MODE_AUTO) {
-		if (nv_crtc->base.primary->fb->depth > connector->display_info.bpc * 3)
+		if (nv_crtc->base.primary->fb->format->depth > connector->display_info.bpc * 3)
 			mode = DITHERING_MODE_DYNAMIC2X2;
 	} else {
 		mode = nv_connector->dithering_mode;
@@ -1350,7 +1350,7 @@ nv50_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 
 static int
 nv50_crtc_gamma_set(struct drm_crtc *crtc, u16 *r, u16 *g, u16 *b,
-		    uint32_t size)
+		    uint32_t size, struct drm_modeset_acquire_ctx *ctx)
 {
 	struct nouveau_crtc *nv_crtc = nouveau_crtc(crtc);
 	u32 i;
@@ -2434,7 +2434,7 @@ nv50_fb_ctor(struct drm_framebuffer *fb)
 	if (drm->device.info.chipset >= 0xc0)
 		tile >>= 4; /* yep.. */
 
-	switch (fb->depth) {
+	switch (fb->format->depth) {
 	case  8: nv_fb->r_format = 0x1e00; break;
 	case 15: nv_fb->r_format = 0xe900; break;
 	case 16: nv_fb->r_format = 0xe800; break;
@@ -2442,7 +2442,7 @@ nv50_fb_ctor(struct drm_framebuffer *fb)
 	case 32: nv_fb->r_format = 0xcf00; break;
 	case 30: nv_fb->r_format = 0xd100; break;
 	default:
-		 NV_ERROR(drm, "unknown depth %d\n", fb->depth);
+		 NV_ERROR(drm, "unknown depth %d\n", fb->format->depth);
 		 return -EINVAL;
 	}
 

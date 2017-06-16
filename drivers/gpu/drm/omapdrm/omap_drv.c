@@ -105,7 +105,7 @@ static void omap_atomic_complete(struct omap_atomic_state_commit *commit)
 
 	dispc_runtime_put();
 
-	drm_atomic_state_free(old_state);
+	drm_atomic_state_put(old_state);
 
 	/* Complete the commit, wake up any waiter. */
 	spin_lock(&priv->commit.lock);
@@ -176,6 +176,7 @@ static int omap_atomic_commit(struct drm_device *dev,
 	/* Swap the state, this is the point of no return. */
 	drm_atomic_helper_swap_state(state, true);
 
+	drm_atomic_state_get(state);
 	if (nonblock)
 		schedule_work(&commit->work);
 	else
@@ -291,16 +292,6 @@ static int omap_modeset_create_crtc(struct drm_device *dev, int id,
 static int omap_modeset_init_properties(struct drm_device *dev)
 {
 	struct omap_drm_private *priv = dev->dev_private;
-
-	if (priv->has_dmm) {
-		dev->mode_config.rotation_property =
-			drm_mode_create_rotation_property(dev,
-				DRM_ROTATE_0 | DRM_ROTATE_90 |
-				DRM_ROTATE_180 | DRM_ROTATE_270 |
-				DRM_REFLECT_X | DRM_REFLECT_Y);
-		if (!dev->mode_config.rotation_property)
-			return -ENOMEM;
-	}
 
 	priv->zorder_prop = drm_property_create_range(dev, 0, "zorder", 0, 3);
 	if (!priv->zorder_prop)
@@ -696,7 +687,7 @@ static int dev_load(struct drm_device *dev, unsigned long flags)
 	return 0;
 }
 
-static int dev_unload(struct drm_device *dev)
+static void dev_unload(struct drm_device *dev)
 {
 	struct omap_drm_private *priv = dev->dev_private;
 
@@ -719,8 +710,6 @@ static int dev_unload(struct drm_device *dev)
 	dev->dev_private = NULL;
 
 	dev_set_drvdata(dev->dev, NULL);
-
-	return 0;
 }
 
 static int dev_open(struct drm_device *dev, struct drm_file *file)
@@ -752,22 +741,32 @@ static void dev_lastclose(struct drm_device *dev)
 
 	DBG("lastclose: dev=%p", dev);
 
-	if (dev->mode_config.rotation_property) {
-		/* need to restore default rotation state.. not sure
-		 * if there is a cleaner way to restore properties to
-		 * default state?  Maybe a flag that properties should
-		 * automatically be restored to default state on
-		 * lastclose?
-		 */
-		for (i = 0; i < priv->num_crtcs; i++) {
-			drm_object_property_set_value(&priv->crtcs[i]->base,
-					dev->mode_config.rotation_property, 0);
-		}
+	/* need to restore default rotation state.. not sure
+	 * if there is a cleaner way to restore properties to
+	 * default state?  Maybe a flag that properties should
+	 * automatically be restored to default state on
+	 * lastclose?
+	 */
+	for (i = 0; i < priv->num_crtcs; i++) {
+		struct drm_crtc *crtc = priv->crtcs[i];
 
-		for (i = 0; i < priv->num_planes; i++) {
-			drm_object_property_set_value(&priv->planes[i]->base,
-					dev->mode_config.rotation_property, 0);
-		}
+		if (!crtc->primary->rotation_property)
+			continue;
+
+		drm_object_property_set_value(&crtc->base,
+					      crtc->primary->rotation_property,
+					      DRM_ROTATE_0);
+	}
+
+	for (i = 0; i < priv->num_planes; i++) {
+		struct drm_plane *plane = priv->planes[i];
+
+		if (!plane->rotation_property)
+			continue;
+
+		drm_object_property_set_value(&plane->base,
+					      plane->rotation_property,
+					      DRM_ROTATE_0);
 	}
 
 	if (priv->fbdev) {
@@ -801,7 +800,6 @@ static struct drm_driver omap_drm_driver = {
 	.unload = dev_unload,
 	.open = dev_open,
 	.lastclose = dev_lastclose,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank = omap_irq_enable_vblank,
 	.disable_vblank = omap_irq_disable_vblank,
 #ifdef CONFIG_DEBUG_FS

@@ -54,8 +54,7 @@ static struct page **get_pages_vram(struct drm_gem_object *obj,
 	if (!p)
 		return ERR_PTR(-ENOMEM);
 
-	ret = drm_mm_insert_node(&priv->vram.mm, msm_obj->vram_node,
-			npages, 0, DRM_MM_SEARCH_DEFAULT);
+	ret = drm_mm_insert_node(&priv->vram.mm, msm_obj->vram_node, npages);
 	if (ret) {
 		drm_free_large(p);
 		return ERR_PTR(ret);
@@ -225,16 +224,14 @@ int msm_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	}
 
 	/* We don't use vmf->pgoff since that has the fake offset: */
-	pgoff = ((unsigned long)vmf->virtual_address -
-			vma->vm_start) >> PAGE_SHIFT;
+	pgoff = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
 
 	pfn = page_to_pfn(pages[pgoff]);
 
-	VERB("Inserting %p pfn %lx, pa %lx", vmf->virtual_address,
+	VERB("Inserting %p pfn %lx, pa %lx", (void *)vmf->address,
 			pfn, pfn << PAGE_SHIFT);
 
-	ret = vm_insert_mixed(vma, (unsigned long)vmf->virtual_address,
-			__pfn_to_pfn_t(pfn, PFN_DEV));
+	ret = vm_insert_mixed(vma, vmf->address, __pfn_to_pfn_t(pfn, PFN_DEV));
 
 out_unlock:
 	mutex_unlock(&dev->struct_mutex);
@@ -521,7 +518,7 @@ int msm_gem_sync_object(struct drm_gem_object *obj,
 {
 	struct msm_gem_object *msm_obj = to_msm_bo(obj);
 	struct reservation_object_list *fobj;
-	struct fence *fence;
+	struct dma_fence *fence;
 	int i, ret;
 
 	if (!exclusive) {
@@ -540,7 +537,7 @@ int msm_gem_sync_object(struct drm_gem_object *obj,
 		fence = reservation_object_get_excl(msm_obj->resv);
 		/* don't need to wait on our own fences, since ring is fifo */
 		if (fence && (fence->context != fctx->context)) {
-			ret = fence_wait(fence, true);
+			ret = dma_fence_wait(fence, true);
 			if (ret)
 				return ret;
 		}
@@ -553,7 +550,7 @@ int msm_gem_sync_object(struct drm_gem_object *obj,
 		fence = rcu_dereference_protected(fobj->shared[i],
 						reservation_object_held(msm_obj->resv));
 		if (fence->context != fctx->context) {
-			ret = fence_wait(fence, true);
+			ret = dma_fence_wait(fence, true);
 			if (ret)
 				return ret;
 		}
@@ -563,7 +560,7 @@ int msm_gem_sync_object(struct drm_gem_object *obj,
 }
 
 void msm_gem_move_to_active(struct drm_gem_object *obj,
-		struct msm_gpu *gpu, bool exclusive, struct fence *fence)
+		struct msm_gpu *gpu, bool exclusive, struct dma_fence *fence)
 {
 	struct msm_gem_object *msm_obj = to_msm_bo(obj);
 	WARN_ON(msm_obj->madv != MSM_MADV_WILLNEED);
@@ -616,10 +613,10 @@ int msm_gem_cpu_fini(struct drm_gem_object *obj)
 }
 
 #ifdef CONFIG_DEBUG_FS
-static void describe_fence(struct fence *fence, const char *type,
+static void describe_fence(struct dma_fence *fence, const char *type,
 		struct seq_file *m)
 {
-	if (!fence_is_signaled(fence))
+	if (!dma_fence_is_signaled(fence))
 		seq_printf(m, "\t%9s: %s %s seq %u\n", type,
 				fence->ops->get_driver_name(fence),
 				fence->ops->get_timeline_name(fence),
@@ -631,7 +628,7 @@ void msm_gem_describe(struct drm_gem_object *obj, struct seq_file *m)
 	struct msm_gem_object *msm_obj = to_msm_bo(obj);
 	struct reservation_object *robj = msm_obj->resv;
 	struct reservation_object_list *fobj;
-	struct fence *fence;
+	struct dma_fence *fence;
 	uint64_t off = drm_vma_node_start(&obj->vma_node);
 	const char *madv;
 
@@ -652,7 +649,7 @@ void msm_gem_describe(struct drm_gem_object *obj, struct seq_file *m)
 
 	seq_printf(m, "%08x: %c %2d (%2d) %08llx %p %zu%s\n",
 			msm_obj->flags, is_active(msm_obj) ? 'A' : 'I',
-			obj->name, obj->refcount.refcount.counter,
+			obj->name, kref_read(&obj->refcount),
 			off, msm_obj->vaddr, obj->size, madv);
 
 	rcu_read_lock();

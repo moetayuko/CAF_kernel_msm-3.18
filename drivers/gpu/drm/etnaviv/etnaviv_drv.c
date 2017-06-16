@@ -16,6 +16,7 @@
 
 #include <linux/component.h>
 #include <linux/of_platform.h>
+#include <drm/drm_of.h>
 
 #include "etnaviv_drv.h"
 #include "etnaviv_gpu.h"
@@ -146,21 +147,23 @@ static int etnaviv_gem_show(struct drm_device *dev, struct seq_file *m)
 
 static int etnaviv_mm_show(struct drm_device *dev, struct seq_file *m)
 {
-	int ret;
+	struct drm_printer p = drm_seq_file_printer(m);
 
 	read_lock(&dev->vma_offset_manager->vm_lock);
-	ret = drm_mm_dump_table(m, &dev->vma_offset_manager->vm_addr_space_mm);
+	drm_mm_print(&dev->vma_offset_manager->vm_addr_space_mm, &p);
 	read_unlock(&dev->vma_offset_manager->vm_lock);
 
-	return ret;
+	return 0;
 }
 
 static int etnaviv_mmu_show(struct etnaviv_gpu *gpu, struct seq_file *m)
 {
+	struct drm_printer p = drm_seq_file_printer(m);
+
 	seq_printf(m, "Active Objects (%s):\n", dev_name(gpu->dev));
 
 	mutex_lock(&gpu->mmu->lock);
-	drm_mm_dump_table(m, &gpu->mmu->mm);
+	drm_mm_print(&gpu->mmu->mm, &p);
 	mutex_unlock(&gpu->mmu->lock);
 
 	return 0;
@@ -478,9 +481,7 @@ static const struct file_operations fops = {
 	.open               = drm_open,
 	.release            = drm_release,
 	.unlocked_ioctl     = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl       = drm_compat_ioctl,
-#endif
 	.poll               = drm_poll,
 	.read               = drm_read,
 	.llseek             = no_llseek,
@@ -629,8 +630,8 @@ static int etnaviv_pdev_probe(struct platform_device *pdev)
 			if (!core_node)
 				break;
 
-			component_match_add(&pdev->dev, &match, compare_of,
-					    core_node);
+			drm_of_component_match_add(&pdev->dev, &match,
+						   compare_of, core_node);
 			of_node_put(core_node);
 		}
 	} else if (dev->platform_data) {

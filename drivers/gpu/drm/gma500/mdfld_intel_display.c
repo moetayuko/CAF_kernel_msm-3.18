@@ -148,7 +148,7 @@ static int check_fb(struct drm_framebuffer *fb)
 	if (!fb)
 		return 0;
 
-	switch (fb->bits_per_pixel) {
+	switch (fb->format->cpp[0] * 8) {
 	case 8:
 	case 16:
 	case 24:
@@ -196,18 +196,18 @@ static int mdfld__intel_pipe_set_base(struct drm_crtc *crtc, int x, int y,
 		return 0;
 
 	start = psbfb->gtt->offset;
-	offset = y * crtc->primary->fb->pitches[0] + x * (crtc->primary->fb->bits_per_pixel / 8);
+	offset = y * crtc->primary->fb->pitches[0] + x * crtc->primary->fb->format->cpp[0];
 
 	REG_WRITE(map->stride, crtc->primary->fb->pitches[0]);
 	dspcntr = REG_READ(map->cntr);
 	dspcntr &= ~DISPPLANE_PIXFORMAT_MASK;
 
-	switch (crtc->primary->fb->bits_per_pixel) {
+	switch (crtc->primary->fb->format->cpp[0] * 8) {
 	case 8:
 		dspcntr |= DISPPLANE_8BPP;
 		break;
 	case 16:
-		if (crtc->primary->fb->depth == 15)
+		if (crtc->primary->fb->format->depth == 15)
 			dspcntr |= DISPPLANE_15_16BPP;
 		else
 			dspcntr |= DISPPLANE_16BPP;
