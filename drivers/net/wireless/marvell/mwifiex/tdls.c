@@ -55,11 +55,8 @@ static void mwifiex_restore_tdls_packets(struct mwifiex_private *priv,
 			tx_info->flags |= MWIFIEX_BUF_FLAG_TDLS_PKT;
 		} else {
 			tid_list = &priv->wmm.tid_tbl_ptr[tid_down].ra_list;
-			if (!list_empty(tid_list))
-				ra_list = list_first_entry(tid_list,
-					      struct mwifiex_ra_list_tbl, list);
-			else
-				ra_list = NULL;
+			ra_list = list_first_entry_or_null(tid_list,
+					struct mwifiex_ra_list_tbl, list);
 			tx_info->flags &= ~MWIFIEX_BUF_FLAG_TDLS_PKT;
 		}
 
@@ -856,8 +853,8 @@ int mwifiex_send_tdls_action_frame(struct mwifiex_private *priv, const u8 *peer,
 
 	pkt_type = PKT_TYPE_MGMT;
 	tx_control = 0;
-	pos = skb_put(skb, MWIFIEX_MGMT_FRAME_HEADER_SIZE + sizeof(pkt_len));
-	memset(pos, 0, MWIFIEX_MGMT_FRAME_HEADER_SIZE + sizeof(pkt_len));
+	pos = skb_put_zero(skb,
+			   MWIFIEX_MGMT_FRAME_HEADER_SIZE + sizeof(pkt_len));
 	memcpy(pos, &pkt_type, sizeof(pkt_type));
 	memcpy(pos + sizeof(pkt_type), &tx_control, sizeof(tx_control));
 
