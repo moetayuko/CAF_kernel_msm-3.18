@@ -554,6 +554,44 @@ int filemap_write_and_wait_range(struct address_space *mapping,
 EXPORT_SYMBOL(filemap_write_and_wait_range);
 
 /**
+ * filemap_report_wb_err - report wb error (if any) that was previously set
+ * @file: struct file on which the error is being reported
+ *
+ * When userland calls fsync (or something like nfsd does the equivalent), we
+ * want to report any writeback errors that occurred since the last fsync (or
+ * since the file was opened if there haven't been any).
+ *
+ * Grab the wb_err from the mapping. If it matches what we have in the file,
+ * then just quickly return 0. The file is all caught up.
+ *
+ * If it doesn't match, then take the mapping value, set the "seen" flag in
+ * it and try to swap it into place. If it works, or another task beat us
+ * to it with the new value, then update the f_wb_err and return the error
+ * portion. The error at this point must be reported via proper channels
+ * (a'la fsync, or NFS COMMIT operation, etc.).
+ *
+ * While we handle mapping->wb_err with atomic operations, the f_wb_err
+ * value is protected by the f_lock since we must ensure that it reflects
+ * the latest value swapped in for this file descriptor.
+ */
+int filemap_report_wb_err(struct file *file)
+{
+	int err = 0;
+	struct address_space *mapping = file->f_mapping;
+
+	/* Locklessly handle the common case where nothing has changed */
+	if (errseq_check(&mapping->wb_err, READ_ONCE(file->f_wb_err))) {
+		/* Something changed, must use slow path */
+		spin_lock(&file->f_lock);
+		err = errseq_check_and_advance(&mapping->wb_err,
+						&file->f_wb_err);
+		spin_unlock(&file->f_lock);
+	}
+	return err;
+}
+EXPORT_SYMBOL(filemap_report_wb_err);
+
+/**
  * replace_page_cache_page - replace a pagecache page with a new one
  * @old:	page to be replaced
  * @new:	page to replace with
