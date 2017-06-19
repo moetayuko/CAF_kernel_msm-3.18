@@ -204,7 +204,8 @@ dtb-$(CONFIG_ARCH_KEYSTONE) += \
 	keystone-k2hk-evm.dtb \
 	keystone-k2l-evm.dtb \
 	keystone-k2e-evm.dtb \
-	keystone-k2g-evm.dtb
+	keystone-k2g-evm.dtb \
+	keystone-k2g-ice.dtb
 dtb-$(CONFIG_MACH_KIRKWOOD) += \
 	kirkwood-b3.dtb \
 	kirkwood-blackarmor-nas220.dtb \
@@ -603,6 +604,7 @@ dtb-$(CONFIG_SOC_AM33XX) += \
 	am335x-bone.dtb \
 	am335x-boneblack.dtb \
 	am335x-boneblack-wireless.dtb \
+	am335x-boneblue.dtb \
 	am335x-bonegreen.dtb \
 	am335x-bonegreen-wireless.dtb \
 	am335x-chiliboard.dtb \
@@ -718,7 +720,7 @@ dtb-$(CONFIG_ARCH_RENESAS) += \
 	r8a7794-silk.dtb \
 	sh73a0-kzm9g.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += \
-	rk1108-evb.dtb \
+	rv1108-evb.dtb \
 	rk3036-evb.dtb \
 	rk3036-kylin.dtb \
 	rk3066a-bqcurie2.dtb \
