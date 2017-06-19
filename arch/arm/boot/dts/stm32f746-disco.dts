@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Jens Kuske <jenskuske@gmail.com>
+ * Copyright 2017 - Vikas MANOCHA <vikas.manocha@st.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -40,86 +40,35 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/* The Orange Pi Plus is an extended version of the Orange Pi 2 */
-#include "sun8i-h3-orangepi-2.dts"
+/dts-v1/;
+#include "stm32f746.dtsi"
+#include <dt-bindings/input/input.h>
 
 / {
-	model = "Xunlong Orange Pi Plus / Plus 2";
-	compatible = "xunlong,orangepi-plus", "allwinner,sun8i-h3";
+	model = "STMicroelectronics STM32F746-DISCO board";
+	compatible = "st,stm32f746-disco", "st,stm32f746";
+
+	chosen {
+		bootargs = "root=/dev/ram";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory {
+		reg = <0xC0000000 0x800000>;
+	};
 
 	aliases {
-		ethernet0 = &emac;
+		serial0 = &usart1;
 	};
 
-	reg_gmac_3v3: gmac-3v3 {
-		compatible = "regulator-fixed";
-		regulator-name = "gmac-3v3";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		startup-delay-us = <100000>;
-		enable-active-high;
-		gpio = <&pio 3 6 GPIO_ACTIVE_HIGH>;
-	};
-
-	reg_usb3_vbus: usb3-vbus {
-		compatible = "regulator-fixed";
-		pinctrl-names = "default";
-		pinctrl-0 = <&usb3_vbus_pin_a>;
-		regulator-name = "usb3-vbus";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		regulator-boot-on;
-		enable-active-high;
-		gpio = <&pio 6 11 GPIO_ACTIVE_HIGH>;
-	};
 };
 
-&ehci3 {
-	status = "okay";
+&clk_hse {
+	clock-frequency = <25000000>;
 };
 
-&emac {
+&usart1 {
+	pinctrl-0 = <&usart1_pins_b>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&emac_rgmii_pins>;
-	phy-supply = <&reg_gmac_3v3>;
-	phy-handle = <&ext_rgmii_phy>;
-	phy-mode = "rgmii";
-
-	allwinner,leds-active-low;
 	status = "okay";
-};
-
-&mdio {
-	ext_rgmii_phy: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <0>;
-	};
-};
-
-&mmc2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&mmc2_8bit_pins>;
-	vmmc-supply = <&reg_vcc3v3>;
-	bus-width = <8>;
-	non-removable;
-	cap-mmc-hw-reset;
-	status = "okay";
-};
-
-&mmc2_8bit_pins {
-	/* Increase drive strength for DDR modes */
-	drive-strength = <40>;
-	/* eMMC is missing pull-ups */
-	bias-pull-up;
-};
-
-&pio {
-	usb3_vbus_pin_a: usb3_vbus_pin@0 {
-		pins = "PG11";
-		function = "gpio_out";
-	};
-};
-
-&usbphy {
-	usb3_vbus-supply = <&reg_usb3_vbus>;
 };
