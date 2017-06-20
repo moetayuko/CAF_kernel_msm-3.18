@@ -204,17 +204,13 @@ static int faraday_pci_read_config(struct pci_bus *bus, unsigned int fn,
 	return PCIBIOS_SUCCESSFUL;
 }
 
-static int faraday_pci_write_config(struct pci_bus *bus, unsigned int fn,
-				    int config, int size, u32 value)
+static int faraday_raw_pci_write_config(struct faraday_pci *p, int bus_number,
+					 unsigned int fn, int config, int size,
+					 u32 value)
 {
-	struct faraday_pci *p = bus->sysdata;
 	int ret = PCIBIOS_SUCCESSFUL;
 
-	dev_dbg(&bus->dev,
-		"[write] slt: %.2d, fnc: %d, cnf: 0x%.2X, val (%d bytes): 0x%.8X\n",
-		PCI_SLOT(fn), PCI_FUNC(fn), config, size, value);
-
-	writel(PCI_CONF_BUS(bus->number) |
+	writel(PCI_CONF_BUS(bus_number) |
 			PCI_CONF_DEVICE(PCI_SLOT(fn)) |
 			PCI_CONF_FUNCTION(PCI_FUNC(fn)) |
 			PCI_CONF_WHERE(config) |
@@ -236,6 +232,19 @@ static int faraday_pci_write_config(struct pci_bus *bus, unsigned int fn,
 	}
 
 	return ret;
+}
+
+static int faraday_pci_write_config(struct pci_bus *bus, unsigned int fn,
+				    int config, int size, u32 value)
+{
+	struct faraday_pci *p = bus->sysdata;
+
+	dev_dbg(&bus->dev,
+		"[write] slt: %.2d, fnc: %d, cnf: 0x%.2X, val (%d bytes): 0x%.8X\n",
+		PCI_SLOT(fn), PCI_FUNC(fn), config, size, value);
+
+	return faraday_raw_pci_write_config(p, bus->number, fn, config, size,
+					    value);
 }
 
 static struct pci_ops faraday_pci_ops = {
@@ -432,7 +441,7 @@ static int faraday_pci_probe(struct platform_device *pdev)
 	u32 val;
 	LIST_HEAD(res);
 
-	host = pci_alloc_host_bridge(sizeof(*p));
+	host = devm_pci_alloc_host_bridge(dev, sizeof(*p));
 	if (!host)
 		return -ENOMEM;
 
@@ -440,6 +449,8 @@ static int faraday_pci_probe(struct platform_device *pdev)
 	host->ops = &faraday_pci_ops;
 	host->busnr = 0;
 	host->msi = NULL;
+	host->map_irq = of_irq_parse_and_map_pci;
+	host->swizzle_irq = pci_common_swizzle;
 	p = pci_host_bridge_priv(host);
 	host->sysdata = p;
 	p->dev = dev;
@@ -496,17 +507,8 @@ static int faraday_pci_probe(struct platform_device *pdev)
 	val |= PCI_COMMAND_MEMORY;
 	val |= PCI_COMMAND_MASTER;
 	writel(val, p->base + PCI_CTRL);
-
-	list_splice_init(&res, &host->windows);
-	ret = pci_register_host_bridge(host);
-	if (ret) {
-		dev_err(dev, "failed to register host: %d\n", ret);
-		return ret;
-	}
-	p->bus = host->bus;
-
 	/* Mask and clear all interrupts */
-	faraday_pci_write_config(p->bus, 0, FARADAY_PCI_CTRL2 + 2, 2, 0xF000);
+	faraday_raw_pci_write_config(p, 0, 0, FARADAY_PCI_CTRL2 + 2, 2, 0xF000);
 	if (variant->cascaded_irq) {
 		ret = faraday_pci_setup_cascaded_irq(p);
 		if (ret) {
@@ -519,8 +521,14 @@ static int faraday_pci_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	pci_scan_child_bus(p->bus);
-	pci_fixup_irqs(pci_common_swizzle, of_irq_parse_and_map_pci);
+	list_splice_init(&res, &host->windows);
+	ret = pci_scan_root_bus_bridge(host);
+	if (ret) {
+		dev_err(dev, "failed to scan host: %d\n", ret);
+		return ret;
+	}
+	p->bus = host->bus;
+
 	pci_bus_assign_resources(p->bus);
 	pci_bus_add_devices(p->bus);
 	pci_free_resource_list(&res);
