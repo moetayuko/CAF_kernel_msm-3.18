@@ -1281,10 +1281,13 @@ lpfc_hb_timeout_handler(struct lpfc_hba *phba)
 		/* Check outstanding IO count */
 		if (phba->cfg_enable_fc4_type & LPFC_ENABLE_NVME) {
 			if (phba->nvmet_support) {
-				spin_lock(&phba->sli4_hba.nvmet_io_lock);
+				spin_lock(&phba->sli4_hba.nvmet_ctx_get_lock);
+				spin_lock(&phba->sli4_hba.nvmet_ctx_put_lock);
 				tot = phba->sli4_hba.nvmet_xri_cnt -
-					phba->sli4_hba.nvmet_ctx_cnt;
-				spin_unlock(&phba->sli4_hba.nvmet_io_lock);
+					(phba->sli4_hba.nvmet_ctx_get_cnt +
+					phba->sli4_hba.nvmet_ctx_put_cnt);
+				spin_unlock(&phba->sli4_hba.nvmet_ctx_put_lock);
+				spin_unlock(&phba->sli4_hba.nvmet_ctx_get_lock);
 			} else {
 				tot = atomic_read(&phba->fc4NvmeIoCmpls);
 				data1 = atomic_read(
@@ -3487,7 +3490,6 @@ lpfc_sli4_nvmet_sgl_update(struct lpfc_hba *phba)
 
 	/* For NVMET, ALL remaining XRIs are dedicated for IO processing */
 	nvmet_xri_cnt = phba->sli4_hba.max_cfg_param.max_xri - els_xri_cnt;
-
 	if (nvmet_xri_cnt > phba->sli4_hba.nvmet_xri_cnt) {
 		/* els xri-sgl expanded */
 		xri_cnt = nvmet_xri_cnt - phba->sli4_hba.nvmet_xri_cnt;
@@ -3691,14 +3693,6 @@ lpfc_get_wwpn(struct lpfc_hba *phba)
 	LPFC_MBOXQ_t *mboxq;
 	MAILBOX_t *mb;
 
-	if (phba->sli_rev < LPFC_SLI_REV4) {
-		/* Reset the port first */
-		lpfc_sli_brdrestart(phba);
-		rc = lpfc_sli_chipset_init(phba);
-		if (rc)
-			return (uint64_t)-1;
-	}
-
 	mboxq = (LPFC_MBOXQ_t *) mempool_alloc(phba->mbox_mem_pool,
 						GFP_KERNEL);
 	if (!mboxq)
@@ -3852,8 +3846,19 @@ lpfc_create_port(struct lpfc_hba *phba, int instance, struct device *dev)
 	int i;
 	uint64_t wwn;
 	bool use_no_reset_hba = false;
+	int rc;
 
-	wwn = lpfc_get_wwpn(phba);
+	if (lpfc_no_hba_reset_cnt) {
+		if (phba->sli_rev < LPFC_SLI_REV4 &&
+		    dev == &phba->pcidev->dev) {
+			/* Reset the port first */
+			lpfc_sli_brdrestart(phba);
+			rc = lpfc_sli_chipset_init(phba);
+			if (rc)
+				return NULL;
+		}
+		wwn = lpfc_get_wwpn(phba);
+	}
 
 	for (i = 0; i < lpfc_no_hba_reset_cnt; i++) {
 		if (wwn == lpfc_no_hba_reset[i]) {
@@ -5932,7 +5937,8 @@ lpfc_sli4_driver_resource_setup(struct lpfc_hba *phba)
 		spin_lock_init(&phba->sli4_hba.abts_nvme_buf_list_lock);
 		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_abts_nvme_buf_list);
 		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_abts_nvmet_ctx_list);
-		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_nvmet_ctx_list);
+		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_nvmet_ctx_get_list);
+		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_nvmet_ctx_put_list);
 		INIT_LIST_HEAD(&phba->sli4_hba.lpfc_nvmet_io_wait_list);
 
 		/* Fast-path XRI aborted CQ Event work queue list */
@@ -5941,7 +5947,8 @@ lpfc_sli4_driver_resource_setup(struct lpfc_hba *phba)
 
 	/* This abort list used by worker thread */
 	spin_lock_init(&phba->sli4_hba.sgl_list_lock);
-	spin_lock_init(&phba->sli4_hba.nvmet_io_lock);
+	spin_lock_init(&phba->sli4_hba.nvmet_ctx_get_lock);
+	spin_lock_init(&phba->sli4_hba.nvmet_ctx_put_lock);
 	spin_lock_init(&phba->sli4_hba.nvmet_io_wait_lock);
 
 	/*

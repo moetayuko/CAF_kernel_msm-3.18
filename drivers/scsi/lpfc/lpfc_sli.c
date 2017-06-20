@@ -4303,7 +4303,6 @@ lpfc_sli4_brdreset(struct lpfc_hba *phba)
 
 	/* Perform FCoE PCI function reset before freeing queue memory */
 	rc = lpfc_pci_function_reset(phba);
-	lpfc_sli4_queue_destroy(phba);
 
 	/* Restore PCI cmd register */
 	pci_write_config_word(phba->pcidev, PCI_COMMAND, cfg_value);
@@ -4428,6 +4427,7 @@ lpfc_sli_brdrestart_s4(struct lpfc_hba *phba)
 		pci_disable_pcie_error_reporting(phba->pcidev);
 
 	lpfc_hba_down_post(phba);
+	lpfc_sli4_queue_destroy(phba);
 
 	return rc;
 }
@@ -6927,18 +6927,6 @@ lpfc_sli4_hba_setup(struct lpfc_hba *phba)
 		cnt = phba->cfg_iocb_cnt * 1024;
 		/* We need 1 iocbq for every SGL, for IO processing */
 		cnt += phba->sli4_hba.nvmet_xri_cnt;
-		/* Initialize and populate the iocb list per host */
-		lpfc_printf_log(phba, KERN_INFO, LOG_INIT,
-				"2821 initialize iocb list %d total %d\n",
-				phba->cfg_iocb_cnt, cnt);
-		rc = lpfc_init_iocb_list(phba, cnt);
-		if (rc) {
-			lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
-					"1413 Failed to init iocb list.\n");
-			goto out_destroy_queue;
-		}
-
-		lpfc_nvmet_create_targetport(phba);
 	} else {
 		/* update host scsi xri-sgl sizes and mappings */
 		rc = lpfc_sli4_scsi_sgl_update(phba);
@@ -6959,17 +6947,23 @@ lpfc_sli4_hba_setup(struct lpfc_hba *phba)
 		}
 
 		cnt = phba->cfg_iocb_cnt * 1024;
+	}
+
+	if (!phba->sli.iocbq_lookup) {
 		/* Initialize and populate the iocb list per host */
 		lpfc_printf_log(phba, KERN_INFO, LOG_INIT,
-				"2820 initialize iocb list %d total %d\n",
+				"2821 initialize iocb list %d total %d\n",
 				phba->cfg_iocb_cnt, cnt);
 		rc = lpfc_init_iocb_list(phba, cnt);
 		if (rc) {
 			lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
-					"6301 Failed to init iocb list.\n");
+					"1413 Failed to init iocb list.\n");
 			goto out_destroy_queue;
 		}
 	}
+
+	if (phba->nvmet_support)
+		lpfc_nvmet_create_targetport(phba);
 
 	if (phba->nvmet_support && phba->cfg_nvmet_mrq) {
 		/* Post initial buffers to all RQs created */
@@ -13559,6 +13553,9 @@ lpfc_sli4_fof_handle_eqe(struct lpfc_hba *phba, struct lpfc_eqe *eqe)
 				cqid, cq->queue_id);
 		return;
 	}
+
+	/* Save EQ associated with this CQ */
+	cq->assoc_qp = phba->sli4_hba.fof_eq;
 
 	/* Process all the entries to the OAS CQ */
 	while ((cqe = lpfc_sli4_cq_get(cq))) {
