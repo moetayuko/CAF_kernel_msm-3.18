@@ -13,6 +13,7 @@
 #include <linux/spinlock.h>
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/console.h>
 #include <linux/list.h>
 #include <linux/of_graph.h>
 #include <linux/of_reserved_mem.h>
@@ -297,6 +298,9 @@ static int hdlcd_drm_bind(struct device *dev)
 	if (ret)
 		goto err_free;
 
+	/* Set the CRTC's port so that the encoder component can find it */
+	hdlcd->crtc.port = of_graph_get_port_by_id(dev->of_node, 0);
+
 	ret = component_bind_all(dev, drm);
 	if (ret) {
 		DRM_ERROR("Failed to bind all components\n");
@@ -340,11 +344,14 @@ err_register:
 	}
 err_fbdev:
 	drm_kms_helper_poll_fini(drm);
+	drm_vblank_cleanup(drm);
 err_vblank:
 	pm_runtime_disable(drm->dev);
 err_pm_active:
 	component_unbind_all(dev, drm);
 err_unload:
+	of_node_put(hdlcd->crtc.port);
+	hdlcd->crtc.port = NULL;
 	drm_irq_uninstall(drm);
 	of_reserved_mem_device_release(drm->dev);
 err_free:
@@ -367,6 +374,9 @@ static void hdlcd_drm_unbind(struct device *dev)
 	}
 	drm_kms_helper_poll_fini(drm);
 	component_unbind_all(dev, drm);
+	of_node_put(hdlcd->crtc.port);
+	hdlcd->crtc.port = NULL;
+	drm_vblank_cleanup(drm);
 	pm_runtime_get_sync(drm->dev);
 	drm_irq_uninstall(drm);
 	pm_runtime_put_sync(drm->dev);
@@ -426,9 +436,15 @@ static int __maybe_unused hdlcd_pm_suspend(struct device *dev)
 		return 0;
 
 	drm_kms_helper_poll_disable(drm);
+	console_lock();
+	drm_fbdev_cma_set_suspend(hdlcd->fbdev, 1);
+	console_unlock();
 
 	hdlcd->state = drm_atomic_helper_suspend(drm);
 	if (IS_ERR(hdlcd->state)) {
+		console_lock();
+		drm_fbdev_cma_set_suspend(hdlcd->fbdev, 0);
+		console_unlock();
 		drm_kms_helper_poll_enable(drm);
 		return PTR_ERR(hdlcd->state);
 	}
@@ -445,8 +461,10 @@ static int __maybe_unused hdlcd_pm_resume(struct device *dev)
 		return 0;
 
 	drm_atomic_helper_resume(drm, hdlcd->state);
+	console_lock();
+	drm_fbdev_cma_set_suspend(hdlcd->fbdev, 0);
+	console_unlock();
 	drm_kms_helper_poll_enable(drm);
-	pm_runtime_set_active(dev);
 
 	return 0;
 }
