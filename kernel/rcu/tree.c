@@ -537,8 +537,8 @@ module_param(rcu_kick_kthreads, bool, 0644);
  * How long the grace period must be before we start recruiting
  * quiescent-state help from rcu_note_context_switch().
  */
-static ulong jiffies_till_sched_qs = HZ / 20;
-module_param(jiffies_till_sched_qs, ulong, 0644);
+static ulong jiffies_till_sched_qs = HZ / 16;
+module_param(jiffies_till_sched_qs, ulong, 0444);
 
 static bool rcu_start_gp_advanced(struct rcu_state *rsp, struct rcu_node *rnp,
 				  struct rcu_data *rdp);
@@ -1230,7 +1230,6 @@ static int rcu_implicit_dynticks_qs(struct rcu_data *rdp)
 	unsigned long jtsq;
 	bool *rnhqp;
 	bool *ruqp;
-	unsigned long rjtsc;
 	struct rcu_node *rnp;
 
 	/*
@@ -1247,23 +1246,13 @@ static int rcu_implicit_dynticks_qs(struct rcu_data *rdp)
 		return 1;
 	}
 
-	/* Compute and saturate jiffies_till_sched_qs. */
-	jtsq = jiffies_till_sched_qs;
-	rjtsc = rcu_jiffies_till_stall_check();
-	if (jtsq > rjtsc / 2) {
-		WRITE_ONCE(jiffies_till_sched_qs, rjtsc);
-		jtsq = rjtsc / 2;
-	} else if (jtsq < 1) {
-		WRITE_ONCE(jiffies_till_sched_qs, 1);
-		jtsq = 1;
-	}
-
 	/*
 	 * Has this CPU encountered a cond_resched_rcu_qs() since the
 	 * beginning of the grace period?  For this to be the case,
 	 * the CPU has to have noticed the current grace period.  This
 	 * might not be the case for nohz_full CPUs looping in the kernel.
 	 */
+	jtsq = jiffies_till_sched_qs;
 	rnp = rdp->mynode;
 	ruqp = per_cpu_ptr(&rcu_dynticks.rcu_urgent_qs, rdp->cpu);
 	if (time_after(jiffies, rdp->rsp->gp_start + jtsq) &&
@@ -1271,7 +1260,7 @@ static int rcu_implicit_dynticks_qs(struct rcu_data *rdp)
 	    READ_ONCE(rdp->gpnum) == rnp->gpnum && !rdp->gpwrap) {
 		trace_rcu_fqs(rdp->rsp->name, rdp->gpnum, rdp->cpu, TPS("rqc"));
 		return 1;
-	} else {
+	} else if (time_after(jiffies, rdp->rsp->gp_start + jtsq)) {
 		/* Load rcu_qs_ctr before store to rcu_urgent_qs. */
 		smp_store_release(ruqp, true);
 	}
@@ -1299,10 +1288,6 @@ static int rcu_implicit_dynticks_qs(struct rcu_data *rdp)
 	 * updates are only once every few jiffies, the probability of
 	 * lossage (and thus of slight grace-period extension) is
 	 * quite low.
-	 *
-	 * Note that if the jiffies_till_sched_qs boot/sysfs parameter
-	 * is set too high, we override with half of the RCU CPU stall
-	 * warning delay.
 	 */
 	rnhqp = &per_cpu(rcu_dynticks.rcu_need_heavy_qs, rdp->cpu);
 	if (!READ_ONCE(*rnhqp) &&
@@ -2067,7 +2052,7 @@ static bool rcu_gp_init(struct rcu_state *rsp)
 }
 
 /*
- * Helper function for wait_event_interruptible_timeout() wakeup
+ * Helper function for swait_event_interruptible_timeout() wakeup
  * at force-quiescent-state time.
  */
 static bool rcu_gp_fqs_check_wake(struct rcu_state *rsp, int *gfp)
@@ -2206,6 +2191,7 @@ static int __noreturn rcu_gp_kthread(void *arg)
 					       READ_ONCE(rsp->gpnum),
 					       TPS("reqwait"));
 			rsp->gp_state = RCU_GP_WAIT_GPS;
+			/* _interruptible() to avoid messing up load average. */
 			swait_event_interruptible(rsp->gp_wq,
 						 READ_ONCE(rsp->gp_flags) &
 						 RCU_GP_FLAG_INIT);
@@ -2239,6 +2225,7 @@ static int __noreturn rcu_gp_kthread(void *arg)
 					       READ_ONCE(rsp->gpnum),
 					       TPS("fqswait"));
 			rsp->gp_state = RCU_GP_WAIT_FQS;
+			/* _interruptible() to avoid messing up load average. */
 			ret = swait_event_interruptible_timeout(rsp->gp_wq,
 					rcu_gp_fqs_check_wake(rsp, &gf), j);
 			rsp->gp_state = RCU_GP_DOING_FQS;
@@ -3777,8 +3764,6 @@ rcu_init_percpu_data(int cpu, struct rcu_state *rsp)
 	 */
 	rnp = rdp->mynode;
 	raw_spin_lock_rcu_node(rnp);		/* irqs already disabled. */
-	if (!rdp->beenonline)
-		WRITE_ONCE(rsp->ncpus, READ_ONCE(rsp->ncpus) + 1);
 	rdp->beenonline = true;	 /* We have now been online. */
 	rdp->gpnum = rnp->completed; /* Make CPU later note any new GP. */
 	rdp->completed = rnp->completed;
@@ -3882,6 +3867,8 @@ void rcu_cpu_starting(unsigned int cpu)
 {
 	unsigned long flags;
 	unsigned long mask;
+	int nbits;
+	unsigned long oldmask;
 	struct rcu_data *rdp;
 	struct rcu_node *rnp;
 	struct rcu_state *rsp;
@@ -3892,9 +3879,15 @@ void rcu_cpu_starting(unsigned int cpu)
 		mask = rdp->grpmask;
 		raw_spin_lock_irqsave_rcu_node(rnp, flags);
 		rnp->qsmaskinitnext |= mask;
+		oldmask = rnp->expmaskinitnext;
 		rnp->expmaskinitnext |= mask;
+		oldmask ^= rnp->expmaskinitnext;
+		nbits = bitmap_weight(&oldmask, BITS_PER_LONG);
+		/* Allow lockless access for expedited grace periods. */
+		smp_store_release(&rsp->ncpus, rsp->ncpus + nbits); /* ^^^ */
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 	}
+	smp_mb(); /* Ensure RCU read-side usage follows above initialization. */
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
