@@ -970,7 +970,7 @@ static bool vxlan_snoop(struct net_device *dev,
 			return false;
 
 		/* Don't migrate static entries, drop packets */
-		if (f->state & NUD_NOARP)
+		if (f->state & (NUD_PERMANENT | NUD_NOARP))
 			return true;
 
 		if (net_ratelimit())
@@ -1077,10 +1077,10 @@ static void vxlan_sock_release(struct vxlan_dev *vxlan)
 #if IS_ENABLED(CONFIG_IPV6)
 	struct vxlan_sock *sock6 = rtnl_dereference(vxlan->vn6_sock);
 
-	rcu_assign_pointer(vxlan->vn6_sock, NULL);
+	RCU_INIT_POINTER(vxlan->vn6_sock, NULL);
 #endif
 
-	rcu_assign_pointer(vxlan->vn4_sock, NULL);
+	RCU_INIT_POINTER(vxlan->vn4_sock, NULL);
 	synchronize_net();
 
 	vxlan_vs_del_dev(vxlan);
@@ -1584,10 +1584,8 @@ static struct sk_buff *vxlan_na_create(struct sk_buff *request,
 	skb_pull(reply, sizeof(struct ipv6hdr));
 	skb_reset_transport_header(reply);
 
-	na = (struct nd_msg *)skb_put(reply, sizeof(*na) + na_olen);
-
 	/* Neighbor Advertisement */
-	memset(na, 0, sizeof(*na)+na_olen);
+	na = skb_put_zero(reply, sizeof(*na) + na_olen);
 	na->icmph.icmp6_type = NDISC_NEIGHBOUR_ADVERTISEMENT;
 	na->icmph.icmp6_router = isrouter;
 	na->icmph.icmp6_override = 1;
@@ -1829,7 +1827,7 @@ static int vxlan_build_skb(struct sk_buff *skb, struct dst_entry *dst,
 	if (err)
 		return err;
 
-	vxh = (struct vxlanhdr *) __skb_push(skb, sizeof(*vxh));
+	vxh = __skb_push(skb, sizeof(*vxh));
 	vxh->vx_flags = VXLAN_HF_VNI;
 	vxh->vx_vni = vxlan_vni_field(vni);
 
