@@ -49,10 +49,10 @@ static void i915_gem_flush_free_objects(struct drm_i915_private *i915);
 
 static bool cpu_write_needs_clflush(struct drm_i915_gem_object *obj)
 {
-	if (obj->base.write_domain == I915_GEM_DOMAIN_CPU)
+	if (obj->cache_dirty)
 		return false;
 
-	if (!i915_gem_object_is_coherent(obj))
+	if (!obj->cache_coherent)
 		return true;
 
 	return obj->pin_display;
@@ -143,9 +143,9 @@ i915_gem_get_aperture_ioctl(struct drm_device *dev, void *data,
 	struct i915_ggtt *ggtt = &dev_priv->ggtt;
 	struct drm_i915_gem_get_aperture *args = data;
 	struct i915_vma *vma;
-	size_t pinned;
+	u64 pinned;
 
-	pinned = 0;
+	pinned = ggtt->base.reserved;
 	mutex_lock(&dev->struct_mutex);
 	list_for_each_entry(vma, &ggtt->base.active_list, vm_link)
 		if (i915_vma_is_pinned(vma))
@@ -233,6 +233,14 @@ err_phys:
 	return st;
 }
 
+static void __start_cpu_write(struct drm_i915_gem_object *obj)
+{
+	obj->base.read_domains = I915_GEM_DOMAIN_CPU;
+	obj->base.write_domain = I915_GEM_DOMAIN_CPU;
+	if (cpu_write_needs_clflush(obj))
+		obj->cache_dirty = true;
+}
+
 static void
 __i915_gem_object_release_shmem(struct drm_i915_gem_object *obj,
 				struct sg_table *pages,
@@ -245,11 +253,10 @@ __i915_gem_object_release_shmem(struct drm_i915_gem_object *obj,
 
 	if (needs_clflush &&
 	    (obj->base.read_domains & I915_GEM_DOMAIN_CPU) == 0 &&
-	    !i915_gem_object_is_coherent(obj))
+	    !obj->cache_coherent)
 		drm_clflush_sg(pages);
 
-	obj->base.read_domains = I915_GEM_DOMAIN_CPU;
-	obj->base.write_domain = I915_GEM_DOMAIN_CPU;
+	__start_cpu_write(obj);
 }
 
 static void
@@ -684,6 +691,12 @@ i915_gem_dumb_create(struct drm_file *file,
 			       args->size, &args->handle);
 }
 
+static bool gpu_write_needs_clflush(struct drm_i915_gem_object *obj)
+{
+	return !(obj->cache_level == I915_CACHE_NONE ||
+		 obj->cache_level == I915_CACHE_WT);
+}
+
 /**
  * Creates a new mm object and returns a handle to it.
  * @dev: drm device pointer
@@ -752,6 +765,11 @@ flush_write_domain(struct drm_i915_gem_object *obj, unsigned int flush_domains)
 
 	case I915_GEM_DOMAIN_CPU:
 		i915_gem_clflush_object(obj, I915_CLFLUSH_SYNC);
+		break;
+
+	case I915_GEM_DOMAIN_RENDER:
+		if (gpu_write_needs_clflush(obj))
+			obj->cache_dirty = true;
 		break;
 	}
 
@@ -838,8 +856,7 @@ int i915_gem_obj_prepare_shmem_read(struct drm_i915_gem_object *obj,
 	if (ret)
 		return ret;
 
-	if (i915_gem_object_is_coherent(obj) ||
-	    !static_cpu_has(X86_FEATURE_CLFLUSH)) {
+	if (obj->cache_coherent || !static_cpu_has(X86_FEATURE_CLFLUSH)) {
 		ret = i915_gem_object_set_to_cpu_domain(obj, false);
 		if (ret)
 			goto err_unpin;
@@ -854,7 +871,8 @@ int i915_gem_obj_prepare_shmem_read(struct drm_i915_gem_object *obj,
 	 * optimizes for the case when the gpu will dirty the data
 	 * anyway again before the next pread happens.
 	 */
-	if (!(obj->base.read_domains & I915_GEM_DOMAIN_CPU))
+	if (!obj->cache_dirty &&
+	    !(obj->base.read_domains & I915_GEM_DOMAIN_CPU))
 		*needs_clflush = CLFLUSH_BEFORE;
 
 out:
@@ -890,8 +908,7 @@ int i915_gem_obj_prepare_shmem_write(struct drm_i915_gem_object *obj,
 	if (ret)
 		return ret;
 
-	if (i915_gem_object_is_coherent(obj) ||
-	    !static_cpu_has(X86_FEATURE_CLFLUSH)) {
+	if (obj->cache_coherent || !static_cpu_has(X86_FEATURE_CLFLUSH)) {
 		ret = i915_gem_object_set_to_cpu_domain(obj, true);
 		if (ret)
 			goto err_unpin;
@@ -906,14 +923,16 @@ int i915_gem_obj_prepare_shmem_write(struct drm_i915_gem_object *obj,
 	 * This optimizes for the case when the gpu will use the data
 	 * right away and we therefore have to clflush anyway.
 	 */
-	if (obj->base.write_domain != I915_GEM_DOMAIN_CPU)
+	if (!obj->cache_dirty) {
 		*needs_clflush |= CLFLUSH_AFTER;
 
-	/* Same trick applies to invalidate partially written cachelines read
-	 * before writing.
-	 */
-	if (!(obj->base.read_domains & I915_GEM_DOMAIN_CPU))
-		*needs_clflush |= CLFLUSH_BEFORE;
+		/*
+		 * Same trick applies to invalidate partially written
+		 * cachelines read before writing.
+		 */
+		if (!(obj->base.read_domains & I915_GEM_DOMAIN_CPU))
+			*needs_clflush |= CLFLUSH_BEFORE;
+	}
 
 out:
 	intel_fb_obj_invalidate(obj, ORIGIN_CPU);
@@ -2367,8 +2386,7 @@ rebuild_st:
 	 * Fail silently without starting the shrinker
 	 */
 	mapping = obj->base.filp->f_mapping;
-	noreclaim = mapping_gfp_constraint(mapping,
-					   ~(__GFP_IO | __GFP_RECLAIM));
+	noreclaim = mapping_gfp_constraint(mapping, ~__GFP_RECLAIM);
 	noreclaim |= __GFP_NORETRY | __GFP_NOWARN;
 
 	sg = st->sgl;
@@ -3243,6 +3261,10 @@ void i915_gem_close_object(struct drm_gem_object *gem, struct drm_file *file)
 		if (vma->vm->file == fpriv)
 			i915_vma_close(vma);
 
+	vma = obj->vma_hashed;
+	if (vma && vma->ctx->file_priv == fpriv)
+		i915_vma_unlink_ctx(vma);
+
 	if (i915_gem_object_is_active(obj) &&
 	    !i915_gem_object_has_active_reference(obj)) {
 		i915_gem_object_set_active_reference(obj);
@@ -3396,10 +3418,13 @@ int i915_gem_wait_for_idle(struct drm_i915_private *i915, unsigned int flags)
 
 static void __i915_gem_object_flush_for_display(struct drm_i915_gem_object *obj)
 {
-	if (obj->base.write_domain != I915_GEM_DOMAIN_CPU && !obj->cache_dirty)
-		return;
-
-	i915_gem_clflush_object(obj, I915_CLFLUSH_FORCE);
+	/*
+	 * We manually flush the CPU domain so that we can override and
+	 * force the flush for the display, and perform it asyncrhonously.
+	 */
+	flush_write_domain(obj, ~I915_GEM_DOMAIN_CPU);
+	if (obj->cache_dirty)
+		i915_gem_clflush_object(obj, I915_CLFLUSH_FORCE);
 	obj->base.write_domain = 0;
 }
 
@@ -3658,13 +3683,11 @@ restart:
 		}
 	}
 
-	if (obj->base.write_domain == I915_GEM_DOMAIN_CPU &&
-	    i915_gem_object_is_coherent(obj))
-		obj->cache_dirty = true;
-
 	list_for_each_entry(vma, &obj->vma_list, obj_link)
 		vma->node.color = cache_level;
 	obj->cache_level = cache_level;
+	obj->cache_coherent = i915_gem_object_is_coherent(obj);
+	obj->cache_dirty = true; /* Always invalidate stale cachelines */
 
 	return 0;
 }
@@ -3886,9 +3909,6 @@ i915_gem_object_set_to_cpu_domain(struct drm_i915_gem_object *obj, bool write)
 	if (ret)
 		return ret;
 
-	if (obj->base.write_domain == I915_GEM_DOMAIN_CPU)
-		return 0;
-
 	flush_write_domain(obj, ~I915_GEM_DOMAIN_CPU);
 
 	/* Flush the CPU cache if it's still invalid. */
@@ -3900,15 +3920,13 @@ i915_gem_object_set_to_cpu_domain(struct drm_i915_gem_object *obj, bool write)
 	/* It should now be out of any other write domains, and we can update
 	 * the domain values for our changes.
 	 */
-	GEM_BUG_ON((obj->base.write_domain & ~I915_GEM_DOMAIN_CPU) != 0);
+	GEM_BUG_ON(obj->base.write_domain & ~I915_GEM_DOMAIN_CPU);
 
 	/* If we're writing through the CPU, then the GPU read domains will
 	 * need to be invalidated at next use.
 	 */
-	if (write) {
-		obj->base.read_domains = I915_GEM_DOMAIN_CPU;
-		obj->base.write_domain = I915_GEM_DOMAIN_CPU;
-	}
+	if (write)
+		__start_cpu_write(obj);
 
 	return 0;
 }
@@ -4240,7 +4258,6 @@ void i915_gem_object_init(struct drm_i915_gem_object *obj,
 
 	INIT_LIST_HEAD(&obj->global_link);
 	INIT_LIST_HEAD(&obj->userfault_link);
-	INIT_LIST_HEAD(&obj->obj_exec_link);
 	INIT_LIST_HEAD(&obj->vma_list);
 	INIT_LIST_HEAD(&obj->batch_pool_link);
 
@@ -4329,6 +4346,9 @@ i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 	} else
 		obj->cache_level = I915_CACHE_NONE;
 
+	obj->cache_coherent = i915_gem_object_is_coherent(obj);
+	obj->cache_dirty = !obj->cache_coherent;
+
 	trace_i915_gem_object_create(obj);
 
 	return obj;
@@ -4377,7 +4397,6 @@ static void __i915_gem_free_objects(struct drm_i915_private *i915,
 		GEM_BUG_ON(i915_gem_object_is_active(obj));
 		list_for_each_entry_safe(vma, vn,
 					 &obj->vma_list, obj_link) {
-			GEM_BUG_ON(!i915_vma_is_ggtt(vma));
 			GEM_BUG_ON(i915_vma_is_active(vma));
 			vma->flags &= ~I915_VMA_PIN_MASK;
 			i915_vma_close(vma);
@@ -4784,7 +4803,9 @@ int i915_gem_init(struct drm_i915_private *dev_priv)
 	 */
 	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
 
-	i915_gem_init_userptr(dev_priv);
+	ret = i915_gem_init_userptr(dev_priv);
+	if (ret)
+		goto out_unlock;
 
 	ret = i915_gem_init_ggtt(dev_priv);
 	if (ret)
@@ -4995,10 +5016,8 @@ int i915_gem_freeze_late(struct drm_i915_private *dev_priv)
 
 	mutex_lock(&dev_priv->drm.struct_mutex);
 	for (p = phases; *p; p++) {
-		list_for_each_entry(obj, *p, global_link) {
-			obj->base.read_domains = I915_GEM_DOMAIN_CPU;
-			obj->base.write_domain = I915_GEM_DOMAIN_CPU;
-		}
+		list_for_each_entry(obj, *p, global_link)
+			__start_cpu_write(obj);
 	}
 	mutex_unlock(&dev_priv->drm.struct_mutex);
 
