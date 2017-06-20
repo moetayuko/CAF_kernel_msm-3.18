@@ -338,7 +338,7 @@ config ARCH_MULTIPLATFORM
 	select ARM_HAS_SG_CHAIN
 	select ARM_PATCH_PHYS_VIRT
 	select AUTO_ZRELADDR
-	select CLKSRC_OF
+	select TIMER_OF
 	select COMMON_CLK
 	select GENERIC_CLOCKEVENTS
 	select MIGHT_HAVE_PCI
@@ -352,7 +352,7 @@ config ARM_SINGLE_ARMV7M
 	depends on !MMU
 	select ARM_NVIC
 	select AUTO_ZRELADDR
-	select CLKSRC_OF
+	select TIMER_OF
 	select COMMON_CLK
 	select CPU_V7M
 	select GENERIC_CLOCKEVENTS
@@ -533,7 +533,7 @@ config ARCH_PXA
 	select CLKDEV_LOOKUP
 	select CLKSRC_PXA
 	select CLKSRC_MMIO
-	select CLKSRC_OF
+	select TIMER_OF
 	select CPU_XSCALE if !CPU_XSC3
 	select GENERIC_CLOCKEVENTS
 	select GPIO_PXA
@@ -572,7 +572,7 @@ config ARCH_SA1100
 	select CLKDEV_LOOKUP
 	select CLKSRC_MMIO
 	select CLKSRC_PXA
-	select CLKSRC_OF if OF
+	select TIMER_OF if OF
 	select CPU_FREQ
 	select CPU_SA1100
 	select GENERIC_CLOCKEVENTS
@@ -1360,7 +1360,7 @@ config HAVE_ARM_ARCH_TIMER
 
 config HAVE_ARM_TWD
 	bool
-	select CLKSRC_OF if OF
+	select TIMER_OF if OF
 	help
 	  This options enables support for the ARM timer and watchdog unit
 
