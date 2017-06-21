@@ -498,6 +498,7 @@ bool btrfs_is_name_len_valid(struct extent_buffer *leaf, int slot,
 {
 	struct btrfs_fs_info *fs_info = leaf->fs_info;
 	struct btrfs_key key;
+	struct btrfs_dir_item *di;
 	u32 read_start;
 	u32 read_end;
 	u32 item_start;
@@ -515,8 +516,17 @@ bool btrfs_is_name_len_valid(struct extent_buffer *leaf, int slot,
 	btrfs_item_key_to_cpu(leaf, &key, slot);
 
 	switch (key.type) {
-	case BTRFS_DIR_ITEM_KEY:
 	case BTRFS_XATTR_ITEM_KEY:
+		/*
+		 * XATTR_ITEM could contain data so the item_end would not
+		 * match read_end as for other item types. Artificially lower
+		 * the upper bound so we check just name_len. We have to trust
+		 * the data_len value here, but if it's too big the validation
+		 * fails so it's safer than increasing read_end.
+		 */
+		di = btrfs_item_ptr(leaf, slot, struct btrfs_dir_item);
+		item_end -= btrfs_dir_data_len(leaf, di);
+	case BTRFS_DIR_ITEM_KEY:
 	case BTRFS_DIR_INDEX_KEY:
 		size = sizeof(struct btrfs_dir_item);
 		break;
