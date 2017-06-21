@@ -30,6 +30,8 @@ endif
 # In kernel modules, this causes load failures due to unsupported relocations.
 KBUILD_CFLAGS   += -fno-asynchronous-unwind-tables
 
+LDFLAGS_vmlinux	+= -R arch/tile/kernel/vdso/vdso-syms.o
+
 LIBGCC_PATH     := \
   $(shell $(CC) $(KBUILD_CFLAGS) $(KCFLAGS) -print-libgcc-file-name)
 
