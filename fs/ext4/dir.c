@@ -611,9 +611,17 @@ finished:
 
 static int ext4_dir_open(struct inode * inode, struct file * filp)
 {
+	int ret = 0;
+
 	if (ext4_encrypted_inode(inode))
-		return fscrypt_get_encryption_info(inode) ? -EACCES : 0;
-	return 0;
+		ret = fscrypt_get_encryption_info(inode) ? -EACCES : 0;
+	if (!ret) {
+		struct inode *bd_inode = inode->i_sb->s_bdev->bd_inode;
+
+		filp->f_md_wb_err =
+			filemap_sample_wb_err(bd_inode->i_mapping);
+	}
+	return ret;
 }
 
 static int ext4_release_dir(struct inode *inode, struct file *filp)

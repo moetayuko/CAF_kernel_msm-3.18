@@ -100,7 +100,7 @@ static int ext2_commit_chunk(struct page *page, loff_t pos, unsigned len)
 	}
 
 	if (IS_DIRSYNC(dir)) {
-		err = write_one_page(page, 1);
+		err = write_one_page(page);
 		if (!err)
 			err = sync_inode_metadata(dir, 1);
 	} else {
@@ -713,6 +713,15 @@ not_empty:
 	return 0;
 }
 
+static int ext2_dir_open(struct inode *inode, struct file *file)
+{
+	struct inode *bd_inode = inode->i_sb->s_bdev->bd_inode;
+
+	/* Sample blockdev mapping errseq_t for metadata writeback */
+	file->f_md_wb_err = filemap_sample_wb_err(bd_inode->i_mapping);
+	return 0;
+}
+
 const struct file_operations ext2_dir_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= generic_read_dir,
@@ -721,5 +730,6 @@ const struct file_operations ext2_dir_operations = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl	= ext2_compat_ioctl,
 #endif
+	.open		= ext2_dir_open,
 	.fsync		= ext2_fsync,
 };

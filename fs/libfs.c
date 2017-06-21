@@ -974,12 +974,12 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
 	int err;
 	int ret;
 
-	err = filemap_write_and_wait_range(inode->i_mapping, start, end);
-	if (err)
-		return err;
+	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
 
 	inode_lock(inode);
-	ret = sync_mapping_buffers(inode->i_mapping);
+	err = sync_mapping_buffers(inode->i_mapping);
+	if (ret == 0)
+		ret = err;
 	if (!(inode->i_state & I_DIRTY_ALL))
 		goto out;
 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
@@ -988,10 +988,10 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
 	err = sync_inode_metadata(inode, 1);
 	if (ret == 0)
 		ret = err;
-
 out:
 	inode_unlock(inode);
-	return ret;
+	err = filemap_check_errors(inode->i_mapping);
+	return ret ? ret : err;
 }
 EXPORT_SYMBOL(__generic_file_fsync);
 
