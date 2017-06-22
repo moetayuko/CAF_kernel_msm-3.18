@@ -114,7 +114,7 @@ static void pblk_end_io_read(struct nvm_rq *rqd)
 		pblk_log_read_err(pblk, rqd);
 #ifdef CONFIG_NVM_DEBUG
 	else
-		WARN_ONCE(bio->bi_error, "pblk: corrupted read error\n");
+		WARN_ONCE(bio->bi_status, "pblk: corrupted read error\n");
 #endif
 
 	if (rqd->nr_ppas > 1)
@@ -123,7 +123,7 @@ static void pblk_end_io_read(struct nvm_rq *rqd)
 	bio_put(bio);
 	if (r_ctx->orig_bio) {
 #ifdef CONFIG_NVM_DEBUG
-		WARN_ONCE(r_ctx->orig_bio->bi_error,
+		WARN_ONCE(r_ctx->orig_bio->bi_status,
 						"pblk: corrupted read bio\n");
 #endif
 		bio_endio(r_ctx->orig_bio);
@@ -342,7 +342,7 @@ int pblk_submit_read(struct pblk *pblk, struct bio *bio)
 		struct pblk_r_ctx *r_ctx = nvm_rq_to_pdu(rqd);
 
 		/* Clone read bio to deal with read errors internally */
-		int_bio = bio_clone_bioset(bio, GFP_KERNEL, fs_bio_set);
+		int_bio = bio_clone_fast(bio, GFP_KERNEL, pblk_bio_set);
 		if (!int_bio) {
 			pr_err("pblk: could not clone read bio\n");
 			return NVM_IO_ERR;

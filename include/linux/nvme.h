@@ -102,6 +102,7 @@ enum {
 	NVME_REG_ACQ	= 0x0030,	/* Admin CQ Base Address */
 	NVME_REG_CMBLOC = 0x0038,	/* Controller Memory Buffer Location */
 	NVME_REG_CMBSZ	= 0x003c,	/* Controller Memory Buffer Size */
+	NVME_REG_DBS	= 0x1000,	/* SQ 0 Tail Doorbell */
 };
 
 #define NVME_CAP_MQES(cap)	((cap) & 0xffff)
@@ -208,9 +209,15 @@ struct nvme_id_ctrl {
 	__u8			tnvmcap[16];
 	__u8			unvmcap[16];
 	__le32			rpmbs;
-	__u8			rsvd316[4];
+	__le16			edstt;
+	__u8			dsto;
+	__u8			fwug;
 	__le16			kas;
-	__u8			rsvd322[190];
+	__le16			hctma;
+	__le16			mntmt;
+	__le16			mxtmt;
+	__le32			sanicap;
+	__u8			rsvd332[180];
 	__u8			sqes;
 	__u8			cqes;
 	__le16			maxcmd;
@@ -275,7 +282,7 @@ struct nvme_id_ns {
 	__le16			nabsn;
 	__le16			nabo;
 	__le16			nabspf;
-	__u16			rsvd46;
+	__le16			noiob;
 	__u8			nvmcap[16];
 	__u8			rsvd64[40];
 	__u8			nguid[16];
@@ -289,6 +296,7 @@ enum {
 	NVME_ID_CNS_NS			= 0x00,
 	NVME_ID_CNS_CTRL		= 0x01,
 	NVME_ID_CNS_NS_ACTIVE_LIST	= 0x02,
+	NVME_ID_CNS_NS_DESC_LIST	= 0x03,
 	NVME_ID_CNS_NS_PRESENT_LIST	= 0x10,
 	NVME_ID_CNS_NS_PRESENT		= 0x11,
 	NVME_ID_CNS_CTRL_NS_LIST	= 0x12,
@@ -313,6 +321,22 @@ enum {
 	NVME_NS_DPS_PI_TYPE1	= 1,
 	NVME_NS_DPS_PI_TYPE2	= 2,
 	NVME_NS_DPS_PI_TYPE3	= 3,
+};
+
+struct nvme_ns_id_desc {
+	__u8 nidt;
+	__u8 nidl;
+	__le16 reserved;
+};
+
+#define NVME_NIDT_EUI64_LEN	8
+#define NVME_NIDT_NGUID_LEN	16
+#define NVME_NIDT_UUID_LEN	16
+
+enum {
+	NVME_NIDT_EUI64		= 0x01,
+	NVME_NIDT_NGUID		= 0x02,
+	NVME_NIDT_UUID		= 0x03,
 };
 
 struct nvme_smart_log {
@@ -587,6 +611,11 @@ struct nvme_feat_auto_pst {
 	__le64 entries[32];
 };
 
+enum {
+	NVME_HOST_MEM_ENABLE	= (1 << 0),
+	NVME_HOST_MEM_RETURN	= (1 << 1),
+};
+
 /* Admin commands */
 
 enum nvme_admin_opcode {
@@ -659,6 +688,8 @@ struct nvme_identify {
 	__u32			rsvd11[5];
 };
 
+#define NVME_IDENTIFY_DATA_SIZE 4096
+
 struct nvme_features {
 	__u8			opcode;
 	__u8			flags;
@@ -668,7 +699,16 @@ struct nvme_features {
 	union nvme_data_ptr	dptr;
 	__le32			fid;
 	__le32			dword11;
-	__u32			rsvd12[4];
+	__le32                  dword12;
+	__le32                  dword13;
+	__le32                  dword14;
+	__le32                  dword15;
+};
+
+struct nvme_host_mem_buf_desc {
+	__le64			addr;
+	__le32			size;
+	__u32			rsvd;
 };
 
 struct nvme_create_cq {
@@ -1050,5 +1090,9 @@ struct nvme_completion {
 
 #define NVME_VS(major, minor, tertiary) \
 	(((major) << 16) | ((minor) << 8) | (tertiary))
+
+#define NVME_MAJOR(ver)		((ver) >> 16)
+#define NVME_MINOR(ver)		(((ver) >> 8) & 0xff)
+#define NVME_TERTIARY(ver)	((ver) & 0xff)
 
 #endif /* _LINUX_NVME_H */

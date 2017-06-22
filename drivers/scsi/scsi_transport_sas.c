@@ -33,6 +33,7 @@
 #include <linux/bsg.h>
 
 #include <scsi/scsi.h>
+#include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_request.h>
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_host.h>
@@ -172,7 +173,7 @@ static void sas_smp_request(struct request_queue *q, struct Scsi_Host *shost,
 			    struct sas_rphy *rphy)
 {
 	struct request *req;
-	int ret;
+	blk_status_t ret;
 	int (*handler)(struct Scsi_Host *, struct sas_rphy *, struct request *);
 
 	while ((req = blk_fetch_request(q)) != NULL) {
@@ -230,6 +231,7 @@ static int sas_bsg_initialize(struct Scsi_Host *shost, struct sas_rphy *rphy)
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
 		return -ENOMEM;
+	q->initialize_rq_fn = scsi_initialize_rq;
 	q->cmd_size = sizeof(struct scsi_request);
 
 	if (rphy) {
@@ -264,6 +266,7 @@ static int sas_bsg_initialize(struct Scsi_Host *shost, struct sas_rphy *rphy)
 		q->queuedata = shost;
 
 	queue_flag_set_unlocked(QUEUE_FLAG_BIDI, q);
+	queue_flag_set_unlocked(QUEUE_FLAG_SCSI_PASSTHROUGH, q);
 	return 0;
 
 out_cleanup_queue:
