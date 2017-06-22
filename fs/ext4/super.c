@@ -927,9 +927,13 @@ static void ext4_put_super(struct super_block *sb)
 		invalidate_bdev(sbi->journal_bdev);
 		ext4_blkdev_remove(sbi);
 	}
-	if (sbi->s_mb_cache) {
-		ext4_xattr_destroy_cache(sbi->s_mb_cache);
-		sbi->s_mb_cache = NULL;
+	if (sbi->s_ea_inode_cache) {
+		ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
+		sbi->s_ea_inode_cache = NULL;
+	}
+	if (sbi->s_ea_block_cache) {
+		ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
+		sbi->s_ea_block_cache = NULL;
 	}
 	if (sbi->s_mmp_tsk)
 		kthread_stop(sbi->s_mmp_tsk);
@@ -1143,7 +1147,7 @@ static int ext4_set_context(struct inode *inode, const void *ctx, size_t len,
 							void *fs_data)
 {
 	handle_t *handle = fs_data;
-	int res, res2, retries = 0;
+	int res, res2, credits, retries = 0;
 
 	res = ext4_convert_inline_data(inode);
 	if (res)
@@ -1178,8 +1182,11 @@ static int ext4_set_context(struct inode *inode, const void *ctx, size_t len,
 	if (res)
 		return res;
 retry:
-	handle = ext4_journal_start(inode, EXT4_HT_MISC,
-			ext4_jbd2_credits_xattr(inode));
+	res = ext4_xattr_set_credits(inode, len, &credits);
+	if (res)
+		return res;
+
+	handle = ext4_journal_start(inode, EXT4_HT_MISC, credits);
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -1256,16 +1263,17 @@ static struct dquot **ext4_get_dquots(struct inode *inode)
 }
 
 static const struct dquot_operations ext4_quota_operations = {
-	.get_reserved_space = ext4_get_reserved_space,
-	.write_dquot	= ext4_write_dquot,
-	.acquire_dquot	= ext4_acquire_dquot,
-	.release_dquot	= ext4_release_dquot,
-	.mark_dirty	= ext4_mark_dquot_dirty,
-	.write_info	= ext4_write_info,
-	.alloc_dquot	= dquot_alloc,
-	.destroy_dquot	= dquot_destroy,
-	.get_projid	= ext4_get_projid,
-	.get_next_id	= ext4_get_next_id,
+	.get_reserved_space	= ext4_get_reserved_space,
+	.write_dquot		= ext4_write_dquot,
+	.acquire_dquot		= ext4_acquire_dquot,
+	.release_dquot		= ext4_release_dquot,
+	.mark_dirty		= ext4_mark_dquot_dirty,
+	.write_info		= ext4_write_info,
+	.alloc_dquot		= dquot_alloc,
+	.destroy_dquot		= dquot_destroy,
+	.get_projid		= ext4_get_projid,
+	.get_inode_usage	= ext4_get_inode_usage,
+	.get_next_id		= ext4_get_next_id,
 };
 
 static const struct quotactl_ops ext4_qctl_operations = {
@@ -1328,7 +1336,7 @@ enum {
 	Opt_inode_readahead_blks, Opt_journal_ioprio,
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
-	Opt_max_dir_size_kb, Opt_nojournal_checksum,
+	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_nombcache,
 };
 
 static const match_table_t tokens = {
@@ -1411,6 +1419,8 @@ static const match_table_t tokens = {
 	{Opt_noinit_itable, "noinit_itable"},
 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
 	{Opt_test_dummy_encryption, "test_dummy_encryption"},
+	{Opt_nombcache, "nombcache"},
+	{Opt_nombcache, "no_mbcache"},	/* for backward compatibility */
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1618,6 +1628,7 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
 	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
+	{Opt_nombcache, EXT4_MOUNT_NO_MBCACHE, MOPT_SET},
 	{Opt_err, 0, 0}
 };
 
@@ -3445,7 +3456,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	/* Load the checksum driver */
-	if (ext4_has_feature_metadata_csum(sb)) {
+	if (ext4_has_feature_metadata_csum(sb) ||
+	    ext4_has_feature_ea_inode(sb)) {
 		sbi->s_chksum_driver = crypto_alloc_shash("crc32c", 0, 0);
 		if (IS_ERR(sbi->s_chksum_driver)) {
 			ext4_msg(sb, KERN_ERR, "Cannot load crc32c driver.");
@@ -3467,7 +3479,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	/* Precompute checksum seed for all metadata */
 	if (ext4_has_feature_csum_seed(sb))
 		sbi->s_csum_seed = le32_to_cpu(es->s_checksum_seed);
-	else if (ext4_has_metadata_csum(sb))
+	else if (ext4_has_metadata_csum(sb) || ext4_has_feature_ea_inode(sb))
 		sbi->s_csum_seed = ext4_chksum(sbi, ~0, es->s_uuid,
 					       sizeof(es->s_uuid));
 
@@ -3595,6 +3607,16 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		if (ext4_has_feature_64bit(sb)) {
 			ext4_msg(sb, KERN_ERR,
 				 "The Hurd can't support 64-bit file systems");
+			goto failed_mount;
+		}
+
+		/*
+		 * ea_inode feature uses l_i_version field which is not
+		 * available in HURD_COMPAT mode.
+		 */
+		if (ext4_has_feature_ea_inode(sb)) {
+			ext4_msg(sb, KERN_ERR,
+				 "ea_inode feature is not supported for Hurd");
 			goto failed_mount;
 		}
 	}
@@ -4061,10 +4083,22 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_journal->j_commit_callback = ext4_journal_commit_callback;
 
 no_journal:
-	sbi->s_mb_cache = ext4_xattr_create_cache();
-	if (!sbi->s_mb_cache) {
-		ext4_msg(sb, KERN_ERR, "Failed to create an mb_cache");
-		goto failed_mount_wq;
+	if (!test_opt(sb, NO_MBCACHE)) {
+		sbi->s_ea_block_cache = ext4_xattr_create_cache();
+		if (!sbi->s_ea_block_cache) {
+			ext4_msg(sb, KERN_ERR,
+				 "Failed to create ea_block_cache");
+			goto failed_mount_wq;
+		}
+
+		if (ext4_has_feature_ea_inode(sb)) {
+			sbi->s_ea_inode_cache = ext4_xattr_create_cache();
+			if (!sbi->s_ea_inode_cache) {
+				ext4_msg(sb, KERN_ERR,
+					 "Failed to create ea_inode_cache");
+				goto failed_mount_wq;
+			}
+		}
 	}
 
 	if ((DUMMY_ENCRYPTION_ENABLED(sbi) || ext4_has_feature_encrypt(sb)) &&
@@ -4296,9 +4330,13 @@ failed_mount4:
 	if (EXT4_SB(sb)->rsv_conversion_wq)
 		destroy_workqueue(EXT4_SB(sb)->rsv_conversion_wq);
 failed_mount_wq:
-	if (sbi->s_mb_cache) {
-		ext4_xattr_destroy_cache(sbi->s_mb_cache);
-		sbi->s_mb_cache = NULL;
+	if (sbi->s_ea_inode_cache) {
+		ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
+		sbi->s_ea_inode_cache = NULL;
+	}
+	if (sbi->s_ea_block_cache) {
+		ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
+		sbi->s_ea_block_cache = NULL;
 	}
 	if (sbi->s_journal) {
 		jbd2_journal_destroy(sbi->s_journal);
@@ -4955,6 +4993,12 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 			err = -EINVAL;
 			goto restore_opts;
 		}
+	}
+
+	if ((sbi->s_mount_opt ^ old_opts.s_mount_opt) & EXT4_MOUNT_NO_MBCACHE) {
+		ext4_msg(sb, KERN_ERR, "can't enable nombcache during remount");
+		err = -EINVAL;
+		goto restore_opts;
 	}
 
 	if ((sbi->s_mount_opt ^ old_opts.s_mount_opt) & EXT4_MOUNT_DAX) {

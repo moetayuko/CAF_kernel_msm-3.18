@@ -189,6 +189,8 @@ void ext4_evict_inode(struct inode *inode)
 {
 	handle_t *handle;
 	int err;
+	int extra_credits = 3;
+	struct ext4_xattr_inode_array *ea_inode_array = NULL;
 
 	trace_ext4_evict_inode(inode);
 
@@ -238,8 +240,12 @@ void ext4_evict_inode(struct inode *inode)
 	 * protection against it
 	 */
 	sb_start_intwrite(inode->i_sb);
+
+	if (!IS_NOQUOTA(inode))
+		extra_credits += EXT4_MAXQUOTAS_DEL_BLOCKS(inode->i_sb);
+
 	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE,
-				    ext4_blocks_for_truncate(inode)+3);
+				 ext4_blocks_for_truncate(inode)+extra_credits);
 	if (IS_ERR(handle)) {
 		ext4_std_error(inode->i_sb, PTR_ERR(handle));
 		/*
@@ -271,25 +277,17 @@ void ext4_evict_inode(struct inode *inode)
 		}
 	}
 
-	/*
-	 * ext4_ext_truncate() doesn't reserve any slop when it
-	 * restarts journal transactions; therefore there may not be
-	 * enough credits left in the handle to remove the inode from
-	 * the orphan list and set the dtime field.
-	 */
-	if (!ext4_handle_has_enough_credits(handle, 3)) {
-		err = ext4_journal_extend(handle, 3);
-		if (err > 0)
-			err = ext4_journal_restart(handle, 3);
-		if (err != 0) {
-			ext4_warning(inode->i_sb,
-				     "couldn't extend journal (err %d)", err);
-		stop_handle:
-			ext4_journal_stop(handle);
-			ext4_orphan_del(NULL, inode);
-			sb_end_intwrite(inode->i_sb);
-			goto no_delete;
-		}
+	/* Remove xattr references. */
+	err = ext4_xattr_delete_inode(handle, inode, &ea_inode_array,
+				      extra_credits);
+	if (err) {
+		ext4_warning(inode->i_sb, "xattr delete (err %d)", err);
+stop_handle:
+		ext4_journal_stop(handle);
+		ext4_orphan_del(NULL, inode);
+		sb_end_intwrite(inode->i_sb);
+		ext4_xattr_inode_array_free(ea_inode_array);
+		goto no_delete;
 	}
 
 	/*
@@ -317,6 +315,7 @@ void ext4_evict_inode(struct inode *inode)
 		ext4_free_inode(handle, inode);
 	ext4_journal_stop(handle);
 	sb_end_intwrite(inode->i_sb);
+	ext4_xattr_inode_array_free(ea_inode_array);
 	return;
 no_delete:
 	ext4_clear_inode(inode);	/* We must guarantee clearing of inode... */
@@ -710,7 +709,7 @@ out_sem:
 		if (map->m_flags & EXT4_MAP_NEW &&
 		    !(map->m_flags & EXT4_MAP_UNWRITTEN) &&
 		    !(flags & EXT4_GET_BLOCKS_ZERO) &&
-		    !IS_NOQUOTA(inode) &&
+		    !ext4_is_quota_file(inode) &&
 		    ext4_should_order_data(inode)) {
 			if (flags & EXT4_GET_BLOCKS_IO_SUBMIT)
 				ret = ext4_jbd2_inode_add_wait(handle, inode);
@@ -4712,7 +4711,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	if (ext4_has_feature_64bit(sb))
 		ei->i_file_acl |=
 			((__u64)le16_to_cpu(raw_inode->i_file_acl_high)) << 32;
-	inode->i_size = ext4_isize(raw_inode);
+	inode->i_size = ext4_isize(sb, raw_inode);
 	if ((size = i_size_read(inode)) < 0) {
 		EXT4_ERROR_INODE(inode, "bad i_size value: %lld", size);
 		ret = -EFSCORRUPTED;
@@ -4846,6 +4845,15 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	}
 	brelse(iloc.bh);
 	ext4_set_inode_flags(inode);
+
+	if (ei->i_flags & EXT4_EA_INODE_FL) {
+		ext4_xattr_inode_set_class(inode);
+
+		inode_lock(inode);
+		inode->i_flags |= S_NOQUOTA;
+		inode_unlock(inode);
+	}
+
 	unlock_new_inode(inode);
 	return inode;
 
@@ -5037,7 +5045,7 @@ static int ext4_do_update_inode(handle_t *handle,
 		raw_inode->i_file_acl_high =
 			cpu_to_le16(ei->i_file_acl >> 32);
 	raw_inode->i_file_acl_lo = cpu_to_le32(ei->i_file_acl);
-	if (ei->i_disksize != ext4_isize(raw_inode)) {
+	if (ei->i_disksize != ext4_isize(inode->i_sb, raw_inode)) {
 		ext4_isize_set(raw_inode, ei->i_disksize);
 		need_datasync = 1;
 	}
@@ -5287,7 +5295,14 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 			error = PTR_ERR(handle);
 			goto err_out;
 		}
+
+		/* dquot_transfer() calls back ext4_get_inode_usage() which
+		 * counts xattr inode references.
+		 */
+		down_read(&EXT4_I(inode)->xattr_sem);
 		error = dquot_transfer(inode, attr);
+		up_read(&EXT4_I(inode)->xattr_sem);
+
 		if (error) {
 			ext4_journal_stop(handle);
 			return error;
