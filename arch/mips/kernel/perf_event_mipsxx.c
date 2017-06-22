@@ -814,7 +814,7 @@ static const struct mips_perf_event mipsxxcore_event_map2
 	[PERF_COUNT_HW_BRANCH_MISSES] = { 0x27, CNTR_ODD, T },
 };
 
-static const struct mips_perf_event i6400_event_map[PERF_COUNT_HW_MAX] = {
+static const struct mips_perf_event i6x00_event_map[PERF_COUNT_HW_MAX] = {
 	[PERF_COUNT_HW_CPU_CYCLES]          = { 0x00, CNTR_EVEN | CNTR_ODD },
 	[PERF_COUNT_HW_INSTRUCTIONS]        = { 0x01, CNTR_EVEN | CNTR_ODD },
 	/* These only count dcache, not icache */
@@ -1014,7 +1014,7 @@ static const struct mips_perf_event mipsxxcore_cache_map2
 },
 };
 
-static const struct mips_perf_event i6400_cache_map
+static const struct mips_perf_event i6x00_cache_map
 				[PERF_COUNT_HW_CACHE_MAX]
 				[PERF_COUNT_HW_CACHE_OP_MAX]
 				[PERF_COUNT_HW_CACHE_RESULT_MAX] = {
@@ -1597,6 +1597,8 @@ static const struct mips_perf_event *mipsxx_pmu_map_raw_event(u64 config)
 		break;
 	case CPU_P5600:
 	case CPU_P6600:
+	case CPU_I6400:
+	case CPU_I6500:
 		/* 8-bit event numbers */
 		raw_id = config & 0x1ff;
 		base_id = raw_id & 0xff;
@@ -1770,8 +1772,13 @@ init_hw_perf_events(void)
 		break;
 	case CPU_I6400:
 		mipspmu.name = "mips/I6400";
-		mipspmu.general_event_map = &i6400_event_map;
-		mipspmu.cache_event_map = &i6400_cache_map;
+		mipspmu.general_event_map = &i6x00_event_map;
+		mipspmu.cache_event_map = &i6x00_cache_map;
+		break;
+	case CPU_I6500:
+		mipspmu.name = "mips/I6500";
+		mipspmu.general_event_map = &i6x00_event_map;
+		mipspmu.cache_event_map = &i6x00_cache_map;
 		break;
 	case CPU_1004K:
 		mipspmu.name = "mips/1004K";
