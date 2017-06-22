@@ -267,6 +267,8 @@ struct kvm_resize_hpt;
 
 struct kvm_arch {
 	unsigned int lpid;
+	unsigned int smt_mode;		/* # vcpus per virtual core */
+	unsigned int emul_smt_mode;	/* emualted SMT mode, on P9 */
 #ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
 	unsigned int tlb_sets;
 	struct kvm_hpt_info hpt;
@@ -566,6 +568,7 @@ struct kvm_vcpu_arch {
 	ulong wort;
 	ulong tid;
 	ulong psscr;
+	ulong hfscr;
 	ulong shadow_srr1;
 #endif
 	u32 vrsave; /* also USPRG0 */
@@ -579,7 +582,7 @@ struct kvm_vcpu_arch {
 	ulong mcsrr0;
 	ulong mcsrr1;
 	ulong mcsr;
-	u32 dec;
+	ulong dec;
 #ifdef CONFIG_BOOKE
 	u32 decar;
 #endif
@@ -710,6 +713,7 @@ struct kvm_vcpu_arch {
 	unsigned long pending_exceptions;
 	u8 ceded;
 	u8 prodded;
+	u8 doorbell_request;
 	u32 last_inst;
 
 	struct swait_queue_head *wqp;

@@ -32,11 +32,29 @@
 #include <asm/opal.h>
 #include <asm/xive-regs.h>
 
+/* Sign-extend HDEC if not on POWER9 */
+#define EXTEND_HDEC(reg)			\
+BEGIN_FTR_SECTION;				\
+	extsw	reg, reg;			\
+END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
+
 #define VCPU_GPRS_TM(reg) (((reg) * ULONG_SIZE) + VCPU_GPR_TM)
 
 /* Values in HSTATE_NAPPING(r13) */
 #define NAPPING_CEDE	1
 #define NAPPING_NOVCPU	2
+
+/* Stack frame offsets for kvmppc_hv_entry */
+#define SFS			160
+#define STACK_SLOT_TRAP		(SFS-4)
+#define STACK_SLOT_TID		(SFS-16)
+#define STACK_SLOT_PSSCR	(SFS-24)
+#define STACK_SLOT_PID		(SFS-32)
+#define STACK_SLOT_IAMR		(SFS-40)
+#define STACK_SLOT_CIABR	(SFS-48)
+#define STACK_SLOT_DAWR		(SFS-56)
+#define STACK_SLOT_DAWRX	(SFS-64)
+#define STACK_SLOT_HFSCR	(SFS-72)
 
 /*
  * Call kvmppc_hv_entry in real mode.
@@ -214,6 +232,8 @@ END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
 kvmppc_primary_no_guest:
 	/* We handle this much like a ceded vcpu */
 	/* put the HDEC into the DEC, since HDEC interrupts don't wake us */
+	/* HDEC may be larger than DEC for arch >= v3.00, but since the */
+	/* HDEC value came from DEC in the first place, it will fit */
 	mfspr	r3, SPRN_HDEC
 	mtspr	SPRN_DEC, r3
 	/*
@@ -295,8 +315,9 @@ kvm_novcpu_wakeup:
 
 	/* See if our timeslice has expired (HDEC is negative) */
 	mfspr	r0, SPRN_HDEC
+	EXTEND_HDEC(r0)
 	li	r12, BOOK3S_INTERRUPT_HV_DECREMENTER
-	cmpwi	r0, 0
+	cmpdi	r0, 0
 	blt	kvm_novcpu_exit
 
 	/* Got an IPI but other vcpus aren't yet exiting, must be a latecomer */
@@ -319,10 +340,10 @@ kvm_novcpu_exit:
 	bl	kvmhv_accumulate_time
 #endif
 13:	mr	r3, r12
-	stw	r12, 112-4(r1)
+	stw	r12, STACK_SLOT_TRAP(r1)
 	bl	kvmhv_commence_exit
 	nop
-	lwz	r12, 112-4(r1)
+	lwz	r12, STACK_SLOT_TRAP(r1)
 	b	kvmhv_switch_to_host
 
 /*
@@ -396,8 +417,8 @@ kvm_secondary_got_guest:
 	lbz	r4, HSTATE_PTID(r13)
 	cmpwi	r4, 0
 	bne	63f
-	lis	r6, 0x7fff
-	ori	r6, r6, 0xffff
+	LOAD_REG_ADDR(r6, decrementer_max)
+	ld	r6, 0(r6)
 	mtspr	SPRN_HDEC, r6
 	/* and set per-LPAR registers, if doing dynamic micro-threading */
 	ld	r6, HSTATE_SPLIT_MODE(r13)
@@ -553,11 +574,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
  *                                                                            *
  *****************************************************************************/
 
-/* Stack frame offsets */
-#define STACK_SLOT_TID		(112-16)
-#define STACK_SLOT_PSSCR	(112-24)
-#define STACK_SLOT_PID		(112-32)
-
 .global kvmppc_hv_entry
 kvmppc_hv_entry:
 
@@ -573,7 +589,7 @@ kvmppc_hv_entry:
 	 */
 	mflr	r0
 	std	r0, PPC_LR_STKOFF(r1)
-	stdu	r1, -112(r1)
+	stdu	r1, -SFS(r1)
 
 	/* Save R1 in the PACA */
 	std	r1, HSTATE_HOST_R1(r13)
@@ -757,10 +773,22 @@ BEGIN_FTR_SECTION
 	mfspr	r5, SPRN_TIDR
 	mfspr	r6, SPRN_PSSCR
 	mfspr	r7, SPRN_PID
+	mfspr	r8, SPRN_IAMR
 	std	r5, STACK_SLOT_TID(r1)
 	std	r6, STACK_SLOT_PSSCR(r1)
 	std	r7, STACK_SLOT_PID(r1)
+	std	r8, STACK_SLOT_IAMR(r1)
+	mfspr	r5, SPRN_HFSCR
+	std	r5, STACK_SLOT_HFSCR(r1)
 END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
+BEGIN_FTR_SECTION
+	mfspr	r5, SPRN_CIABR
+	mfspr	r6, SPRN_DAWR
+	mfspr	r7, SPRN_DAWRX
+	std	r5, STACK_SLOT_CIABR(r1)
+	std	r6, STACK_SLOT_DAWR(r1)
+	std	r7, STACK_SLOT_DAWRX(r1)
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
 
 BEGIN_FTR_SECTION
 	/* Set partition DABR */
@@ -903,8 +931,10 @@ FTR_SECTION_ELSE
 	ld	r5, VCPU_TID(r4)
 	ld	r6, VCPU_PSSCR(r4)
 	oris	r6, r6, PSSCR_EC@h	/* This makes stop trap to HV */
+	ld	r7, VCPU_HFSCR(r4)
 	mtspr	SPRN_TIDR, r5
 	mtspr	SPRN_PSSCR, r6
+	mtspr	SPRN_HFSCR, r7
 ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 8:
 
@@ -919,7 +949,7 @@ ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 	mftb	r7
 	subf	r3,r7,r8
 	mtspr	SPRN_DEC,r3
-	stw	r3,VCPU_DEC(r4)
+	std	r3,VCPU_DEC(r4)
 
 	ld	r5, VCPU_SPRG0(r4)
 	ld	r6, VCPU_SPRG1(r4)
@@ -976,7 +1006,8 @@ ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 
 	/* Check if HDEC expires soon */
 	mfspr	r3, SPRN_HDEC
-	cmpwi	r3, 512		/* 1 microsecond */
+	EXTEND_HDEC(r3)
+	cmpdi	r3, 512		/* 1 microsecond */
 	blt	hdec_soon
 
 #ifdef CONFIG_KVM_XICS
@@ -1030,7 +1061,13 @@ kvmppc_cede_reentry:		/* r4 = vcpu, r13 = paca */
 	li	r0, BOOK3S_INTERRUPT_EXTERNAL
 	bne	cr1, 12f
 	mfspr	r0, SPRN_DEC
-	cmpwi	r0, 0
+BEGIN_FTR_SECTION
+	/* On POWER9 check whether the guest has large decrementer enabled */
+	andis.	r8, r8, LPCR_LD@h
+	bne	15f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
+	extsw	r0, r0
+15:	cmpdi	r0, 0
 	li	r0, BOOK3S_INTERRUPT_DECREMENTER
 	bge	5f
 
@@ -1040,6 +1077,23 @@ kvmppc_cede_reentry:		/* r4 = vcpu, r13 = paca */
 	mr	r9, r4
 	bl	kvmppc_msr_interrupt
 5:
+BEGIN_FTR_SECTION
+	b	fast_guest_return
+END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
+	/* On POWER9, check for pending doorbell requests */
+	lbz	r0, VCPU_DBELL_REQ(r4)
+	cmpwi	r0, 0
+	beq	fast_guest_return
+	ld	r5, HSTATE_KVM_VCORE(r13)
+	/* Set DPDES register so the CPU will take a doorbell interrupt */
+	li	r0, 1
+	mtspr	SPRN_DPDES, r0
+	std	r0, VCORE_DPDES(r5)
+	/* Make sure other cpus see vcore->dpdes set before dbell req clear */
+	lwsync
+	/* Clear the pending doorbell request */
+	li	r0, 0
+	stb	r0, VCPU_DBELL_REQ(r4)
 
 /*
  * Required state:
@@ -1270,6 +1324,13 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	beq	4f
 	b	guest_exit_cont
 3:
+	/* If it's a hypervisor facility unavailable interrupt, save HFSCR */
+	cmpwi	r12, BOOK3S_INTERRUPT_H_FAC_UNAVAIL
+	bne	14f
+	mfspr	r3, SPRN_HFSCR
+	std	r3, VCPU_HFSCR(r9)
+	b	guest_exit_cont
+14:
 	/* External interrupt ? */
 	cmpwi	r12, BOOK3S_INTERRUPT_EXTERNAL
 	bne+	guest_exit_cont
@@ -1457,12 +1518,18 @@ mc_cont:
 	mtspr	SPRN_SPURR,r4
 
 	/* Save DEC */
+	ld	r3, HSTATE_KVM_VCORE(r13)
 	mfspr	r5,SPRN_DEC
 	mftb	r6
+	/* On P9, if the guest has large decr enabled, don't sign extend */
+BEGIN_FTR_SECTION
+	ld	r4, VCORE_LPCR(r3)
+	andis.	r4, r4, LPCR_LD@h
+	bne	16f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
 	extsw	r5,r5
-	add	r5,r5,r6
+16:	add	r5,r5,r6
 	/* r5 is a guest timebase value here, convert to host TB */
-	ld	r3,HSTATE_KVM_VCORE(r13)
 	ld	r4,VCORE_TB_OFFSET(r3)
 	subf	r5,r4,r5
 	std	r5,VCPU_DEC_EXPIRES(r9)
@@ -1507,17 +1574,19 @@ FTR_SECTION_ELSE
 	rldicl	r6, r6, 4, 50		/* r6 &= PSSCR_GUEST_VIS */
 	rotldi	r6, r6, 60
 	std	r6, VCPU_PSSCR(r9)
+	/* Restore host HFSCR value */
+	ld	r7, STACK_SLOT_HFSCR(r1)
+	mtspr	SPRN_HFSCR, r7
 ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 	/*
 	 * Restore various registers to 0, where non-zero values
 	 * set by the guest could disrupt the host.
 	 */
 	li	r0, 0
-	mtspr	SPRN_IAMR, r0
-	mtspr	SPRN_CIABR, r0
-	mtspr	SPRN_DAWRX, r0
+	mtspr	SPRN_PSPB, r0
 	mtspr	SPRN_WORT, r0
 BEGIN_FTR_SECTION
+	mtspr	SPRN_IAMR, r0
 	mtspr	SPRN_TCSCR, r0
 	/* Set MMCRS to 1<<31 to freeze and disable the SPMC counters */
 	li	r0, 1
@@ -1533,6 +1602,7 @@ END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
 	std	r6,VCPU_UAMOR(r9)
 	li	r6,0
 	mtspr	SPRN_AMR,r6
+	mtspr	SPRN_UAMOR, r6
 
 	/* Switch DSCR back to host value */
 	mfspr	r8, SPRN_DSCR
@@ -1678,12 +1748,22 @@ END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
 
 	/* Restore host values of some registers */
 BEGIN_FTR_SECTION
+	ld	r5, STACK_SLOT_CIABR(r1)
+	ld	r6, STACK_SLOT_DAWR(r1)
+	ld	r7, STACK_SLOT_DAWRX(r1)
+	mtspr	SPRN_CIABR, r5
+	mtspr	SPRN_DAWR, r6
+	mtspr	SPRN_DAWRX, r7
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
+BEGIN_FTR_SECTION
 	ld	r5, STACK_SLOT_TID(r1)
 	ld	r6, STACK_SLOT_PSSCR(r1)
 	ld	r7, STACK_SLOT_PID(r1)
+	ld	r8, STACK_SLOT_IAMR(r1)
 	mtspr	SPRN_TIDR, r5
 	mtspr	SPRN_PSSCR, r6
 	mtspr	SPRN_PID, r7
+	mtspr	SPRN_IAMR, r8
 END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
 BEGIN_FTR_SECTION
 	PPC_INVALIDATE_ERAT
@@ -1827,8 +1907,8 @@ END_MMU_FTR_SECTION_IFSET(MMU_FTR_TYPE_RADIX)
 	li	r0, KVM_GUEST_MODE_NONE
 	stb	r0, HSTATE_IN_GUEST(r13)
 
-	ld	r0, 112+PPC_LR_STKOFF(r1)
-	addi	r1, r1, 112
+	ld	r0, SFS+PPC_LR_STKOFF(r1)
+	addi	r1, r1, SFS
 	mtlr	r0
 	blr
 
@@ -2374,12 +2454,20 @@ END_FTR_SECTION_IFSET(CPU_FTR_TM)
 	mfspr	r3, SPRN_DEC
 	mfspr	r4, SPRN_HDEC
 	mftb	r5
-	cmpw	r3, r4
+BEGIN_FTR_SECTION
+	/* On P9 check whether the guest has large decrementer mode enabled */
+	ld	r6, HSTATE_KVM_VCORE(r13)
+	ld	r6, VCORE_LPCR(r6)
+	andis.	r6, r6, LPCR_LD@h
+	bne	68f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
+	extsw	r3, r3
+68:	EXTEND_HDEC(r4)
+	cmpd	r3, r4
 	ble	67f
 	mtspr	SPRN_DEC, r4
 67:
 	/* save expiry time of guest decrementer */
-	extsw	r3, r3
 	add	r3, r3, r5
 	ld	r4, HSTATE_KVM_VCPU(r13)
 	ld	r5, HSTATE_KVM_VCORE(r13)
