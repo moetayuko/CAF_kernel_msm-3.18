@@ -18,6 +18,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/pci.h>
 #include <linux/platform_device.h>
 #include <linux/property.h>
 #include <linux/regmap.h>
@@ -45,6 +46,12 @@
 #define DEV_IS_EXPANDER(type) \
 	((type == SAS_EDGE_EXPANDER_DEVICE) || \
 	(type == SAS_FANOUT_EXPANDER_DEVICE))
+
+#define HISI_SAS_SATA_PROTOCOL_NONDATA		0x1
+#define HISI_SAS_SATA_PROTOCOL_PIO			0x2
+#define HISI_SAS_SATA_PROTOCOL_DMA			0x4
+#define HISI_SAS_SATA_PROTOCOL_FPDMA		0x8
+#define HISI_SAS_SATA_PROTOCOL_ATAPI		0x10
 
 struct hisi_hba;
 
@@ -102,20 +109,23 @@ struct hisi_sas_cq {
 
 struct hisi_sas_dq {
 	struct hisi_hba *hisi_hba;
+	struct hisi_sas_slot	*slot_prep;
+	spinlock_t lock;
 	int	wr_point;
 	int	id;
 };
 
 struct hisi_sas_device {
-	enum sas_device_type	dev_type;
 	struct hisi_hba		*hisi_hba;
 	struct domain_device	*sas_device;
-	u64 attached_phy;
-	u64 device_id;
-	atomic64_t running_req;
+	struct hisi_sas_dq	*dq;
 	struct list_head	list;
-	u8 dev_status;
+	u64 attached_phy;
+	atomic64_t running_req;
+	enum sas_device_type	dev_type;
+	int device_id;
 	int sata_idx;
+	u8 dev_status;
 };
 
 struct hisi_sas_slot {
@@ -154,9 +164,8 @@ struct hisi_sas_hw {
 				struct domain_device *device);
 	struct hisi_sas_device *(*alloc_dev)(struct domain_device *device);
 	void (*sl_notify)(struct hisi_hba *hisi_hba, int phy_no);
-	int (*get_free_slot)(struct hisi_hba *hisi_hba, u32 dev_id,
-			int *q, int *s);
-	void (*start_delivery)(struct hisi_hba *hisi_hba);
+	int (*get_free_slot)(struct hisi_hba *hisi_hba, struct hisi_sas_dq *dq);
+	void (*start_delivery)(struct hisi_sas_dq *dq);
 	int (*prep_ssp)(struct hisi_hba *hisi_hba,
 			struct hisi_sas_slot *slot, int is_tmf,
 			struct hisi_sas_tmf_task *tmf);
@@ -179,6 +188,8 @@ struct hisi_sas_hw {
 	void (*free_device)(struct hisi_hba *hisi_hba,
 			    struct hisi_sas_device *dev);
 	int (*get_wideport_bitmap)(struct hisi_hba *hisi_hba, int port_id);
+	void (*dereg_device)(struct hisi_hba *hisi_hba,
+				struct domain_device *device);
 	int (*soft_reset)(struct hisi_hba *hisi_hba);
 	int max_command_entries;
 	int complete_hdr_size;
@@ -188,7 +199,10 @@ struct hisi_hba {
 	/* This must be the first element, used by SHOST_TO_SAS_HA */
 	struct sas_ha_struct *p;
 
-	struct platform_device *pdev;
+	struct platform_device *platform_dev;
+	struct pci_dev *pci_dev;
+	struct device *dev;
+
 	void __iomem *regs;
 	struct regmap *ctrl;
 	u32 ctrl_reset_reg;
@@ -217,7 +231,6 @@ struct hisi_hba {
 	struct hisi_sas_port port[HISI_SAS_MAX_PHYS];
 
 	int	queue_count;
-	struct hisi_sas_slot	*slot_prep;
 
 	struct dma_pool *sge_page_pool;
 	struct hisi_sas_device	devices[HISI_SAS_MAX_DEVICES];
@@ -355,7 +368,18 @@ union hisi_sas_command_table {
 	struct hisi_sas_command_table_stp stp;
 };
 
+extern struct scsi_transport_template *hisi_sas_stt;
+extern struct scsi_host_template *hisi_sas_sht;
+
+extern void hisi_sas_init_add(struct hisi_hba *hisi_hba);
+extern int hisi_sas_alloc(struct hisi_hba *hisi_hba, struct Scsi_Host *shost);
+extern void hisi_sas_free(struct hisi_hba *hisi_hba);
+extern u8 hisi_sas_get_ata_protocol(u8 cmd, int direction);
 extern struct hisi_sas_port *to_hisi_sas_port(struct asd_sas_port *sas_port);
+extern void hisi_sas_sata_done(struct sas_task *task,
+			    struct hisi_sas_slot *slot);
+extern int hisi_sas_get_ncq_tag(struct sas_task *task, u32 *tag);
+extern int hisi_sas_get_fw_info(struct hisi_hba *hisi_hba);
 extern int hisi_sas_probe(struct platform_device *pdev,
 			  const struct hisi_sas_hw *ops);
 extern int hisi_sas_remove(struct platform_device *pdev);
