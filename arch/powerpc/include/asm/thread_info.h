@@ -54,6 +54,7 @@ struct thread_info {
 	.task =		&tsk,			\
 	.cpu =		0,			\
 	.preempt_count = INIT_PREEMPT_COUNT,	\
+	.local_flags =	0,			\
 	.flags =	0,			\
 }
 
@@ -61,6 +62,24 @@ struct thread_info {
 #define init_stack		(init_thread_union.stack)
 
 #define THREAD_SIZE_ORDER	(THREAD_SHIFT - PAGE_SHIFT)
+
+/*
+ * Emergency stacks are used for a range of things, from asynchronous
+ * NMIs (system reset, machine check) to synchronous, process context.
+ * Set HARDIRQ_OFFSET because we don't know exactly what context we
+ * come from or if it had a valid stack, which is about the best we
+ * can do.
+ * TODO: what to do with accounting?
+ */
+#define emstack_init_thread_info(ti, c)		\
+do {						\
+	(ti)->task = NULL;			\
+	(ti)->cpu = (c);			\
+	(ti)->preempt_count = HARDIRQ_OFFSET;	\
+	(ti)->local_flags = 0;			\
+	(ti)->flags = 0;			\
+	klp_init_thread_info(ti);		\
+} while (0)
 
 /* how to get the thread information struct from C */
 static inline struct thread_info *current_thread_info(void)
