@@ -97,6 +97,8 @@ defaultimage-$(CONFIG_SH_7619_SOLUTION_ENGINE)	:= vmlinux
 boot := arch/sh/boot
 KBUILD_IMAGE		:= $(boot)/$(defaultimage-y)
 
+LDFLAGS_vmlinux		+= -R arch/sh/kernel/vsyscall/vsyscall-syms.o
+
 #
 # Choosing incompatible machines durings configuration will result in
 # error messages during linking.
