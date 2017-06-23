@@ -22,6 +22,7 @@
 #include <linux/topology.h>
 #include <linux/wait.h>
 #include <linux/io.h>
+#include <linux/slab.h>
 
 #include <asm/irq.h>
 #include <asm/ptrace.h>
@@ -216,6 +217,7 @@ enum {
 	IRQD_WAKEUP_ARMED		= (1 << 19),
 	IRQD_FORWARDED_TO_VCPU		= (1 << 20),
 	IRQD_AFFINITY_MANAGED		= (1 << 21),
+	IRQD_IRQ_STARTED		= (1 << 22),
 };
 
 #define __irqd_to_state(d) ACCESS_PRIVATE((d)->common, state_use_accessors)
@@ -327,6 +329,11 @@ static inline void irqd_set_activated(struct irq_data *d)
 static inline void irqd_clr_activated(struct irq_data *d)
 {
 	__irqd_to_state(d) &= ~IRQD_ACTIVATED;
+}
+
+static inline bool irqd_is_started(struct irq_data *d)
+{
+	return __irqd_to_state(d) & IRQD_IRQ_STARTED;
 }
 
 #undef __irqd_to_state
@@ -951,6 +958,14 @@ int irq_setup_alt_chip(struct irq_data *d, unsigned int type);
 void irq_remove_generic_chip(struct irq_chip_generic *gc, u32 msk,
 			     unsigned int clr, unsigned int set);
 
+struct irq_chip_generic *
+devm_irq_alloc_generic_chip(struct device *dev, const char *name, int num_ct,
+			    unsigned int irq_base, void __iomem *reg_base,
+			    irq_flow_handler_t handler);
+int devm_irq_setup_generic_chip(struct device *dev, struct irq_chip_generic *gc,
+				u32 msk, enum irq_gc_flags flags,
+				unsigned int clr, unsigned int set);
+
 struct irq_chip_generic *irq_get_domain_generic_chip(struct irq_domain *d, unsigned int hw_irq);
 
 int __irq_alloc_domain_generic_chips(struct irq_domain *d, int irqs_per_chip,
@@ -966,6 +981,19 @@ int __irq_alloc_domain_generic_chips(struct irq_domain *d, int irqs_per_chip,
 	__irq_alloc_domain_generic_chips(d, irqs_per_chip, num_ct, name,\
 					 handler, clr, set, flags);	\
 })
+
+static inline void irq_free_generic_chip(struct irq_chip_generic *gc)
+{
+	kfree(gc);
+}
+
+static inline void irq_destroy_generic_chip(struct irq_chip_generic *gc,
+					    u32 msk, unsigned int clr,
+					    unsigned int set)
+{
+	irq_remove_generic_chip(gc, msk, clr, set);
+	irq_free_generic_chip(gc);
+}
 
 static inline struct irq_chip_type *irq_data_get_chip_type(struct irq_data *d)
 {
