@@ -172,17 +172,23 @@ static int ext2_release_file (struct inode * inode, struct file * filp)
 
 int ext2_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 {
-	int ret;
+	int ret, ret2;
 	struct super_block *sb = file->f_mapping->host->i_sb;
 	struct address_space *mapping = sb->s_bdev->bd_inode->i_mapping;
 
 	ret = generic_file_fsync(file, start, end, datasync);
-	if (ret == -EIO || test_and_clear_bit(AS_EIO, &mapping->flags)) {
+	if (ret == -EIO)
 		/* We don't really know where the IO error happened... */
 		ext2_error(sb, __func__,
 			   "detected IO error when writing metadata buffers");
-		ret = -EIO;
-	}
+
+	ret2 = filemap_report_wb_err(file);
+	if (ret == 0)
+		ret = ret2;
+
+	ret2 = filemap_report_md_wb_err(file, mapping);
+	if (ret == 0)
+		ret = ret2;
 	return ret;
 }
 
@@ -204,6 +210,19 @@ static ssize_t ext2_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	return generic_file_write_iter(iocb, from);
 }
 
+static int ext2_file_open(struct inode *inode, struct file *file)
+{
+	int ret;
+
+	ret = dquot_file_open(inode, file);
+	if (likely(ret == 0)) {
+		struct inode *bd_inode = inode->i_sb->s_bdev->bd_inode;
+
+		file->f_md_wb_err = filemap_sample_wb_err(bd_inode->i_mapping);
+	}
+	return ret;
+}
+
 const struct file_operations ext2_file_operations = {
 	.llseek		= generic_file_llseek,
 	.read_iter	= ext2_file_read_iter,
@@ -213,7 +232,7 @@ const struct file_operations ext2_file_operations = {
 	.compat_ioctl	= ext2_compat_ioctl,
 #endif
 	.mmap		= ext2_file_mmap,
-	.open		= dquot_file_open,
+	.open		= ext2_file_open,
 	.release	= ext2_release_file,
 	.fsync		= ext2_fsync,
 	.get_unmapped_area = thp_get_unmapped_area,
