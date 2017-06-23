@@ -35,11 +35,17 @@ INTERACTIVE COMMANDS
 
 *g*::	filter by guest name
 
+*h*::	display interactive commands reference
+
+*o*::   toggle sorting order (Total vs CurAvg/s)
+
 *p*::	filter by PID
 
 *q*::	quit
 
 *r*::	reset stats
+
+*s*::   set update interval
 
 *x*::	toggle reporting of stats for child trace events
 
