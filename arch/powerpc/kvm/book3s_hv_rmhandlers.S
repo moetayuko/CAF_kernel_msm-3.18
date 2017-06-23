@@ -45,7 +45,7 @@ END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
 #define NAPPING_NOVCPU	2
 
 /* Stack frame offsets for kvmppc_hv_entry */
-#define SFS			144
+#define SFS			160
 #define STACK_SLOT_TRAP		(SFS-4)
 #define STACK_SLOT_TID		(SFS-16)
 #define STACK_SLOT_PSSCR	(SFS-24)
@@ -54,6 +54,7 @@ END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
 #define STACK_SLOT_CIABR	(SFS-48)
 #define STACK_SLOT_DAWR		(SFS-56)
 #define STACK_SLOT_DAWRX	(SFS-64)
+#define STACK_SLOT_HFSCR	(SFS-72)
 
 /*
  * Call kvmppc_hv_entry in real mode.
@@ -777,6 +778,8 @@ BEGIN_FTR_SECTION
 	std	r6, STACK_SLOT_PSSCR(r1)
 	std	r7, STACK_SLOT_PID(r1)
 	std	r8, STACK_SLOT_IAMR(r1)
+	mfspr	r5, SPRN_HFSCR
+	std	r5, STACK_SLOT_HFSCR(r1)
 END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
 BEGIN_FTR_SECTION
 	mfspr	r5, SPRN_CIABR
@@ -928,8 +931,10 @@ FTR_SECTION_ELSE
 	ld	r5, VCPU_TID(r4)
 	ld	r6, VCPU_PSSCR(r4)
 	oris	r6, r6, PSSCR_EC@h	/* This makes stop trap to HV */
+	ld	r7, VCPU_HFSCR(r4)
 	mtspr	SPRN_TIDR, r5
 	mtspr	SPRN_PSSCR, r6
+	mtspr	SPRN_HFSCR, r7
 ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 8:
 
@@ -944,7 +949,7 @@ ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 	mftb	r7
 	subf	r3,r7,r8
 	mtspr	SPRN_DEC,r3
-	stw	r3,VCPU_DEC(r4)
+	std	r3,VCPU_DEC(r4)
 
 	ld	r5, VCPU_SPRG0(r4)
 	ld	r6, VCPU_SPRG1(r4)
@@ -1056,7 +1061,13 @@ kvmppc_cede_reentry:		/* r4 = vcpu, r13 = paca */
 	li	r0, BOOK3S_INTERRUPT_EXTERNAL
 	bne	cr1, 12f
 	mfspr	r0, SPRN_DEC
-	cmpwi	r0, 0
+BEGIN_FTR_SECTION
+	/* On POWER9 check whether the guest has large decrementer enabled */
+	andis.	r8, r8, LPCR_LD@h
+	bne	15f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
+	extsw	r0, r0
+15:	cmpdi	r0, 0
 	li	r0, BOOK3S_INTERRUPT_DECREMENTER
 	bge	5f
 
@@ -1066,6 +1077,23 @@ kvmppc_cede_reentry:		/* r4 = vcpu, r13 = paca */
 	mr	r9, r4
 	bl	kvmppc_msr_interrupt
 5:
+BEGIN_FTR_SECTION
+	b	fast_guest_return
+END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_300)
+	/* On POWER9, check for pending doorbell requests */
+	lbz	r0, VCPU_DBELL_REQ(r4)
+	cmpwi	r0, 0
+	beq	fast_guest_return
+	ld	r5, HSTATE_KVM_VCORE(r13)
+	/* Set DPDES register so the CPU will take a doorbell interrupt */
+	li	r0, 1
+	mtspr	SPRN_DPDES, r0
+	std	r0, VCORE_DPDES(r5)
+	/* Make sure other cpus see vcore->dpdes set before dbell req clear */
+	lwsync
+	/* Clear the pending doorbell request */
+	li	r0, 0
+	stb	r0, VCPU_DBELL_REQ(r4)
 
 /*
  * Required state:
@@ -1296,6 +1324,13 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	beq	4f
 	b	guest_exit_cont
 3:
+	/* If it's a hypervisor facility unavailable interrupt, save HFSCR */
+	cmpwi	r12, BOOK3S_INTERRUPT_H_FAC_UNAVAIL
+	bne	14f
+	mfspr	r3, SPRN_HFSCR
+	std	r3, VCPU_HFSCR(r9)
+	b	guest_exit_cont
+14:
 	/* External interrupt ? */
 	cmpwi	r12, BOOK3S_INTERRUPT_EXTERNAL
 	bne+	guest_exit_cont
@@ -1483,12 +1518,18 @@ mc_cont:
 	mtspr	SPRN_SPURR,r4
 
 	/* Save DEC */
+	ld	r3, HSTATE_KVM_VCORE(r13)
 	mfspr	r5,SPRN_DEC
 	mftb	r6
+	/* On P9, if the guest has large decr enabled, don't sign extend */
+BEGIN_FTR_SECTION
+	ld	r4, VCORE_LPCR(r3)
+	andis.	r4, r4, LPCR_LD@h
+	bne	16f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
 	extsw	r5,r5
-	add	r5,r5,r6
+16:	add	r5,r5,r6
 	/* r5 is a guest timebase value here, convert to host TB */
-	ld	r3,HSTATE_KVM_VCORE(r13)
 	ld	r4,VCORE_TB_OFFSET(r3)
 	subf	r5,r4,r5
 	std	r5,VCPU_DEC_EXPIRES(r9)
@@ -1533,6 +1574,9 @@ FTR_SECTION_ELSE
 	rldicl	r6, r6, 4, 50		/* r6 &= PSSCR_GUEST_VIS */
 	rotldi	r6, r6, 60
 	std	r6, VCPU_PSSCR(r9)
+	/* Restore host HFSCR value */
+	ld	r7, STACK_SLOT_HFSCR(r1)
+	mtspr	SPRN_HFSCR, r7
 ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
 	/*
 	 * Restore various registers to 0, where non-zero values
@@ -2410,8 +2454,15 @@ END_FTR_SECTION_IFSET(CPU_FTR_TM)
 	mfspr	r3, SPRN_DEC
 	mfspr	r4, SPRN_HDEC
 	mftb	r5
+BEGIN_FTR_SECTION
+	/* On P9 check whether the guest has large decrementer mode enabled */
+	ld	r6, HSTATE_KVM_VCORE(r13)
+	ld	r6, VCORE_LPCR(r6)
+	andis.	r6, r6, LPCR_LD@h
+	bne	68f
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_300)
 	extsw	r3, r3
-	EXTEND_HDEC(r4)
+68:	EXTEND_HDEC(r4)
 	cmpd	r3, r4
 	ble	67f
 	mtspr	SPRN_DEC, r4
