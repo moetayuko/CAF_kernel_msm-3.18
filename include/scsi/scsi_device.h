@@ -207,6 +207,7 @@ struct scsi_device {
 	void			*handler_data;
 
 	unsigned char		access_state;
+	struct mutex		state_mutex;
 	enum scsi_device_state sdev_state;
 	unsigned long		sdev_data[0];
 } __attribute__((aligned(sizeof(unsigned long))));
@@ -472,9 +473,9 @@ static inline int scsi_device_created(struct scsi_device *sdev)
 		sdev->sdev_state == SDEV_CREATED_BLOCK;
 }
 
-int scsi_internal_device_block(struct scsi_device *sdev, bool wait);
-int scsi_internal_device_unblock(struct scsi_device *sdev,
-				 enum scsi_device_state new_state);
+int scsi_internal_device_block_nowait(struct scsi_device *sdev);
+int scsi_internal_device_unblock_nowait(struct scsi_device *sdev,
+					enum scsi_device_state new_state);
 
 /* accessor functions for the SCSI parameters */
 static inline int scsi_device_sync(struct scsi_device *sdev)
