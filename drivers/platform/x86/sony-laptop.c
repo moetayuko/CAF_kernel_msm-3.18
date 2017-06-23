@@ -222,7 +222,7 @@ struct sony_laptop_keypress {
 /* Correspondance table between sonypi events
  * and input layer indexes in the keymap
  */
-static int sony_laptop_input_index[] = {
+static const int sony_laptop_input_index[] = {
 	-1,	/*  0 no event */
 	-1,	/*  1 SONYPI_EVENT_JOGDIAL_DOWN */
 	-1,	/*  2 SONYPI_EVENT_JOGDIAL_UP */
@@ -299,7 +299,7 @@ static int sony_laptop_input_index[] = {
 	59,	/* 72 SONYPI_EVENT_VENDOR_PRESSED */
 };
 
-static int sony_laptop_input_keycode_map[] = {
+static const int sony_laptop_input_keycode_map[] = {
 	KEY_CAMERA,	/*  0 SONYPI_EVENT_CAPTURE_PRESSED */
 	KEY_RESERVED,	/*  1 SONYPI_EVENT_CAPTURE_RELEASED */
 	KEY_RESERVED,	/*  2 SONYPI_EVENT_CAPTURE_PARTIALPRESSED */
@@ -4032,7 +4032,7 @@ static struct attribute *spic_attributes[] = {
 	NULL
 };
 
-static struct attribute_group spic_attribute_group = {
+static const struct attribute_group spic_attribute_group = {
 	.attrs = spic_attributes
 };
 
