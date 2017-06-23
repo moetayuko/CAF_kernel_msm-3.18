@@ -228,7 +228,7 @@ static inline void scm_request_init(struct scm_blk_dev *bdev,
 	aob->request.data = (u64) aobrq;
 	scmrq->bdev = bdev;
 	scmrq->retries = 4;
-	scmrq->error = 0;
+	scmrq->error = BLK_STS_OK;
 	/* We don't use all msbs - place aidaws at the end of the aob page. */
 	scmrq->next_aidaw = (void *) &aob->msb[nr_requests_per_io];
 }
@@ -278,7 +278,7 @@ struct scm_queue {
 	spinlock_t lock;
 };
 
-static int scm_blk_request(struct blk_mq_hw_ctx *hctx,
+static blk_status_t scm_blk_request(struct blk_mq_hw_ctx *hctx,
 			   const struct blk_mq_queue_data *qd)
 {
 	struct scm_device *scmdev = hctx->queue->queuedata;
@@ -290,7 +290,7 @@ static int scm_blk_request(struct blk_mq_hw_ctx *hctx,
 	spin_lock(&sq->lock);
 	if (!scm_permit_request(bdev, req)) {
 		spin_unlock(&sq->lock);
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return BLK_STS_RESOURCE;
 	}
 
 	scmrq = sq->scmrq;
@@ -299,7 +299,7 @@ static int scm_blk_request(struct blk_mq_hw_ctx *hctx,
 		if (!scmrq) {
 			SCM_LOG(5, "no request");
 			spin_unlock(&sq->lock);
-			return BLK_MQ_RQ_QUEUE_BUSY;
+			return BLK_STS_RESOURCE;
 		}
 		scm_request_init(bdev, scmrq);
 		sq->scmrq = scmrq;
@@ -315,7 +315,7 @@ static int scm_blk_request(struct blk_mq_hw_ctx *hctx,
 
 		sq->scmrq = NULL;
 		spin_unlock(&sq->lock);
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return BLK_STS_RESOURCE;
 	}
 	blk_mq_start_request(req);
 
@@ -324,7 +324,7 @@ static int scm_blk_request(struct blk_mq_hw_ctx *hctx,
 		sq->scmrq = NULL;
 	}
 	spin_unlock(&sq->lock);
-	return BLK_MQ_RQ_QUEUE_OK;
+	return BLK_STS_OK;
 }
 
 static int scm_blk_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
@@ -354,7 +354,7 @@ static void __scmrq_log_error(struct scm_request *scmrq)
 {
 	struct aob *aob = scmrq->aob;
 
-	if (scmrq->error == -ETIMEDOUT)
+	if (scmrq->error == BLK_STS_TIMEOUT)
 		SCM_LOG(1, "Request timeout");
 	else {
 		SCM_LOG(1, "Request error");
@@ -372,7 +372,7 @@ static void scm_blk_handle_error(struct scm_request *scmrq)
 	struct scm_blk_dev *bdev = scmrq->bdev;
 	unsigned long flags;
 
-	if (scmrq->error != -EIO)
+	if (scmrq->error != BLK_STS_IOERR)
 		goto restart;
 
 	/* For -EIO the response block is valid. */
@@ -397,7 +397,7 @@ requeue:
 	scm_request_requeue(scmrq);
 }
 
-void scm_blk_irq(struct scm_device *scmdev, void *data, int error)
+void scm_blk_irq(struct scm_device *scmdev, void *data, blk_status_t error)
 {
 	struct scm_request *scmrq = data;
 
