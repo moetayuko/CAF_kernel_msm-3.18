@@ -749,8 +749,7 @@ static int macvlan_set_mac_address(struct net_device *dev, void *p)
 
 	if (vlan->mode == MACVLAN_MODE_PASSTHRU) {
 		macvlan_set_addr_change(vlan->port);
-		dev_set_mac_address(vlan->lowerdev, addr);
-		return 0;
+		return dev_set_mac_address(vlan->lowerdev, addr);
 	}
 
 	return macvlan_sync_address(dev, addr->sa_data);
