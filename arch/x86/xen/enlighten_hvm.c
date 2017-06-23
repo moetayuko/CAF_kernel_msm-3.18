@@ -20,7 +20,6 @@
 
 void __ref xen_hvm_init_shared_info(void)
 {
-	int cpu;
 	struct xen_add_to_physmap xatp;
 	static struct shared_info *shared_info_page;
 
@@ -35,22 +34,6 @@ void __ref xen_hvm_init_shared_info(void)
 		BUG();
 
 	HYPERVISOR_shared_info = (struct shared_info *)shared_info_page;
-
-	/* xen_vcpu is a pointer to the vcpu_info struct in the shared_info
-	 * page, we use it in the event channel upcall and in some pvclock
-	 * related functions. We don't need the vcpu_info placement
-	 * optimizations because we don't use any pv_mmu or pv_irq op on
-	 * HVM.
-	 * When xen_hvm_init_shared_info is run at boot time only vcpu 0 is
-	 * online but xen_hvm_init_shared_info is run at resume time too and
-	 * in that case multiple vcpus might be online. */
-	for_each_online_cpu(cpu) {
-		/* Leave it to be NULL. */
-		if (xen_vcpu_nr(cpu) >= MAX_VIRT_CPUS)
-			continue;
-		per_cpu(xen_vcpu, cpu) =
-			&HYPERVISOR_shared_info->vcpu_info[xen_vcpu_nr(cpu)];
-	}
 }
 
 static void __init init_hvm_pv_info(void)
@@ -106,7 +89,7 @@ static void xen_hvm_crash_shutdown(struct pt_regs *regs)
 
 static int xen_cpu_up_prepare_hvm(unsigned int cpu)
 {
-	int rc;
+	int rc = 0;
 
 	/*
 	 * This can happen if CPU was offlined earlier and
@@ -121,7 +104,9 @@ static int xen_cpu_up_prepare_hvm(unsigned int cpu)
 		per_cpu(xen_vcpu_id, cpu) = cpu_acpi_id(cpu);
 	else
 		per_cpu(xen_vcpu_id, cpu) = cpu;
-	xen_vcpu_setup(cpu);
+	rc = xen_vcpu_setup(cpu);
+	if (rc)
+		return rc;
 
 	if (xen_have_vector_callback && xen_feature(XENFEAT_hvm_safe_pvclock))
 		xen_setup_timer(cpu);
@@ -130,9 +115,8 @@ static int xen_cpu_up_prepare_hvm(unsigned int cpu)
 	if (rc) {
 		WARN(1, "xen_smp_intr_init() for CPU %d failed: %d\n",
 		     cpu, rc);
-		return rc;
 	}
-	return 0;
+	return rc;
 }
 
 static int xen_cpu_dead_hvm(unsigned int cpu)
@@ -153,6 +137,13 @@ static void __init xen_hvm_guest_init(void)
 	init_hvm_pv_info();
 
 	xen_hvm_init_shared_info();
+
+	/*
+	 * xen_vcpu is a pointer to the vcpu_info struct in the shared_info
+	 * page, we use it in the event channel upcall and in some pvclock
+	 * related functions.
+	 */
+	xen_vcpu_info_reset(0);
 
 	xen_panic_handler_init();
 
