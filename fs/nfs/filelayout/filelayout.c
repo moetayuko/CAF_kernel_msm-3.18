@@ -991,18 +991,29 @@ out_mds:
 	nfs_pageio_reset_write_mds(pgio);
 }
 
+static void filelayout_pg_cleanup(struct nfs_pageio_descriptor *desc)
+{
+	if (desc->pg_lseg) {
+		struct nfs4_filelayout_segment *fl =
+			FILELAYOUT_LSEG(desc->pg_lseg);
+
+		nfs4_fl_put_deviceid(fl->dsaddr);
+	}
+	pnfs_generic_pg_cleanup(desc);
+}
+
 static const struct nfs_pageio_ops filelayout_pg_read_ops = {
 	.pg_init = filelayout_pg_init_read,
 	.pg_test = filelayout_pg_test,
 	.pg_doio = pnfs_generic_pg_readpages,
-	.pg_cleanup = pnfs_generic_pg_cleanup,
+	.pg_cleanup = filelayout_pg_cleanup,
 };
 
 static const struct nfs_pageio_ops filelayout_pg_write_ops = {
 	.pg_init = filelayout_pg_init_write,
 	.pg_test = filelayout_pg_test,
 	.pg_doio = pnfs_generic_pg_writepages,
-	.pg_cleanup = pnfs_generic_pg_cleanup,
+	.pg_cleanup = filelayout_pg_cleanup,
 };
 
 static u32 select_bucket_index(struct nfs4_filelayout_segment *fl, u32 j)

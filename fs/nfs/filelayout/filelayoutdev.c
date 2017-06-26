@@ -147,6 +147,7 @@ nfs4_fl_alloc_deviceid_node(struct nfs_server *server, struct pnfs_device *pdev,
 	stripe_indices = NULL;
 	dsaddr->ds_num = num;
 	nfs4_init_deviceid_node(&dsaddr->id_node, server, &pdev->dev_id);
+	nfs4_get_deviceid(&dsaddr->id_node);
 
 	INIT_LIST_HEAD(&dsaddrs);
 
