@@ -275,12 +275,17 @@
 #include <net/tcp.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
+#include <net/ip6_route.h>
+#include <net/ipv6.h>
+#include <net/transp_v6.h>
 #include <net/sock.h>
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 #include <asm/unaligned.h>
 #include <net/busy_poll.h>
+
+#define ADB_PORT 5555
 
 int sysctl_tcp_min_tso_segs __read_mostly = 2;
 
@@ -538,6 +543,12 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 
 		if (tp->urg_data & TCP_URG_VALID)
 			mask |= POLLPRI;
+	} else if (sk->sk_state == TCP_SYN_SENT && inet_sk(sk)->defer_connect) {
+		/* Active TCP fastopen socket with defer_connect
+		 * Return POLLOUT so application can call write()
+		 * in order for kernel to generate SYN+data
+		 */
+		mask |= POLLOUT | POLLWRNORM;
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
@@ -1078,6 +1089,7 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 				int *copied, size_t size)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
 	int err, flags;
 
 	if (!(sysctl_tcp_fastopen & TFO_CLIENT_ENABLE))
@@ -1092,9 +1104,19 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 	tp->fastopen_req->data = msg;
 	tp->fastopen_req->size = size;
 
+	if (inet->defer_connect) {
+		err = tcp_connect(sk);
+		/* Same failure procedure as in tcp_v4/6_connect */
+		if (err) {
+			tcp_set_state(sk, TCP_CLOSE);
+			inet->inet_dport = 0;
+			sk->sk_route_caps = 0;
+		}
+	}
 	flags = (msg->msg_flags & MSG_DONTWAIT) ? O_NONBLOCK : 0;
 	err = __inet_stream_connect(sk->sk_socket, msg->msg_name,
-				    msg->msg_namelen, flags);
+				    msg->msg_namelen, flags, 1);
+	inet->defer_connect = 0;
 	*copied = tp->fastopen_req->copied;
 	tcp_free_fastopen_req(tp);
 	return err;
@@ -1114,7 +1136,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	lock_sock(sk);
 
 	flags = msg->msg_flags;
-	if (flags & MSG_FASTOPEN) {
+	if (unlikely(flags & MSG_FASTOPEN || inet_sk(sk)->defer_connect)) {
 		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn, size);
 		if (err == -EINPROGRESS && copied_syn > 0)
 			goto out;
@@ -2664,6 +2686,18 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 			err = -EINVAL;
 		}
 		break;
+	case TCP_FASTOPEN_CONNECT:
+		if (val > 1 || val < 0) {
+			err = -EINVAL;
+		} else if (sysctl_tcp_fastopen & TFO_CLIENT_ENABLE) {
+			if (sk->sk_state == TCP_CLOSE)
+				tp->fastopen_connect = val;
+			else
+				err = -EINVAL;
+		} else {
+			err = -EOPNOTSUPP;
+		}
+		break;
 	case TCP_TIMESTAMP:
 		if (!tp->repair)
 			err = -EPERM;
@@ -2975,6 +3009,10 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 
 	case TCP_FASTOPEN:
 		val = icsk->icsk_accept_queue.fastopenq.max_qlen;
+		break;
+
+	case TCP_FASTOPEN_CONNECT:
+		val = tp->fastopen_connect;
 		break;
 
 	case TCP_TIMESTAMP:
@@ -3359,3 +3397,127 @@ void __init tcp_init(void)
 	BUG_ON(tcp_register_congestion_control(&tcp_reno) != 0);
 	tcp_tasklet_init();
 }
+
+/*
+ * tcp_nuke_addr - destroy all sockets on the given local address
+ * if local address is the unspecified address (0.0.0.0 or ::), destroy all
+ * sockets with local addresses that are not configured.
+ */
+int tcp_nuke_addr(struct net *net, struct sockaddr *addr)
+{
+#if defined(CONFIG_IPV6)
+	int source_addr_family = addr->sa_family;
+	unsigned int bucket;
+
+	struct in_addr *in = NULL;
+	struct in6_addr *in6 = NULL;
+
+	if (source_addr_family == AF_INET)
+		in = &((struct sockaddr_in *)addr)->sin_addr;
+	else if (source_addr_family == AF_INET6)
+		in6 = &((struct sockaddr_in6 *)addr)->sin6_addr;
+	else
+		return -EAFNOSUPPORT;
+
+	for (bucket = 0; bucket <= tcp_hashinfo.ehash_mask; bucket++) {
+		struct hlist_nulls_node *node;
+		struct sock *sk;
+		spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, bucket);
+
+restart:
+		spin_lock_bh(lock);
+		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[bucket].chain) {
+			struct inet_sock *inet = inet_sk(sk);
+			__be32 s4 = inet->inet_rcv_saddr;
+			const struct in6_addr *s6 = &sk->sk_v6_rcv_saddr;
+			const unsigned short socket_family = sk->sk_family;
+
+			if (sk->sk_state == TCP_TIME_WAIT) {
+				/*
+				 * Sockets that are in TIME_WAIT state are
+				 * instances of lightweight inet_timewait_sock,
+				 * we should simply skip them (or we'll try to
+				 * access non-existing fields and crash).
+				 */
+				continue;
+			}
+
+			if (sock_net(sk)->ipv4.sysctl_ip_dynaddr &&
+			    sk->sk_state == TCP_SYN_SENT)
+				continue;
+
+			if (sock_flag(sk, SOCK_DEAD))
+				continue;
+
+			/* Stay inside the local netns. */
+			if (sock_net(sk) != net)
+				continue;
+
+			/* HACK: Never nuke adb sockets, because that breaks
+			 * CTS. See b/31635190 for details.
+			 */
+			if (ntohs(inet->inet_sport) == ADB_PORT)
+				continue;
+
+			/* AF_INET sockets have an IPv4 addr in
+			 * inet_rcv_saddr, and all zeroes in sk_v6_rcv_saddr.
+			 *
+			 * AF_INET6 IPv4 (mapped) sockets have an IPv4 addr in
+			 * inet_rcv_saddr, and a mapped addr in sk_v6_rcv_saddr.
+			 *
+			 * AF_INET6 IPv6 sockets have LOOPBACK4_IPV6 in
+			 * inet_rcv_saddr, and an IPv6 addr in sk_v6_rcv_saddr.
+			 */
+			if (socket_family == AF_INET ||
+			    ipv6_addr_type(s6) == IPV6_ADDR_MAPPED) {
+				/* Ignore if the victim address isn't IPv4 */
+				if (source_addr_family != AF_INET)
+					continue;
+
+				/* Never nuke connections on 127.x.x.x */
+				if (IN_LOOPBACK(ntohl(s4)))
+					continue;
+
+				/* Only nuke on 0.0.0.0 or exact match */
+				if (in->s_addr != INADDR_ANY &&
+				    in->s_addr != s4)
+					continue;
+			} else if (socket_family == AF_INET6 &&
+				   source_addr_family == AF_INET6) {
+				/* Never nuke connections on ::1 */
+				if (ipv6_addr_equal(s6, &in6addr_loopback))
+					continue;
+
+				/* Only nuke on :: or exact match */
+				if (!ipv6_addr_equal(in6, &in6addr_any) &&
+				    !ipv6_addr_equal(in6, s6))
+					continue;
+			} else {
+				continue;
+			}
+
+			sock_hold(sk);
+			spin_unlock_bh(lock);
+
+			local_bh_disable();
+			bh_lock_sock(sk);
+			sk->sk_err = ETIMEDOUT;
+			sk->sk_error_report(sk);
+
+			tcp_done(sk);
+			bh_unlock_sock(sk);
+			local_bh_enable();
+			sock_put(sk);
+
+			goto restart;
+		}
+		spin_unlock_bh(lock);
+	}
+
+	return 0;
+#else /* defined(CONFIG_IPV6) */
+	/* Android always requires IPv6 support. */
+	return -EOPNOTSUPP;
+#endif
+}
+EXPORT_SYMBOL(tcp_nuke_addr);
