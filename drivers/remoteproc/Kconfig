@@ -52,7 +52,7 @@ config DA8XX_REMOTEPROC
 	tristate "DA8xx/OMAP-L13x remoteproc support"
 	depends on ARCH_DAVINCI_DA8XX
 	depends on REMOTEPROC
-	select CMA if MMU
+	depends on DMA_CMA
 	select RPMSG_VIRTIO
 	help
 	  Say y here to support DA8xx/OMAP-L13x remote processors via the
@@ -70,6 +70,19 @@ config DA8XX_REMOTEPROC
 
 	  It's safe to say n here if you're not interested in multimedia
 	  offloading.
+
+config KEYSTONE_REMOTEPROC
+	tristate "Keystone Remoteproc support"
+	depends on ARCH_KEYSTONE
+	depends on RESET_CONTROLLER
+	depends on REMOTEPROC
+	select RPMSG_VIRTIO
+	help
+	  Say Y here here to support Keystone remote processors (DSP)
+	  via the remote processor framework.
+
+	  It's safe to say N here if you're not interested in the Keystone
+	  DSPs or just want to use a bare minimum kernel.
 
 config QCOM_ADSP_PIL
 	tristate "Qualcomm ADSP Peripheral Image Loader"
