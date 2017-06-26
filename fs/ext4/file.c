@@ -428,7 +428,13 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 		if (ret < 0)
 			return ret;
 	}
-	return dquot_file_open(inode, filp);
+	ret = dquot_file_open(inode, filp);
+	if (!ret) {
+		struct inode *bd_inode = sb->s_bdev->bd_inode;
+
+		filp->f_md_wb_err = filemap_sample_wb_err(bd_inode->i_mapping);
+	}
+	return ret;
 }
 
 /*

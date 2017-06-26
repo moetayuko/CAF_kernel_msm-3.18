@@ -622,11 +622,11 @@ int blkdev_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 {
 	struct inode *bd_inode = bdev_file_inode(filp);
 	struct block_device *bdev = I_BDEV(bd_inode);
-	int error;
+	int error, wberr;
 	
 	error = filemap_write_and_wait_range(filp->f_mapping, start, end);
 	if (error)
-		return error;
+		goto out;
 
 	/*
 	 * There is no need to serialise calls to blkdev_issue_flush with
@@ -637,6 +637,10 @@ int blkdev_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 	if (error == -EOPNOTSUPP)
 		error = 0;
 
+out:
+	wberr = filemap_report_wb_err(filp);
+	if (!error)
+		error = wberr;
 	return error;
 }
 EXPORT_SYMBOL(blkdev_fsync);
@@ -1743,6 +1747,7 @@ static int blkdev_open(struct inode * inode, struct file * filp)
 		return -ENOMEM;
 
 	filp->f_mapping = bdev->bd_inode->i_mapping;
+	filp->f_wb_err = filemap_sample_wb_err(filp->f_mapping);
 
 	return blkdev_get(bdev, filp->f_mode, filp);
 }
