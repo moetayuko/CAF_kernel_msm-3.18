@@ -257,7 +257,7 @@ static int cirrus_crtc_mode_set(struct drm_crtc *crtc,
 	sr07 = RREG8(SEQ_DATA);
 	sr07 &= 0xe0;
 	hdr = 0;
-	switch (crtc->primary->fb->bits_per_pixel) {
+	switch (crtc->primary->fb->format->cpp[0] * 8) {
 	case 8:
 		sr07 |= 0x11;
 		break;
@@ -326,7 +326,8 @@ static void cirrus_crtc_commit(struct drm_crtc *crtc)
  * but it's a requirement that we provide the function
  */
 static int cirrus_crtc_gamma_set(struct drm_crtc *crtc, u16 *red, u16 *green,
-				 u16 *blue, uint32_t size)
+				 u16 *blue, uint32_t size,
+				 struct drm_modeset_acquire_ctx *ctx)
 {
 	struct cirrus_crtc *cirrus_crtc = to_cirrus_crtc(crtc);
 	int i;
@@ -498,12 +499,6 @@ static struct drm_encoder *cirrus_connector_best_encoder(struct drm_connector
 	return NULL;
 }
 
-static enum drm_connector_status cirrus_vga_detect(struct drm_connector
-						   *connector, bool force)
-{
-	return connector_status_connected;
-}
-
 static void cirrus_connector_destroy(struct drm_connector *connector)
 {
 	drm_connector_cleanup(connector);
@@ -517,7 +512,6 @@ static const struct drm_connector_helper_funcs cirrus_vga_connector_helper_funcs
 
 static const struct drm_connector_funcs cirrus_vga_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.detect = cirrus_vga_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = cirrus_connector_destroy,
 };

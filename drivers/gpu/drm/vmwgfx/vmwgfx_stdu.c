@@ -424,7 +424,7 @@ static int vmw_stdu_bind_fb(struct vmw_private *dev_priv,
 		 */
 		if (new_content_type == SEPARATE_DMA) {
 
-			switch (new_fb->bits_per_pixel) {
+			switch (new_fb->format->cpp[0] * 8) {
 			case 32:
 				content_srf.format = SVGA3D_X8R8G8B8;
 				break;
@@ -509,7 +509,8 @@ out_srf_unref:
  * RETURNS:
  * 0 on success, error code otherwise
  */
-static int vmw_stdu_crtc_set_config(struct drm_mode_set *set)
+static int vmw_stdu_crtc_set_config(struct drm_mode_set *set,
+				    struct drm_modeset_acquire_ctx *ctx)
 {
 	struct vmw_private *dev_priv;
 	struct vmw_framebuffer *vfb;
@@ -649,7 +650,8 @@ static int vmw_stdu_crtc_set_config(struct drm_mode_set *set)
 static int vmw_stdu_crtc_page_flip(struct drm_crtc *crtc,
 				   struct drm_framebuffer *new_fb,
 				   struct drm_pending_vblank_event *event,
-				   uint32_t flags)
+				   uint32_t flags,
+				   struct drm_modeset_acquire_ctx *ctx)
 
 {
 	struct vmw_private *dev_priv = vmw_priv(crtc->dev);

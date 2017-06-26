@@ -102,7 +102,7 @@ done:
 	return ret;
 }
 
-static int fsl_dcu_unload(struct drm_device *dev)
+static void fsl_dcu_unload(struct drm_device *dev)
 {
 	struct fsl_dcu_drm_device *fsl_dev = dev->dev_private;
 
@@ -116,8 +116,6 @@ static int fsl_dcu_unload(struct drm_device *dev)
 	drm_irq_uninstall(dev);
 
 	dev->dev_private = NULL;
-
-	return 0;
 }
 
 static irqreturn_t fsl_dcu_drm_irq(int irq, void *arg)
@@ -176,9 +174,7 @@ static const struct file_operations fsl_dcu_drm_fops = {
 	.open		= drm_open,
 	.release	= drm_release,
 	.unlocked_ioctl	= drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl	= drm_compat_ioctl,
-#endif
 	.poll		= drm_poll,
 	.read		= drm_read,
 	.llseek		= no_llseek,
@@ -192,7 +188,6 @@ static struct drm_driver fsl_dcu_drm_driver = {
 	.load			= fsl_dcu_load,
 	.unload			= fsl_dcu_unload,
 	.irq_handler		= fsl_dcu_drm_irq,
-	.get_vblank_counter	= drm_vblank_no_hw_counter,
 	.enable_vblank		= fsl_dcu_drm_enable_vblank,
 	.disable_vblank		= fsl_dcu_drm_disable_vblank,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,
@@ -406,10 +401,6 @@ static int fsl_dcu_drm_probe(struct platform_device *pdev)
 	ret = drm_dev_register(drm, 0);
 	if (ret < 0)
 		goto unref;
-
-	DRM_INFO("Initialized %s %d.%d.%d %s on minor %d\n", driver->name,
-		 driver->major, driver->minor, driver->patchlevel,
-		 driver->date, drm->primary->index);
 
 	return 0;
 

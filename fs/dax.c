@@ -794,7 +794,7 @@ static int dax_insert_mapping(struct address_space *mapping,
 		struct block_device *bdev, sector_t sector, size_t size,
 		void **entryp, struct vm_area_struct *vma, struct vm_fault *vmf)
 {
-	unsigned long vaddr = (unsigned long)vmf->virtual_address;
+	unsigned long vaddr = vmf->address;
 	struct blk_dax_ctl dax = {
 		.sector = sector,
 		.size = size,
@@ -832,7 +832,6 @@ int dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
 	struct inode *inode = mapping->host;
 	void *entry;
 	struct buffer_head bh;
-	unsigned long vaddr = (unsigned long)vmf->virtual_address;
 	unsigned blkbits = inode->i_blkbits;
 	sector_t block;
 	pgoff_t size;
@@ -869,9 +868,9 @@ int dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
 		struct page *new_page = vmf->cow_page;
 		if (buffer_written(&bh))
 			error = copy_user_dax(bh.b_bdev, to_sector(&bh, inode),
-					bh.b_size, new_page, vaddr);
+					bh.b_size, new_page, vmf->address);
 		else
-			clear_user_highpage(new_page, vaddr);
+			clear_user_highpage(new_page, vmf->address);
 		if (error)
 			goto unlock_entry;
 		if (!radix_tree_exceptional_entry(entry)) {
@@ -1375,7 +1374,7 @@ int iomap_dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
 {
 	struct address_space *mapping = vma->vm_file->f_mapping;
 	struct inode *inode = mapping->host;
-	unsigned long vaddr = (unsigned long)vmf->virtual_address;
+	unsigned long vaddr = vmf->address;
 	loff_t pos = (loff_t)vmf->pgoff << PAGE_SHIFT;
 	sector_t sector;
 	struct iomap iomap = { 0 };

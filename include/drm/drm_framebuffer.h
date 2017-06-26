@@ -101,8 +101,8 @@ struct drm_framebuffer_funcs {
  * cleanup (like releasing the reference(s) on the backing GEM bo(s))
  * should be deferred.  In cases like this, the driver would like to
  * hold a ref to the fb even though it has already been removed from
- * userspace perspective. See drm_framebuffer_reference() and
- * drm_framebuffer_unreference().
+ * userspace perspective. See drm_framebuffer_get() and
+ * drm_framebuffer_put().
  *
  * The refcount is stored inside the mode object @base.
  */
@@ -121,6 +121,10 @@ struct drm_framebuffer {
 	 * @base: base modeset object structure, contains the reference count.
 	 */
 	struct drm_mode_object base;
+	/**
+	 * @format: framebuffer format information
+	 */
+	const struct drm_format_info *format;
 	/**
 	 * @funcs: framebuffer vfunc table
 	 */
@@ -149,12 +153,12 @@ struct drm_framebuffer {
 	 */
 	unsigned int offsets[4];
 	/**
-	 * @modifier: Data layout modifier, per buffer. This is used to describe
+	 * @modifier: Data layout modifier. This is used to describe
 	 * tiling, or also special layouts (like compression) of auxiliary
 	 * buffers. For userspace created object this is copied from
 	 * drm_mode_fb_cmd2.
 	 */
-	uint64_t modifier[4];
+	uint64_t modifier;
 	/**
 	 * @width: Logical width of the visible area of the framebuffer, in
 	 * pixels.
@@ -166,27 +170,10 @@ struct drm_framebuffer {
 	 */
 	unsigned int height;
 	/**
-	 * @depth: Depth in bits per pixel for RGB formats. 0 for everything
-	 * else. Legacy information derived from @pixel_format, it's suggested to use
-	 * the DRM FOURCC codes and helper functions directly instead.
-	 */
-	unsigned int depth;
-	/**
-	 * @bits_per_pixel: Storage used bits per pixel for RGB formats. 0 for
-	 * everything else. Legacy information derived from @pixel_format, it's
-	 * suggested to use the DRM FOURCC codes and helper functions directly
-	 * instead.
-	 */
-	int bits_per_pixel;
-	/**
 	 * @flags: Framebuffer flags like DRM_MODE_FB_INTERLACED or
 	 * DRM_MODE_FB_MODIFIERS.
 	 */
 	int flags;
-	/**
-	 * @pixel_format: DRM FOURCC code describing the pixel format.
-	 */
-	uint32_t pixel_format; /* fourcc format */
 	/**
 	 * @hot_x: X coordinate of the cursor hotspot. Used by the legacy cursor
 	 * IOCTL when the driver supports cursor through a DRM_PLANE_TYPE_CURSOR
@@ -218,25 +205,50 @@ void drm_framebuffer_cleanup(struct drm_framebuffer *fb);
 void drm_framebuffer_unregister_private(struct drm_framebuffer *fb);
 
 /**
- * drm_framebuffer_reference - incr the fb refcnt
- * @fb: framebuffer
+ * drm_framebuffer_get - acquire a framebuffer reference
+ * @fb: DRM framebuffer
  *
- * This functions increments the fb's refcount.
+ * This function increments the framebuffer's reference count.
  */
-static inline void drm_framebuffer_reference(struct drm_framebuffer *fb)
+static inline void drm_framebuffer_get(struct drm_framebuffer *fb)
 {
-	drm_mode_object_reference(&fb->base);
+	drm_mode_object_get(&fb->base);
 }
 
 /**
- * drm_framebuffer_unreference - unref a framebuffer
- * @fb: framebuffer to unref
+ * drm_framebuffer_put - release a framebuffer reference
+ * @fb: DRM framebuffer
  *
- * This functions decrements the fb's refcount and frees it if it drops to zero.
+ * This function decrements the framebuffer's reference count and frees the
+ * framebuffer if the reference count drops to zero.
+ */
+static inline void drm_framebuffer_put(struct drm_framebuffer *fb)
+{
+	drm_mode_object_put(&fb->base);
+}
+
+/**
+ * drm_framebuffer_reference - acquire a framebuffer reference
+ * @fb: DRM framebuffer
+ *
+ * This is a compatibility alias for drm_framebuffer_get() and should not be
+ * used by new code.
+ */
+static inline void drm_framebuffer_reference(struct drm_framebuffer *fb)
+{
+	drm_framebuffer_get(fb);
+}
+
+/**
+ * drm_framebuffer_unreference - release a framebuffer reference
+ * @fb: DRM framebuffer
+ *
+ * This is a compatibility alias for drm_framebuffer_put() and should not be
+ * used by new code.
  */
 static inline void drm_framebuffer_unreference(struct drm_framebuffer *fb)
 {
-	drm_mode_object_unreference(&fb->base);
+	drm_framebuffer_put(fb);
 }
 
 /**
@@ -247,10 +259,28 @@ static inline void drm_framebuffer_unreference(struct drm_framebuffer *fb)
  */
 static inline uint32_t drm_framebuffer_read_refcount(struct drm_framebuffer *fb)
 {
-	return atomic_read(&fb->base.refcount.refcount);
+	return kref_read(&fb->base.refcount);
 }
 
 /**
+ * drm_framebuffer_assign - store a reference to the fb
+ * @p: location to store framebuffer
+ * @fb: new framebuffer (maybe NULL)
+ *
+ * This functions sets the location to store a reference to the framebuffer,
+ * unreferencing the framebuffer that was previously stored in that location.
+ */
+static inline void drm_framebuffer_assign(struct drm_framebuffer **p,
+					  struct drm_framebuffer *fb)
+{
+	if (fb)
+		drm_framebuffer_get(fb);
+	if (*p)
+		drm_framebuffer_put(*p);
+	*p = fb;
+}
+
+/*
  * drm_for_each_fb - iterate over all framebuffers
  * @fb: the loop cursor
  * @dev: the DRM device
@@ -264,4 +294,10 @@ static inline uint32_t drm_framebuffer_read_refcount(struct drm_framebuffer *fb)
 					  struct drm_framebuffer, head);	\
 	     &fb->head != (&(dev)->mode_config.fb_list);			\
 	     fb = list_next_entry(fb, head))
+
+int drm_framebuffer_plane_width(int width,
+				const struct drm_framebuffer *fb, int plane);
+int drm_framebuffer_plane_height(int height,
+				 const struct drm_framebuffer *fb, int plane);
+
 #endif

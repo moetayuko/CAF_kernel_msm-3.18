@@ -30,6 +30,7 @@
 
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_encoder.h>
 #include "vmwgfx_drv.h"
 
 /**
@@ -197,7 +198,8 @@ void vmw_du_crtc_save(struct drm_crtc *crtc);
 void vmw_du_crtc_restore(struct drm_crtc *crtc);
 int vmw_du_crtc_gamma_set(struct drm_crtc *crtc,
 			   u16 *r, u16 *g, u16 *b,
-			   uint32_t size);
+			   uint32_t size,
+			   struct drm_modeset_acquire_ctx *ctx);
 int vmw_du_crtc_cursor_set2(struct drm_crtc *crtc, struct drm_file *file_priv,
 			    uint32_t handle, uint32_t width, uint32_t height,
 			    int32_t hot_x, int32_t hot_y);
@@ -248,7 +250,7 @@ vmw_kms_new_framebuffer(struct vmw_private *dev_priv,
 			struct vmw_dma_buffer *dmabuf,
 			struct vmw_surface *surface,
 			bool only_2d,
-			const struct drm_mode_fb_cmd *mode_cmd);
+			const struct drm_mode_fb_cmd2 *mode_cmd);
 int vmw_kms_fbdev_init_data(struct vmw_private *dev_priv,
 			    unsigned unit,
 			    u32 max_width,

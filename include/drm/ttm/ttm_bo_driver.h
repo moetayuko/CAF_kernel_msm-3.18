@@ -303,7 +303,7 @@ struct ttm_mem_type_manager {
 	/*
 	 * Protected by @move_lock.
 	 */
-	struct fence *move;
+	struct dma_fence *move;
 };
 
 /**
@@ -864,7 +864,7 @@ static inline int ttm_bo_reserve(struct ttm_buffer_object *bo,
 {
 	int ret;
 
-	WARN_ON(!atomic_read(&bo->kref.refcount));
+	WARN_ON(!kref_read(&bo->kref));
 
 	ret = __ttm_bo_reserve(bo, interruptible, no_wait, ticket);
 	if (likely(ret == 0))
@@ -889,7 +889,7 @@ static inline int ttm_bo_reserve_slowpath(struct ttm_buffer_object *bo,
 {
 	int ret = 0;
 
-	WARN_ON(!atomic_read(&bo->kref.refcount));
+	WARN_ON(!kref_read(&bo->kref));
 
 	if (interruptible)
 		ret = ww_mutex_lock_slow_interruptible(&bo->resv->lock,
@@ -1025,7 +1025,7 @@ extern void ttm_bo_free_old_node(struct ttm_buffer_object *bo);
  */
 
 extern int ttm_bo_move_accel_cleanup(struct ttm_buffer_object *bo,
-				     struct fence *fence, bool evict,
+				     struct dma_fence *fence, bool evict,
 				     struct ttm_mem_reg *new_mem);
 
 /**
@@ -1040,7 +1040,7 @@ extern int ttm_bo_move_accel_cleanup(struct ttm_buffer_object *bo,
  * immediately or hang it on a temporary buffer object.
  */
 int ttm_bo_pipeline_move(struct ttm_buffer_object *bo,
-			 struct fence *fence, bool evict,
+			 struct dma_fence *fence, bool evict,
 			 struct ttm_mem_reg *new_mem);
 
 /**

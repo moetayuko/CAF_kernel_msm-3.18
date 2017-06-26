@@ -101,7 +101,7 @@ static void malidp_atomic_commit_tail(struct drm_atomic_state *state)
 	drm_atomic_helper_cleanup_planes(drm, state);
 }
 
-static struct drm_mode_config_helper_funcs malidp_mode_config_helpers = {
+static const struct drm_mode_config_helper_funcs malidp_mode_config_helpers = {
 	.atomic_commit_tail = malidp_atomic_commit_tail,
 };
 
@@ -197,9 +197,7 @@ static const struct file_operations fops = {
 	.open = drm_open,
 	.release = drm_release,
 	.unlocked_ioctl = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl = drm_compat_ioctl,
-#endif
 	.poll = drm_poll,
 	.read = drm_read,
 	.llseek = noop_llseek,
@@ -210,7 +208,6 @@ static struct drm_driver malidp_driver = {
 	.driver_features = DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC |
 			   DRIVER_PRIME,
 	.lastclose = malidp_lastclose,
-	.get_vblank_counter = drm_vblank_no_hw_counter,
 	.enable_vblank = malidp_enable_vblank,
 	.disable_vblank = malidp_disable_vblank,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,
@@ -385,7 +382,7 @@ static int malidp_bind(struct device *dev)
 
 	drm_mode_config_reset(drm);
 
-	malidp->fbdev = drm_fbdev_cma_init(drm, 32, drm->mode_config.num_crtc,
+	malidp->fbdev = drm_fbdev_cma_init(drm, 32,
 					   drm->mode_config.num_connector);
 
 	if (IS_ERR(malidp->fbdev)) {
@@ -493,7 +490,9 @@ static int malidp_platform_probe(struct platform_device *pdev)
 		return -EAGAIN;
 	}
 
-	component_match_add(&pdev->dev, &match, malidp_compare_dev, port);
+	drm_of_component_match_add(&pdev->dev, &match, malidp_compare_dev,
+				   port);
+	of_node_put(port);
 	return component_master_add_with_match(&pdev->dev, &malidp_master_ops,
 					       match);
 }

@@ -63,6 +63,9 @@ Atomic State Reset and Initialization
 .. kernel-doc:: drivers/gpu/drm/drm_atomic_helper.c
    :doc: atomic state reset and initialization
 
+Helper Functions Reference
+--------------------------
+
 .. kernel-doc:: include/drm/drm_atomic_helper.h
    :internal:
 
@@ -214,6 +217,18 @@ EDID Helper Functions Reference
 .. kernel-doc:: drivers/gpu/drm/drm_edid.c
    :export:
 
+SCDC Helper Functions Reference
+===============================
+
+.. kernel-doc:: drivers/gpu/drm/drm_scdc_helper.c
+   :doc: scdc helpers
+
+.. kernel-doc:: include/drm/drm_scdc_helper.h
+   :internal:
+
+.. kernel-doc:: drivers/gpu/drm/drm_scdc_helper.c
+   :export:
+
 Rectangle Utilities Reference
 =============================
 
@@ -260,14 +275,6 @@ Plane Helper Reference
 
 .. kernel-doc:: drivers/gpu/drm/drm_plane_helper.c
    :export:
-
-Tile group
-==========
-
-# FIXME: This should probably be moved into a property documentation section
-
-.. kernel-doc:: drivers/gpu/drm/drm_crtc.c
-   :doc: Tile group
 
 Auxiliary Modeset Helpers
 =========================

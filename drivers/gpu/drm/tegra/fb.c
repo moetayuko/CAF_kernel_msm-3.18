@@ -32,7 +32,7 @@ struct tegra_bo *tegra_fb_get_plane(struct drm_framebuffer *framebuffer,
 {
 	struct tegra_fb *fb = to_tegra_fb(framebuffer);
 
-	if (index >= drm_format_num_planes(framebuffer->pixel_format))
+	if (index >= framebuffer->format->num_planes)
 		return NULL;
 
 	return fb->planes[index];
@@ -114,7 +114,7 @@ static struct tegra_fb *tegra_fb_alloc(struct drm_device *drm,
 
 	fb->num_planes = num_planes;
 
-	drm_helper_mode_fill_fb_struct(&fb->base, mode_cmd);
+	drm_helper_mode_fill_fb_struct(drm, &fb->base, mode_cmd);
 
 	for (i = 0; i < fb->num_planes; i++)
 		fb->planes[i] = planes[i];
@@ -239,7 +239,7 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 		dev_err(drm->dev, "failed to allocate DRM framebuffer: %d\n",
 			err);
 		drm_gem_object_unreference_unlocked(&bo->gem);
-		goto release;
+		return PTR_ERR(fbdev->fb);
 	}
 
 	fb = &fbdev->fb->base;
@@ -250,7 +250,7 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 	info->flags = FBINFO_FLAG_DEFAULT;
 	info->fbops = &tegra_fb_ops;
 
-	drm_fb_helper_fill_fix(info, fb->pitches[0], fb->depth);
+	drm_fb_helper_fill_fix(info, fb->pitches[0], fb->format->depth);
 	drm_fb_helper_fill_var(info, helper, fb->width, fb->height);
 
 	offset = info->var.xoffset * bytes_per_pixel +
@@ -277,8 +277,6 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 destroy:
 	drm_framebuffer_unregister_private(fb);
 	tegra_fb_destroy(fb);
-release:
-	drm_fb_helper_release_fbi(helper);
 	return err;
 }
 
@@ -314,7 +312,7 @@ static int tegra_fbdev_init(struct tegra_fbdev *fbdev,
 	struct drm_device *drm = fbdev->base.dev;
 	int err;
 
-	err = drm_fb_helper_init(drm, &fbdev->base, num_crtc, max_connectors);
+	err = drm_fb_helper_init(drm, &fbdev->base, max_connectors);
 	if (err < 0) {
 		dev_err(drm->dev, "failed to initialize DRM FB helper: %d\n",
 			err);
@@ -344,7 +342,6 @@ fini:
 static void tegra_fbdev_exit(struct tegra_fbdev *fbdev)
 {
 	drm_fb_helper_unregister_fbi(&fbdev->base);
-	drm_fb_helper_release_fbi(&fbdev->base);
 
 	if (fbdev->fb) {
 		drm_framebuffer_unregister_private(&fbdev->fb->base);

@@ -4,25 +4,38 @@
 #include <linux/of_graph.h>
 
 struct component_master_ops;
+struct component_match;
 struct device;
 struct drm_device;
 struct drm_encoder;
 struct device_node;
 
 #ifdef CONFIG_OF
-extern uint32_t drm_of_find_possible_crtcs(struct drm_device *dev,
-					   struct device_node *port);
-extern int drm_of_component_probe(struct device *dev,
-				  int (*compare_of)(struct device *, void *),
-				  const struct component_master_ops *m_ops);
-extern int drm_of_encoder_active_endpoint(struct device_node *node,
-					  struct drm_encoder *encoder,
-					  struct of_endpoint *endpoint);
+uint32_t drm_of_find_possible_crtcs(struct drm_device *dev,
+				    struct device_node *port);
+void drm_of_component_match_add(struct device *master,
+				struct component_match **matchptr,
+				int (*compare)(struct device *, void *),
+				struct device_node *node);
+int drm_of_component_probe(struct device *dev,
+			   int (*compare_of)(struct device *, void *),
+			   const struct component_master_ops *m_ops);
+int drm_of_encoder_active_endpoint(struct device_node *node,
+				   struct drm_encoder *encoder,
+				   struct of_endpoint *endpoint);
 #else
 static inline uint32_t drm_of_find_possible_crtcs(struct drm_device *dev,
 						  struct device_node *port)
 {
 	return 0;
+}
+
+static inline void
+drm_of_component_match_add(struct device *master,
+			   struct component_match **matchptr,
+			   int (*compare)(struct device *, void *),
+			   struct device_node *node)
+{
 }
 
 static inline int
