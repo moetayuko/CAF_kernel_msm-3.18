@@ -10,6 +10,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/gpio.h>
 #include <linux/module.h>
@@ -30,6 +31,7 @@ struct pwm_bl_data {
 	unsigned int		period;
 	unsigned int		lth_brightness;
 	unsigned int		*levels;
+	unsigned int		pwm_delay;
 	bool			enabled;
 	struct regulator	*power_supply;
 	struct gpio_desc	*enable_gpio;
@@ -54,10 +56,14 @@ static void pwm_backlight_power_on(struct pwm_bl_data *pb, int brightness)
 	if (err < 0)
 		dev_err(pb->dev, "failed to enable power supply\n");
 
+	pwm_enable(pb->pwm);
+
+	if (pb->pwm_delay)
+		usleep_range(pb->pwm_delay, pb->pwm_delay + 2000);
+
 	if (pb->enable_gpio)
 		gpiod_set_value_cansleep(pb->enable_gpio, 1);
 
-	pwm_enable(pb->pwm);
 	pb->enabled = true;
 }
 
@@ -66,11 +72,14 @@ static void pwm_backlight_power_off(struct pwm_bl_data *pb)
 	if (!pb->enabled)
 		return;
 
-	pwm_config(pb->pwm, 0, pb->period);
-	pwm_disable(pb->pwm);
-
 	if (pb->enable_gpio)
 		gpiod_set_value_cansleep(pb->enable_gpio, 0);
+
+	if (pb->pwm_delay)
+		usleep_range(pb->pwm_delay, pb->pwm_delay + 2000);
+
+	pwm_config(pb->pwm, 0, pb->period);
+	pwm_disable(pb->pwm);
 
 	regulator_disable(pb->power_supply);
 	pb->enabled = false;
@@ -146,24 +155,35 @@ static int pwm_backlight_parse_dt(struct device *dev,
 
 	/* determine the number of brightness levels */
 	prop = of_find_property(node, "brightness-levels", &length);
-	if (!prop)
-		return -EINVAL;
-
-	data->max_brightness = length / sizeof(u32);
+	if (!prop) {
+		/* total number of brightness levels */
+		ret = of_property_read_u32(node, "brightness-levels-scale",
+					   &value);
+		if (ret < 0)
+			return ret;
+		if (value > INT_MAX)
+			return -EINVAL;
+		data->max_brightness = value;
+	} else {
+		data->max_brightness = length / sizeof(u32);
+	}
 
 	/* read brightness levels from DT property */
 	if (data->max_brightness > 0) {
 		size_t size = sizeof(*data->levels) * data->max_brightness;
 
-		data->levels = devm_kzalloc(dev, size, GFP_KERNEL);
-		if (!data->levels)
-			return -ENOMEM;
+		if (prop) {
+			data->levels = devm_kzalloc(dev, size, GFP_KERNEL);
+			if (!data->levels)
+				return -ENOMEM;
 
-		ret = of_property_read_u32_array(node, "brightness-levels",
-						 data->levels,
-						 data->max_brightness);
-		if (ret < 0)
-			return ret;
+			ret = of_property_read_u32_array(node,
+							 "brightness-levels",
+							 data->levels,
+							 data->max_brightness);
+			if (ret < 0)
+				return ret;
+		}
 
 		ret = of_property_read_u32(node, "default-brightness-level",
 					   &value);
@@ -244,6 +264,7 @@ static int pwm_backlight_probe(struct platform_device *pdev)
 	pb->dev = &pdev->dev;
 	pb->enabled = false;
 
+	of_property_read_u32(pdev->dev.of_node, "pwm-delay-us", &pb->pwm_delay);
 	pb->enable_gpio = devm_gpiod_get_optional(&pdev->dev, "enable",
 						  GPIOD_ASIS);
 	if (IS_ERR(pb->enable_gpio)) {
