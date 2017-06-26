@@ -167,6 +167,12 @@ int xhci_reset(struct xhci_hcd *xhci)
 	int ret, i;
 
 	state = readl(&xhci->op_regs->status);
+
+	if (state == ~(u32)0) {
+		xhci_warn(xhci, "Host not accessible, reset failed.\n");
+		return -ENODEV;
+	}
+
 	if ((state & STS_HALT) == 0) {
 		xhci_warn(xhci, "Host controller not halted, aborting reset.\n");
 		return 0;
@@ -188,7 +194,7 @@ int xhci_reset(struct xhci_hcd *xhci)
 		udelay(1000);
 
 	ret = xhci_handshake(&xhci->op_regs->command,
-			CMD_RESET, 0, 10 * 1000 * 1000);
+			CMD_RESET, 0, 20 * 1000 * 1000);
 	if (ret)
 		return ret;
 
@@ -690,7 +696,6 @@ void xhci_stop(struct usb_hcd *hcd)
 		xhci->cmd_ring_state = CMD_RING_STATE_STOPPED;
 		xhci_halt(xhci);
 		xhci_reset(xhci);
-
 		spin_unlock_irq(&xhci->lock);
 	}
 
@@ -1558,14 +1563,13 @@ int xhci_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 	/* Queue a stop endpoint command, but only if this is
 	 * the first cancellation to be handled.
 	 */
-	if (!(ep->ep_state & EP_HALT_PENDING)) {
+	if (!(ep->ep_state & EP_STOP_CMD_PENDING)) {
 		command = xhci_alloc_command(xhci, false, false, GFP_ATOMIC);
 		if (!command) {
 			ret = -ENOMEM;
 			goto done;
 		}
-		ep->ep_state |= EP_HALT_PENDING;
-		ep->stop_cmds_pending++;
+		ep->ep_state |= EP_STOP_CMD_PENDING;
 		ep->stop_cmd_timer.expires = jiffies +
 			XHCI_STOP_EP_CMD_TIMEOUT * HZ;
 		add_timer(&ep->stop_cmd_timer);
@@ -3606,7 +3610,7 @@ void xhci_free_dev(struct usb_hcd *hcd, struct usb_device *udev)
 
 	/* Stop any wayward timer functions (which may grab the lock) */
 	for (i = 0; i < 31; ++i) {
-		virt_dev->eps[i].ep_state &= ~EP_HALT_PENDING;
+		virt_dev->eps[i].ep_state &= ~EP_STOP_CMD_PENDING;
 		del_timer_sync(&virt_dev->eps[i].stop_cmd_timer);
 	}
 
