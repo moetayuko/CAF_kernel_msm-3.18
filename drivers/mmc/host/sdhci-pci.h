@@ -81,6 +81,7 @@ struct sdhci_pci_slot {
 	char			*cd_con_id;
 	int			cd_idx;
 	bool			cd_override_level;
+	bool			cd_wake;
 
 	void (*hw_reset)(struct sdhci_host *host);
 	int (*select_drive_strength)(struct sdhci_host *host,
