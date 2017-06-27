@@ -172,6 +172,8 @@ struct cros_ec_platform {
 	u16 cmd_offset;
 };
 
+struct cros_ec_debugfs;
+
 /*
  * struct cros_ec_dev - ChromeOS EC device entry point
  *
@@ -179,6 +181,7 @@ struct cros_ec_platform {
  * @cdev: Character device structure in /dev
  * @ec_dev: cros_ec_device structure to talk to the physical device
  * @dev: pointer to the platform device
+ * @debug_info: cros_ec_debugfs structure for debugging information
  * @cmd_offset: offset to apply for each command.
  */
 struct cros_ec_dev {
@@ -186,6 +189,7 @@ struct cros_ec_dev {
 	struct cdev cdev;
 	struct cros_ec_device *ec_dev;
 	struct device *dev;
+	struct cros_ec_debugfs *debug_info;
 	u16 cmd_offset;
 	u32 features[2];
 };
@@ -299,6 +303,16 @@ int cros_ec_query_all(struct cros_ec_device *ec_dev);
  * Returns: 0 on success, Linux error number on failure
  */
 int cros_ec_get_next_event(struct cros_ec_device *ec_dev);
+
+/**
+ * cros_ec_get_host_event - Return a mask of event set by the EC.
+ *
+ * When MKBP is supported, when the EC raises an interrupt,
+ * We collect the events raised and call the functions in the ec notifier.
+ *
+ * This function is a helper to know which events are raised.
+ */
+u32 cros_ec_get_host_event(struct cros_ec_device *ec_dev);
 
 /* sysfs stuff */
 extern struct attribute_group cros_ec_attr_group;
