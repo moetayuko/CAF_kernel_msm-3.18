@@ -494,6 +494,8 @@ static void pcibios_init_hw(struct device *parent, struct hw_pci *hw,
 				bridge->busnr = sys->busnr;
 				bridge->ops = hw->ops;
 				bridge->msi = hw->msi_ctrl;
+				bridge->map_irq = pcibios_map_irq;
+				bridge->swizzle_irq = pcibios_swizzle;
 				bridge->align_resource =
 						hw->align_resource;
 
@@ -529,8 +531,6 @@ void pci_common_init_dev(struct device *parent, struct hw_pci *hw)
 	pcibios_init_hw(parent, hw, &head);
 	if (hw->postinit)
 		hw->postinit();
-
-	pci_fixup_irqs(pcibios_swizzle, pcibios_map_irq);
 
 	list_for_each_entry(sys, &head, node) {
 		struct pci_bus *bus = sys->bus;
