@@ -8,8 +8,6 @@ next/fixes-non-critical
 	ccn/fixes
 		git://git.linaro.org/people/pawel.moll/linux tags/ccn/fixes-for-4.13-v2
 
-next/cleanup
-
 next/soc
 	davinci/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/nsekhar/linux-davinci tags/davinci-for-v4.13/soc
@@ -42,8 +40,12 @@ next/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-soc-4.13
 	<no branch> (cc7a938f5f308eeb6f8fe3cec28e1800aa81facb)
 		git://git.kernel.org/pub/scm/linux/kernel/git/abelloni/linux tags/at91-4.12-fixes
-	<no branch> (139358be24e526bc8d050e319cdd4e2d1941503e)
+	socfpga/soc
 		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_updates_for_v4.13
+	actions/soc
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-arm-soc-for-4.13
+	actions/soc-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-arm-soc+sps-for-4.13
 
 next/dt
 	renesas/dt
@@ -101,6 +103,10 @@ next/dt
 		https://github.com/rjarzmik/linux tags/pxa-dt-4.13
 	socfpga/dts
 		git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux tags/socfpga_dts_for_v4.13
+	amlogic/dt-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-dt-2
+	actions/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-arm-dt-for-4.13
 
 next/defconfig
 	davinci/defconfig
@@ -121,8 +127,12 @@ next/defconfig
 		git://git.infradead.org/linux-mvebu tags/mvebu-defconfig-4.13-1
 	imx/defconfig
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-defconfig-4.13
-	<no branch> (794b77738c0dede15441209a56044fd67c48a200)
+	samsung/defconfig-2
 		git://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux tags/samsung-defconfig-4.13-2
+	<no branch> (7f794788dbf9e1a9ca9a5c1cc0a90642f3b4e4ce)
+		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-defconfig-for-4.13-2
+	patch
+		multi_v7_defconfig: Enable OMAP MTD and DM816 AHCI
 
 next/drivers
 	omap/gpmc
@@ -149,6 +159,8 @@ next/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-drivers-4.13
 	qcom/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/agross/linux tags/qcom-drivers-for-4.13
+	actions/drivers
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-drivers-for-4.13
 
 next/dt64
 	renesas/dt64
@@ -195,7 +207,10 @@ next/dt64
 		git://git.infradead.org/linux-mvebu tags/mvebu-fixes-4.12-1
 	patch
 		Revert "arm64: dts: marvell: add dma-mask in crypto nodes for 7k/8k"
-
+	amlogic/dt64-2
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-dt64-2
+	actions/dt64
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-arm64-dt-for-4.13
 
 next/arm64
 	patch
@@ -220,9 +235,12 @@ next/arm64
 		arm64: defconfig: enable Qualcomm Technologies EMAC and some PHY drivers
 	mvebu/arm64
 		git://git.infradead.org/linux-mvebu tags/mvebu-arm64-4.13-1
+	patch
+		arm64: defconfig: remove duplicate entry
+	actions/arm64
+		git://git.kernel.org/pub/scm/linux/kernel/git/afaerber/linux-actions tags/actions-arm64-soc-for-4.13
 
 fixes
 	<no branch> (4fcee14d3802b60f22baf1aeab9f1cff08834c56)
 		git://git.infradead.org/linux-mvebu tags/mvebu-fixes-4.12-2
-
 
