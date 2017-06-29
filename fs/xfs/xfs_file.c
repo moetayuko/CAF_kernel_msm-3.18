@@ -660,6 +660,7 @@ write_retry:
 		xfs_iunlock(ip, iolock);
 		eofb.eof_flags = XFS_EOF_FLAGS_SYNC;
 		xfs_icache_free_eofblocks(ip->i_mount, &eofb);
+		xfs_icache_free_cowblocks(ip->i_mount, &eofb);
 		goto write_retry;
 	}
 
@@ -950,7 +951,7 @@ xfs_file_readdir(
 	 */
 	bufsize = (size_t)min_t(loff_t, 32768, ip->i_d.di_size);
 
-	return xfs_readdir(ip, ctx, bufsize);
+	return xfs_readdir(NULL, ip, ctx, bufsize);
 }
 
 /*
