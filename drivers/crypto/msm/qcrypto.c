@@ -144,8 +144,9 @@ struct qcrypto_req_control {
 	int res; /* execution result */
 };
 
-#define DEFAULT_POLL_INTVAL	100
+#define DEFAULT_POLL_INTVAL	350
 #define MICRO_TO_NS(us)		(us * 1000)
+#define MAX_POLL_INTVAL		1000000
 #define DEFAULT_POLL_CPU	1
 #define DEFAULT_POLL_RETRY	100
 
@@ -155,14 +156,15 @@ struct crypto_poll_ctl {
 	struct workqueue_struct	*wq;
 	enum resp_workq_sts	state;
 	struct work_struct	work;
-	struct tasklet_hrtimer	timer;
+	struct tasklet_struct	task;
+	struct hrtimer		timer;
 	struct list_head	engine_list;
 	spinlock_t		lock;
 	struct crypto_engine	*first_engine_to_poll;
 	bool			pm_support;
 
 	int			cpu;		/* which CPU it is on */
-	u32			intval;		/* polling interval */
+	ktime_t			intval;		/* polling interval */
 	u32			retry;
 	u32			max_retry;
 
@@ -267,6 +269,7 @@ struct crypto_priv {
 	unsigned int max_resp_qlen;
 	unsigned int max_reorder_cnt;
 	u64 queue_complete_work;
+	u64 req_drop_cnt;
 };
 
 static struct crypto_priv qcrypto_dev;
@@ -275,7 +278,7 @@ static struct crypto_engine *_qcrypto_static_assign_engine(
 
 static inline void qcrypto_poll_ctl_sched(struct crypto_poll_ctl *ctl)
 {
-	if (!hrtimer_active(&ctl->timer.timer) &&
+	if (!hrtimer_active(&ctl->timer) &&
 	    (cmpxchg(&ctl->state, NOT_SCHEDULED, IS_SCHEDULED) ==
 	     NOT_SCHEDULED)) {
 		queue_work_on(ctl->cpu, ctl->wq, &ctl->work);
@@ -859,7 +862,17 @@ static enum hrtimer_restart qcrypto_poll_timeout(struct hrtimer *timer)
 {
 	struct crypto_poll_ctl *ctl = container_of(timer,
 						   struct crypto_poll_ctl,
-						   timer.timer);
+						   timer);
+
+	hrtimer_forward_now(timer, ctl->intval);
+	tasklet_schedule(&ctl->task);
+
+	return HRTIMER_RESTART;
+}
+
+static void qcrypto_poll_task(unsigned long data)
+{
+	struct crypto_poll_ctl *ctl = (struct crypto_poll_ctl *)data;
 	struct crypto_engine *pengine;
 	u32 n = 0;
 	bool restart_timer = true;
@@ -876,23 +889,6 @@ static enum hrtimer_restart qcrypto_poll_timeout(struct hrtimer *timer)
 		switch (pengine->bw_state) {
 		case BUS_HAS_BANDWIDTH:
 			qce_poll_eot(pengine->qce);
-			break;
-		default:
-			break;
-		}
-		pengine = next_engine_to_poll(pengine);
-		if (pengine == ctl->first_engine_to_poll)
-			break;
-	}
-
-	__qcrypto_wq_sched(ctl->cp);
-
-	/* Handle the pending request */
-	ctl->first_engine_to_poll =
-		next_engine_to_poll(ctl->first_engine_to_poll);
-	for (pengine = ctl->first_engine_to_poll; pengine;) {
-		switch (pengine->bw_state) {
-		case BUS_HAS_BANDWIDTH:
 			_start_qcrypto_process(pengine->pcp, pengine);
 			n += pengine->req_count;
 			break;
@@ -910,6 +906,8 @@ static enum hrtimer_restart qcrypto_poll_timeout(struct hrtimer *timer)
 			break;
 	}
 
+	__qcrypto_wq_sched(ctl->cp);
+
 out:
 	if (ctl->pm_support)
 		spin_unlock(&ctl->lock);
@@ -922,17 +920,10 @@ out:
 	} else
 		ctl->retry = 0;
 
-	if (restart_timer) {
-		tasklet_hrtimer_start(
-			&ctl->timer,
-			ns_to_ktime((ctl->intval) ?
-				    MICRO_TO_NS(ctl->intval) :
-				    MICRO_TO_NS(DEFAULT_POLL_INTVAL)),
-			HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
-	} else
+	if (!restart_timer) {
+		hrtimer_cancel(&ctl->timer);
 		ctl->state = NOT_SCHEDULED;
-
-	return HRTIMER_NORESTART;
+	}
 }
 
 static void qcrypto_poll_work(struct work_struct *work)
@@ -940,11 +931,8 @@ static void qcrypto_poll_work(struct work_struct *work)
 	struct crypto_poll_ctl *ctl = container_of(work, struct crypto_poll_ctl,
 						   work);
 
-	ktime_t ktime = ktime_set(0, (ctl->intval) ? MICRO_TO_NS(ctl->intval) :
-				  MICRO_TO_NS(DEFAULT_POLL_INTVAL));
-
-	tasklet_hrtimer_start(&ctl->timer, ktime,
-			      HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
+	hrtimer_start(&ctl->timer, ctl->intval,
+		      HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
 	ctl->state = IS_SCHEDULED;
 }
 
@@ -972,13 +960,16 @@ static struct crypto_poll_ctl *qcrypto_poll_ctl_alloc(struct crypto_priv *cp,
 	}
 
 	INIT_WORK(&ctl->work, qcrypto_poll_work);
-	tasklet_hrtimer_init(&ctl->timer, qcrypto_poll_timeout,
-			     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	tasklet_init(&ctl->task, qcrypto_poll_task, (unsigned long)ctl);
+	hrtimer_init(&ctl->timer, CLOCK_MONOTONIC,
+		     HRTIMER_MODE_REL|HRTIMER_MODE_PINNED);
+	ctl->timer.function = qcrypto_poll_timeout;
 	spin_lock_init(&ctl->lock);
 	INIT_LIST_HEAD(&ctl->engine_list);
 
 	ctl->cp = cp;
 	ctl->cpu = cpu;
+	ctl->intval = ns_to_ktime(MICRO_TO_NS(DEFAULT_POLL_INTVAL));
 	ctl->state = NOT_SCHEDULED;
 	ctl->max_retry = DEFAULT_POLL_RETRY;
 	ctl->pm_support = (cp->ce_support.clk_mgmt_sus_res ||
@@ -993,7 +984,8 @@ static void qcrypto_poll_ctl_free(struct crypto_poll_ctl *ctl)
 {
 	cancel_work_sync(&ctl->work);
 	destroy_workqueue(ctl->wq);
-	tasklet_hrtimer_cancel(&ctl->timer);
+	hrtimer_cancel(&ctl->timer);
+	tasklet_kill(&ctl->task);
 
 	list_del(&ctl->list);
 	ctl->cp->poll_ctl_num--;
@@ -1660,6 +1652,9 @@ static int _disp_stats(int id)
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
 			"   complete work queue scheduling      : %llu\n",
 					cp->queue_complete_work);
+	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
+			"   dropped request                     : %llu\n",
+					cp->req_drop_cnt);
 	len += scnprintf(_debug_read_buf + len, DEBUG_MAX_RW_BUF - len - 1,
 			"\n");
 	spin_lock_irqsave(&cp->lock, flags);
@@ -3068,7 +3063,11 @@ static int _qcrypto_queue_req(struct crypto_priv *cp,
 	}
 	spin_unlock_irqrestore(&cp->lock, flags);
 
-	qcrypto_poll_ctl_sched(ctl);
+	if (unlikely((ret == -EBUSY) &&
+		     !(req->flags & CRYPTO_TFM_REQ_MAY_BACKLOG)))
+		cp->req_drop_cnt++;
+	else
+		qcrypto_poll_ctl_sched(ctl);
 
 	return ret;
 }
@@ -6644,6 +6643,7 @@ static ssize_t _debug_stats_write(struct file *file, const char __user *buf,
 	cp->max_resp_qlen = 0;
 	cp->max_reorder_cnt = 0;
 	cp->queue_complete_work = 0;
+	cp->req_drop_cnt = 0;
 	spin_unlock_irqrestore(&cp->lock, flags);
 	return count;
 }
@@ -6652,6 +6652,53 @@ static const struct file_operations _debug_stats_ops = {
 	.open =         _debug_stats_open,
 	.read =         _debug_stats_read,
 	.write =        _debug_stats_write,
+};
+
+static ssize_t _debug_poll_intval_read(struct file *file, char __user *buf,
+			size_t count, loff_t *ppos)
+{
+	int rc = -EINVAL;
+	struct crypto_priv *cp = &qcrypto_dev;
+	struct crypto_poll_ctl *ctl;
+	char s[512];
+	int len = 0;
+
+
+	list_for_each_entry(ctl, &cp->poll_ctl_list, list) {
+		len += scnprintf(s + len, sizeof(s) - len - 1,
+				 "   CPU%d: %lluus\n",
+				 ctl->cpu, ktime_to_us(ctl->intval));
+	}
+
+	if (len <= count)
+		rc = simple_read_from_buffer((void __user *) buf, len,
+			ppos, s, len);
+	return rc;
+}
+
+static ssize_t _debug_poll_intval_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *ppos)
+{
+	struct crypto_priv *cp = &qcrypto_dev;
+	struct crypto_poll_ctl *ctl;
+	unsigned int intval;
+
+	if (kstrtouint_from_user(buf, count, 0, &intval))
+		return -EINVAL;
+
+	if (!intval || intval >= MAX_POLL_INTVAL)
+		return -EINVAL;
+
+	list_for_each_entry(ctl, &cp->poll_ctl_list, list)
+		ctl->intval = ns_to_ktime(MICRO_TO_NS(intval));
+
+	return count;
+}
+
+static const struct file_operations _debug_poll_intval_ops = {
+	.open =         simple_open,
+	.read =         _debug_poll_intval_read,
+	.write =        _debug_poll_intval_write,
 };
 
 static int _qcrypto_debug_init(void)
@@ -6671,6 +6718,14 @@ static int _qcrypto_debug_init(void)
 	_debug_qcrypto = 0;
 	dent = debugfs_create_file(name, 0644, _debug_dent,
 				&_debug_qcrypto, &_debug_stats_ops);
+	if (dent == NULL) {
+		pr_err("qcrypto debugfs_create_file fail, error %ld\n",
+				PTR_ERR(dent));
+		rc = PTR_ERR(dent);
+		goto err;
+	}
+	dent = debugfs_create_file("poll-interval", 0644, _debug_dent,
+				&_debug_qcrypto, &_debug_poll_intval_ops);
 	if (dent == NULL) {
 		pr_err("qcrypto debugfs_create_file fail, error %ld\n",
 				PTR_ERR(dent));
