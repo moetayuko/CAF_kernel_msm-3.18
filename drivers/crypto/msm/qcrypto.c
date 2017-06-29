@@ -247,9 +247,8 @@ struct crypto_priv {
 						 * responses in sequence.
 						 */
 	atomic_t resp_cnt;
-	struct workqueue_struct *resp_wq;
-	struct work_struct resp_work;	/*
-					 * Workq to send responses
+	struct tasklet_struct resp_wq;	/*
+					 * tasklet to send responses
 					 * in sequence.
 					 */
 	enum resp_workq_sts sched_resp_workq_status;
@@ -824,6 +823,26 @@ ret:
 		qcrypto_bw_set_timeout(pengine);
 }
 
+static inline void __qcrypto_wq_sched(struct crypto_priv *cp)
+{
+	while (!llist_empty(&cp->ordered_resp_list)) {
+		unsigned int cpu = COMP_WQ_CPU;
+
+		if (cmpxchg(&cp->sched_resp_workq_status, NOT_SCHEDULED,
+					IS_SCHEDULED) == NOT_SCHEDULED) {
+			smp_call_function_single(
+				cpu,
+				(smp_call_func_t)tasklet_schedule,
+				&cp->resp_wq,
+				0);
+			cp->queue_complete_work++;
+		} else if (cmpxchg(&cp->sched_resp_workq_status, IS_SCHEDULED,
+					SCHEDULE_AGAIN) == NOT_SCHEDULED)
+			continue;
+		break;
+	}
+}
+
 static inline struct crypto_engine *next_engine_to_poll(struct crypto_engine *p)
 {
 	struct crypto_poll_ctl *ctl = p->pctl;
@@ -865,6 +884,8 @@ static enum hrtimer_restart qcrypto_poll_timeout(struct hrtimer *timer)
 		if (pengine == ctl->first_engine_to_poll)
 			break;
 	}
+
+	__qcrypto_wq_sched(ctl->cp);
 
 	/* Handle the pending request */
 	ctl->first_engine_to_poll =
@@ -1926,10 +1947,9 @@ static int _qcrypto_setkey_3des(struct crypto_ablkcipher *cipher, const u8 *key,
 	return 0;
 };
 
-static void seq_response(struct work_struct *work)
+static void seq_response(unsigned long data)
 {
-	struct crypto_priv *cp = container_of(work, struct crypto_priv,
-							 resp_work);
+	struct crypto_priv *cp = (struct crypto_priv *)data;
 	struct llist_node *list;
 	struct llist_node *rev = NULL;
 
@@ -1947,7 +1967,6 @@ again:
 		rev = t;
 	}
 
-	local_bh_disable();
 	while (rev) {
 		struct qcrypto_resp_ctx *arsp;
 		struct crypto_async_request *areq;
@@ -1959,7 +1978,6 @@ again:
 		areq->complete(areq, arsp->res);
 		atomic_dec(&cp->resp_cnt);
 	}
-	local_bh_enable();
 
 	if (atomic_read(&cp->resp_cnt) < COMPLETION_CB_BACKLOG_LENGTH_START &&
 		(cmpxchg(&cp->ce_req_proc_sts, STOPPED, IN_PROGRESS)
@@ -2028,19 +2046,6 @@ static void _qcrypto_tfm_complete(struct crypto_engine *pengine, u32 type,
 
 	if (need_lock)
 		spin_unlock_irqrestore(&cp->lock, flags);
-
-retry:
-	if (!llist_empty(&cp->ordered_resp_list)) {
-		unsigned int cpu = COMP_WQ_CPU;
-
-		if (cmpxchg(&cp->sched_resp_workq_status, NOT_SCHEDULED,
-					IS_SCHEDULED) == NOT_SCHEDULED) {
-			queue_work_on(cpu, cp->resp_wq, &cp->resp_work);
-			cp->queue_complete_work++;
-		} else if (cmpxchg(&cp->sched_resp_workq_status, IS_SCHEDULED,
-					SCHEDULE_AGAIN) == NOT_SCHEDULED)
-			goto retry;
-	}
 }
 
 static void req_done(struct qcrypto_req_control *pqcrypto_req_control)
@@ -6692,13 +6697,7 @@ static int __init _qcrypto_init(void)
 	init_llist_head(&pcp->ordered_resp_list);
 	spin_lock_init(&pcp->lock);
 	mutex_init(&pcp->engine_lock);
-	pcp->resp_wq = alloc_workqueue("qcrypto_seq_response_wq",
-			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
-	if (!pcp->resp_wq) {
-		pr_err("Error allocating workqueue\n");
-		return -ENOMEM;
-	}
-	INIT_WORK(&pcp->resp_work, seq_response);
+	tasklet_init(&pcp->resp_wq, seq_response, (unsigned long)pcp);
 	pcp->total_units = 0;
 	pcp->platform_support.bus_scale_table = NULL;
 	pcp->next_engine = NULL;
