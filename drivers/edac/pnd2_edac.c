@@ -131,7 +131,7 @@ static struct mem_ctl_info *pnd2_mci;
 
 #ifdef CONFIG_X86_INTEL_SBI_APL
 #include "linux/platform_data/sbi_apl.h"
-int sbi_send(int port, int off, int op, u32 *data)
+static int sbi_send(int port, int off, int op, u32 *data)
 {
 	struct sbi_apl_message sbi_arg;
 	int ret, read = 0;
@@ -160,7 +160,7 @@ int sbi_send(int port, int off, int op, u32 *data)
 	return ret;
 }
 #else
-int sbi_send(int port, int off, int op, u32 *data)
+static int sbi_send(int port, int off, int op, u32 *data)
 {
 	return -EUNATCH;
 }
@@ -168,14 +168,15 @@ int sbi_send(int port, int off, int op, u32 *data)
 
 static int apl_rd_reg(int port, int off, int op, void *data, size_t sz, char *name)
 {
-	int	ret = 0;
+	int ret = 0;
 
 	edac_dbg(2, "Read %s port=%x off=%x op=%x\n", name, port, off, op);
 	switch (sz) {
 	case 8:
 		ret = sbi_send(port, off + 4, op, (u32 *)(data + 4));
+		/* fall through */
 	case 4:
-		ret = sbi_send(port, off, op, (u32 *)data);
+		ret |= sbi_send(port, off, op, (u32 *)data);
 		pnd2_printk(KERN_DEBUG, "%s=%x%08x ret=%d\n", name,
 					sz == 8 ? *((u32 *)(data + 4)) : 0, *((u32 *)data), ret);
 		break;
