@@ -336,7 +336,6 @@ enum {
 };
 
 struct gfs2_glock {
-	struct hlist_bl_node gl_list;
 	unsigned long gl_flags;		/* GLF_... */
 	struct lm_lockname gl_name;
 
@@ -821,7 +820,6 @@ struct gfs2_sbd {
 	wait_queue_head_t sd_reserving_log_wait;
 
 	unsigned int sd_log_flush_head;
-	u64 sd_log_flush_wrapped;
 
 	spinlock_t sd_ail_lock;
 	struct list_head sd_ail1_list;
