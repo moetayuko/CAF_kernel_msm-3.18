@@ -109,7 +109,7 @@ static void end_compressed_bio_read(struct bio *bio)
 	unsigned long index;
 	int ret;
 
-	if (bio->bi_error)
+	if (bio->bi_status)
 		cb->errors = 1;
 
 	/* if there are more bios still pending for this compressed
@@ -219,7 +219,7 @@ static void end_compressed_bio_write(struct bio *bio)
 	struct page *page;
 	unsigned long index;
 
-	if (bio->bi_error)
+	if (bio->bi_status)
 		cb->errors = 1;
 
 	/* if there are more bios still pending for this compressed
@@ -238,7 +238,7 @@ static void end_compressed_bio_write(struct bio *bio)
 					 cb->start,
 					 cb->start + cb->len - 1,
 					 NULL,
-					 bio->bi_error ? 0 : 1);
+					 bio->bi_status ? 0 : 1);
 	cb->compressed_pages[0]->mapping = NULL;
 
 	end_compressed_writeback(inode, cb);
@@ -271,7 +271,7 @@ out:
  * This also checksums the file bytes and gets things ready for
  * the end io hooks.
  */
-int btrfs_submit_compressed_write(struct inode *inode, u64 start,
+blk_status_t btrfs_submit_compressed_write(struct inode *inode, u64 start,
 				 unsigned long len, u64 disk_start,
 				 unsigned long compressed_len,
 				 struct page **compressed_pages,
@@ -286,13 +286,13 @@ int btrfs_submit_compressed_write(struct inode *inode, u64 start,
 	struct page *page;
 	u64 first_byte = disk_start;
 	struct block_device *bdev;
-	int ret;
+	blk_status_t ret;
 	int skip_sum = BTRFS_I(inode)->flags & BTRFS_INODE_NODATASUM;
 
 	WARN_ON(start & ((u64)PAGE_SIZE - 1));
 	cb = kmalloc(compressed_bio_size(fs_info, compressed_len), GFP_NOFS);
 	if (!cb)
-		return -ENOMEM;
+		return BLK_STS_RESOURCE;
 	refcount_set(&cb->pending_bios, 0);
 	cb->errors = 0;
 	cb->inode = inode;
@@ -315,17 +315,17 @@ int btrfs_submit_compressed_write(struct inode *inode, u64 start,
 	/* create and submit bios for the compressed pages */
 	bytes_left = compressed_len;
 	for (pg_index = 0; pg_index < cb->nr_pages; pg_index++) {
+		int submit = 0;
+
 		page = compressed_pages[pg_index];
 		page->mapping = inode->i_mapping;
 		if (bio->bi_iter.bi_size)
-			ret = io_tree->ops->merge_bio_hook(page, 0,
+			submit = io_tree->ops->merge_bio_hook(page, 0,
 							   PAGE_SIZE,
 							   bio, 0);
-		else
-			ret = 0;
 
 		page->mapping = NULL;
-		if (ret || bio_add_page(bio, page, PAGE_SIZE, 0) <
+		if (submit || bio_add_page(bio, page, PAGE_SIZE, 0) <
 		    PAGE_SIZE) {
 			bio_get(bio);
 
@@ -347,7 +347,7 @@ int btrfs_submit_compressed_write(struct inode *inode, u64 start,
 
 			ret = btrfs_map_bio(fs_info, bio, 0, 1);
 			if (ret) {
-				bio->bi_error = ret;
+				bio->bi_status = ret;
 				bio_endio(bio);
 			}
 
@@ -380,7 +380,7 @@ int btrfs_submit_compressed_write(struct inode *inode, u64 start,
 
 	ret = btrfs_map_bio(fs_info, bio, 0, 1);
 	if (ret) {
-		bio->bi_error = ret;
+		bio->bi_status = ret;
 		bio_endio(bio);
 	}
 
@@ -515,7 +515,7 @@ next:
  * After the compressed pages are read, we copy the bytes into the
  * bio we were passed and then call the bio end_io calls
  */
-int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
+blk_status_t btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 				 int mirror_num, unsigned long bio_flags)
 {
 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
@@ -532,7 +532,7 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 	u64 em_len;
 	u64 em_start;
 	struct extent_map *em;
-	int ret = -ENOMEM;
+	blk_status_t ret = BLK_STS_RESOURCE;
 	int faili = 0;
 	u32 *sums;
 
@@ -546,7 +546,7 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 				   PAGE_SIZE);
 	read_unlock(&em_tree->lock);
 	if (!em)
-		return -EIO;
+		return BLK_STS_IOERR;
 
 	compressed_len = em->block_len;
 	cb = kmalloc(compressed_bio_size(fs_info, compressed_len), GFP_NOFS);
@@ -584,7 +584,7 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 							      __GFP_HIGHMEM);
 		if (!cb->compressed_pages[pg_index]) {
 			faili = pg_index - 1;
-			ret = -ENOMEM;
+			ret = BLK_STS_RESOURCE;
 			goto fail2;
 		}
 	}
@@ -603,19 +603,19 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 	refcount_set(&cb->pending_bios, 1);
 
 	for (pg_index = 0; pg_index < nr_pages; pg_index++) {
+		int submit = 0;
+
 		page = cb->compressed_pages[pg_index];
 		page->mapping = inode->i_mapping;
 		page->index = em_start >> PAGE_SHIFT;
 
 		if (comp_bio->bi_iter.bi_size)
-			ret = tree->ops->merge_bio_hook(page, 0,
+			submit = tree->ops->merge_bio_hook(page, 0,
 							PAGE_SIZE,
 							comp_bio, 0);
-		else
-			ret = 0;
 
 		page->mapping = NULL;
-		if (ret || bio_add_page(comp_bio, page, PAGE_SIZE, 0) <
+		if (submit || bio_add_page(comp_bio, page, PAGE_SIZE, 0) <
 		    PAGE_SIZE) {
 			bio_get(comp_bio);
 
@@ -641,7 +641,7 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 
 			ret = btrfs_map_bio(fs_info, comp_bio, mirror_num, 0);
 			if (ret) {
-				comp_bio->bi_error = ret;
+				comp_bio->bi_status = ret;
 				bio_endio(comp_bio);
 			}
 
@@ -668,7 +668,7 @@ int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 
 	ret = btrfs_map_bio(fs_info, comp_bio, mirror_num, 0);
 	if (ret) {
-		comp_bio->bi_error = ret;
+		comp_bio->bi_status = ret;
 		bio_endio(comp_bio);
 	}
 
