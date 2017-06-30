@@ -20,7 +20,6 @@
 #include <linux/list.h>
 #include <linux/acpi.h>
 #include <linux/sort.h>
-#include <linux/pmem.h>
 #include <linux/io.h>
 #include <linux/nd.h>
 #include <asm/cacheflush.h>
@@ -1066,7 +1065,7 @@ static struct attribute *acpi_nfit_attributes[] = {
 	NULL,
 };
 
-static struct attribute_group acpi_nfit_attribute_group = {
+static const struct attribute_group acpi_nfit_attribute_group = {
 	.name = "nfit",
 	.attrs = acpi_nfit_attributes,
 	.is_visible = nfit_visible,
@@ -1346,7 +1345,7 @@ static umode_t acpi_nfit_dimm_attr_visible(struct kobject *kobj,
 	return a->mode;
 }
 
-static struct attribute_group acpi_nfit_dimm_attribute_group = {
+static const struct attribute_group acpi_nfit_dimm_attribute_group = {
 	.name = "nfit",
 	.attrs = acpi_nfit_dimm_attributes,
 	.is_visible = acpi_nfit_dimm_attr_visible,
@@ -1640,7 +1639,7 @@ static struct attribute *acpi_nfit_region_attributes[] = {
 	NULL,
 };
 
-static struct attribute_group acpi_nfit_region_attribute_group = {
+static const struct attribute_group acpi_nfit_region_attribute_group = {
 	.name = "nfit",
 	.attrs = acpi_nfit_region_attributes,
 };
@@ -1663,10 +1662,27 @@ struct nfit_set_info {
 	} mapping[0];
 };
 
+struct nfit_set_info2 {
+	struct nfit_set_info_map2 {
+		u64 region_offset;
+		u32 serial_number;
+		u16 vendor_id;
+		u16 manufacturing_date;
+		u8  manufacturing_location;
+		u8  reserved[31];
+	} mapping[0];
+};
+
 static size_t sizeof_nfit_set_info(int num_mappings)
 {
 	return sizeof(struct nfit_set_info)
 		+ num_mappings * sizeof(struct nfit_set_info_map);
+}
+
+static size_t sizeof_nfit_set_info2(int num_mappings)
+{
+	return sizeof(struct nfit_set_info2)
+		+ num_mappings * sizeof(struct nfit_set_info_map2);
 }
 
 static int cmp_map_compat(const void *m0, const void *m1)
@@ -1682,6 +1698,18 @@ static int cmp_map(const void *m0, const void *m1)
 {
 	const struct nfit_set_info_map *map0 = m0;
 	const struct nfit_set_info_map *map1 = m1;
+
+	if (map0->region_offset < map1->region_offset)
+		return -1;
+	else if (map0->region_offset > map1->region_offset)
+		return 1;
+	return 0;
+}
+
+static int cmp_map2(const void *m0, const void *m1)
+{
+	const struct nfit_set_info_map2 *map0 = m0;
+	const struct nfit_set_info_map2 *map1 = m1;
 
 	if (map0->region_offset < map1->region_offset)
 		return -1;
@@ -1707,27 +1735,31 @@ static int acpi_nfit_init_interleave_set(struct acpi_nfit_desc *acpi_desc,
 		struct nd_region_desc *ndr_desc,
 		struct acpi_nfit_system_address *spa)
 {
-	int i, spa_type = nfit_spa_type(spa);
 	struct device *dev = acpi_desc->dev;
 	struct nd_interleave_set *nd_set;
 	u16 nr = ndr_desc->num_mappings;
+	struct nfit_set_info2 *info2;
 	struct nfit_set_info *info;
-
-	if (spa_type == NFIT_SPA_PM || spa_type == NFIT_SPA_VOLATILE)
-		/* pass */;
-	else
-		return 0;
+	int i;
 
 	nd_set = devm_kzalloc(dev, sizeof(*nd_set), GFP_KERNEL);
 	if (!nd_set)
 		return -ENOMEM;
+	ndr_desc->nd_set = nd_set;
+	guid_copy(&nd_set->type_guid, (guid_t *) spa->range_guid);
 
 	info = devm_kzalloc(dev, sizeof_nfit_set_info(nr), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
+
+	info2 = devm_kzalloc(dev, sizeof_nfit_set_info2(nr), GFP_KERNEL);
+	if (!info2)
+		return -ENOMEM;
+
 	for (i = 0; i < nr; i++) {
 		struct nd_mapping_desc *mapping = &ndr_desc->mapping[i];
 		struct nfit_set_info_map *map = &info->mapping[i];
+		struct nfit_set_info_map2 *map2 = &info2->mapping[i];
 		struct nvdimm *nvdimm = mapping->nvdimm;
 		struct nfit_mem *nfit_mem = nvdimm_provider_data(nvdimm);
 		struct acpi_nfit_memory_map *memdev = memdev_from_spa(acpi_desc,
@@ -1740,19 +1772,32 @@ static int acpi_nfit_init_interleave_set(struct acpi_nfit_desc *acpi_desc,
 
 		map->region_offset = memdev->region_offset;
 		map->serial_number = nfit_mem->dcr->serial_number;
+
+		map2->region_offset = memdev->region_offset;
+		map2->serial_number = nfit_mem->dcr->serial_number;
+		map2->vendor_id = nfit_mem->dcr->vendor_id;
+		map2->manufacturing_date = nfit_mem->dcr->manufacturing_date;
+		map2->manufacturing_location = nfit_mem->dcr->manufacturing_location;
 	}
 
+	/* v1.1 namespaces */
 	sort(&info->mapping[0], nr, sizeof(struct nfit_set_info_map),
 			cmp_map, NULL);
-	nd_set->cookie = nd_fletcher64(info, sizeof_nfit_set_info(nr), 0);
+	nd_set->cookie1 = nd_fletcher64(info, sizeof_nfit_set_info(nr), 0);
 
-	/* support namespaces created with the wrong sort order */
+	/* v1.2 namespaces */
+	sort(&info2->mapping[0], nr, sizeof(struct nfit_set_info_map2),
+			cmp_map2, NULL);
+	nd_set->cookie2 = nd_fletcher64(info2, sizeof_nfit_set_info2(nr), 0);
+
+	/* support v1.1 namespaces created with the wrong sort order */
 	sort(&info->mapping[0], nr, sizeof(struct nfit_set_info_map),
 			cmp_map_compat, NULL);
 	nd_set->altcookie = nd_fletcher64(info, sizeof_nfit_set_info(nr), 0);
 
 	ndr_desc->nd_set = nd_set;
 	devm_kfree(dev, info);
+	devm_kfree(dev, info2);
 
 	return 0;
 }
@@ -1842,8 +1887,7 @@ static int acpi_nfit_blk_single_io(struct nfit_blk *nfit_blk,
 		}
 
 		if (rw)
-			memcpy_to_pmem(mmio->addr.aperture + offset,
-					iobuf + copied, c);
+			memcpy_flushcache(mmio->addr.aperture + offset, iobuf + copied, c);
 		else {
 			if (nfit_blk->dimm_flags & NFIT_BLK_READ_FLUSH)
 				mmio_flush_range((void __force *)
@@ -1957,7 +2001,7 @@ static int acpi_nfit_blk_region_enable(struct nvdimm_bus *nvdimm_bus,
 	nfit_blk->bdw_offset = nfit_mem->bdw->offset;
 	mmio = &nfit_blk->mmio[BDW];
 	mmio->addr.base = devm_nvdimm_memremap(dev, nfit_mem->spa_bdw->address,
-                        nfit_mem->spa_bdw->length, ARCH_MEMREMAP_PMEM);
+                        nfit_mem->spa_bdw->length, nd_blk_memremap_flags(ndbr));
 	if (!mmio->addr.base) {
 		dev_dbg(dev, "%s: %s failed to map bdw\n", __func__,
 				nvdimm_name(nvdimm));
@@ -2179,7 +2223,7 @@ static int acpi_nfit_init_mapping(struct acpi_nfit_desc *acpi_desc,
 	struct acpi_nfit_system_address *spa = nfit_spa->spa;
 	struct nd_blk_region_desc *ndbr_desc;
 	struct nfit_mem *nfit_mem;
-	int blk_valid = 0;
+	int blk_valid = 0, rc;
 
 	if (!nvdimm) {
 		dev_err(acpi_desc->dev, "spa%d dimm: %#x not found\n",
@@ -2211,6 +2255,9 @@ static int acpi_nfit_init_mapping(struct acpi_nfit_desc *acpi_desc,
 		ndbr_desc = to_blk_region_desc(ndr_desc);
 		ndbr_desc->enable = acpi_nfit_blk_region_enable;
 		ndbr_desc->do_io = acpi_desc->blk_do_io;
+		rc = acpi_nfit_init_interleave_set(acpi_desc, ndr_desc, spa);
+		if (rc)
+			return rc;
 		nfit_spa->nd_region = nvdimm_blk_region_create(acpi_desc->nvdimm_bus,
 				ndr_desc);
 		if (!nfit_spa->nd_region)
@@ -2227,6 +2274,13 @@ static bool nfit_spa_is_virtual(struct acpi_nfit_system_address *spa)
 		nfit_spa_type(spa) == NFIT_SPA_VCD   ||
 		nfit_spa_type(spa) == NFIT_SPA_PDISK ||
 		nfit_spa_type(spa) == NFIT_SPA_PCD);
+}
+
+static bool nfit_spa_is_volatile(struct acpi_nfit_system_address *spa)
+{
+	return (nfit_spa_type(spa) == NFIT_SPA_VDISK ||
+		nfit_spa_type(spa) == NFIT_SPA_VCD   ||
+		nfit_spa_type(spa) == NFIT_SPA_VOLATILE);
 }
 
 static int acpi_nfit_register_region(struct acpi_nfit_desc *acpi_desc,
@@ -2303,7 +2357,7 @@ static int acpi_nfit_register_region(struct acpi_nfit_desc *acpi_desc,
 				ndr_desc);
 		if (!nfit_spa->nd_region)
 			rc = -ENOMEM;
-	} else if (nfit_spa_type(spa) == NFIT_SPA_VOLATILE) {
+	} else if (nfit_spa_is_volatile(spa)) {
 		nfit_spa->nd_region = nvdimm_volatile_region_create(nvdimm_bus,
 				ndr_desc);
 		if (!nfit_spa->nd_region)
@@ -2967,18 +3021,13 @@ static int acpi_nfit_remove(struct acpi_device *adev)
 	return 0;
 }
 
-void __acpi_nfit_notify(struct device *dev, acpi_handle handle, u32 event)
+static void acpi_nfit_update_notify(struct device *dev, acpi_handle handle)
 {
 	struct acpi_nfit_desc *acpi_desc = dev_get_drvdata(dev);
 	struct acpi_buffer buf = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 	acpi_status status;
 	int ret;
-
-	dev_dbg(dev, "%s: event: %d\n", __func__, event);
-
-	if (event != NFIT_NOTIFY_UPDATE)
-		return;
 
 	if (!dev->driver) {
 		/* dev->driver may be null if we're being removed */
@@ -3015,6 +3064,27 @@ void __acpi_nfit_notify(struct device *dev, acpi_handle handle, u32 event)
 	} else
 		dev_err(dev, "Invalid _FIT\n");
 	kfree(buf.pointer);
+}
+
+static void acpi_nfit_uc_error_notify(struct device *dev, acpi_handle handle)
+{
+	struct acpi_nfit_desc *acpi_desc = dev_get_drvdata(dev);
+
+	acpi_nfit_ars_rescan(acpi_desc);
+}
+
+void __acpi_nfit_notify(struct device *dev, acpi_handle handle, u32 event)
+{
+	dev_dbg(dev, "%s: event: 0x%x\n", __func__, event);
+
+	switch (event) {
+	case NFIT_NOTIFY_UPDATE:
+		return acpi_nfit_update_notify(dev, handle);
+	case NFIT_NOTIFY_UC_MEMORY_ERROR:
+		return acpi_nfit_uc_error_notify(dev, handle);
+	default:
+		return;
+	}
 }
 EXPORT_SYMBOL_GPL(__acpi_nfit_notify);
 
