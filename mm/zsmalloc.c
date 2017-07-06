@@ -548,7 +548,7 @@ static int get_size_class_index(int size)
 		idx = DIV_ROUND_UP(size - ZS_MIN_ALLOC_SIZE,
 				ZS_SIZE_CLASS_DELTA);
 
-	return min((int)ZS_SIZE_CLASSES - 1, idx);
+	return min_t(int, ZS_SIZE_CLASSES - 1, idx);
 }
 
 static inline void zs_stat_inc(struct size_class *class,
