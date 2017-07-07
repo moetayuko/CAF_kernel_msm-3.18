@@ -102,6 +102,8 @@ static int ttyport_open(struct serdev_controller *ctrl)
 		return PTR_ERR(tty);
 	serport->tty = tty;
 
+	tty->port->client_ops = &client_ops;
+
 	if (tty->ops->open)
 		tty->ops->open(serport->tty, NULL);
 	else
@@ -232,7 +234,6 @@ struct device *serdev_tty_port_register(struct tty_port *port,
 	ctrl->ops = &ctrl_ops;
 
 	old_ops = port->client_ops;
-	port->client_ops = &client_ops;
 	port->client_data = ctrl;
 
 	ret = serdev_controller_add(ctrl);
