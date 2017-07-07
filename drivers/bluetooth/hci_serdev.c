@@ -20,7 +20,7 @@
  *  GNU General Public License for more details.
  *
  */
-
+#define DEBUG
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/serdev.h>
@@ -120,11 +120,13 @@ static int hci_uart_flush(struct hci_dev *hdev)
 		kfree_skb(hu->tx_skb); hu->tx_skb = NULL;
 	}
 
+	if (!test_bit(HCI_UART_PROTO_READY, &hu->flags))
+		return 0;
+
+	hu->proto->flush(hu);
+
 	/* Flush any pending characters in the driver and discipline. */
 	serdev_device_write_flush(hu->serdev);
-
-	if (test_bit(HCI_UART_PROTO_READY, &hu->flags))
-		hu->proto->flush(hu);
 
 	return 0;
 }
@@ -132,7 +134,7 @@ static int hci_uart_flush(struct hci_dev *hdev)
 /* Close device */
 static int hci_uart_close(struct hci_dev *hdev)
 {
-	BT_DBG("hdev %p", hdev);
+	BT_DBG("hdev %p close", hdev);
 
 	hci_uart_flush(hdev);
 	hdev->flush = NULL;

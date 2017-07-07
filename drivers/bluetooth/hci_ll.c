@@ -26,7 +26,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
-
+#define DEBUG
 #include <linux/module.h>
 #include <linux/kernel.h>
 
@@ -176,7 +176,7 @@ static int ll_close(struct hci_uart *hu)
 {
 	struct ll_struct *ll = hu->priv;
 
-	BT_DBG("hu %p", hu);
+	BT_DBG("hu %p close", hu);
 
 	skb_queue_purge(&ll->tx_wait_q);
 	skb_queue_purge(&ll->txq);

@@ -19,7 +19,7 @@
 #include <linux/uaccess.h>
 #include <linux/ratelimit.h>
 
-#undef LDISC_DEBUG_HANGUP
+#define LDISC_DEBUG_HANGUP
 
 #ifdef LDISC_DEBUG_HANGUP
 #define tty_ldisc_debug(tty, f, args...)	tty_debug(tty, f, ##args)
