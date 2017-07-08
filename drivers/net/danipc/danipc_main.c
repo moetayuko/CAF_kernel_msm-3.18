@@ -194,6 +194,7 @@ static int release_local_fifo(struct danipc_fifo *fifo, void *owner)
 	}
 	fifo->owner = NULL;
 	fifo->flag &= ~DANIPC_FIFO_F_INUSE;
+
 out:
 	mutex_unlock(&fifo->lock);
 	return ret;
@@ -393,6 +394,8 @@ static int parse_resources(struct platform_device *pdev, const char *regs[],
 		struct resource	*res;
 		int		shm_size = 0;
 		int		r;
+		const struct ipc_buf_desc *prop_mem_map;
+		uint32_t len = 0;
 
 		for (r = 0; r < RESOURCE_NUM && !parse_err; r++) {
 			res = platform_get_resource_byname(pdev,
@@ -417,7 +420,6 @@ static int parse_resources(struct platform_device *pdev, const char *regs[],
 
 		if (!has_ipc_bufs) {
 			const struct ipc_buf_desc *buf_desc;
-			uint32_t len;
 
 			buf_desc = of_get_property(node, "ul-bufs", &len);
 
@@ -442,6 +444,32 @@ static int parse_resources(struct platform_device *pdev, const char *regs[],
 			num_ext_bufs = len/sizeof(struct ipc_buf_desc);
 		}
 
+		prop_mem_map = of_get_property(node, "memory-region", &len);
+		if (prop_mem_map) {
+			struct danipc_mem_map *p;
+			int n = len/sizeof(struct ipc_buf_desc);
+			int i;
+
+			p = kzalloc((n * sizeof(*p)), GFP_KERNEL);
+			if (p == NULL)
+				return -ENOMEM;
+
+			for (i = 0; i < n; i++) {
+				p[i].paddr_base = prop_mem_map[i].phy_addr;
+				p[i].size = prop_mem_map[i].sz;
+				p[i].vaddr_base = ioremap_cache(
+					p[i].paddr_base, p[i].size);
+				if (p[i].vaddr_base == NULL) {
+					pr_err("failed to map the region\n");
+					while (--i >= 0)
+						iounmap(p[i].vaddr_base);
+					kfree(p);
+					return -ENOMEM;
+				}
+			}
+			danipc_driver.proc_map = p;
+			danipc_driver.proc_map_entry = n;
+		}
 		for (r = 0; r < PLATFORM_MAX_NUM_OF_NODES && !parse_err; r++) {
 			if (!regs[r])
 				continue;
@@ -2417,6 +2445,15 @@ int danipc_remove(struct platform_device *pdev)
 	danipc_netdev_cleanup(pdev);
 	danipc_cdev_cleanup();
 	danipc_ll_cleanup(&danipc_driver);
+	if (danipc_driver.proc_map && danipc_driver.proc_map_entry) {
+		int i;
+
+		for (i = 0; i < danipc_driver.proc_map_entry; i++)
+			iounmap(danipc_driver.proc_map[i].vaddr_base);
+		kfree(danipc_driver.proc_map);
+		danipc_driver.proc_map = NULL;
+		danipc_driver.proc_map_entry = 0;
+	}
 	return 0;
 }
 

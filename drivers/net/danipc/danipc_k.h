@@ -311,6 +311,12 @@ struct danipc_cdev {
 	struct danipc_cdev_status	status;
 };
 
+struct danipc_mem_map {
+	phys_addr_t	paddr_base;
+	void __iomem	*vaddr_base;
+	phys_addr_t	size;
+};
+
 /* Network device private data */
 struct danipc_drvr {
 	resource_size_t		res_start[RESOURCE_NUM];
@@ -336,6 +342,10 @@ struct danipc_drvr {
 
 	bool			support_mem_map;
 	uint32_t		mem_map_version;
+
+	/* memory map to access other processor's private address space */
+	struct danipc_mem_map	*proc_map;
+	uint32_t		proc_map_entry;
 
 	/* char device driver interface */
 	struct danipc_cdev	cdev[DANIPC_MAX_CDEV];

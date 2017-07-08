@@ -36,6 +36,25 @@
 
 DEFINE_PER_CPU(atomic_t, danipc_rx_sched_state);
 
+#define IPC_MSG_TYPE_PTR 0x10
+
+struct fapi_msg_hdr {
+	uint16_t eth_type;
+	uint16_t type;
+	uint8_t sec_id;
+	uint8_t pad1;
+	uint32_t seq;
+	uint16_t size;
+	uint8_t frag;
+	uint8_t platform;
+	uint64_t tmstmp;
+} __packed;
+
+struct ipc_fapi_msg_hdr {
+	struct fapi_msg_hdr hdr;
+	void *msg_ptr;
+} __packed;
+
 int send_pkt(struct sk_buff *skb)
 {
 	struct danipc_pair	*pair =
@@ -151,24 +170,85 @@ int danipc_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	return rc;
 }
 
-static void
-read_ipc_message(char *const packet, char *buf,
-			struct ipc_msg_hdr *const first_hdr, const unsigned len,
-			u8 cpuid, enum ipc_trns_prio prio)
+static inline void *get_virt_addr(phys_addr_t phy_addr)
+{
+	struct danipc_mem_map *map = danipc_driver.proc_map;
+	int i;
+
+	for (i = 0; i < danipc_driver.proc_map_entry; i++) {
+		if (phy_addr >= map[i].paddr_base) {
+			phys_addr_t offset = phy_addr - map[i].paddr_base;
+
+			if (offset < map[i].size)
+				return (char *)map[i].vaddr_base + offset;
+		}
+	}
+	return NULL;
+}
+
+static int
+read_ipc_message(struct danipc_fifo *fifo, char *buf,
+		 struct ipc_msg_hdr *first_hdr, enum ipc_trns_prio prio)
 {
 	unsigned		data_len = IPC_FIRST_BUF_DATA_SIZE_MAX;
-	unsigned		rest_len = len;
+	unsigned		rest_len = first_hdr->msg_len;
 	uint8_t			*data_ptr = (uint8_t *)(first_hdr) +
 						sizeof(struct ipc_msg_hdr);
+	int ret = 0;
 
+	if (first_hdr->msg_type == IPC_MSG_TYPE_PTR) {
+		struct ipc_fapi_msg_hdr *fapi_hdr;
+		uint8_t *fapi_msg_ptr;
+
+		if (first_hdr->msg_len != sizeof(struct ipc_fapi_msg_hdr)) {
+			pr_debug("%s: unexpected msglen(%d)\n",
+				 __func__, first_hdr->msg_len);
+			ret = -EINVAL;
+			goto free_buf;
+		}
+
+		fapi_hdr = (struct ipc_fapi_msg_hdr *)(first_hdr+1);
+		fapi_msg_ptr = get_virt_addr((phys_addr_t)fapi_hdr->msg_ptr);
+		if (fapi_msg_ptr == NULL) {
+			pr_debug("%s: unexpected fapi message pointer(%p)\n",
+				 __func__, fapi_hdr->msg_ptr);
+			ret = -EINVAL;
+			goto free_buf;
+		}
+
+		rest_len = sizeof(struct fapi_msg_hdr);
+		dmac_inv_range(fapi_msg_ptr, fapi_msg_ptr + fapi_hdr->hdr.size);
+		memcpy(buf + sizeof(struct fapi_msg_hdr),
+		       fapi_msg_ptr,
+		       fapi_hdr->hdr.size);
+	}
 	data_len = min(rest_len, data_len);
 	memcpy(buf, data_ptr, data_len);
-	ipc_buf_free(packet, cpuid, prio);
+free_buf:
+	ipc_buf_free((char *)first_hdr, fifo->node_id, prio);
+	return ret;
 }
 
 void drop_ipc_message(char *const packet, enum ipc_trns_prio prio, u8 cpuid)
 {
 	ipc_buf_free(packet, cpuid, prio);
+}
+
+static inline unsigned ipc_msg_len(struct ipc_msg_hdr *h)
+{
+	unsigned len = h->msg_len;
+
+	if (h->msg_type == IPC_MSG_TYPE_PTR) {
+		struct ipc_fapi_msg_hdr *fapi_h;
+
+		fapi_h = (struct ipc_fapi_msg_hdr *)(h + 1);
+
+		len += fapi_h->hdr.size;
+		len -= (sizeof(struct ipc_fapi_msg_hdr) -
+			sizeof(struct fapi_msg_hdr));
+	}
+
+	return len;
 }
 
 void
@@ -177,7 +257,7 @@ handle_incoming_packet(struct packet_proc_info *pproc, char *const packet)
 	struct danipc_if	*intf = pproc->intf;
 	struct danipc_pktq	*rx_pool = &intf->rx_pkt_pool;
 	struct ipc_msg_hdr *const first_hdr = (struct ipc_msg_hdr *)packet;
-	const unsigned		msg_len = first_hdr->msg_len;
+	const unsigned		msg_len = ipc_msg_len(first_hdr);
 	struct net_device	*dev = intf->dev;
 	struct sk_buff		*skb = netdev_alloc_skb(dev, msg_len);
 	uint8_t			prio = pproc - intf->pproc;
@@ -201,8 +281,13 @@ handle_incoming_packet(struct packet_proc_info *pproc, char *const packet)
 		pair->dst = first_hdr->dest_aid;
 		pair->src = first_hdr->src_aid;
 
-		read_ipc_message(packet, skb->data, first_hdr, msg_len,
-				 intf->rx_fifo_idx, prio);
+		if (read_ipc_message(intf->fifo, skb->data, first_hdr, prio)) {
+			netdev_warn(dev, "%s: read_ipc_message failed\n",
+				    __func__);
+			dev_kfree_skb(skb);
+			histo->stats->rx_dropped++;
+			return;
+		}
 
 		netdev_dbg(dev, "%s() pair={dst=0x%x src=0x%x}\n",
 			   __func__, pair->dst, pair->src);
