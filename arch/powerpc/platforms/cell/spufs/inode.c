@@ -605,6 +605,25 @@ static const match_table_t spufs_tokens = {
 	{ Opt_err,    NULL  },
 };
 
+static int spufs_show_options(struct seq_file *m, struct dentry *root)
+{
+	struct spufs_sb_info *sbi = spufs_get_sb_info(root->d_sb);
+
+#if 0
+	if (!uid_eq(root->i_uid, GLOBAL_ROOT_UID))
+		seq_printf(m, ",uid=%u",
+			   from_kuid_munged(&init_user_ns, root->i_uid));
+	if (!gid_eq(root->i_gid, GLOBAL_ROOT_GID))
+		seq_printf(m, ",gid=%u",
+			   from_kgid_munged(&init_user_ns, root->i_gid));
+	if (root->i_mode & S_IALLUGO != 0775)
+		seq_printf(m, ",mode=%o", root->i_mode);
+#endif
+	if (sbi->debug)
+		seq_puts(m, ",debug");
+	return 0;
+}
+
 static int
 spufs_parse_options(struct super_block *sb, char *options, struct inode *root)
 {
@@ -724,10 +743,8 @@ spufs_fill_super(struct super_block *sb, void *data, int silent)
 		.destroy_inode = spufs_destroy_inode,
 		.statfs = simple_statfs,
 		.evict_inode = spufs_evict_inode,
-		.show_options = generic_show_options,
+		.show_options = spufs_show_options,
 	};
-
-	save_mount_options(sb, data);
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
