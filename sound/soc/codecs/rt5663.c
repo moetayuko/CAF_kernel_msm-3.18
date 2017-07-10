@@ -1508,7 +1508,7 @@ static int rt5663_v2_jack_detect(struct snd_soc_codec *codec, int jack_insert)
 static int rt5663_jack_detect(struct snd_soc_codec *codec, int jack_insert)
 {
 	struct rt5663_priv *rt5663 = snd_soc_codec_get_drvdata(codec);
-	int val, i = 0, sleep_time[5] = {300, 150, 100, 50, 30};
+	int val, i = 0;
 
 	dev_dbg(codec->dev, "%s jack_insert:%d\n", __func__, jack_insert);
 
@@ -1543,17 +1543,22 @@ static int rt5663_jack_detect(struct snd_soc_codec *codec, int jack_insert)
 			RT5663_IRQ_POW_SAV_MASK, RT5663_IRQ_POW_SAV_EN);
 		snd_soc_update_bits(codec, RT5663_IRQ_1,
 			RT5663_EN_IRQ_JD1_MASK, RT5663_EN_IRQ_JD1_EN);
-		while (i < 5) {
-			msleep(sleep_time[i]);
-			val = snd_soc_read(codec, RT5663_EM_JACK_TYPE_2) &
-				0x0003;
-			dev_dbg(codec->dev, "%s: MX-00e7 val=%x sleep %d\n",
-				__func__, val, sleep_time[i]);
-			i++;
-			if (val == 0x1 || val == 0x2 || val == 0x3)
+
+		while (true) {
+			regmap_read(rt5663->regmap, RT5663_INT_ST_2, &val);
+			if (!(val & 0x80))
+				usleep_range(10000, 10005);
+			else
 				break;
+
+			if (i > 200)
+				break;
+			i++;
 		}
+
+		val = snd_soc_read(codec, RT5663_EM_JACK_TYPE_2) & 0x0003;
 		dev_dbg(codec->dev, "%s val = %d\n", __func__, val);
+
 		switch (val) {
 		case 1:
 		case 2:
@@ -2024,10 +2029,6 @@ static int rt5663_hp_event(struct snd_soc_dapm_widget *w,
 				RT5663_HP_SIG_SRC1_SILENCE);
 		} else {
 			snd_soc_write(codec, RT5663_DEPOP_2, 0x3003);
-			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x000b,
-				0x000b);
-			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x0030,
-				0x0030);
 			snd_soc_update_bits(codec, RT5663_HP_CHARGE_PUMP_1,
 				RT5663_OVCD_HP_MASK, RT5663_OVCD_HP_DIS);
 			snd_soc_write(codec, RT5663_HP_CHARGE_PUMP_2, 0x1371);
@@ -2050,10 +2051,32 @@ static int rt5663_hp_event(struct snd_soc_dapm_widget *w,
 			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x3000, 0x0);
 			snd_soc_update_bits(codec, RT5663_HP_CHARGE_PUMP_1,
 				RT5663_OVCD_HP_MASK, RT5663_OVCD_HP_EN);
-			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x0030, 0x0);
-			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x000b,
-				0x000b);
 		}
+		break;
+
+	default:
+		return 0;
+	}
+
+	return 0;
+}
+
+static int rt5663_charge_pump_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct rt5663_priv *rt5663 = snd_soc_codec_get_drvdata(codec);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		if (rt5663->codec_ver == CODEC_VER_0)
+			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x003b,
+				0x003b);
+		break;
+
+	case SND_SOC_DAPM_POST_PMD:
+		if (rt5663->codec_ver == CODEC_VER_0)
+			snd_soc_update_bits(codec, RT5663_DEPOP_1, 0x003b, 0);
 		break;
 
 	default:
@@ -2182,6 +2205,9 @@ static const struct snd_soc_dapm_widget rt5663_dapm_widgets[] = {
 	SND_SOC_DAPM_DAC("DAC R", NULL, SND_SOC_NOPM, 0, 0),
 
 	/* Headphone*/
+	SND_SOC_DAPM_SUPPLY("HP Charge Pump", SND_SOC_NOPM, 0, 0,
+		rt5663_charge_pump_event, SND_SOC_DAPM_PRE_PMU |
+		SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_PGA_S("HP Amp", 1, SND_SOC_NOPM, 0, 0, rt5663_hp_event,
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMU),
 
@@ -2338,6 +2364,7 @@ static const struct snd_soc_dapm_route rt5663_dapm_routes[] = {
 	{ "STO1 DAC MIXR", NULL, "STO1 DAC R Power" },
 	{ "STO1 DAC MIXR", NULL, "STO1 DAC Filter" },
 
+	{ "HP Amp", NULL, "HP Charge Pump" },
 	{ "HP Amp", NULL, "DAC L" },
 	{ "HP Amp", NULL, "DAC R" },
 };
@@ -2986,47 +3013,75 @@ static void rt5663_calibrate(struct rt5663_priv *rt5663)
 {
 	int value, count;
 
-	regmap_write(rt5663->regmap, RT5663_RC_CLK, 0x0280);
-	regmap_write(rt5663->regmap, RT5663_GLB_CLK, 0x8000);
-	regmap_write(rt5663->regmap, RT5663_DIG_MISC, 0x8001);
-	regmap_write(rt5663->regmap, RT5663_VREF_RECMIX, 0x0032);
-	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xa2be);
+	regmap_write(rt5663->regmap, RT5663_RESET, 0x0000);
 	msleep(20);
-	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xf2be);
-	regmap_write(rt5663->regmap, RT5663_PWR_DIG_2, 0x8400);
-	regmap_write(rt5663->regmap, RT5663_CHOP_ADC, 0x3000);
-	regmap_write(rt5663->regmap, RT5663_DEPOP_1, 0x003b);
-	regmap_write(rt5663->regmap, RT5663_PWR_DIG_1, 0x8df8);
-	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_2, 0x0003);
-	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_3, 0x018c);
-	regmap_write(rt5663->regmap, RT5663_ADDA_CLK_1, 0x1111);
+	regmap_write(rt5663->regmap, RT5663_ANA_BIAS_CUR_4, 0x00a1);
+	regmap_write(rt5663->regmap, RT5663_RC_CLK, 0x0380);
+	regmap_write(rt5663->regmap, RT5663_GLB_CLK, 0x8000);
+	regmap_write(rt5663->regmap, RT5663_ADDA_CLK_1, 0x1000);
+	regmap_write(rt5663->regmap, RT5663_VREF_RECMIX, 0x0032);
+	regmap_write(rt5663->regmap, RT5663_HP_IMP_SEN_19, 0x000c);
+	regmap_write(rt5663->regmap, RT5663_DUMMY_1, 0x0324);
+	regmap_write(rt5663->regmap, RT5663_DIG_MISC, 0x8001);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xa23b);
+	msleep(30);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0xf23b);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_2, 0x8000);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_3, 0x0008);
 	regmap_write(rt5663->regmap, RT5663_PRE_DIV_GATING_1, 0xffff);
 	regmap_write(rt5663->regmap, RT5663_PRE_DIV_GATING_2, 0xffff);
+	regmap_write(rt5663->regmap, RT5663_CBJ_1, 0x8c10);
+	regmap_write(rt5663->regmap, RT5663_IL_CMD_2, 0x00c1);
+	regmap_write(rt5663->regmap, RT5663_EM_JACK_TYPE_1, 0xb880);
+	regmap_write(rt5663->regmap, RT5663_EM_JACK_TYPE_2, 0x4110);
+	regmap_write(rt5663->regmap, RT5663_EM_JACK_TYPE_2, 0x4118);
+
+	count = 0;
+	while (true) {
+		regmap_read(rt5663->regmap, RT5663_INT_ST_2, &value);
+		if (!(value & 0x80))
+			usleep_range(10000, 10005);
+		else
+			break;
+
+		if (count > 200)
+			break;
+	}
+
+	regmap_write(rt5663->regmap, RT5663_HP_IMP_SEN_19, 0x0000);
 	regmap_write(rt5663->regmap, RT5663_DEPOP_2, 0x3003);
+	regmap_write(rt5663->regmap, RT5663_DEPOP_1, 0x0038);
 	regmap_write(rt5663->regmap, RT5663_DEPOP_1, 0x003b);
+	regmap_write(rt5663->regmap, RT5663_PWR_DIG_2, 0x8400);
+	regmap_write(rt5663->regmap, RT5663_PWR_DIG_1, 0x8df8);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_2, 0x8003);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_3, 0x018c);
 	regmap_write(rt5663->regmap, RT5663_HP_CHARGE_PUMP_1, 0x1e32);
-	regmap_write(rt5663->regmap, RT5663_HP_CHARGE_PUMP_2, 0x1371);
 	regmap_write(rt5663->regmap, RT5663_DACREF_LDO, 0x3b0b);
-	regmap_write(rt5663->regmap, RT5663_STO_DAC_MIXER, 0x2080);
+	regmap_write(rt5663->regmap, RT5663_STO_DAC_MIXER, 0x0000);
 	regmap_write(rt5663->regmap, RT5663_BYPASS_STO_DAC, 0x000c);
-	regmap_write(rt5663->regmap, RT5663_HP_BIAS, 0xabba);
+	regmap_write(rt5663->regmap, RT5663_HP_BIAS, 0xafaa);
 	regmap_write(rt5663->regmap, RT5663_CHARGE_PUMP_1, 0x2224);
 	regmap_write(rt5663->regmap, RT5663_HP_OUT_EN, 0x8088);
 	regmap_write(rt5663->regmap, RT5663_STO_DRE_9, 0x0017);
 	regmap_write(rt5663->regmap, RT5663_STO_DRE_10, 0x0017);
 	regmap_write(rt5663->regmap, RT5663_STO1_ADC_MIXER, 0x4040);
+	regmap_write(rt5663->regmap, RT5663_CHOP_ADC, 0x3000);
 	regmap_write(rt5663->regmap, RT5663_RECMIX, 0x0005);
 	regmap_write(rt5663->regmap, RT5663_ADDA_RST, 0xc000);
 	regmap_write(rt5663->regmap, RT5663_STO1_HPF_ADJ1, 0x3320);
 	regmap_write(rt5663->regmap, RT5663_HP_CALIB_2, 0x00c9);
 	regmap_write(rt5663->regmap, RT5663_DUMMY_1, 0x004c);
-	regmap_write(rt5663->regmap, RT5663_ANA_BIAS_CUR_1, 0x7766);
-	regmap_write(rt5663->regmap, RT5663_BIAS_CUR_8, 0x4702);
-	msleep(200);
+	regmap_write(rt5663->regmap, RT5663_ANA_BIAS_CUR_1, 0x1111);
+	regmap_write(rt5663->regmap, RT5663_BIAS_CUR_8, 0x4402);
+	regmap_write(rt5663->regmap, RT5663_CHARGE_PUMP_2, 0x3311);
 	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1, 0x0069);
-	regmap_write(rt5663->regmap, RT5663_HP_CALIB_3, 0x06c2);
-	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0x7b00);
-	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0xfb00);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_3, 0x06ce);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0x6800);
+	regmap_write(rt5663->regmap, RT5663_CHARGE_PUMP_2, 0x1100);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_7, 0x0057);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0xe800);
+
 	count = 0;
 	while (true) {
 		regmap_read(rt5663->regmap, RT5663_HP_CALIB_1_1, &value);
@@ -3039,6 +3094,36 @@ static void rt5663_calibrate(struct rt5663_priv *rt5663)
 			return;
 		count++;
 	}
+
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0x6200);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_7, 0x0059);
+	regmap_write(rt5663->regmap, RT5663_HP_CALIB_1_1, 0xe200);
+
+	count = 0;
+	while (true) {
+		regmap_read(rt5663->regmap, RT5663_HP_CALIB_1_1, &value);
+		if (value & 0x8000)
+			usleep_range(10000, 10005);
+		else
+			break;
+
+		if (count > 200)
+			return;
+		count++;
+	}
+
+	regmap_write(rt5663->regmap, RT5663_EM_JACK_TYPE_1, 0xb8e0);
+	usleep_range(10000, 10005);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_1, 0x003b);
+	usleep_range(10000, 10005);
+	regmap_write(rt5663->regmap, RT5663_PWR_DIG_1, 0x0000);
+	usleep_range(10000, 10005);
+	regmap_write(rt5663->regmap, RT5663_DEPOP_1, 0x000b);
+	usleep_range(10000, 10005);
+	regmap_write(rt5663->regmap, RT5663_DEPOP_1, 0x0008);
+	usleep_range(10000, 10005);
+	regmap_write(rt5663->regmap, RT5663_PWR_ANLG_2, 0x0000);
+	usleep_range(10000, 10005);
 }
 
 static int rt5663_i2c_probe(struct i2c_client *i2c,
