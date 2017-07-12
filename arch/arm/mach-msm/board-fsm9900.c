@@ -429,6 +429,7 @@ static int __init fsm9900_ipc_buf_region_update(void)
 	struct mem_map_seg __iomem *mem_map_table;
 	struct mem_map_seg *ul_region;
 	struct mem_map_seg *dl_region;
+	struct mem_map_seg *fapi_region;
 
 	/* Once node "qcom,danipc" is found in DT, break out of loop */
 	for_each_compatible_node(np, NULL, "qcom,danipc") {
@@ -470,6 +471,11 @@ static int __init fsm9900_ipc_buf_region_update(void)
 
 	if (ret != 0)
 		goto out;
+
+	fapi_region = find_mem_map_seg(mem_map_table,
+				       MEM_TAG_SHARED_LTEFAPI_UL);
+	if (fapi_region)
+		ret = add_danipc_property(np, fapi_region, "memory-region");
 
 out:
 	of_node_put(np);
