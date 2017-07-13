@@ -637,7 +637,6 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	u32			hird_thresh;
 	u32			lpm_nyet_thresh;
-	bool			host_only_mode;
 
 	mem = devm_kzalloc(dev, sizeof(*dwc) + DWC3_ALIGN_MASK, GFP_KERNEL);
 	if (!mem) {
@@ -688,7 +687,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	}
 
 	dwc->needs_fifo_resize = of_property_read_bool(node, "tx-fifo-resize");
-	host_only_mode = of_property_read_bool(node, "snps,host-only-mode");
+	dwc->dr_mode = of_usb_get_dr_mode(node);
 	dwc->ssphy_clear_auto_suspend_on_disconnect =
 						of_property_read_bool(node,
 						"snps,ssphy-clear-auto-suspend-on-disconnect");
