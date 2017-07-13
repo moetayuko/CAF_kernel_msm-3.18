@@ -67,7 +67,6 @@ struct port_data {
 
 struct charger_data {
 	struct device *dev;
-	struct cros_ec_dev *ec_dev;
 	struct cros_ec_device *ec_device;
 	int num_charger_ports;
 	int num_registered_psy;
@@ -103,7 +102,6 @@ static int ec_command(struct charger_data *charger, int version, int command,
 		      int insize)
 {
 	struct cros_ec_device *ec_device = charger->ec_device;
-	struct cros_ec_dev *ec_dev = charger->ec_dev;
 	struct cros_ec_command *msg;
 	int ret;
 
@@ -112,7 +110,7 @@ static int ec_command(struct charger_data *charger, int version, int command,
 		return -ENOMEM;
 
 	msg->version = version;
-	msg->command = ec_dev->cmd_offset + command;
+	msg->command = command;
 	msg->outsize = outsize;
 	msg->insize = insize;
 
@@ -646,8 +644,7 @@ static char *charger_supplied_to[] = {"cros-usb_pd-charger"};
 static int cros_usb_pd_charger_probe(struct platform_device *pd)
 {
 	struct device *dev = &pd->dev;
-	struct cros_ec_dev *ec_dev = dev_get_drvdata(pd->dev.parent);
-	struct cros_ec_device *ec_device;
+	struct cros_ec_device *ec_device = dev_get_drvdata(pd->dev.parent);
 	struct charger_data *charger;
 	struct port_data *port;
 	struct power_supply_desc *psy_desc;
@@ -656,26 +653,14 @@ static int cros_usb_pd_charger_probe(struct platform_device *pd)
 	int ret = -EINVAL;
 
 	dev_dbg(dev, "cros_usb_pd_charger_probe\n");
-	if (!ec_dev) {
-		WARN(1, "%s: No EC dev found\n", dev_name(dev));
-		return -EINVAL;
-	}
 
-	ec_device = ec_dev->ec_dev;
-	if (!ec_device) {
-		WARN(1, "%s: No EC device found\n", dev_name(dev));
-		return -EINVAL;
-	}
-
-	charger = devm_kzalloc(dev, sizeof(struct charger_data),
-				    GFP_KERNEL);
+	charger = devm_kzalloc(dev, sizeof(struct charger_data), GFP_KERNEL);
 	if (!charger) {
 		dev_err(dev, "Failed to alloc charger. Failing probe.\n");
 		return -ENOMEM;
 	}
 
 	charger->dev = dev;
-	charger->ec_dev = ec_dev;
 	charger->ec_device = ec_device;
 
 	platform_set_drvdata(pd, charger);
@@ -910,7 +895,6 @@ static ssize_t set_ec_ext_voltage_lim(struct device *dev,
 {
 	int ret;
 	uint16_t tmp_val;
-
 	struct cros_ec_dev *ec = container_of(
 			dev, struct cros_ec_dev, class_dev);
 
