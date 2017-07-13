@@ -187,12 +187,23 @@ static void ack_flush(void *_completed)
 {
 }
 
+static inline bool kvm_kick_many_cpus(const struct cpumask *cpus, bool wait)
+{
+	if (unlikely(!cpus))
+		cpus = cpu_online_mask;
+
+	if (cpumask_empty(cpus))
+		return false;
+
+	smp_call_function_many(cpus, ack_flush, NULL, wait);
+	return true;
+}
+
 bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req)
 {
 	int i, cpu, me;
 	cpumask_var_t cpus;
-	bool called = true;
-	bool wait = req & KVM_REQUEST_WAIT;
+	bool called;
 	struct kvm_vcpu *vcpu;
 
 	zalloc_cpumask_var(&cpus, GFP_ATOMIC);
@@ -207,14 +218,9 @@ bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req)
 
 		if (cpus != NULL && cpu != -1 && cpu != me &&
 		    kvm_request_needs_ipi(vcpu, req))
-			cpumask_set_cpu(cpu, cpus);
+			__cpumask_set_cpu(cpu, cpus);
 	}
-	if (unlikely(cpus == NULL))
-		smp_call_function_many(cpu_online_mask, ack_flush, NULL, wait);
-	else if (!cpumask_empty(cpus))
-		smp_call_function_many(cpus, ack_flush, NULL, wait);
-	else
-		called = false;
+	called = kvm_kick_many_cpus(cpus, !!(req & KVM_REQUEST_WAIT));
 	put_cpu();
 	free_cpumask_var(cpus);
 	return called;
@@ -293,7 +299,12 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_init);
 
 void kvm_vcpu_uninit(struct kvm_vcpu *vcpu)
 {
-	put_pid(vcpu->pid);
+	/*
+	 * no need for rcu_read_lock as VCPU_RUN is the only place that
+	 * will change the vcpu->pid pointer and on uninit all file
+	 * descriptors are already gone.
+	 */
+	put_pid(rcu_dereference_protected(vcpu->pid, 1));
 	kvm_arch_vcpu_uninit(vcpu);
 	free_page((unsigned long)vcpu->run);
 }
@@ -674,8 +685,8 @@ static struct kvm *kvm_create_vm(unsigned long type)
 	if (init_srcu_struct(&kvm->irq_srcu))
 		goto out_err_no_irq_srcu;
 	for (i = 0; i < KVM_NR_BUSES; i++) {
-		kvm->buses[i] = kzalloc(sizeof(struct kvm_io_bus),
-					GFP_KERNEL);
+		rcu_assign_pointer(kvm->buses[i],
+			kzalloc(sizeof(struct kvm_io_bus), GFP_KERNEL));
 		if (!kvm->buses[i])
 			goto out_err;
 	}
@@ -700,9 +711,10 @@ out_err_no_srcu:
 	hardware_disable_all();
 out_err_no_disable:
 	for (i = 0; i < KVM_NR_BUSES; i++)
-		kfree(kvm->buses[i]);
+		kfree(rcu_access_pointer(kvm->buses[i]));
 	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++)
-		kvm_free_memslots(kvm, kvm->memslots[i]);
+		kvm_free_memslots(kvm,
+			rcu_dereference_protected(kvm->memslots[i], 1));
 	kvm_arch_free_vm(kvm);
 	mmdrop(current->mm);
 	return ERR_PTR(r);
@@ -735,8 +747,11 @@ static void kvm_destroy_vm(struct kvm *kvm)
 	spin_unlock(&kvm_lock);
 	kvm_free_irq_routing(kvm);
 	for (i = 0; i < KVM_NR_BUSES; i++) {
-		if (kvm->buses[i])
-			kvm_io_bus_destroy(kvm->buses[i]);
+		struct kvm_io_bus *bus;
+
+		bus = rcu_dereference_protected(kvm->buses[i], 1);
+		if (bus)
+			kvm_io_bus_destroy(bus);
 		kvm->buses[i] = NULL;
 	}
 	kvm_coalesced_mmio_free(kvm);
@@ -748,7 +763,8 @@ static void kvm_destroy_vm(struct kvm *kvm)
 	kvm_arch_destroy_vm(kvm);
 	kvm_destroy_devices(kvm);
 	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++)
-		kvm_free_memslots(kvm, kvm->memslots[i]);
+		kvm_free_memslots(kvm,
+			rcu_dereference_protected(kvm->memslots[i], 1));
 	cleanup_srcu_struct(&kvm->irq_srcu);
 	cleanup_srcu_struct(&kvm->srcu);
 	kvm_arch_free_vm(kvm);
@@ -2551,13 +2567,14 @@ static long kvm_vcpu_ioctl(struct file *filp,
 	if (r)
 		return r;
 	switch (ioctl) {
-	case KVM_RUN:
+	case KVM_RUN: {
+		struct pid *oldpid;
 		r = -EINVAL;
 		if (arg)
 			goto out;
-		if (unlikely(vcpu->pid != current->pids[PIDTYPE_PID].pid)) {
+		oldpid = rcu_access_pointer(vcpu->pid);
+		if (unlikely(oldpid != current->pids[PIDTYPE_PID].pid)) {
 			/* The thread running this VCPU changed. */
-			struct pid *oldpid = vcpu->pid;
 			struct pid *newpid = get_task_pid(current, PIDTYPE_PID);
 
 			rcu_assign_pointer(vcpu->pid, newpid);
@@ -2568,6 +2585,7 @@ static long kvm_vcpu_ioctl(struct file *filp,
 		r = kvm_arch_vcpu_ioctl_run(vcpu, vcpu->run);
 		trace_kvm_userspace_exit(vcpu->run->exit_reason, r);
 		break;
+	}
 	case KVM_GET_REGS: {
 		struct kvm_regs *kvm_regs;
 
@@ -3563,7 +3581,7 @@ int kvm_io_bus_register_dev(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 {
 	struct kvm_io_bus *new_bus, *bus;
 
-	bus = kvm->buses[bus_idx];
+	bus = kvm_get_bus(kvm, bus_idx);
 	if (!bus)
 		return -ENOMEM;
 
@@ -3592,7 +3610,7 @@ void kvm_io_bus_unregister_dev(struct kvm *kvm, enum kvm_bus bus_idx,
 	int i;
 	struct kvm_io_bus *new_bus, *bus;
 
-	bus = kvm->buses[bus_idx];
+	bus = kvm_get_bus(kvm, bus_idx);
 	if (!bus)
 		return;
 
