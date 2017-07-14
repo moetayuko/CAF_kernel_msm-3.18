@@ -72,7 +72,6 @@ config SND_SOC_QDSP6_ASM_DAI
 	tristate
 	default n
 
-
 config SND_SOC_QDSP6
 	tristate "SoC ALSA audio driver for QDSP6"
 	select SND_SOC_QDSP6_AFE
@@ -87,3 +86,11 @@ config SND_SOC_QDSP6
 	 This will enable sound soc platform specific
 	 audio drivers. This includes q6asm, q6adm,
 	 q6afe interfaces to DSP using apr.
+
+config SND_SOC_MSM8996
+	tristate "SoC Machine driver for MSM8996 and APQ8096 boards"
+	select SND_SOC_QDSP6V2
+	default n
+	help
+	 To add support for SoC audio on MSM8996 and APQ8096 boards
+
