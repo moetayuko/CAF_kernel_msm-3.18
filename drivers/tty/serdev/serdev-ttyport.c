@@ -15,6 +15,7 @@
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/poll.h>
+#include <linux/slab.h>
 
 #define SERPORT_ACTIVE		1
 
@@ -97,9 +98,17 @@ static int ttyport_open(struct serdev_controller *ctrl)
 	struct tty_struct *tty;
 	struct ktermios ktermios;
 
-	tty = tty_init_dev(serport->tty_drv, serport->tty_idx);
-	if (IS_ERR(tty))
-		return PTR_ERR(tty);
+	tty = alloc_tty_struct(serport->tty_drv, serport->tty_idx);
+	if (!tty)
+		return -ENOMEM;
+
+	tty->ldisc = NULL;
+	tty_init_termios(tty);
+//	tty_driver_kref_get(driver);
+	tty->count++;
+
+	tty->port = serport->port;
+	tty->port->itty = tty;
 	serport->tty = tty;
 
 	tty->port->client_ops = &client_ops;
@@ -122,7 +131,6 @@ static int ttyport_open(struct serdev_controller *ctrl)
 
 	set_bit(SERPORT_ACTIVE, &serport->flags);
 
-	tty_unlock(serport->tty);
 	return 0;
 }
 
@@ -133,10 +141,11 @@ static void ttyport_close(struct serdev_controller *ctrl)
 
 	clear_bit(SERPORT_ACTIVE, &serport->flags);
 
-	if (tty->ops->close)
+	if (tty && tty->ops->close)
 		tty->ops->close(tty, NULL);
 
-	tty_release_struct(tty, serport->tty_idx);
+	serport->tty = NULL;
+	kfree(tty);
 }
 
 static unsigned int ttyport_set_baudrate(struct serdev_controller *ctrl, unsigned int speed)
