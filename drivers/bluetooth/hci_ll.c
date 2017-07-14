@@ -744,8 +744,15 @@ static void hci_ti_remove(struct serdev_device *serdev)
 	struct ll_device *lldev = serdev_device_get_drvdata(serdev);
 	struct hci_uart *hu = &lldev->hu;
 	struct hci_dev *hdev = hu->hdev;
+	unsigned long flags;
 
 	cancel_work_sync(&hu->write_work);
+
+	write_lock_irqsave(&hu->proto_lock, flags);
+	clear_bit(HCI_UART_PROTO_READY, &hu->flags);
+	write_unlock_irqrestore(&hu->proto_lock, flags);
+
+	bt_dev_err(hdev, "hci_ti_remove");
 
 	hci_unregister_dev(hdev);
 	hci_free_dev(hdev);
