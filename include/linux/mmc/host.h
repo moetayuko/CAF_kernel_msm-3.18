@@ -184,6 +184,7 @@ struct mmc_async_req {
  */
 struct mmc_slot {
 	int cd_irq;
+	bool cd_wake_enabled;
 	void *handler_priv;
 };
 
@@ -360,6 +361,7 @@ struct mmc_host {
 	struct task_struct	*sdio_irq_thread;
 	bool			sdio_irq_pending;
 	atomic_t		sdio_irq_thread_abort;
+	atomic_t		sdio_irq_thread_suspend;
 
 	mmc_pm_flag_t		pm_flags;	/* requested pm features */
 
