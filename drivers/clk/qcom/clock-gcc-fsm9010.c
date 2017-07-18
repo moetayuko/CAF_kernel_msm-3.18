@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1298,6 +1298,7 @@ static struct rcg_clk usb30_master_clk_src = {
 
 static struct clk_freq_tbl ftbl_gcc_usb30_mock_utmi_clk[] = {
 	F(48000000,  gpll0, 12.5,   0,   0),
+	F(19200000,     xo,    1,   0,   0),
 	F(60000000,  gpll0,   10,   0,   0),
 	F_END
 };
