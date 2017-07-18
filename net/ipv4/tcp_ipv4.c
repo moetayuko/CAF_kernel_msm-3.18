@@ -80,6 +80,7 @@
 #include <linux/stddef.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/inetdevice.h>
 
 #include <crypto/hash.h>
 #include <linux/scatterlist.h>
@@ -906,6 +907,48 @@ struct tcp_md5sig_key *tcp_md5_do_lookup(const struct sock *sk,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_md5sig_key *key;
+	const struct tcp_md5sig_info *md5sig;
+	__be32 mask;
+	struct tcp_md5sig_key *best_match = NULL;
+	bool match;
+
+	/* caller either holds rcu_read_lock() or socket lock */
+	md5sig = rcu_dereference_check(tp->md5sig_info,
+				       lockdep_sock_is_held(sk));
+	if (!md5sig)
+		return NULL;
+
+	hlist_for_each_entry_rcu(key, &md5sig->head, node) {
+		if (key->family != family)
+			continue;
+
+		if (family == AF_INET) {
+			mask = inet_make_mask(key->prefixlen);
+			match = (key->addr.a4.s_addr & mask) ==
+				(addr->a4.s_addr & mask);
+#if IS_ENABLED(CONFIG_IPV6)
+		} else if (family == AF_INET6) {
+			match = ipv6_prefix_equal(&key->addr.a6, &addr->a6,
+						  key->prefixlen);
+#endif
+		} else {
+			match = false;
+		}
+
+		if (match && (!best_match ||
+			      key->prefixlen > best_match->prefixlen))
+			best_match = key;
+	}
+	return best_match;
+}
+EXPORT_SYMBOL(tcp_md5_do_lookup);
+
+static struct tcp_md5sig_key *tcp_md5_do_lookup_exact(const struct sock *sk,
+						      const union tcp_md5_addr *addr,
+						      int family, u8 prefixlen)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_md5sig_key *key;
 	unsigned int size = sizeof(struct in_addr);
 	const struct tcp_md5sig_info *md5sig;
 
@@ -921,12 +964,12 @@ struct tcp_md5sig_key *tcp_md5_do_lookup(const struct sock *sk,
 	hlist_for_each_entry_rcu(key, &md5sig->head, node) {
 		if (key->family != family)
 			continue;
-		if (!memcmp(&key->addr, addr, size))
+		if (!memcmp(&key->addr, addr, size) &&
+		    key->prefixlen == prefixlen)
 			return key;
 	}
 	return NULL;
 }
-EXPORT_SYMBOL(tcp_md5_do_lookup);
 
 struct tcp_md5sig_key *tcp_v4_md5_lookup(const struct sock *sk,
 					 const struct sock *addr_sk)
@@ -940,14 +983,15 @@ EXPORT_SYMBOL(tcp_v4_md5_lookup);
 
 /* This can be called on a newly created socket, from other files */
 int tcp_md5_do_add(struct sock *sk, const union tcp_md5_addr *addr,
-		   int family, const u8 *newkey, u8 newkeylen, gfp_t gfp)
+		   int family, u8 prefixlen, const u8 *newkey, u8 newkeylen,
+		   gfp_t gfp)
 {
 	/* Add Key to the list */
 	struct tcp_md5sig_key *key;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_md5sig_info *md5sig;
 
-	key = tcp_md5_do_lookup(sk, addr, family);
+	key = tcp_md5_do_lookup_exact(sk, addr, family, prefixlen);
 	if (key) {
 		/* Pre-existing entry - just update that one. */
 		memcpy(key->key, newkey, newkeylen);
@@ -978,6 +1022,7 @@ int tcp_md5_do_add(struct sock *sk, const union tcp_md5_addr *addr,
 	memcpy(key->key, newkey, newkeylen);
 	key->keylen = newkeylen;
 	key->family = family;
+	key->prefixlen = prefixlen;
 	memcpy(&key->addr, addr,
 	       (family == AF_INET6) ? sizeof(struct in6_addr) :
 				      sizeof(struct in_addr));
@@ -986,11 +1031,12 @@ int tcp_md5_do_add(struct sock *sk, const union tcp_md5_addr *addr,
 }
 EXPORT_SYMBOL(tcp_md5_do_add);
 
-int tcp_md5_do_del(struct sock *sk, const union tcp_md5_addr *addr, int family)
+int tcp_md5_do_del(struct sock *sk, const union tcp_md5_addr *addr, int family,
+		   u8 prefixlen)
 {
 	struct tcp_md5sig_key *key;
 
-	key = tcp_md5_do_lookup(sk, addr, family);
+	key = tcp_md5_do_lookup_exact(sk, addr, family, prefixlen);
 	if (!key)
 		return -ENOENT;
 	hlist_del_rcu(&key->node);
@@ -1016,11 +1062,12 @@ static void tcp_clear_md5_list(struct sock *sk)
 	}
 }
 
-static int tcp_v4_parse_md5_keys(struct sock *sk, char __user *optval,
-				 int optlen)
+static int tcp_v4_parse_md5_keys(struct sock *sk, int optname,
+				 char __user *optval, int optlen)
 {
 	struct tcp_md5sig cmd;
 	struct sockaddr_in *sin = (struct sockaddr_in *)&cmd.tcpm_addr;
+	u8 prefixlen = 32;
 
 	if (optlen < sizeof(cmd))
 		return -EINVAL;
@@ -1031,15 +1078,22 @@ static int tcp_v4_parse_md5_keys(struct sock *sk, char __user *optval,
 	if (sin->sin_family != AF_INET)
 		return -EINVAL;
 
+	if (optname == TCP_MD5SIG_EXT &&
+	    cmd.tcpm_flags & TCP_MD5SIG_FLAG_PREFIX) {
+		prefixlen = cmd.tcpm_prefixlen;
+		if (prefixlen > 32)
+			return -EINVAL;
+	}
+
 	if (!cmd.tcpm_keylen)
 		return tcp_md5_do_del(sk, (union tcp_md5_addr *)&sin->sin_addr.s_addr,
-				      AF_INET);
+				      AF_INET, prefixlen);
 
 	if (cmd.tcpm_keylen > TCP_MD5SIG_MAXKEYLEN)
 		return -EINVAL;
 
 	return tcp_md5_do_add(sk, (union tcp_md5_addr *)&sin->sin_addr.s_addr,
-			      AF_INET, cmd.tcpm_key, cmd.tcpm_keylen,
+			      AF_INET, prefixlen, cmd.tcpm_key, cmd.tcpm_keylen,
 			      GFP_KERNEL);
 }
 
@@ -1342,7 +1396,7 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 		 * across. Shucks.
 		 */
 		tcp_md5_do_add(newsk, (union tcp_md5_addr *)&newinet->inet_daddr,
-			       AF_INET, key->key, key->keylen, GFP_ATOMIC);
+			       AF_INET, 32, key->key, key->keylen, GFP_ATOMIC);
 		sk_nocaps_add(newsk, NETIF_F_GSO_MASK);
 	}
 #endif
@@ -1675,6 +1729,8 @@ process:
 		}
 		if (nsk == sk) {
 			reqsk_put(req);
+		} else if (tcp_filter(sk, skb)) {
+			goto discard_and_relse;
 		} else if (tcp_child_process(sk, nsk, skb)) {
 			tcp_v4_send_reset(nsk, skb);
 			goto discard_and_relse;
@@ -2267,7 +2323,7 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i)
 		from_kuid_munged(seq_user_ns(f), sock_i_uid(sk)),
 		icsk->icsk_probes_out,
 		sock_i_ino(sk),
-		atomic_read(&sk->sk_refcnt), sk,
+		refcount_read(&sk->sk_refcnt), sk,
 		jiffies_to_clock_t(icsk->icsk_rto),
 		jiffies_to_clock_t(icsk->icsk_ack.ato),
 		(icsk->icsk_ack.quick << 1) | icsk->icsk_ack.pingpong,
@@ -2293,7 +2349,7 @@ static void get_timewait4_sock(const struct inet_timewait_sock *tw,
 		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %d %d %pK",
 		i, src, srcp, dest, destp, tw->tw_substate, 0, 0,
 		3, jiffies_delta_to_clock_t(delta), 0, 0, 0, 0,
-		atomic_read(&tw->tw_refcnt), tw);
+		refcount_read(&tw->tw_refcnt), tw);
 }
 
 #define TMPSZ 150

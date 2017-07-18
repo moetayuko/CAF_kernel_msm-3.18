@@ -1061,7 +1061,8 @@ static const struct nla_policy ppp_nl_policy[IFLA_PPP_MAX + 1] = {
 	[IFLA_PPP_DEV_FD]	= { .type = NLA_S32 },
 };
 
-static int ppp_nl_validate(struct nlattr *tb[], struct nlattr *data[])
+static int ppp_nl_validate(struct nlattr *tb[], struct nlattr *data[],
+			   struct netlink_ext_ack *extack)
 {
 	if (!data)
 		return -EINVAL;
@@ -1075,7 +1076,8 @@ static int ppp_nl_validate(struct nlattr *tb[], struct nlattr *data[])
 }
 
 static int ppp_nl_newlink(struct net *src_net, struct net_device *dev,
-			  struct nlattr *tb[], struct nlattr *data[])
+			  struct nlattr *tb[], struct nlattr *data[],
+			  struct netlink_ext_ack *extack)
 {
 	struct ppp_config conf = {
 		.unit = -1,
@@ -1490,7 +1492,7 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 		/* check if we should pass this packet */
 		/* the filter instructions are constructed assuming
 		   a four-byte PPP header on each packet */
-		*skb_push(skb, 2) = 1;
+		*(u8 *)skb_push(skb, 2) = 1;
 		if (ppp->pass_filter &&
 		    BPF_PROG_RUN(ppp->pass_filter, skb) == 0) {
 			if (ppp->debug & 1)
@@ -2133,7 +2135,7 @@ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 			if (skb_unclone(skb, GFP_ATOMIC))
 				goto err;
 
-			*skb_push(skb, 2) = 0;
+			*(u8 *)skb_push(skb, 2) = 0;
 			if (ppp->pass_filter &&
 			    BPF_PROG_RUN(ppp->pass_filter, skb) == 0) {
 				if (ppp->debug & 1)
@@ -2267,7 +2269,7 @@ ppp_receive_mp_frame(struct ppp *ppp, struct sk_buff *skb, struct channel *pch)
 	 * Do protocol ID decompression on the first fragment of each packet.
 	 */
 	if ((PPP_MP_CB(skb)->BEbits & B) && (skb->data[0] & 1))
-		*skb_push(skb, 1) = 0;
+		*(u8 *)skb_push(skb, 1) = 0;
 
 	/*
 	 * Expand sequence number to 32 bits, making it as close

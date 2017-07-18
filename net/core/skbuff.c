@@ -176,7 +176,7 @@ struct sk_buff *__alloc_skb_head(gfp_t gfp_mask, int node)
 	memset(skb, 0, offsetof(struct sk_buff, tail));
 	skb->head = NULL;
 	skb->truesize = sizeof(struct sk_buff);
-	atomic_set(&skb->users, 1);
+	refcount_set(&skb->users, 1);
 
 	skb->mac_header = (typeof(skb->mac_header))~0U;
 out:
@@ -247,7 +247,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	/* Account for allocated memory : skb + skb->head */
 	skb->truesize = SKB_TRUESIZE(size);
 	skb->pfmemalloc = pfmemalloc;
-	atomic_set(&skb->users, 1);
+	refcount_set(&skb->users, 1);
 	skb->head = data;
 	skb->data = data;
 	skb_reset_tail_pointer(skb);
@@ -268,7 +268,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 
 		kmemcheck_annotate_bitfield(&fclones->skb2, flags1);
 		skb->fclone = SKB_FCLONE_ORIG;
-		atomic_set(&fclones->fclone_ref, 1);
+		refcount_set(&fclones->fclone_ref, 1);
 
 		fclones->skb2.fclone = SKB_FCLONE_CLONE;
 	}
@@ -314,7 +314,7 @@ struct sk_buff *__build_skb(void *data, unsigned int frag_size)
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
 	skb->truesize = SKB_TRUESIZE(size);
-	atomic_set(&skb->users, 1);
+	refcount_set(&skb->users, 1);
 	skb->head = data;
 	skb->data = data;
 	skb_reset_tail_pointer(skb);
@@ -629,7 +629,7 @@ static void kfree_skbmem(struct sk_buff *skb)
 		 * This test would have no chance to be true for the clone,
 		 * while here, branch prediction will be good.
 		 */
-		if (atomic_read(&fclones->fclone_ref) == 1)
+		if (refcount_read(&fclones->fclone_ref) == 1)
 			goto fastpath;
 		break;
 
@@ -637,7 +637,7 @@ static void kfree_skbmem(struct sk_buff *skb)
 		fclones = container_of(skb, struct sk_buff_fclones, skb2);
 		break;
 	}
-	if (!atomic_dec_and_test(&fclones->fclone_ref))
+	if (!refcount_dec_and_test(&fclones->fclone_ref))
 		return;
 fastpath:
 	kmem_cache_free(skbuff_fclone_cache, fclones);
@@ -915,7 +915,7 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	C(head_frag);
 	C(data);
 	C(truesize);
-	atomic_set(&n->users, 1);
+	refcount_set(&n->users, 1);
 
 	atomic_inc(&(skb_shinfo(skb)->dataref));
 	skb->cloned = 1;
@@ -1027,9 +1027,9 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 		return NULL;
 
 	if (skb->fclone == SKB_FCLONE_ORIG &&
-	    atomic_read(&fclones->fclone_ref) == 1) {
+	    refcount_read(&fclones->fclone_ref) == 1) {
 		n = &fclones->skb2;
-		atomic_set(&fclones->fclone_ref, 2);
+		refcount_set(&fclones->fclone_ref, 2);
 	} else {
 		if (skb_pfmemalloc(skb))
 			gfp_mask |= __GFP_MEMALLOC;
@@ -1421,7 +1421,7 @@ EXPORT_SYMBOL(skb_pad);
  *	returned.
  */
 
-unsigned char *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len)
+void *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len)
 {
 	if (tail != skb) {
 		skb->data_len += len;
@@ -1440,9 +1440,9 @@ EXPORT_SYMBOL_GPL(pskb_put);
  *	exceed the total buffer size the kernel will panic. A pointer to the
  *	first byte of the extra data is returned.
  */
-unsigned char *skb_put(struct sk_buff *skb, unsigned int len)
+void *skb_put(struct sk_buff *skb, unsigned int len)
 {
-	unsigned char *tmp = skb_tail_pointer(skb);
+	void *tmp = skb_tail_pointer(skb);
 	SKB_LINEAR_ASSERT(skb);
 	skb->tail += len;
 	skb->len  += len;
@@ -1461,7 +1461,7 @@ EXPORT_SYMBOL(skb_put);
  *	start. If this would exceed the total buffer headroom the kernel will
  *	panic. A pointer to the first byte of the extra data is returned.
  */
-unsigned char *skb_push(struct sk_buff *skb, unsigned int len)
+void *skb_push(struct sk_buff *skb, unsigned int len)
 {
 	skb->data -= len;
 	skb->len  += len;
@@ -1481,7 +1481,7 @@ EXPORT_SYMBOL(skb_push);
  *	is returned. Once the data has been pulled future pushes will overwrite
  *	the old data.
  */
-unsigned char *skb_pull(struct sk_buff *skb, unsigned int len)
+void *skb_pull(struct sk_buff *skb, unsigned int len)
 {
 	return skb_pull_inline(skb, len);
 }
@@ -1616,7 +1616,7 @@ EXPORT_SYMBOL(___pskb_trim);
  *
  * It is pretty complicated. Luckily, it is called only in exceptional cases.
  */
-unsigned char *__pskb_pull_tail(struct sk_buff *skb, int delta)
+void *__pskb_pull_tail(struct sk_buff *skb, int delta)
 {
 	/* If skb has not enough free space at tail, get new one
 	 * plus 128 bytes for future expansions. If we have enough
@@ -3024,7 +3024,7 @@ int skb_append_datato_frags(struct sock *sk, struct sk_buff *skb,
 		get_page(pfrag->page);
 
 		skb->truesize += copy;
-		atomic_add(copy, &sk->sk_wmem_alloc);
+		refcount_add(copy, &sk->sk_wmem_alloc);
 		skb->len += copy;
 		skb->data_len += copy;
 		offset += copy;
@@ -3065,7 +3065,7 @@ EXPORT_SYMBOL_GPL(skb_append_pagefrags);
  *	that the checksum difference is zero (e.g., a valid IP header)
  *	or you are setting ip_summed to CHECKSUM_NONE.
  */
-unsigned char *skb_pull_rcsum(struct sk_buff *skb, unsigned int len)
+void *skb_pull_rcsum(struct sk_buff *skb, unsigned int len)
 {
 	unsigned char *data = skb->data;
 
@@ -3844,7 +3844,7 @@ struct sk_buff *skb_clone_sk(struct sk_buff *skb)
 	struct sock *sk = skb->sk;
 	struct sk_buff *clone;
 
-	if (!sk || !atomic_inc_not_zero(&sk->sk_refcnt))
+	if (!sk || !refcount_inc_not_zero(&sk->sk_refcnt))
 		return NULL;
 
 	clone = skb_clone(skb, GFP_ATOMIC);
@@ -3915,7 +3915,7 @@ void skb_complete_tx_timestamp(struct sk_buff *skb,
 	/* Take a reference to prevent skb_orphan() from freeing the socket,
 	 * but only if the socket refcount is not zero.
 	 */
-	if (likely(atomic_inc_not_zero(&sk->sk_refcnt))) {
+	if (likely(refcount_inc_not_zero(&sk->sk_refcnt))) {
 		*skb_hwtstamps(skb) = *hwtstamps;
 		__skb_complete_tx_timestamp(skb, sk, SCM_TSTAMP_SND, false);
 		sock_put(sk);
@@ -3997,7 +3997,7 @@ void skb_complete_wifi_ack(struct sk_buff *skb, bool acked)
 	/* Take a reference to prevent skb_orphan() from freeing the socket,
 	 * but only if the socket refcount is not zero.
 	 */
-	if (likely(atomic_inc_not_zero(&sk->sk_refcnt))) {
+	if (likely(refcount_inc_not_zero(&sk->sk_refcnt))) {
 		err = sock_queue_err_skb(sk, skb);
 		sock_put(sk);
 	}
@@ -4747,7 +4747,7 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 
 	gfp_head = gfp_mask;
 	if (gfp_head & __GFP_DIRECT_RECLAIM)
-		gfp_head |= __GFP_REPEAT;
+		gfp_head |= __GFP_RETRY_MAYFAIL;
 
 	*errcode = -ENOBUFS;
 	skb = alloc_skb(header_len, gfp_head);

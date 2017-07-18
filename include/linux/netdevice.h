@@ -807,8 +807,10 @@ enum xdp_netdev_command {
 	 * when it is no longer used.
 	 */
 	XDP_SETUP_PROG,
+	XDP_SETUP_PROG_HW,
 	/* Check if a bpf program is set on the device.  The callee should
-	 * return true if a program is currently attached and running.
+	 * set @prog_attached to one of XDP_ATTACHED_* values, note that "true"
+	 * is equivalent to XDP_ATTACHED_DRV.
 	 */
 	XDP_QUERY_PROG,
 };
@@ -820,11 +822,15 @@ struct netdev_xdp {
 	union {
 		/* XDP_SETUP_PROG */
 		struct {
+			u32 flags;
 			struct bpf_prog *prog;
 			struct netlink_ext_ack *extack;
 		};
 		/* XDP_QUERY_PROG */
-		bool prog_attached;
+		struct {
+			u8 prog_attached;
+			u32 prog_id;
+		};
 	};
 };
 
@@ -1108,12 +1114,6 @@ struct xfrmdev_ops {
  *	by 'ndo_dfwd_add_station'. 'pdev' is the net device backing
  *	the station and priv is the structure returned by the add
  *	operation.
- * netdev_tx_t (*ndo_dfwd_start_xmit)(struct sk_buff *skb,
- *				      struct net_device *dev,
- *				      void *priv);
- *	Callback to use for xmit over the accelerated station. This
- *	is used in place of ndo_start_xmit on accelerated net
- *	devices.
  * int (*ndo_set_tx_maxrate)(struct net_device *dev,
  *			     int queue_index, u32 maxrate);
  *	Called when a user wants to set a max-rate limitation of specific
@@ -1310,9 +1310,6 @@ struct net_device_ops {
 	void			(*ndo_dfwd_del_station)(struct net_device *pdev,
 							void *priv);
 
-	netdev_tx_t		(*ndo_dfwd_start_xmit) (struct sk_buff *skb,
-							struct net_device *dev,
-							void *priv);
 	int			(*ndo_get_lock_subclass)(struct net_device *dev);
 	int			(*ndo_set_tx_maxrate)(struct net_device *dev,
 						      int queue_index,
@@ -1432,13 +1429,14 @@ enum netdev_priv_flags {
 
 /**
  *	struct net_device - The DEVICE structure.
- *		Actually, this whole structure is a big mistake.  It mixes I/O
- *		data with strictly "high-level" data, and it has to know about
- *		almost every data structure used in the INET module.
+ *
+ *	Actually, this whole structure is a big mistake.  It mixes I/O
+ *	data with strictly "high-level" data, and it has to know about
+ *	almost every data structure used in the INET module.
  *
  *	@name:	This is the first field of the "visible" part of this structure
  *		(i.e. as seen by users in the "Space.c" file).  It is the name
- *	 	of the interface.
+ *		of the interface.
  *
  *	@name_hlist: 	Device name hash chain, please keep it close to name[]
  *	@ifalias:	SNMP alias
@@ -3286,6 +3284,7 @@ void __dev_notify_flags(struct net_device *, unsigned int old_flags,
 int dev_change_name(struct net_device *, const char *);
 int dev_set_alias(struct net_device *, const char *, size_t);
 int dev_change_net_namespace(struct net_device *, struct net *, const char *);
+int __dev_set_mtu(struct net_device *, int);
 int dev_set_mtu(struct net_device *, int);
 void dev_set_group(struct net_device *, int);
 int dev_set_mac_address(struct net_device *, struct sockaddr *);
@@ -3302,7 +3301,7 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 typedef int (*xdp_op_t)(struct net_device *dev, struct netdev_xdp *xdp);
 int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 		      int fd, u32 flags);
-bool __dev_xdp_attached(struct net_device *dev, xdp_op_t xdp_op);
+u8 __dev_xdp_attached(struct net_device *dev, xdp_op_t xdp_op, u32 *prog_id);
 
 int __dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
 int dev_forward_skb(struct net_device *dev, struct sk_buff *skb);

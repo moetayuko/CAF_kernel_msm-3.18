@@ -1449,7 +1449,7 @@ static void free_dma_rx_desc_resources(struct stmmac_priv *priv)
 static void free_dma_tx_desc_resources(struct stmmac_priv *priv)
 {
 	u32 tx_count = priv->plat->tx_queues_to_use;
-	u32 queue = 0;
+	u32 queue;
 
 	/* Free TX queue resources */
 	for (queue = 0; queue < tx_count; queue++) {
@@ -1498,7 +1498,7 @@ static int alloc_dma_rx_desc_resources(struct stmmac_priv *priv)
 						    sizeof(dma_addr_t),
 						    GFP_KERNEL);
 		if (!rx_q->rx_skbuff_dma)
-			return -ENOMEM;
+			goto err_dma;
 
 		rx_q->rx_skbuff = kmalloc_array(DMA_RX_SIZE,
 						sizeof(struct sk_buff *),
@@ -1561,13 +1561,13 @@ static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
 						    sizeof(*tx_q->tx_skbuff_dma),
 						    GFP_KERNEL);
 		if (!tx_q->tx_skbuff_dma)
-			return -ENOMEM;
+			goto err_dma;
 
 		tx_q->tx_skbuff = kmalloc_array(DMA_TX_SIZE,
 						sizeof(struct sk_buff *),
 						GFP_KERNEL);
 		if (!tx_q->tx_skbuff)
-			goto err_dma_buffers;
+			goto err_dma;
 
 		if (priv->extend_desc) {
 			tx_q->dma_etx = dma_zalloc_coherent(priv->device,
@@ -1577,7 +1577,7 @@ static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
 							    &tx_q->dma_tx_phy,
 							    GFP_KERNEL);
 			if (!tx_q->dma_etx)
-				goto err_dma_buffers;
+				goto err_dma;
 		} else {
 			tx_q->dma_tx = dma_zalloc_coherent(priv->device,
 							   DMA_TX_SIZE *
@@ -1586,13 +1586,13 @@ static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
 							   &tx_q->dma_tx_phy,
 							   GFP_KERNEL);
 			if (!tx_q->dma_tx)
-				goto err_dma_buffers;
+				goto err_dma;
 		}
 	}
 
 	return 0;
 
-err_dma_buffers:
+err_dma:
 	free_dma_tx_desc_resources(priv);
 
 	return ret;
@@ -2830,7 +2830,6 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	tx_q->tx_skbuff_dma[first_entry].buf = des;
 	tx_q->tx_skbuff_dma[first_entry].len = skb_headlen(skb);
-	tx_q->tx_skbuff[first_entry] = skb;
 
 	first->des0 = cpu_to_le32(des);
 
@@ -2864,6 +2863,14 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	tx_q->tx_skbuff_dma[tx_q->cur_tx].last_segment = true;
 
+	/* Only the last descriptor gets to point to the skb. */
+	tx_q->tx_skbuff[tx_q->cur_tx] = skb;
+
+	/* We've used all descriptors we need for this skb, however,
+	 * advance cur_tx so that it references a fresh descriptor.
+	 * ndo_start_xmit will fill this descriptor the next time it's
+	 * called and stmmac_tx_clean may clean up to this descriptor.
+	 */
 	tx_q->cur_tx = STMMAC_GET_ENTRY(tx_q->cur_tx, DMA_TX_SIZE);
 
 	if (unlikely(stmmac_tx_avail(priv, queue) <= (MAX_SKB_FRAGS + 1))) {
@@ -2965,7 +2972,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	/* Manage oversized TCP frames for GMAC4 device */
 	if (skb_is_gso(skb) && priv->tso) {
-		if (ip_hdr(skb)->protocol == IPPROTO_TCP)
+		if (skb_shinfo(skb)->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6))
 			return stmmac_tso_xmit(skb, dev);
 	}
 
@@ -2995,8 +3002,6 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 		desc = tx_q->dma_tx + entry;
 
 	first = desc;
-
-	tx_q->tx_skbuff[first_entry] = skb;
 
 	enh_desc = priv->plat->enh_desc;
 	/* To program the descriptors according to the size of the frame */
@@ -3045,8 +3050,15 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 						skb->len);
 	}
 
-	entry = STMMAC_GET_ENTRY(entry, DMA_TX_SIZE);
+	/* Only the last descriptor gets to point to the skb. */
+	tx_q->tx_skbuff[entry] = skb;
 
+	/* We've used all descriptors we need for this skb, however,
+	 * advance cur_tx so that it references a fresh descriptor.
+	 * ndo_start_xmit will fill this descriptor the next time it's
+	 * called and stmmac_tx_clean may clean up to this descriptor.
+	 */
+	entry = STMMAC_GET_ENTRY(entry, DMA_TX_SIZE);
 	tx_q->cur_tx = entry;
 
 	if (netif_msg_pktdata(priv)) {
@@ -4126,7 +4138,7 @@ int stmmac_dvr_probe(struct device *device,
 			    NETIF_F_RXCSUM;
 
 	if ((priv->plat->tso_en) && (priv->dma_cap.tsoen)) {
-		ndev->hw_features |= NETIF_F_TSO;
+		ndev->hw_features |= NETIF_F_TSO | NETIF_F_TSO6;
 		priv->tso = true;
 		dev_info(priv->device, "TSO feature enabled\n");
 	}

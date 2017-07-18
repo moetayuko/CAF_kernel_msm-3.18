@@ -58,6 +58,7 @@ struct nfp_hwinfo;
 struct nfp_mip;
 struct nfp_net;
 struct nfp_nsp_identify;
+struct nfp_port;
 struct nfp_rtsym_table;
 
 /**
@@ -68,6 +69,10 @@ struct nfp_rtsym_table;
  * @data_vnic_bar:	Pointer to the CPP area for the data vNICs' BARs
  * @ctrl_vnic_bar:	Pointer to the CPP area for the ctrl vNIC's BAR
  * @qc_area:		Pointer to the CPP area for the queues
+ * @mac_stats_bar:	Pointer to the CPP area for the MAC stats
+ * @mac_stats_mem:	Pointer to mapped MAC stats area
+ * @vf_cfg_bar:		Pointer to the CPP area for the VF configuration BAR
+ * @vf_cfg_mem:		Pointer to mapped VF configuration area
  * @irq_entries:	Array of MSI-X entries for all vNICs
  * @limit_vfs:		Number of VFs supported by firmware (~0 for PCI limit)
  * @num_vfs:		Number of SR-IOV VFs enabled
@@ -84,6 +89,7 @@ struct nfp_rtsym_table;
  * @num_vnics:		Number of vNICs spawned
  * @vnics:		Linked list of vNIC structures (struct nfp_net)
  * @ports:		Linked list of port structures (struct nfp_port)
+ * @wq:			Workqueue for running works which need to grab @lock
  * @port_refresh_work:	Work entry for taking netdevs out
  * @lock:		Protects all fields which may change after probe
  */
@@ -97,6 +103,10 @@ struct nfp_pf {
 	struct nfp_cpp_area *data_vnic_bar;
 	struct nfp_cpp_area *ctrl_vnic_bar;
 	struct nfp_cpp_area *qc_area;
+	struct nfp_cpp_area *mac_stats_bar;
+	u8 __iomem *mac_stats_mem;
+	struct nfp_cpp_area *vf_cfg_bar;
+	u8 __iomem *vf_cfg_mem;
 
 	struct msix_entry *irq_entries;
 
@@ -122,7 +132,10 @@ struct nfp_pf {
 
 	struct list_head vnics;
 	struct list_head ports;
+
+	struct workqueue_struct *wq;
 	struct work_struct port_refresh_work;
+
 	struct mutex lock;
 };
 
@@ -136,10 +149,7 @@ void nfp_net_pci_remove(struct nfp_pf *pf);
 int nfp_hwmon_register(struct nfp_pf *pf);
 void nfp_hwmon_unregister(struct nfp_pf *pf);
 
-struct nfp_eth_table_port *
-nfp_net_find_port(struct nfp_eth_table *eth_tbl, unsigned int id);
-void
-nfp_net_get_mac_addr(struct nfp_pf *pf, struct nfp_net *nn, unsigned int id);
+void nfp_net_get_mac_addr(struct nfp_pf *pf, struct nfp_port *port);
 
 bool nfp_ctrl_tx(struct nfp_net *nn, struct sk_buff *skb);
 

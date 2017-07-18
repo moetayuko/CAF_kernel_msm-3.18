@@ -135,7 +135,7 @@ static struct sk_buff *qtnf_cmd_alloc_new_cmdskb(u8 macid, u8 vifid, u16 cmd_no,
 		return NULL;
 	}
 
-	memset(skb_put(cmd_skb, cmd_size), 0, cmd_size);
+	skb_put_zero(cmd_skb, cmd_size);
 
 	cmd = (struct qlink_cmd *)cmd_skb->data;
 	cmd->mhdr.len = cpu_to_le16(cmd_skb->len);
@@ -238,9 +238,7 @@ int qtnf_cmd_send_config_ap(struct qtnf_vif *vif)
 				 bss_cfg->bcn_period);
 	qtnf_cmd_skb_put_tlv_u8(cmd_skb, QTN_TLV_ID_DTIM, bss_cfg->dtim);
 
-	qchan = (struct qlink_tlv_channel *)skb_put(cmd_skb, sizeof(*qchan));
-
-	memset(qchan, 0, sizeof(*qchan));
+	qchan = skb_put_zero(cmd_skb, sizeof(*qchan));
 	qchan->hdr.type = cpu_to_le16(QTN_TLV_ID_CHANNEL);
 	qchan->hdr.len = cpu_to_le16(sizeof(*qchan) -
 			sizeof(struct qlink_tlv_hdr));
@@ -1300,12 +1298,6 @@ int qtnf_cmd_get_mac_chan_info(struct qtnf_wmac *mac,
 	int ret = 0;
 	u8 qband;
 
-	cmd_skb = qtnf_cmd_alloc_new_cmdskb(mac->macid, 0,
-					    QLINK_CMD_CHANS_INFO_GET,
-					    sizeof(*cmd));
-	if (!cmd_skb)
-		return -ENOMEM;
-
 	switch (band->band) {
 	case NL80211_BAND_2GHZ:
 		qband = QLINK_BAND_2GHZ;
@@ -1319,6 +1311,12 @@ int qtnf_cmd_get_mac_chan_info(struct qtnf_wmac *mac,
 	default:
 		return -EINVAL;
 	}
+
+	cmd_skb = qtnf_cmd_alloc_new_cmdskb(mac->macid, 0,
+					    QLINK_CMD_CHANS_INFO_GET,
+					    sizeof(*cmd));
+	if (!cmd_skb)
+		return -ENOMEM;
 
 	cmd = (struct qlink_cmd_chans_info_get *)cmd_skb->data;
 	cmd->band = qband;
@@ -1794,9 +1792,7 @@ int qtnf_cmd_send_scan(struct qtnf_wmac *mac)
 			pr_debug("MAC%u: scan chan=%d, freq=%d, flags=%#x\n",
 				 mac->macid, sc->hw_value, sc->center_freq,
 				 sc->flags);
-			qchan = (struct qlink_tlv_channel *)
-					skb_put(cmd_skb, sizeof(*qchan));
-			memset(qchan, 0, sizeof(*qchan));
+			qchan = skb_put_zero(cmd_skb, sizeof(*qchan));
 			flags = 0;
 
 			qchan->hdr.type = cpu_to_le16(QTN_TLV_ID_CHANNEL);

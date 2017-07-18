@@ -252,7 +252,7 @@ struct nf_conntrack {
 
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 struct nf_bridge_info {
-	atomic_t		use;
+	refcount_t		use;
 	enum {
 		BRNF_PROTO_UNCHANGED,
 		BRNF_PROTO_8021Q,
@@ -761,7 +761,7 @@ struct sk_buff {
 	unsigned char		*head,
 				*data;
 	unsigned int		truesize;
-	atomic_t		users;
+	refcount_t		users;
 };
 
 #ifdef __KERNEL__
@@ -872,9 +872,9 @@ static inline bool skb_unref(struct sk_buff *skb)
 {
 	if (unlikely(!skb))
 		return false;
-	if (likely(atomic_read(&skb->users) == 1))
+	if (likely(refcount_read(&skb->users) == 1))
 		smp_rmb();
-	else if (likely(!atomic_dec_and_test(&skb->users)))
+	else if (likely(!refcount_dec_and_test(&skb->users)))
 		return false;
 
 	return true;
@@ -915,7 +915,7 @@ struct sk_buff_fclones {
 
 	struct sk_buff	skb2;
 
-	atomic_t	fclone_ref;
+	refcount_t	fclone_ref;
 };
 
 /**
@@ -935,7 +935,7 @@ static inline bool skb_fclone_busy(const struct sock *sk,
 	fclones = container_of(skb, struct sk_buff_fclones, skb1);
 
 	return skb->fclone == SKB_FCLONE_ORIG &&
-	       atomic_read(&fclones->fclone_ref) > 1 &&
+	       refcount_read(&fclones->fclone_ref) > 1 &&
 	       fclones->skb2.sk == sk;
 }
 
@@ -1283,7 +1283,7 @@ static inline struct sk_buff *skb_queue_prev(const struct sk_buff_head *list,
  */
 static inline struct sk_buff *skb_get(struct sk_buff *skb)
 {
-	atomic_inc(&skb->users);
+	refcount_inc(&skb->users);
 	return skb;
 }
 
@@ -1384,7 +1384,7 @@ static inline void __skb_header_release(struct sk_buff *skb)
  */
 static inline int skb_shared(const struct sk_buff *skb)
 {
-	return atomic_read(&skb->users) != 1;
+	return refcount_read(&skb->users) != 1;
 }
 
 /**
@@ -1893,15 +1893,37 @@ static inline void skb_set_tail_pointer(struct sk_buff *skb, const int offset)
 /*
  *	Add data to an sk_buff
  */
-unsigned char *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len);
-unsigned char *skb_put(struct sk_buff *skb, unsigned int len);
-static inline unsigned char *__skb_put(struct sk_buff *skb, unsigned int len)
+void *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len);
+void *skb_put(struct sk_buff *skb, unsigned int len);
+static inline void *__skb_put(struct sk_buff *skb, unsigned int len)
 {
-	unsigned char *tmp = skb_tail_pointer(skb);
+	void *tmp = skb_tail_pointer(skb);
 	SKB_LINEAR_ASSERT(skb);
 	skb->tail += len;
 	skb->len  += len;
 	return tmp;
+}
+
+static inline void *__skb_put_zero(struct sk_buff *skb, unsigned int len)
+{
+	void *tmp = __skb_put(skb, len);
+
+	memset(tmp, 0, len);
+	return tmp;
+}
+
+static inline void *__skb_put_data(struct sk_buff *skb, const void *data,
+				   unsigned int len)
+{
+	void *tmp = __skb_put(skb, len);
+
+	memcpy(tmp, data, len);
+	return tmp;
+}
+
+static inline void __skb_put_u8(struct sk_buff *skb, u8 val)
+{
+	*(u8 *)__skb_put(skb, 1) = val;
 }
 
 static inline void *skb_put_zero(struct sk_buff *skb, unsigned int len)
@@ -1913,30 +1935,45 @@ static inline void *skb_put_zero(struct sk_buff *skb, unsigned int len)
 	return tmp;
 }
 
-unsigned char *skb_push(struct sk_buff *skb, unsigned int len);
-static inline unsigned char *__skb_push(struct sk_buff *skb, unsigned int len)
+static inline void *skb_put_data(struct sk_buff *skb, const void *data,
+				 unsigned int len)
+{
+	void *tmp = skb_put(skb, len);
+
+	memcpy(tmp, data, len);
+
+	return tmp;
+}
+
+static inline void skb_put_u8(struct sk_buff *skb, u8 val)
+{
+	*(u8 *)skb_put(skb, 1) = val;
+}
+
+void *skb_push(struct sk_buff *skb, unsigned int len);
+static inline void *__skb_push(struct sk_buff *skb, unsigned int len)
 {
 	skb->data -= len;
 	skb->len  += len;
 	return skb->data;
 }
 
-unsigned char *skb_pull(struct sk_buff *skb, unsigned int len);
-static inline unsigned char *__skb_pull(struct sk_buff *skb, unsigned int len)
+void *skb_pull(struct sk_buff *skb, unsigned int len);
+static inline void *__skb_pull(struct sk_buff *skb, unsigned int len)
 {
 	skb->len -= len;
 	BUG_ON(skb->len < skb->data_len);
 	return skb->data += len;
 }
 
-static inline unsigned char *skb_pull_inline(struct sk_buff *skb, unsigned int len)
+static inline void *skb_pull_inline(struct sk_buff *skb, unsigned int len)
 {
 	return unlikely(len > skb->len) ? NULL : __skb_pull(skb, len);
 }
 
-unsigned char *__pskb_pull_tail(struct sk_buff *skb, int delta);
+void *__pskb_pull_tail(struct sk_buff *skb, int delta);
 
-static inline unsigned char *__pskb_pull(struct sk_buff *skb, unsigned int len)
+static inline void *__pskb_pull(struct sk_buff *skb, unsigned int len)
 {
 	if (len > skb_headlen(skb) &&
 	    !__pskb_pull_tail(skb, len - skb_headlen(skb)))
@@ -1945,7 +1982,7 @@ static inline unsigned char *__pskb_pull(struct sk_buff *skb, unsigned int len)
 	return skb->data += len;
 }
 
-static inline unsigned char *pskb_pull(struct sk_buff *skb, unsigned int len)
+static inline void *pskb_pull(struct sk_buff *skb, unsigned int len)
 {
 	return unlikely(len > skb->len) ? NULL : __pskb_pull(skb, len);
 }
@@ -2167,6 +2204,11 @@ static inline unsigned char *skb_mac_header(const struct sk_buff *skb)
 static inline int skb_mac_offset(const struct sk_buff *skb)
 {
 	return skb_mac_header(skb) - skb->data;
+}
+
+static inline u32 skb_mac_header_len(const struct sk_buff *skb)
+{
+	return skb->network_header - skb->mac_header;
 }
 
 static inline int skb_mac_header_was_set(const struct sk_buff *skb)
@@ -2667,7 +2709,7 @@ bool skb_page_frag_refill(unsigned int sz, struct page_frag *pfrag, gfp_t prio);
  * @offset: the offset within the fragment (starting at the
  *          fragment's own offset)
  * @size: the number of bytes to map
- * @dir: the direction of the mapping (%PCI_DMA_*)
+ * @dir: the direction of the mapping (``PCI_DMA_*``)
  *
  * Maps the page associated with @frag to @device.
  */
@@ -2928,7 +2970,7 @@ static inline void skb_postpush_rcsum(struct sk_buff *skb,
 	__skb_postpush_rcsum(skb, start, len, 0);
 }
 
-unsigned char *skb_pull_rcsum(struct sk_buff *skb, unsigned int len);
+void *skb_pull_rcsum(struct sk_buff *skb, unsigned int len);
 
 /**
  *	skb_push_rcsum - push skb and update receive checksum
@@ -2941,8 +2983,7 @@ unsigned char *skb_pull_rcsum(struct sk_buff *skb, unsigned int len);
  *	that the checksum difference is zero (e.g., a valid IP header)
  *	or you are setting ip_summed to CHECKSUM_NONE.
  */
-static inline unsigned char *skb_push_rcsum(struct sk_buff *skb,
-					    unsigned int len)
+static inline void *skb_push_rcsum(struct sk_buff *skb, unsigned int len)
 {
 	skb_push(skb, len);
 	skb_postpush_rcsum(skb, skb->data, len);
@@ -3553,13 +3594,13 @@ static inline void nf_conntrack_get(struct nf_conntrack *nfct)
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 static inline void nf_bridge_put(struct nf_bridge_info *nf_bridge)
 {
-	if (nf_bridge && atomic_dec_and_test(&nf_bridge->use))
+	if (nf_bridge && refcount_dec_and_test(&nf_bridge->use))
 		kfree(nf_bridge);
 }
 static inline void nf_bridge_get(struct nf_bridge_info *nf_bridge)
 {
 	if (nf_bridge)
-		atomic_inc(&nf_bridge->use);
+		refcount_inc(&nf_bridge->use);
 }
 #endif /* CONFIG_BRIDGE_NETFILTER */
 static inline void nf_reset(struct sk_buff *skb)

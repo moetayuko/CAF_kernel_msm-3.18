@@ -316,7 +316,8 @@ static void tcp_ecn_send_synack(struct sock *sk, struct sk_buff *skb)
 	TCP_SKB_CB(skb)->tcp_flags &= ~TCPHDR_CWR;
 	if (!(tp->ecn_flags & TCP_ECN_OK))
 		TCP_SKB_CB(skb)->tcp_flags &= ~TCPHDR_ECE;
-	else if (tcp_ca_needs_ecn(sk))
+	else if (tcp_ca_needs_ecn(sk) ||
+		 tcp_bpf_ca_needs_ecn(sk))
 		INET_ECN_xmit(sk);
 }
 
@@ -324,8 +325,9 @@ static void tcp_ecn_send_synack(struct sock *sk, struct sk_buff *skb)
 static void tcp_ecn_send_syn(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	bool bpf_needs_ecn = tcp_bpf_ca_needs_ecn(sk);
 	bool use_ecn = sock_net(sk)->ipv4.sysctl_tcp_ecn == 1 ||
-		       tcp_ca_needs_ecn(sk);
+		tcp_ca_needs_ecn(sk) || bpf_needs_ecn;
 
 	if (!use_ecn) {
 		const struct dst_entry *dst = __sk_dst_get(sk);
@@ -339,7 +341,7 @@ static void tcp_ecn_send_syn(struct sock *sk, struct sk_buff *skb)
 	if (use_ecn) {
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_ECE | TCPHDR_CWR;
 		tp->ecn_flags = TCP_ECN_OK;
-		if (tcp_ca_needs_ecn(sk))
+		if (tcp_ca_needs_ecn(sk) || bpf_needs_ecn)
 			INET_ECN_xmit(sk);
 	}
 }
@@ -861,12 +863,11 @@ void tcp_wfree(struct sk_buff *skb)
 	struct sock *sk = skb->sk;
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned long flags, nval, oval;
-	int wmem;
 
 	/* Keep one reference on sk_wmem_alloc.
 	 * Will be released by sk_free() from here or tcp_tasklet_func()
 	 */
-	wmem = atomic_sub_return(skb->truesize - 1, &sk->sk_wmem_alloc);
+	WARN_ON(refcount_sub_and_test(skb->truesize - 1, &sk->sk_wmem_alloc));
 
 	/* If this softirq is serviced by ksoftirqd, we are likely under stress.
 	 * Wait until our queues (qdisc + devices) are drained.
@@ -875,7 +876,7 @@ void tcp_wfree(struct sk_buff *skb)
 	 * - chance for incoming ACK (processed by another cpu maybe)
 	 *   to migrate this flow (skb->ooo_okay will be eventually set)
 	 */
-	if (wmem >= SKB_TRUESIZE(1) && this_cpu_ksoftirqd() == current)
+	if (refcount_read(&sk->sk_wmem_alloc) >= SKB_TRUESIZE(1) && this_cpu_ksoftirqd() == current)
 		goto out;
 
 	for (oval = READ_ONCE(sk->sk_tsq_flags);; oval = nval) {
@@ -925,7 +926,7 @@ enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer)
 		if (nval != oval)
 			continue;
 
-		if (!atomic_inc_not_zero(&sk->sk_wmem_alloc))
+		if (!refcount_inc_not_zero(&sk->sk_wmem_alloc))
 			break;
 		/* queue this socket to tasklet queue */
 		tsq = this_cpu_ptr(&tsq_tasklet);
@@ -1045,7 +1046,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb->sk = sk;
 	skb->destructor = skb_is_tcp_pure_ack(skb) ? __sock_wfree : tcp_wfree;
 	skb_set_hash_from_sk(skb, sk);
-	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
+	refcount_add(skb->truesize, &sk->sk_wmem_alloc);
 
 	skb_set_dst_pending_confirm(skb, sk->sk_dst_pending_confirm);
 
@@ -2176,7 +2177,7 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 	limit = min_t(u32, limit, sysctl_tcp_limit_output_bytes);
 	limit <<= factor;
 
-	if (atomic_read(&sk->sk_wmem_alloc) > limit) {
+	if (refcount_read(&sk->sk_wmem_alloc) > limit) {
 		/* Always send the 1st or 2nd skb in write queue.
 		 * No need to wait for TX completion to call us back,
 		 * after softirq/tasklet schedule.
@@ -2192,7 +2193,7 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 		 * test again the condition.
 		 */
 		smp_mb__after_atomic();
-		if (atomic_read(&sk->sk_wmem_alloc) > limit)
+		if (refcount_read(&sk->sk_wmem_alloc) > limit)
 			return true;
 	}
 	return false;
@@ -2812,7 +2813,7 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.
 	 */
-	if (atomic_read(&sk->sk_wmem_alloc) >
+	if (refcount_read(&sk->sk_wmem_alloc) >
 	    min_t(u32, sk->sk_wmem_queued + (sk->sk_wmem_queued >> 2),
 		  sk->sk_sndbuf))
 		return -EAGAIN;
@@ -3212,6 +3213,7 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	tcp_ecn_make_synack(req, th);
 	th->source = htons(ireq->ir_num);
 	th->dest = ireq->ir_rmt_port;
+	skb->mark = ireq->ir_mark;
 	/* Setting of flags are superfluous here for callers (and ECE is
 	 * not even correctly set)
 	 */
@@ -3267,6 +3269,7 @@ static void tcp_connect_init(struct sock *sk)
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u8 rcv_wscale;
+	u32 rcv_wnd;
 
 	/* We'll fix this up when we get a response from the other end.
 	 * See tcp_input.c:tcp_rcv_state_process case TCP_SYN_SENT.
@@ -3300,13 +3303,17 @@ static void tcp_connect_init(struct sock *sk)
 	    (tp->window_clamp > tcp_full_space(sk) || tp->window_clamp == 0))
 		tp->window_clamp = tcp_full_space(sk);
 
+	rcv_wnd = tcp_rwnd_init_bpf(sk);
+	if (rcv_wnd == 0)
+		rcv_wnd = dst_metric(dst, RTAX_INITRWND);
+
 	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
 				  &tp->window_clamp,
 				  sock_net(sk)->ipv4.sysctl_tcp_window_scaling,
 				  &rcv_wscale,
-				  dst_metric(dst, RTAX_INITRWND));
+				  rcv_wnd);
 
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;
@@ -3327,7 +3334,7 @@ static void tcp_connect_init(struct sock *sk)
 	tp->rcv_wup = tp->rcv_nxt;
 	tp->copied_seq = tp->rcv_nxt;
 
-	inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
+	inet_csk(sk)->icsk_rto = tcp_timeout_init(sk);
 	inet_csk(sk)->icsk_retransmits = 0;
 	tcp_clear_retrans(tp);
 }
@@ -3440,6 +3447,7 @@ int tcp_connect(struct sock *sk)
 	struct sk_buff *buff;
 	int err;
 
+	tcp_call_bpf(sk, BPF_SOCK_OPS_TCP_CONNECT_CB);
 	tcp_connect_init(sk);
 
 	if (unlikely(tp->repair)) {

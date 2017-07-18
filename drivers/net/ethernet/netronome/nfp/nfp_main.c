@@ -54,6 +54,7 @@
 
 #include "nfpcore/nfp6000_pcie.h"
 
+#include "nfp_app.h"
 #include "nfp_main.h"
 #include "nfp_net.h"
 
@@ -97,23 +98,41 @@ static int nfp_pcie_sriov_enable(struct pci_dev *pdev, int num_vfs)
 	struct nfp_pf *pf = pci_get_drvdata(pdev);
 	int err;
 
+	mutex_lock(&pf->lock);
+
 	if (num_vfs > pf->limit_vfs) {
 		nfp_info(pf->cpp, "Firmware limits number of VFs to %u\n",
 			 pf->limit_vfs);
-		return -EINVAL;
+		err = -EINVAL;
+		goto err_unlock;
 	}
 
 	err = pci_enable_sriov(pdev, num_vfs);
 	if (err) {
-		dev_warn(&pdev->dev, "Failed to enable PCI sriov: %d\n", err);
-		return err;
+		dev_warn(&pdev->dev, "Failed to enable PCI SR-IOV: %d\n", err);
+		goto err_unlock;
+	}
+
+	err = nfp_app_sriov_enable(pf->app, num_vfs);
+	if (err) {
+		dev_warn(&pdev->dev,
+			 "App specific PCI SR-IOV configuration failed: %d\n",
+			 err);
+		goto err_sriov_disable;
 	}
 
 	pf->num_vfs = num_vfs;
 
 	dev_dbg(&pdev->dev, "Created %d VFs.\n", pf->num_vfs);
 
+	mutex_unlock(&pf->lock);
 	return num_vfs;
+
+err_sriov_disable:
+	pci_disable_sriov(pdev);
+err_unlock:
+	mutex_unlock(&pf->lock);
+	return err;
 #endif
 	return 0;
 }
@@ -123,19 +142,26 @@ static int nfp_pcie_sriov_disable(struct pci_dev *pdev)
 #ifdef CONFIG_PCI_IOV
 	struct nfp_pf *pf = pci_get_drvdata(pdev);
 
+	mutex_lock(&pf->lock);
+
 	/* If the VFs are assigned we cannot shut down SR-IOV without
 	 * causing issues, so just leave the hardware available but
 	 * disabled
 	 */
 	if (pci_vfs_assigned(pdev)) {
 		dev_warn(&pdev->dev, "Disabling while VFs assigned - VFs will not be deallocated\n");
+		mutex_unlock(&pf->lock);
 		return -EPERM;
 	}
+
+	nfp_app_sriov_disable(pf->app);
 
 	pf->num_vfs = 0;
 
 	pci_disable_sriov(pdev);
 	dev_dbg(&pdev->dev, "Removed VFs.\n");
+
+	mutex_unlock(&pf->lock);
 #endif
 	return 0;
 }
@@ -350,6 +376,12 @@ static int nfp_pci_probe(struct pci_dev *pdev,
 	pci_set_drvdata(pdev, pf);
 	pf->pdev = pdev;
 
+	pf->wq = alloc_workqueue("nfp-%s", 0, 2, pci_name(pdev));
+	if (!pf->wq) {
+		err = -ENOMEM;
+		goto err_pci_priv_unset;
+	}
+
 	pf->cpp = nfp_cpp_from_nfp6000_pcie(pdev);
 	if (IS_ERR_OR_NULL(pf->cpp)) {
 		err = PTR_ERR(pf->cpp);
@@ -382,6 +414,14 @@ static int nfp_pci_probe(struct pci_dev *pdev,
 	if (err)
 		goto err_fw_unload;
 
+	pf->num_vfs = pci_num_vf(pdev);
+	if (pf->num_vfs > pf->limit_vfs) {
+		dev_err(&pdev->dev,
+			"Error: %d VFs already enabled, but loaded FW can only support %d\n",
+			pf->num_vfs, pf->limit_vfs);
+		goto err_fw_unload;
+	}
+
 	err = nfp_net_pci_probe(pf);
 	if (err)
 		goto err_sriov_unlimit;
@@ -411,6 +451,8 @@ err_hwinfo_free:
 	kfree(pf->hwinfo);
 	nfp_cpp_free(pf->cpp);
 err_disable_msix:
+	destroy_workqueue(pf->wq);
+err_pci_priv_unset:
 	pci_set_drvdata(pdev, NULL);
 	mutex_destroy(&pf->lock);
 	devlink_free(devlink);
@@ -443,6 +485,7 @@ static void nfp_pci_remove(struct pci_dev *pdev)
 	if (pf->fw_loaded)
 		nfp_fw_unload(pf);
 
+	destroy_workqueue(pf->wq);
 	pci_set_drvdata(pdev, NULL);
 	kfree(pf->hwinfo);
 	nfp_cpp_free(pf->cpp);

@@ -577,7 +577,7 @@ struct sock *udp4_lib_lookup(struct net *net, __be32 saddr, __be16 sport,
 
 	sk = __udp4_lib_lookup(net, saddr, sport, daddr, dport,
 			       dif, &udp_table, NULL);
-	if (sk && !atomic_inc_not_zero(&sk->sk_refcnt))
+	if (sk && !refcount_inc_not_zero(&sk->sk_refcnt))
 		sk = NULL;
 	return sk;
 }
@@ -1163,24 +1163,7 @@ out:
 	return ret;
 }
 
-/* Copy as much information as possible into skb->dev_scratch to avoid
- * possibly multiple cache miss on dequeue();
- */
 #if BITS_PER_LONG == 64
-
-/* we can store multiple info here: truesize, len and the bit needed to
- * compute skb_csum_unnecessary will be on cold cache lines at recvmsg
- * time.
- * skb->len can be stored on 16 bits since the udp header has been already
- * validated and pulled.
- */
-struct udp_dev_scratch {
-	u32 truesize;
-	u16 len;
-	bool is_linear;
-	bool csum_unnecessary;
-};
-
 static void udp_set_dev_scratch(struct sk_buff *skb)
 {
 	struct udp_dev_scratch *scratch;
@@ -1197,22 +1180,6 @@ static int udp_skb_truesize(struct sk_buff *skb)
 {
 	return ((struct udp_dev_scratch *)&skb->dev_scratch)->truesize;
 }
-
-static unsigned int udp_skb_len(struct sk_buff *skb)
-{
-	return ((struct udp_dev_scratch *)&skb->dev_scratch)->len;
-}
-
-static bool udp_skb_csum_unnecessary(struct sk_buff *skb)
-{
-	return ((struct udp_dev_scratch *)&skb->dev_scratch)->csum_unnecessary;
-}
-
-static bool udp_skb_is_linear(struct sk_buff *skb)
-{
-	return ((struct udp_dev_scratch *)&skb->dev_scratch)->is_linear;
-}
-
 #else
 static void udp_set_dev_scratch(struct sk_buff *skb)
 {
@@ -1222,21 +1189,6 @@ static void udp_set_dev_scratch(struct sk_buff *skb)
 static int udp_skb_truesize(struct sk_buff *skb)
 {
 	return skb->dev_scratch;
-}
-
-static unsigned int udp_skb_len(struct sk_buff *skb)
-{
-	return skb->len;
-}
-
-static bool udp_skb_csum_unnecessary(struct sk_buff *skb)
-{
-	return skb_csum_unnecessary(skb);
-}
-
-static bool udp_skb_is_linear(struct sk_buff *skb)
-{
-	return !skb_is_nonlinear(skb);
 }
 #endif
 
@@ -1446,16 +1398,23 @@ static struct sk_buff *__first_packet_length(struct sock *sk,
 {
 	struct sk_buff *skb;
 
-	while ((skb = skb_peek(rcvq)) != NULL &&
-	       udp_lib_checksum_complete(skb)) {
-		__UDP_INC_STATS(sock_net(sk), UDP_MIB_CSUMERRORS,
-				IS_UDPLITE(sk));
-		__UDP_INC_STATS(sock_net(sk), UDP_MIB_INERRORS,
-				IS_UDPLITE(sk));
-		atomic_inc(&sk->sk_drops);
-		__skb_unlink(skb, rcvq);
-		*total += skb->truesize;
-		kfree_skb(skb);
+	while ((skb = skb_peek(rcvq)) != NULL) {
+		if (udp_lib_checksum_complete(skb)) {
+			__UDP_INC_STATS(sock_net(sk), UDP_MIB_CSUMERRORS,
+					IS_UDPLITE(sk));
+			__UDP_INC_STATS(sock_net(sk), UDP_MIB_INERRORS,
+					IS_UDPLITE(sk));
+			atomic_inc(&sk->sk_drops);
+			__skb_unlink(skb, rcvq);
+			*total += skb->truesize;
+			kfree_skb(skb);
+		} else {
+			/* the csum related bits could be changed, refresh
+			 * the scratch area
+			 */
+			udp_set_dev_scratch(skb);
+			break;
+		}
 	}
 	return skb;
 }
@@ -1590,18 +1549,6 @@ busy_check:
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(__skb_recv_udp);
-
-static int copy_linear_skb(struct sk_buff *skb, int len, int off,
-			   struct iov_iter *to)
-{
-	int n, copy = len - off;
-
-	n = copy_to_iter(skb->data + off, copy, to);
-	if (n == copy)
-		return 0;
-
-	return -EFAULT;
-}
 
 /*
  * 	This should be easy, if there is something there we
@@ -1949,6 +1896,7 @@ static int udp_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
+	prefetch(&sk->sk_rmem_alloc);
 	if (rcu_access_pointer(sk->sk_filter) &&
 	    udp_lib_checksum_complete(skb))
 			goto csum_error;
@@ -1977,9 +1925,10 @@ static void udp_sk_rx_dst_set(struct sock *sk, struct dst_entry *dst)
 {
 	struct dst_entry *old;
 
-	dst_hold(dst);
-	old = xchg(&sk->sk_rx_dst, dst);
-	dst_release(old);
+	if (dst_hold_safe(dst)) {
+		old = xchg(&sk->sk_rx_dst, dst);
+		dst_release(old);
+	}
 }
 
 /*
@@ -2293,7 +2242,7 @@ void udp_v4_early_demux(struct sk_buff *skb)
 					     uh->source, iph->saddr, dif);
 	}
 
-	if (!sk || !atomic_inc_not_zero_hint(&sk->sk_refcnt, 2))
+	if (!sk || !refcount_inc_not_zero(&sk->sk_refcnt))
 		return;
 
 	skb->sk = sk;
@@ -2303,13 +2252,11 @@ void udp_v4_early_demux(struct sk_buff *skb)
 	if (dst)
 		dst = dst_check(dst, 0);
 	if (dst) {
-		/* DST_NOCACHE can not be used without taking a reference */
-		if (dst->flags & DST_NOCACHE) {
-			if (likely(atomic_inc_not_zero(&dst->__refcnt)))
-				skb_dst_set(skb, dst);
-		} else {
-			skb_dst_set_noref(skb, dst);
-		}
+		/* set noref for now.
+		 * any place which wants to hold dst has to call
+		 * dst_hold_safe()
+		 */
+		skb_dst_set_noref(skb, dst);
 	}
 }
 
@@ -2744,7 +2691,7 @@ static void udp4_format_sock(struct sock *sp, struct seq_file *f,
 		0, 0L, 0,
 		from_kuid_munged(seq_user_ns(f), sock_i_uid(sp)),
 		0, sock_i_ino(sp),
-		atomic_read(&sp->sk_refcnt), sp,
+		refcount_read(&sp->sk_refcnt), sp,
 		atomic_read(&sp->sk_drops));
 }
 

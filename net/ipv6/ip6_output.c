@@ -682,7 +682,7 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 		skb_frag_list_init(skb);
 
 		__skb_pull(skb, hlen);
-		fh = (struct frag_hdr *)__skb_push(skb, sizeof(struct frag_hdr));
+		fh = __skb_push(skb, sizeof(struct frag_hdr));
 		__skb_push(skb, hlen);
 		skb_reset_network_header(skb);
 		memcpy(skb_network_header(skb), tmp_hdr, hlen);
@@ -698,15 +698,13 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 		ipv6_hdr(skb)->payload_len = htons(first_len -
 						   sizeof(struct ipv6hdr));
 
-		dst_hold(&rt->dst);
-
 		for (;;) {
 			/* Prepare header of the next frame,
 			 * before previous one went down. */
 			if (frag) {
 				frag->ip_summed = CHECKSUM_NONE;
 				skb_reset_transport_header(frag);
-				fh = (struct frag_hdr *)__skb_push(frag, sizeof(struct frag_hdr));
+				fh = __skb_push(frag, sizeof(struct frag_hdr));
 				__skb_push(frag, hlen);
 				skb_reset_network_header(frag);
 				memcpy(skb_network_header(frag), tmp_hdr,
@@ -742,7 +740,6 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 		if (err == 0) {
 			IP6_INC_STATS(net, ip6_dst_idev(&rt->dst),
 				      IPSTATS_MIB_FRAGOKS);
-			ip6_rt_put(rt);
 			return 0;
 		}
 
@@ -750,7 +747,6 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 
 		IP6_INC_STATS(net, ip6_dst_idev(&rt->dst),
 			      IPSTATS_MIB_FRAGFAILS);
-		ip6_rt_put(rt);
 		return err;
 
 slow_path_clean:
@@ -1389,7 +1385,7 @@ emsgsize:
 	 */
 
 	cork->length += length;
-	if ((((length + fragheaderlen) > mtu) ||
+	if ((((length + (skb ? skb->len : headersize)) > mtu) ||
 	     (skb && skb_is_gso(skb))) &&
 	    (sk->sk_protocol == IPPROTO_UDP) &&
 	    (rt->dst.dev->features & NETIF_F_UFO) && !dst_xfrm(&rt->dst) &&
@@ -1476,7 +1472,7 @@ alloc_new_skb:
 						(flags & MSG_DONTWAIT), &err);
 			} else {
 				skb = NULL;
-				if (atomic_read(&sk->sk_wmem_alloc) <=
+				if (refcount_read(&sk->sk_wmem_alloc) <=
 				    2 * sk->sk_sndbuf)
 					skb = sock_wmalloc(sk,
 							   alloclen + hh_len, 1,
@@ -1585,7 +1581,7 @@ alloc_new_skb:
 			skb->len += copy;
 			skb->data_len += copy;
 			skb->truesize += copy;
-			atomic_add(copy, &sk->sk_wmem_alloc);
+			refcount_add(copy, &sk->sk_wmem_alloc);
 		}
 		offset += copy;
 		length -= copy;

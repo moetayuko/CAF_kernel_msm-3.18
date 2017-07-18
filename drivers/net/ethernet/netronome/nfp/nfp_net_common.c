@@ -64,6 +64,7 @@
 #include <linux/vmalloc.h>
 #include <linux/ktime.h>
 
+#include <net/switchdev.h>
 #include <net/vxlan.h>
 
 #include "nfpcore/nfp_nsp.h"
@@ -278,6 +279,30 @@ int nfp_net_reconfig(struct nfp_net *nn, u32 update)
 	spin_unlock_bh(&nn->reconfig_lock);
 
 	return ret;
+}
+
+/**
+ * nfp_net_reconfig_mbox() - Reconfigure the firmware via the mailbox
+ * @nn:        NFP Net device to reconfigure
+ * @mbox_cmd:  The value for the mailbox command
+ *
+ * Helper function for mailbox updates
+ *
+ * Return: Negative errno on error, 0 on success
+ */
+static int nfp_net_reconfig_mbox(struct nfp_net *nn, u32 mbox_cmd)
+{
+	int ret;
+
+	nn_writeq(nn, NFP_NET_CFG_MBOX_CMD, mbox_cmd);
+
+	ret = nfp_net_reconfig(nn, NFP_NET_CFG_UPDATE_MBOX);
+	if (ret) {
+		nn_err(nn, "Mailbox update error\n");
+		return ret;
+	}
+
+	return -nn_readl(nn, NFP_NET_CFG_MBOX_RET);
 }
 
 /* Interrupt configuration and handling
@@ -731,6 +756,26 @@ static void nfp_net_tx_xmit_more_flush(struct nfp_net_tx_ring *tx_ring)
 	tx_ring->wr_ptr_add = 0;
 }
 
+static int nfp_net_prep_port_id(struct sk_buff *skb)
+{
+	struct metadata_dst *md_dst = skb_metadata_dst(skb);
+	unsigned char *data;
+
+	if (likely(!md_dst))
+		return 0;
+	if (unlikely(md_dst->type != METADATA_HW_PORT_MUX))
+		return 0;
+
+	if (unlikely(skb_cow_head(skb, 8)))
+		return -ENOMEM;
+
+	data = skb_push(skb, 8);
+	put_unaligned_be32(NFP_NET_META_PORTID, data);
+	put_unaligned_be32(md_dst->u.port_info.port_id, data + 4);
+
+	return 8;
+}
+
 /**
  * nfp_net_tx() - Main transmit entry point
  * @skb:    SKB to transmit
@@ -743,6 +788,7 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 	struct nfp_net *nn = netdev_priv(netdev);
 	const struct skb_frag_struct *frag;
 	struct nfp_net_tx_desc *txd, txdg;
+	int f, nr_frags, wr_idx, md_bytes;
 	struct nfp_net_tx_ring *tx_ring;
 	struct nfp_net_r_vector *r_vec;
 	struct nfp_net_tx_buf *txbuf;
@@ -750,8 +796,6 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 	struct nfp_net_dp *dp;
 	dma_addr_t dma_addr;
 	unsigned int fsize;
-	int f, nr_frags;
-	int wr_idx;
 	u16 qidx;
 
 	dp = &nn->dp;
@@ -773,6 +817,13 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 		return NETDEV_TX_BUSY;
 	}
 
+	md_bytes = nfp_net_prep_port_id(skb);
+	if (unlikely(md_bytes < 0)) {
+		nfp_net_tx_xmit_more_flush(tx_ring);
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+
 	/* Start with the head skbuf */
 	dma_addr = dma_map_single(dp->dev, skb->data, skb_headlen(skb),
 				  DMA_TO_DEVICE);
@@ -791,7 +842,7 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 
 	/* Build TX descriptor */
 	txd = &tx_ring->txds[wr_idx];
-	txd->offset_eop = (nr_frags == 0) ? PCIE_DESC_TX_EOP : 0;
+	txd->offset_eop = (nr_frags ? 0 : PCIE_DESC_TX_EOP) | md_bytes;
 	txd->dma_len = cpu_to_le16(skb_headlen(skb));
 	nfp_desc_set_dma_addr(txd, dma_addr);
 	txd->data_len = cpu_to_le16(skb->len);
@@ -831,7 +882,7 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 			*txd = txdg;
 			txd->dma_len = cpu_to_le16(fsize);
 			nfp_desc_set_dma_addr(txd, dma_addr);
-			txd->offset_eop =
+			txd->offset_eop |=
 				(f == nr_frags - 1) ? PCIE_DESC_TX_EOP : 0;
 		}
 
@@ -1426,6 +1477,10 @@ nfp_net_parse_meta(struct net_device *netdev, struct nfp_meta_parsed *meta,
 			meta->mark = get_unaligned_be32(data);
 			data += 4;
 			break;
+		case NFP_NET_META_PORTID:
+			meta->portid = get_unaligned_be32(data);
+			data += 4;
+			break;
 		case NFP_NET_META_CSUM:
 			meta->csum_type = CHECKSUM_COMPLETE;
 			meta->csum =
@@ -1570,6 +1625,7 @@ static int nfp_net_rx(struct nfp_net_rx_ring *rx_ring, int budget)
 		struct nfp_net_rx_buf *rxbuf;
 		struct nfp_net_rx_desc *rxd;
 		struct nfp_meta_parsed meta;
+		struct net_device *netdev;
 		dma_addr_t new_dma_addr;
 		void *new_frag;
 
@@ -1648,7 +1704,7 @@ static int nfp_net_rx(struct nfp_net_rx_ring *rx_ring, int budget)
 		}
 
 		if (xdp_prog && !(rxd->rxd.flags & PCIE_DESC_RX_BPF &&
-				  dp->bpf_offload_xdp)) {
+				  dp->bpf_offload_xdp) && !meta.portid) {
 			unsigned int dma_off;
 			void *hard_start;
 			int act;
@@ -1694,6 +1750,20 @@ static int nfp_net_rx(struct nfp_net_rx_ring *rx_ring, int budget)
 			continue;
 		}
 
+		if (likely(!meta.portid)) {
+			netdev = dp->netdev;
+		} else {
+			struct nfp_net *nn;
+
+			nn = netdev_priv(dp->netdev);
+			netdev = nfp_app_repr_get(nn->app, meta.portid);
+			if (unlikely(!netdev)) {
+				nfp_net_rx_drop(dp, r_vec, rx_ring, rxbuf, skb);
+				continue;
+			}
+			nfp_repr_inc_rx_stats(netdev, pkt_len);
+		}
+
 		nfp_net_dma_unmap_rx(dp, rxbuf->dma_addr);
 
 		nfp_net_rx_give_one(dp, rx_ring, new_frag, new_dma_addr);
@@ -1705,7 +1775,7 @@ static int nfp_net_rx(struct nfp_net_rx_ring *rx_ring, int budget)
 		skb_set_hash(skb, meta.hash, meta.hash_type);
 
 		skb_record_rx_queue(skb, rx_ring->idx);
-		skb->protocol = eth_type_trans(skb, dp->netdev);
+		skb->protocol = eth_type_trans(skb, netdev);
 
 		nfp_net_rx_csum(dp, r_vec, rxd, &meta, skb);
 
@@ -2960,6 +3030,40 @@ static int nfp_net_change_mtu(struct net_device *netdev, int new_mtu)
 	return nfp_net_ring_reconfig(nn, dp, NULL);
 }
 
+static int
+nfp_net_vlan_rx_add_vid(struct net_device *netdev, __be16 proto, u16 vid)
+{
+	struct nfp_net *nn = netdev_priv(netdev);
+
+	/* Priority tagged packets with vlan id 0 are processed by the
+	 * NFP as untagged packets
+	 */
+	if (!vid)
+		return 0;
+
+	nn_writew(nn, NFP_NET_CFG_VLAN_FILTER_VID, vid);
+	nn_writew(nn, NFP_NET_CFG_VLAN_FILTER_PROTO, ETH_P_8021Q);
+
+	return nfp_net_reconfig_mbox(nn, NFP_NET_CFG_MBOX_CMD_CTAG_FILTER_ADD);
+}
+
+static int
+nfp_net_vlan_rx_kill_vid(struct net_device *netdev, __be16 proto, u16 vid)
+{
+	struct nfp_net *nn = netdev_priv(netdev);
+
+	/* Priority tagged packets with vlan id 0 are processed by the
+	 * NFP as untagged packets
+	 */
+	if (!vid)
+		return 0;
+
+	nn_writew(nn, NFP_NET_CFG_VLAN_FILTER_VID, vid);
+	nn_writew(nn, NFP_NET_CFG_VLAN_FILTER_PROTO, ETH_P_8021Q);
+
+	return nfp_net_reconfig_mbox(nn, NFP_NET_CFG_MBOX_CMD_CTAG_FILTER_KILL);
+}
+
 static void nfp_net_stat64(struct net_device *netdev,
 			   struct rtnl_link_stats64 *stats)
 {
@@ -2991,18 +3095,6 @@ static void nfp_net_stat64(struct net_device *netdev,
 		stats->tx_bytes += data[1];
 		stats->tx_errors += data[2];
 	}
-}
-
-static int
-nfp_net_setup_tc(struct net_device *netdev, u32 handle, u32 chain_index,
-		 __be16 proto, struct tc_to_netdev *tc)
-{
-	struct nfp_net *nn = netdev_priv(netdev);
-
-	if (chain_index)
-		return -EOPNOTSUPP;
-
-	return nfp_app_setup_tc(nn->app, netdev, handle, proto, tc);
 }
 
 static int nfp_net_set_features(struct net_device *netdev,
@@ -3051,6 +3143,13 @@ static int nfp_net_set_features(struct net_device *netdev,
 			new_ctrl |= NFP_NET_CFG_CTRL_TXVLAN;
 		else
 			new_ctrl &= ~NFP_NET_CFG_CTRL_TXVLAN;
+	}
+
+	if (changed & NETIF_F_HW_VLAN_CTAG_FILTER) {
+		if (features & NETIF_F_HW_VLAN_CTAG_FILTER)
+			new_ctrl |= NFP_NET_CFG_CTRL_CTAG_FILTER;
+		else
+			new_ctrl &= ~NFP_NET_CFG_CTRL_CTAG_FILTER;
 	}
 
 	if (changed & NETIF_F_SG) {
@@ -3209,19 +3308,14 @@ static void nfp_net_del_vxlan_port(struct net_device *netdev,
 		nfp_net_set_vxlan_port(nn, idx, 0);
 }
 
-static int nfp_net_xdp_setup(struct nfp_net *nn, struct netdev_xdp *xdp)
+static int
+nfp_net_xdp_setup_drv(struct nfp_net *nn, struct bpf_prog *prog,
+		      struct netlink_ext_ack *extack)
 {
-	struct bpf_prog *old_prog = nn->dp.xdp_prog;
-	struct bpf_prog *prog = xdp->prog;
 	struct nfp_net_dp *dp;
-	int err;
 
-	if (!prog && !nn->dp.xdp_prog)
-		return 0;
-	if (prog && nn->dp.xdp_prog) {
-		prog = xchg(&nn->dp.xdp_prog, prog);
-		bpf_prog_put(prog);
-		nfp_app_xdp_offload(nn->app, nn, nn->dp.xdp_prog);
+	if (!prog == !nn->dp.xdp_prog) {
+		WRITE_ONCE(nn->dp.xdp_prog, prog);
 		return 0;
 	}
 
@@ -3235,14 +3329,37 @@ static int nfp_net_xdp_setup(struct nfp_net *nn, struct netdev_xdp *xdp)
 	dp->rx_dma_off = prog ? XDP_PACKET_HEADROOM - nn->dp.rx_offset : 0;
 
 	/* We need RX reconfig to remap the buffers (BIDIR vs FROM_DEV) */
-	err = nfp_net_ring_reconfig(nn, dp, xdp->extack);
+	return nfp_net_ring_reconfig(nn, dp, extack);
+}
+
+static int
+nfp_net_xdp_setup(struct nfp_net *nn, struct bpf_prog *prog, u32 flags,
+		  struct netlink_ext_ack *extack)
+{
+	struct bpf_prog *drv_prog, *offload_prog;
+	int err;
+
+	if (nn->xdp_prog && (flags ^ nn->xdp_flags) & XDP_FLAGS_MODES)
+		return -EBUSY;
+
+	/* Load both when no flags set to allow easy activation of driver path
+	 * when program is replaced by one which can't be offloaded.
+	 */
+	drv_prog     = flags & XDP_FLAGS_HW_MODE  ? NULL : prog;
+	offload_prog = flags & XDP_FLAGS_DRV_MODE ? NULL : prog;
+
+	err = nfp_net_xdp_setup_drv(nn, drv_prog, extack);
 	if (err)
 		return err;
 
-	if (old_prog)
-		bpf_prog_put(old_prog);
+	err = nfp_app_xdp_offload(nn->app, nn, offload_prog);
+	if (err && flags & XDP_FLAGS_HW_MODE)
+		return err;
 
-	nfp_app_xdp_offload(nn->app, nn, nn->dp.xdp_prog);
+	if (nn->xdp_prog)
+		bpf_prog_put(nn->xdp_prog);
+	nn->xdp_prog = prog;
+	nn->xdp_flags = flags;
 
 	return 0;
 }
@@ -3253,9 +3370,14 @@ static int nfp_net_xdp(struct net_device *netdev, struct netdev_xdp *xdp)
 
 	switch (xdp->command) {
 	case XDP_SETUP_PROG:
-		return nfp_net_xdp_setup(nn, xdp);
+	case XDP_SETUP_PROG_HW:
+		return nfp_net_xdp_setup(nn, xdp->prog, xdp->flags,
+					 xdp->extack);
 	case XDP_QUERY_PROG:
-		xdp->prog_attached = !!nn->dp.xdp_prog;
+		xdp->prog_attached = !!nn->xdp_prog;
+		if (nn->dp.bpf_offload_xdp)
+			xdp->prog_attached = XDP_ATTACHED_HW;
+		xdp->prog_id = nn->xdp_prog ? nn->xdp_prog->aux->id : 0;
 		return 0;
 	default:
 		return -EINVAL;
@@ -3288,7 +3410,9 @@ const struct net_device_ops nfp_net_netdev_ops = {
 	.ndo_stop		= nfp_net_netdev_close,
 	.ndo_start_xmit		= nfp_net_tx,
 	.ndo_get_stats64	= nfp_net_stat64,
-	.ndo_setup_tc		= nfp_net_setup_tc,
+	.ndo_vlan_rx_add_vid	= nfp_net_vlan_rx_add_vid,
+	.ndo_vlan_rx_kill_vid	= nfp_net_vlan_rx_kill_vid,
+	.ndo_setup_tc		= nfp_port_setup_tc,
 	.ndo_tx_timeout		= nfp_net_tx_timeout,
 	.ndo_set_rx_mode	= nfp_net_set_rx_mode,
 	.ndo_change_mtu		= nfp_net_change_mtu,
@@ -3315,7 +3439,7 @@ void nfp_net_info(struct nfp_net *nn)
 		nn->fw_ver.resv, nn->fw_ver.class,
 		nn->fw_ver.major, nn->fw_ver.minor,
 		nn->max_mtu);
-	nn_info(nn, "CAP: %#x %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+	nn_info(nn, "CAP: %#x %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
 		nn->cap,
 		nn->cap & NFP_NET_CFG_CTRL_PROMISC  ? "PROMISC "  : "",
 		nn->cap & NFP_NET_CFG_CTRL_L2BC     ? "L2BCFILT " : "",
@@ -3330,6 +3454,7 @@ void nfp_net_info(struct nfp_net *nn)
 		nn->cap & NFP_NET_CFG_CTRL_LSO2     ? "TSO2 "     : "",
 		nn->cap & NFP_NET_CFG_CTRL_RSS      ? "RSS1 "     : "",
 		nn->cap & NFP_NET_CFG_CTRL_RSS2     ? "RSS2 "     : "",
+		nn->cap & NFP_NET_CFG_CTRL_CTAG_FILTER ? "CTAG_FILTER " : "",
 		nn->cap & NFP_NET_CFG_CTRL_L2SWITCH ? "L2SWITCH " : "",
 		nn->cap & NFP_NET_CFG_CTRL_MSIXAUTO ? "AUTOMASK " : "",
 		nn->cap & NFP_NET_CFG_CTRL_IRQMOD   ? "IRQMOD "   : "",
@@ -3410,6 +3535,9 @@ struct nfp_net *nfp_net_alloc(struct pci_dev *pdev, bool needs_netdev,
  */
 void nfp_net_free(struct nfp_net *nn)
 {
+	if (nn->xdp_prog)
+		bpf_prog_put(nn->xdp_prog);
+
 	if (nn->dp.netdev)
 		free_netdev(nn->dp.netdev);
 	else
@@ -3546,6 +3674,10 @@ static void nfp_net_netdev_init(struct nfp_net *nn)
 			nn->dp.ctrl |= NFP_NET_CFG_CTRL_TXVLAN;
 		}
 	}
+	if (nn->cap & NFP_NET_CFG_CTRL_CTAG_FILTER) {
+		netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_FILTER;
+		nn->dp.ctrl |= NFP_NET_CFG_CTRL_CTAG_FILTER;
+	}
 
 	netdev->features = netdev->hw_features;
 
@@ -3559,6 +3691,8 @@ static void nfp_net_netdev_init(struct nfp_net *nn)
 	/* Finalise the netdev setup */
 	netdev->netdev_ops = &nfp_net_netdev_ops;
 	netdev->watchdog_timeo = msecs_to_jiffies(5 * 1000);
+
+	SWITCHDEV_SET_OPS(netdev, &nfp_port_switchdev_ops);
 
 	/* MTU range: 68 - hw-specific max */
 	netdev->min_mtu = ETH_MIN_MTU;
@@ -3585,10 +3719,17 @@ int nfp_net_init(struct nfp_net *nn)
 	nn->cap = nn_readl(nn, NFP_NET_CFG_CAP);
 	nn->max_mtu = nn_readl(nn, NFP_NET_CFG_MAX_MTU);
 
-	/* Chained metadata is signalled by capabilities except in version 4 */
+	/* ABI 4.x and ctrl vNIC always use chained metadata, in other cases
+	 * we allow use of non-chained metadata if RSS(v1) is the only
+	 * advertised capability requiring metadata.
+	 */
 	nn->dp.chained_metadata_format = nn->fw_ver.major == 4 ||
 					 !nn->dp.netdev ||
+					 !(nn->cap & NFP_NET_CFG_CTRL_RSS) ||
 					 nn->cap & NFP_NET_CFG_CTRL_CHAIN_META;
+	/* RSS(v1) uses non-chained metadata format, except in ABI 4.x where
+	 * it has the same meaning as RSSv2.
+	 */
 	if (nn->dp.chained_metadata_format && nn->fw_ver.major != 4)
 		nn->cap &= ~NFP_NET_CFG_CTRL_RSS;
 
@@ -3663,7 +3804,4 @@ void nfp_net_clean(struct nfp_net *nn)
 		return;
 
 	unregister_netdev(nn->dp.netdev);
-
-	if (nn->dp.xdp_prog)
-		bpf_prog_put(nn->dp.xdp_prog);
 }

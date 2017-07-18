@@ -3096,15 +3096,14 @@ int hci_register_dev(struct hci_dev *hdev)
 
 	BT_DBG("%p name %s bus %d", hdev, hdev->name, hdev->bus);
 
-	hdev->workqueue = alloc_workqueue("%s", WQ_HIGHPRI | WQ_UNBOUND |
-					  WQ_MEM_RECLAIM, 1, hdev->name);
+	hdev->workqueue = alloc_ordered_workqueue("%s", WQ_HIGHPRI, hdev->name);
 	if (!hdev->workqueue) {
 		error = -ENOMEM;
 		goto err;
 	}
 
-	hdev->req_workqueue = alloc_workqueue("%s", WQ_HIGHPRI | WQ_UNBOUND |
-					      WQ_MEM_RECLAIM, 1, hdev->name);
+	hdev->req_workqueue = alloc_ordered_workqueue("%s", WQ_HIGHPRI,
+						      hdev->name);
 	if (!hdev->req_workqueue) {
 		destroy_workqueue(hdev->workqueue);
 		error = -ENOMEM;
@@ -3266,7 +3265,7 @@ int hci_reset_dev(struct hci_dev *hdev)
 		return -ENOMEM;
 
 	hci_skb_pkt_type(skb) = HCI_EVENT_PKT;
-	memcpy(skb_put(skb, 3), hw_err, 3);
+	skb_put_data(skb, hw_err, 3);
 
 	/* Send Hardware Error to upper stack */
 	return hci_recv_frame(hdev, skb);

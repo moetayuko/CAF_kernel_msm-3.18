@@ -305,7 +305,7 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
 	copy = len;
 	if (copy > skb_tailroom(skb))
 		copy = skb_tailroom(skb);
-	memcpy(skb_put(skb, copy), p, copy);
+	skb_put_data(skb, p, copy);
 
 	len -= copy;
 	offset += copy;
@@ -1802,6 +1802,7 @@ static void virtnet_freeze_down(struct virtio_device *vdev)
 	flush_work(&vi->config_work);
 
 	netif_device_detach(vi->dev);
+	netif_tx_disable(vi->dev);
 	cancel_delayed_work_sync(&vi->refill);
 
 	if (netif_running(vi->dev)) {
@@ -1955,16 +1956,18 @@ virtio_reset_err:
 	return err;
 }
 
-static bool virtnet_xdp_query(struct net_device *dev)
+static u32 virtnet_xdp_query(struct net_device *dev)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
+	const struct bpf_prog *xdp_prog;
 	int i;
 
 	for (i = 0; i < vi->max_queue_pairs; i++) {
-		if (vi->rq[i].xdp_prog)
-			return true;
+		xdp_prog = rtnl_dereference(vi->rq[i].xdp_prog);
+		if (xdp_prog)
+			return xdp_prog->aux->id;
 	}
-	return false;
+	return 0;
 }
 
 static int virtnet_xdp(struct net_device *dev, struct netdev_xdp *xdp)
@@ -1973,7 +1976,8 @@ static int virtnet_xdp(struct net_device *dev, struct netdev_xdp *xdp)
 	case XDP_SETUP_PROG:
 		return virtnet_xdp_set(dev, xdp->prog, xdp->extack);
 	case XDP_QUERY_PROG:
-		xdp->prog_attached = virtnet_xdp_query(dev);
+		xdp->prog_id = virtnet_xdp_query(dev);
+		xdp->prog_attached = !!xdp->prog_id;
 		return 0;
 	default:
 		return -EINVAL;
@@ -2225,6 +2229,7 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
 	kfree(names);
 	kfree(callbacks);
 	kfree(vqs);
+	kfree(ctx);
 
 	return 0;
 
