@@ -10,7 +10,9 @@ Required properties:
 
 Optional properties:
  - tx-fifo-resize: determines if the FIFO *has* to be reallocated.
- - snps,host-only-mode: if present then dwc3 should be run in HOST only mode.
+ - dr_mode: When set to "host", driver executes in host-only mode. If the property is
+            absent or "", the controller executes in peripheral mode. Other commonly
+            found values like "otg" and "peripheral" are NOT supported.
  - snps,nominal-elastic-buffer: When set, the nominal elastic buffer setting
 	is used. By default, the half-full setting is used.
  - snps,ssphy-clear-auto-suspend-on-disconnect: If present, clear auto suspend feaure with ssusb phy
