@@ -292,7 +292,7 @@ intel_dp_aux_display_control_capable(struct intel_connector *connector)
  * via PWM pin or using AUX is better than using PWM pin.
  *
  * The heuristic to determine that using AUX pin is better than using PWM pin is
- * that the panel support any of the feature list here.
+ * that the panel is eDP 1.4 or later and support any of the feature list here
  * - Regional backlight brightness adjustment
  * - Backlight PWM frequency set
  * - More than 8 bits resolution of brightness level
@@ -309,6 +309,10 @@ intel_dp_aux_display_control_heuristic(struct intel_connector *connector)
 	/* Panel doesn't support adjusting backlight brightness via PWN pin */
 	if (!(intel_dp->edp_dpcd[2] & DP_EDP_BACKLIGHT_BRIGHTNESS_PWM_PIN_CAP))
 		return true;
+
+	/* Enable this for eDP 1.4 panel or later. */
+	if (intel_dp->edp_dpcd[0] < DP_EDP_14)
+		return false;
 
 	/* Panel supports regional backlight brightness adjustment */
 	if (drm_dp_dpcd_readb(&intel_dp->aux, DP_EDP_GENERAL_CAP_3,
