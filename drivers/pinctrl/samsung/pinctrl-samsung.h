@@ -25,10 +25,6 @@
 
 #include <linux/gpio.h>
 
-/* pinmux function number for pin as gpio output line */
-#define FUNC_INPUT	0x0
-#define FUNC_OUTPUT	0x1
-
 /**
  * enum pincfg_type - possible pin configuration types supported.
  * @PINCFG_TYPE_FUNC: Function configuration.
@@ -247,6 +243,10 @@ struct samsung_pin_ctrl {
 /**
  * struct samsung_pinctrl_drv_data: wrapper for holding driver data together.
  * @node: global list node
+ * @virt_base: register base address of the controller; this will be equal
+ *             to each bank samsung_pin_bank->pctl_base and used on legacy
+ *             platforms (like S3C24XX or S3C64XX) which has to access the base
+ *             through samsung_pinctrl_drv_data, not samsung_pin_bank).
  * @dev: device instance representing the controller.
  * @irq: interrpt number used by the controller to notify gpio interrupts.
  * @ctrl: pin controller instance managed by the driver.
@@ -262,6 +262,7 @@ struct samsung_pin_ctrl {
  */
 struct samsung_pinctrl_drv_data {
 	struct list_head		node;
+	void __iomem			*virt_base;
 	struct device			*dev;
 	int				irq;
 
