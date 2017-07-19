@@ -87,12 +87,12 @@ int btrfs_decompress_buf2page(const char *buf, unsigned long buf_start,
 			      unsigned long total_out, u64 disk_start,
 			      struct bio *bio);
 
-int btrfs_submit_compressed_write(struct inode *inode, u64 start,
+blk_status_t btrfs_submit_compressed_write(struct inode *inode, u64 start,
 				  unsigned long len, u64 disk_start,
 				  unsigned long compressed_len,
 				  struct page **compressed_pages,
 				  unsigned long nr_pages);
-int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
+blk_status_t btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 				 int mirror_num, unsigned long bio_flags);
 
 enum btrfs_compression_type {
@@ -128,5 +128,7 @@ struct btrfs_compress_op {
 
 extern const struct btrfs_compress_op btrfs_zlib_compress;
 extern const struct btrfs_compress_op btrfs_lzo_compress;
+
+int btrfs_compress_heuristic(struct inode *inode, u64 start, u64 end);
 
 #endif
