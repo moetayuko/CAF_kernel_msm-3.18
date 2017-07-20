@@ -60,7 +60,6 @@ struct device_node {
 	struct	device_node *sibling;
 	struct	kobject kobj;
 	unsigned long _flags;
-	void	*data;
 #if defined(CONFIG_SPARC)
 	const char *path_component_name;
 	unsigned int unique_id;
