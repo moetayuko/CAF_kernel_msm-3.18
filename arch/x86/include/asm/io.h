@@ -328,13 +328,13 @@ static inline unsigned type in##bwl##_p(int port)			\
 static inline void outs##bwl(int port, const void *addr, unsigned long count) \
 {									\
 	asm volatile("rep; outs" #bwl					\
-		     : "+S"(addr), "+c"(count) : "d"(port));		\
+		     : "+S"(addr), "+c"(count) : "d"(port) : "memory");	\
 }									\
 									\
 static inline void ins##bwl(int port, void *addr, unsigned long count)	\
 {									\
 	asm volatile("rep; ins" #bwl					\
-		     : "+D"(addr), "+c"(count) : "d"(port));		\
+		     : "+D"(addr), "+c"(count) : "d"(port) : "memory");	\
 }
 
 BUILDIO(b, b, char)
@@ -380,5 +380,13 @@ extern int arch_io_reserve_memtype_wc(resource_size_t start, resource_size_t siz
 extern void arch_io_free_memtype_wc(resource_size_t start, resource_size_t size);
 #define arch_io_reserve_memtype_wc arch_io_reserve_memtype_wc
 #endif
+
+extern bool arch_memremap_can_ram_remap(resource_size_t offset,
+					unsigned long size,
+					unsigned long flags);
+#define arch_memremap_can_ram_remap arch_memremap_can_ram_remap
+
+extern bool phys_mem_access_encrypted(unsigned long phys_addr,
+				      unsigned long size);
 
 #endif /* _ASM_X86_IO_H */
