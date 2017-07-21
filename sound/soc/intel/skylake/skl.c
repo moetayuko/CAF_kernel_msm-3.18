@@ -882,6 +882,11 @@ static struct sst_codecs skl_codecs = {
 	.codecs = {"NAU88L25"}
 };
 
+static struct sst_codecs skl_chell_codecs = {
+	.num_codecs = 1,
+	.codecs = {"10508825"}
+};
+
 static struct sst_codecs kbl_codecs = {
 	.num_codecs = 1,
 	.codecs = {"NAU88L25"}
@@ -915,6 +920,14 @@ static struct sst_acpi_mach sst_skl_devdata[] = {
 		.fw_filename = "intel/dsp_fw_release.bin",
 		.machine_quirk = sst_acpi_codec_list,
 		.quirk_data = &skl_codecs,
+		.pdata = &skl_dmic_data
+	},
+	{
+		.id = "INT343B",
+		.drv_name = "skl_n88l25_s4567",
+		.fw_filename = "intel/dsp_fw_release.bin",
+		.machine_quirk = sst_acpi_codec_list,
+		.quirk_data = &skl_chell_codecs,
 		.pdata = &skl_dmic_data
 	},
 	{
