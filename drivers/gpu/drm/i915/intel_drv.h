@@ -941,13 +941,17 @@ struct intel_dp {
 	uint8_t psr_dpcd[EDP_PSR_RECEIVER_CAP_SIZE];
 	uint8_t downstream_ports[DP_MAX_DOWNSTREAM_PORTS];
 	uint8_t edp_dpcd[EDP_DISPLAY_CTL_CAP_SIZE];
-	/* sink rates as reported by DP_SUPPORTED_LINK_RATES */
-	uint8_t num_sink_rates;
+	/* source rates */
+	int num_source_rates;
+	const int *source_rates;
+	/* sink rates as reported by DP_MAX_LINK_RATE/DP_SUPPORTED_LINK_RATES */
+	int num_sink_rates;
 	int sink_rates[DP_MAX_SUPPORTED_RATES];
+	bool use_rate_select;
 	/* Max lane count for the sink as per DPCD registers */
 	uint8_t max_sink_lane_count;
 	/* Max link BW for the sink as per DPCD registers */
-	int max_sink_link_bw;
+	int max_sink_link_rate;
 	/* sink or branch descriptor */
 	struct drm_dp_desc desc;
 	struct drm_dp_aux aux;
