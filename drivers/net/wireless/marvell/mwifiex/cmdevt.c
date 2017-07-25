@@ -26,6 +26,8 @@
 #include "11n.h"
 #include "11ac.h"
 
+static void mwifiex_cancel_pending_ioctl(struct mwifiex_adapter *adapter);
+
 /*
  * This function initializes a command node.
  *
@@ -1075,7 +1077,7 @@ mwifiex_cancel_all_pending_cmd(struct mwifiex_adapter *adapter)
  * In case of scan commands, all pending commands in scan pending queue
  * are cancelled.
  */
-void
+static void
 mwifiex_cancel_pending_ioctl(struct mwifiex_adapter *adapter)
 {
 	struct cmd_ctrl_node *cmd_node = NULL;
