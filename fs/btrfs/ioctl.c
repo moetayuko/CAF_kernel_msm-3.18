@@ -37,7 +37,7 @@
 #include <linux/bit_spinlock.h>
 #include <linux/security.h>
 #include <linux/xattr.h>
-#include <linux/vmalloc.h>
+#include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/blkdev.h>
 #include <linux/uuid.h>
@@ -154,37 +154,6 @@ void btrfs_update_iflags(struct inode *inode)
 	set_mask_bits(&inode->i_flags,
 		      S_SYNC | S_APPEND | S_IMMUTABLE | S_NOATIME | S_DIRSYNC,
 		      new_fl);
-}
-
-/*
- * Inherit flags from the parent inode.
- *
- * Currently only the compression flags and the cow flags are inherited.
- */
-void btrfs_inherit_iflags(struct inode *inode, struct inode *dir)
-{
-	unsigned int flags;
-
-	if (!dir)
-		return;
-
-	flags = BTRFS_I(dir)->flags;
-
-	if (flags & BTRFS_INODE_NOCOMPRESS) {
-		BTRFS_I(inode)->flags &= ~BTRFS_INODE_COMPRESS;
-		BTRFS_I(inode)->flags |= BTRFS_INODE_NOCOMPRESS;
-	} else if (flags & BTRFS_INODE_COMPRESS) {
-		BTRFS_I(inode)->flags &= ~BTRFS_INODE_NOCOMPRESS;
-		BTRFS_I(inode)->flags |= BTRFS_INODE_COMPRESS;
-	}
-
-	if (flags & BTRFS_INODE_NODATACOW) {
-		BTRFS_I(inode)->flags |= BTRFS_INODE_NODATACOW;
-		if (S_ISREG(inode->i_mode))
-			BTRFS_I(inode)->flags |= BTRFS_INODE_NODATASUM;
-	}
-
-	btrfs_update_iflags(inode);
 }
 
 static int btrfs_ioctl_getflags(struct file *file, void __user *arg)
@@ -689,7 +658,7 @@ static int create_snapshot(struct btrfs_root *root, struct inode *dir,
 	if (ret)
 		goto dec_and_free;
 
-	btrfs_wait_ordered_extents(root, -1, 0, (u64)-1);
+	btrfs_wait_ordered_extents(root, U64_MAX, 0, (u64)-1);
 
 	btrfs_init_block_rsv(&pending_snapshot->block_rsv,
 			     BTRFS_BLOCK_RSV_TEMP);
@@ -1127,6 +1096,7 @@ static int cluster_pages_for_defrag(struct inode *inode,
 	struct btrfs_ordered_extent *ordered;
 	struct extent_state *cached_state = NULL;
 	struct extent_io_tree *tree;
+	struct extent_changeset *data_reserved = NULL;
 	gfp_t mask = btrfs_alloc_write_mask(inode->i_mapping);
 
 	file_end = (isize - 1) >> PAGE_SHIFT;
@@ -1135,7 +1105,7 @@ static int cluster_pages_for_defrag(struct inode *inode,
 
 	page_cnt = min_t(u64, (u64)num_pages, (u64)file_end - start_index + 1);
 
-	ret = btrfs_delalloc_reserve_space(inode,
+	ret = btrfs_delalloc_reserve_space(inode, &data_reserved,
 			start_index << PAGE_SHIFT,
 			page_cnt << PAGE_SHIFT);
 	if (ret)
@@ -1226,7 +1196,7 @@ again:
 		spin_lock(&BTRFS_I(inode)->lock);
 		BTRFS_I(inode)->outstanding_extents++;
 		spin_unlock(&BTRFS_I(inode)->lock);
-		btrfs_delalloc_release_space(inode,
+		btrfs_delalloc_release_space(inode, data_reserved,
 				start_index << PAGE_SHIFT,
 				(page_cnt - i_done) << PAGE_SHIFT);
 	}
@@ -1247,15 +1217,17 @@ again:
 		unlock_page(pages[i]);
 		put_page(pages[i]);
 	}
+	extent_changeset_free(data_reserved);
 	return i_done;
 out:
 	for (i = 0; i < i_done; i++) {
 		unlock_page(pages[i]);
 		put_page(pages[i]);
 	}
-	btrfs_delalloc_release_space(inode,
+	btrfs_delalloc_release_space(inode, data_reserved,
 			start_index << PAGE_SHIFT,
 			page_cnt << PAGE_SHIFT);
+	extent_changeset_free(data_reserved);
 	return ret;
 
 }
@@ -1301,20 +1273,19 @@ int btrfs_defrag_file(struct inode *inode, struct file *file,
 		extent_thresh = SZ_256K;
 
 	/*
-	 * if we were not given a file, allocate a readahead
-	 * context
+	 * If we were not given a file, allocate a readahead context. As
+	 * readahead is just an optimization, defrag will work without it so
+	 * we don't error out.
 	 */
 	if (!file) {
-		ra = kzalloc(sizeof(*ra), GFP_NOFS);
-		if (!ra)
-			return -ENOMEM;
-		file_ra_state_init(ra, inode->i_mapping);
+		ra = kzalloc(sizeof(*ra), GFP_KERNEL);
+		if (ra)
+			file_ra_state_init(ra, inode->i_mapping);
 	} else {
 		ra = &file->f_ra;
 	}
 
-	pages = kmalloc_array(max_cluster, sizeof(struct page *),
-			GFP_NOFS);
+	pages = kmalloc_array(max_cluster, sizeof(struct page *), GFP_KERNEL);
 	if (!pages) {
 		ret = -ENOMEM;
 		goto out_ra;
@@ -1392,8 +1363,9 @@ int btrfs_defrag_file(struct inode *inode, struct file *file,
 
 		if (i + cluster > ra_index) {
 			ra_index = max(i, ra_index);
-			btrfs_force_ra(inode->i_mapping, ra, file, ra_index,
-				       cluster);
+			if (ra)
+				btrfs_force_ra(inode->i_mapping, ra, file,
+						ra_index, cluster);
 			ra_index += cluster;
 		}
 
@@ -1597,8 +1569,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 		goto out_free;
 	}
 
-	new_size = div_u64(new_size, fs_info->sectorsize);
-	new_size *= fs_info->sectorsize;
+	new_size = round_down(new_size, fs_info->sectorsize);
 
 	btrfs_info_in_rcu(fs_info, "new size for %s is %llu",
 			  rcu_str_deref(device->name), new_size);
@@ -3996,10 +3967,21 @@ static long btrfs_ioctl_trans_start(struct file *file)
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_trans_handle *trans;
 	int ret;
+	static bool warned = false;
 
 	ret = -EPERM;
 	if (!capable(CAP_SYS_ADMIN))
 		goto out;
+
+	if (!warned) {
+		btrfs_warn(fs_info,
+			"Userspace transaction mechanism is considered "
+			"deprecated and slated to be removed in 4.17. "
+			"If you have a valid use case please "
+			"speak up on the mailing list");
+		WARN_ON(1);
+		warned = true;
+	}
 
 	ret = -EINPROGRESS;
 	if (file->private_data)
@@ -4588,7 +4570,7 @@ static long btrfs_ioctl_logical_to_ino(struct btrfs_fs_info *fs_info,
 
 out:
 	btrfs_free_path(path);
-	vfree(inodes);
+	kvfree(inodes);
 	kfree(loi);
 
 	return ret;
@@ -4897,7 +4879,6 @@ static long btrfs_ioctl_qgroup_assign(struct file *file, void __user *arg)
 		goto out;
 	}
 
-	/* FIXME: check if the IDs really exist */
 	if (sa->assign) {
 		ret = btrfs_add_qgroup_relation(trans, fs_info,
 						sa->src, sa->dst);
@@ -4956,7 +4937,6 @@ static long btrfs_ioctl_qgroup_create(struct file *file, void __user *arg)
 		goto out;
 	}
 
-	/* FIXME: check if the IDs really exist */
 	if (sa->create) {
 		ret = btrfs_create_qgroup(trans, fs_info, sa->qgroupid);
 	} else {
@@ -5010,7 +4990,6 @@ static long btrfs_ioctl_qgroup_limit(struct file *file, void __user *arg)
 		qgroupid = root->root_key.objectid;
 	}
 
-	/* FIXME: check if the IDs really exist */
 	ret = btrfs_limit_qgroup(trans, fs_info, qgroupid, &sa->lim);
 
 	err = btrfs_end_transaction(trans);
