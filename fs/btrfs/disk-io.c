@@ -1343,7 +1343,7 @@ static void __setup_root(struct btrfs_root *root, struct btrfs_fs_info *fs_info,
 	atomic_set(&root->log_batch, 0);
 	atomic_set(&root->orphan_inodes, 0);
 	refcount_set(&root->refs, 1);
-	atomic_set(&root->will_be_snapshoted, 0);
+	atomic_set(&root->will_be_snapshotted, 0);
 	atomic64_set(&root->qgroup_meta_rsv, 0);
 	root->log_transid = 0;
 	root->log_transid_committed = -1;
@@ -3942,7 +3942,6 @@ void close_ctree(struct btrfs_fs_info *fs_info)
 	__btrfs_free_block_rsv(root->orphan_block_rsv);
 	root->orphan_block_rsv = NULL;
 
-	mutex_lock(&fs_info->chunk_mutex);
 	while (!list_empty(&fs_info->pinned_chunks)) {
 		struct extent_map *em;
 
@@ -3951,7 +3950,6 @@ void close_ctree(struct btrfs_fs_info *fs_info)
 		list_del_init(&em->list);
 		free_extent_map(em);
 	}
-	mutex_unlock(&fs_info->chunk_mutex);
 }
 
 int btrfs_buffer_uptodate(struct extent_buffer *buf, u64 parent_transid,

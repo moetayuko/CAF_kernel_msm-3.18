@@ -1258,7 +1258,7 @@ struct btrfs_root {
 	 */
 	int send_in_progress;
 	struct btrfs_subvolume_writers *subv_writers;
-	atomic_t will_be_snapshoted;
+	atomic_t will_be_snapshotted;
 
 	/* For qgroup metadata space reserve */
 	atomic64_t qgroup_meta_rsv;
@@ -2778,8 +2778,8 @@ int btrfs_init_space_info(struct btrfs_fs_info *fs_info);
 int btrfs_delayed_refs_qgroup_accounting(struct btrfs_trans_handle *trans,
 					 struct btrfs_fs_info *fs_info);
 int __get_raid_index(u64 flags);
-int btrfs_start_write_no_snapshoting(struct btrfs_root *root);
-void btrfs_end_write_no_snapshoting(struct btrfs_root *root);
+int btrfs_start_write_no_snapshotting(struct btrfs_root *root);
+void btrfs_end_write_no_snapshotting(struct btrfs_root *root);
 void btrfs_wait_for_snapshot_creation(struct btrfs_root *root);
 void check_system_chunk(struct btrfs_trans_handle *trans,
 			struct btrfs_fs_info *fs_info, const u64 type);
@@ -3140,21 +3140,6 @@ struct extent_map *btrfs_get_extent_fiemap(struct btrfs_inode *inode,
 noinline int can_nocow_extent(struct inode *inode, u64 offset, u64 *len,
 			      u64 *orig_start, u64 *orig_block_len,
 			      u64 *ram_bytes);
-
-/* RHEL and EL kernels have a patch that renames PG_checked to FsMisc */
-#if defined(ClearPageFsMisc) && !defined(ClearPageChecked)
-#define ClearPageChecked ClearPageFsMisc
-#define SetPageChecked SetPageFsMisc
-#define PageChecked PageFsMisc
-#endif
-
-/* This forces readahead on a given range of bytes in an inode */
-static inline void btrfs_force_ra(struct address_space *mapping,
-				  struct file_ra_state *ra, struct file *file,
-				  pgoff_t offset, unsigned long req_size)
-{
-	page_cache_sync_readahead(mapping, ra, file, offset, req_size);
-}
 
 struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry);
 int btrfs_set_inode_index(struct btrfs_inode *dir, u64 *index);
