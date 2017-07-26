@@ -9,9 +9,11 @@
 #include "../../util/symbol.h"
 #include "../../util/evsel.h"
 #include "../../util/config.h"
+#include "../../util/evlist.h"
 #include <inttypes.h>
 #include <pthread.h>
 #include <linux/kernel.h>
+#include <linux/string.h>
 #include <sys/ttydefaults.h>
 
 struct disasm_line_samples {
@@ -272,6 +274,25 @@ static bool disasm_line__is_valid_jump(struct disasm_line *dl, struct symbol *sy
 	return true;
 }
 
+static bool is_fused(struct annotate_browser *ab, struct disasm_line *cursor)
+{
+	struct disasm_line *pos = list_prev_entry(cursor, node);
+	const char *name;
+
+	if (!pos)
+		return false;
+
+	if (ins__is_lock(&pos->ins))
+		name = pos->ops.locked.ins.name;
+	else
+		name = pos->ins.name;
+
+	if (!name || !cursor->ins.name)
+		return false;
+
+	return ins__is_fused(ab->arch, name, cursor->ins.name);
+}
+
 static void annotate_browser__draw_current_jump(struct ui_browser *browser)
 {
 	struct annotate_browser *ab = container_of(browser, struct annotate_browser, b);
@@ -307,6 +328,13 @@ static void annotate_browser__draw_current_jump(struct ui_browser *browser)
 	ui_browser__set_color(browser, HE_COLORSET_JUMP_ARROWS);
 	__ui_browser__line_arrow(browser, pcnt_width + 2 + ab->addr_width,
 				 from, to);
+
+	if (is_fused(ab, cursor)) {
+		ui_browser__mark_fused(browser,
+				       pcnt_width + 3 + ab->addr_width,
+				       from - 1,
+				       to > from ? true : false);
+	}
 }
 
 static unsigned int annotate_browser__refresh(struct ui_browser *browser)
@@ -422,14 +450,14 @@ static void annotate_browser__calc_percent(struct annotate_browser *browser,
 		next = disasm__get_next_ip_line(&notes->src->source, pos);
 
 		for (i = 0; i < browser->nr_events; i++) {
-			u64 nr_samples;
+			struct sym_hist_entry sample;
 
 			bpos->samples[i].percent = disasm__calc_percent(notes,
 						evsel->idx + i,
 						pos->offset,
 						next ? next->offset : len,
-						&path, &nr_samples);
-			bpos->samples[i].nr = nr_samples;
+						&path, &sample);
+			bpos->samples[i].nr = sample.nr_samples;
 
 			if (max_percent < bpos->samples[i].percent)
 				max_percent = bpos->samples[i].percent;
@@ -1074,7 +1102,8 @@ int symbol__tui_annotate(struct symbol *sym, struct map *map,
 	}
 
 	err = symbol__disassemble(sym, map, perf_evsel__env_arch(evsel),
-				  sizeof_bdl, &browser.arch);
+				  sizeof_bdl, &browser.arch,
+				  perf_evsel__env_cpuid(evsel));
 	if (err) {
 		char msg[BUFSIZ];
 		symbol__strerror_disassemble(sym, map, err, msg, sizeof(msg));
@@ -1170,7 +1199,7 @@ static int annotate__config(const char *var, const char *value,
 	struct annotate_config *cfg;
 	const char *name;
 
-	if (prefixcmp(var, "annotate.") != 0)
+	if (!strstarts(var, "annotate."))
 		return 0;
 
 	name = var + 9;
