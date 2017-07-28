@@ -185,6 +185,9 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 #endif
 
 /* Unreachable code */
+#ifndef ASM_UNREACHABLE
+# define ASM_UNREACHABLE
+#endif
 #ifndef unreachable
 # define unreachable() do { } while (1)
 #endif
@@ -473,6 +476,10 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
 
 #ifndef __visible
 #define __visible
+#endif
+
+#ifndef __nostackprotector
+# define __nostackprotector
 #endif
 
 /*
