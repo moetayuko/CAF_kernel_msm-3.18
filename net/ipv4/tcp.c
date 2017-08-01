@@ -388,6 +388,19 @@ static int retrans_to_secs(u8 retrans, int timeout, int rto_max)
 	return period;
 }
 
+static u64 tcp_compute_delivery_rate(const struct tcp_sock *tp)
+{
+	u32 rate = READ_ONCE(tp->rate_delivered);
+	u32 intv = READ_ONCE(tp->rate_interval_us);
+	u64 rate64 = 0;
+
+	if (rate && intv) {
+		rate64 = (u64)rate * tp->mss_cache * USEC_PER_SEC;
+		do_div(rate64, intv);
+	}
+	return rate64;
+}
+
 /* Address-family independent initialization for a tcp_sock.
  *
  * NOTE: A lot of things set to zero explicitly by call to
@@ -400,7 +413,6 @@ void tcp_init_sock(struct sock *sk)
 
 	tp->out_of_order_queue = RB_ROOT;
 	tcp_init_xmit_timers(sk);
-	tcp_prequeue_init(tp);
 	INIT_LIST_HEAD(&tp->tsq_node);
 
 	icsk->icsk_rto = TCP_TIMEOUT_INIT;
@@ -1525,20 +1537,6 @@ static void tcp_cleanup_rbuf(struct sock *sk, int copied)
 		tcp_send_ack(sk);
 }
 
-static void tcp_prequeue_process(struct sock *sk)
-{
-	struct sk_buff *skb;
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
-
-	while ((skb = __skb_dequeue(&tp->ucopy.prequeue)) != NULL)
-		sk_backlog_rcv(sk, skb);
-
-	/* Clear memory counter. */
-	tp->ucopy.memory = 0;
-}
-
 static struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 {
 	struct sk_buff *skb;
@@ -1671,7 +1669,6 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 	int err;
 	int target;		/* Read at least this many bytes */
 	long timeo;
-	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb, *last;
 	u32 urg_hole = 0;
 
@@ -1806,51 +1803,6 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 
 		tcp_cleanup_rbuf(sk, copied);
 
-		if (!sysctl_tcp_low_latency && tp->ucopy.task == user_recv) {
-			/* Install new reader */
-			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
-				user_recv = current;
-				tp->ucopy.task = user_recv;
-				tp->ucopy.msg = msg;
-			}
-
-			tp->ucopy.len = len;
-
-			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-				!(flags & (MSG_PEEK | MSG_TRUNC)));
-
-			/* Ugly... If prequeue is not empty, we have to
-			 * process it before releasing socket, otherwise
-			 * order will be broken at second iteration.
-			 * More elegant solution is required!!!
-			 *
-			 * Look: we have the following (pseudo)queues:
-			 *
-			 * 1. packets in flight
-			 * 2. backlog
-			 * 3. prequeue
-			 * 4. receive_queue
-			 *
-			 * Each queue can be processed only if the next ones
-			 * are empty. At this point we have empty receive_queue.
-			 * But prequeue _can_ be not empty after 2nd iteration,
-			 * when we jumped to start of loop because backlog
-			 * processing added something to receive_queue.
-			 * We cannot release_sock(), because backlog contains
-			 * packets arrived _after_ prequeued ones.
-			 *
-			 * Shortly, algorithm is clear --- to process all
-			 * the queues in order. We could make it more directly,
-			 * requeueing packets from backlog to prequeue, if
-			 * is not empty. It is more elegant, but eats cycles,
-			 * unfortunately.
-			 */
-			if (!skb_queue_empty(&tp->ucopy.prequeue))
-				goto do_prequeue;
-
-			/* __ Set realtime policy in scheduler __ */
-		}
-
 		if (copied >= target) {
 			/* Do not sleep, just process backlog. */
 			release_sock(sk);
@@ -1859,31 +1811,6 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 			sk_wait_data(sk, &timeo, last);
 		}
 
-		if (user_recv) {
-			int chunk;
-
-			/* __ Restore normal policy in scheduler __ */
-
-			chunk = len - tp->ucopy.len;
-			if (chunk != 0) {
-				NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
-				len -= chunk;
-				copied += chunk;
-			}
-
-			if (tp->rcv_nxt == tp->copied_seq &&
-			    !skb_queue_empty(&tp->ucopy.prequeue)) {
-do_prequeue:
-				tcp_prequeue_process(sk);
-
-				chunk = len - tp->ucopy.len;
-				if (chunk != 0) {
-					NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-					len -= chunk;
-					copied += chunk;
-				}
-			}
-		}
 		if ((flags & MSG_PEEK) &&
 		    (peek_seq - copied - urg_hole != tp->copied_seq)) {
 			net_dbg_ratelimited("TCP(%s:%d): Application bug, race in MSG_PEEK\n",
@@ -1934,10 +1861,8 @@ do_prequeue:
 		tcp_rcv_space_adjust(sk);
 
 skip_copy:
-		if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
+		if (tp->urg_data && after(tp->copied_seq, tp->urg_seq))
 			tp->urg_data = 0;
-			tcp_fast_path_check(sk);
-		}
 		if (used + offset < skb->len)
 			continue;
 
@@ -1954,25 +1879,6 @@ skip_copy:
 			sk_eat_skb(sk, skb);
 		break;
 	} while (len > 0);
-
-	if (user_recv) {
-		if (!skb_queue_empty(&tp->ucopy.prequeue)) {
-			int chunk;
-
-			tp->ucopy.len = copied > 0 ? len : 0;
-
-			tcp_prequeue_process(sk);
-
-			if (copied > 0 && (chunk = len - tp->ucopy.len) != 0) {
-				NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-				len -= chunk;
-				copied += chunk;
-			}
-		}
-
-		tp->ucopy.task = NULL;
-		tp->ucopy.len = 0;
-	}
 
 	/* According to UNIX98, msg_name/msg_namelen are ignored
 	 * on connected socket. I was just happy when found this 8) --ANK
@@ -2823,7 +2729,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 {
 	const struct tcp_sock *tp = tcp_sk(sk); /* iff sk_type == SOCK_STREAM */
 	const struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 now, intv;
+	u32 now;
 	u64 rate64;
 	bool slow;
 	u32 rate;
@@ -2922,13 +2828,9 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_data_segs_out = tp->data_segs_out;
 
 	info->tcpi_delivery_rate_app_limited = tp->rate_app_limited ? 1 : 0;
-	rate = READ_ONCE(tp->rate_delivered);
-	intv = READ_ONCE(tp->rate_interval_us);
-	if (rate && intv) {
-		rate64 = (u64)rate * tp->mss_cache * USEC_PER_SEC;
-		do_div(rate64, intv);
+	rate64 = tcp_compute_delivery_rate(tp);
+	if (rate64)
 		info->tcpi_delivery_rate = rate64;
-	}
 	unlock_sock_fast(sk, slow);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
@@ -2938,8 +2840,12 @@ struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *stats;
 	struct tcp_info info;
+	u64 rate64;
+	u32 rate;
 
-	stats = alloc_skb(5 * nla_total_size_64bit(sizeof(u64)), GFP_ATOMIC);
+	stats = alloc_skb(7 * nla_total_size_64bit(sizeof(u64)) +
+			  3 * nla_total_size(sizeof(u32)) +
+			  2 * nla_total_size(sizeof(u8)), GFP_ATOMIC);
 	if (!stats)
 		return NULL;
 
@@ -2954,6 +2860,20 @@ struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk)
 			  tp->data_segs_out, TCP_NLA_PAD);
 	nla_put_u64_64bit(stats, TCP_NLA_TOTAL_RETRANS,
 			  tp->total_retrans, TCP_NLA_PAD);
+
+	rate = READ_ONCE(sk->sk_pacing_rate);
+	rate64 = rate != ~0U ? rate : ~0ULL;
+	nla_put_u64_64bit(stats, TCP_NLA_PACING_RATE, rate64, TCP_NLA_PAD);
+
+	rate64 = tcp_compute_delivery_rate(tp);
+	nla_put_u64_64bit(stats, TCP_NLA_DELIVERY_RATE, rate64, TCP_NLA_PAD);
+
+	nla_put_u32(stats, TCP_NLA_SND_CWND, tp->snd_cwnd);
+	nla_put_u32(stats, TCP_NLA_REORDERING, tp->reordering);
+	nla_put_u32(stats, TCP_NLA_MIN_RTT, tcp_min_rtt(tp));
+
+	nla_put_u8(stats, TCP_NLA_RECUR_RETRANS, inet_csk(sk)->icsk_retransmits);
+	nla_put_u8(stats, TCP_NLA_DELIVERY_RATE_APP_LMT, !!tp->rate_app_limited);
 	return stats;
 }
 

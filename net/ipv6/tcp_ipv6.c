@@ -1296,7 +1296,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 			}
 		}
 
-		tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len);
+		tcp_rcv_established(sk, skb, tcp_hdr(skb));
 		if (opt_skb)
 			goto ipv6_pktoptions;
 		return 0;
@@ -1505,8 +1505,7 @@ process:
 	tcp_segs_in(tcp_sk(sk), skb);
 	ret = 0;
 	if (!sock_owned_by_user(sk)) {
-		if (!tcp_prequeue(sk, skb))
-			ret = tcp_v6_do_rcv(sk, skb);
+		ret = tcp_v6_do_rcv(sk, skb);
 	} else if (tcp_add_backlog(sk, skb)) {
 		goto discard_and_relse;
 	}
@@ -1945,7 +1944,7 @@ struct proto tcpv6_prot = {
 	.diag_destroy		= tcp_abort,
 };
 
-static struct inet6_protocol tcpv6_protocol = {
+static const struct inet6_protocol tcpv6_protocol = {
 	.early_demux	=	tcp_v6_early_demux,
 	.early_demux_handler =  tcp_v6_early_demux,
 	.handler	=	tcp_v6_rcv,
