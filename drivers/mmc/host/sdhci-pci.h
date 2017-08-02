@@ -91,6 +91,7 @@ struct sdhci_pci_slot {
 
 	int			cd_idx;
 	bool			cd_override_level;
+	bool			cd_wake;
 
 	void (*hw_reset)(struct sdhci_host *host);
 	unsigned long		private[0] ____cacheline_aligned;
