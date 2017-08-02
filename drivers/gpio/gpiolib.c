@@ -1201,6 +1201,14 @@ int gpiochip_add_data(struct gpio_chip *chip, void *data)
 		struct gpio_desc *desc = &gdev->descs[i];
 
 		desc->gdev = gdev;
+
+		if (chip->request) {
+			status = chip->request(chip, i);
+			if (status < 0)
+				/* The GPIO is unavailable, so skip it */
+				continue;
+		}
+
 		/*
 		 * REVISIT: most hardware initializes GPIOs as inputs
 		 * (often with pullups enabled) so power usage is
@@ -1226,6 +1234,9 @@ int gpiochip_add_data(struct gpio_chip *chip, void *data)
 			 */
 			set_bit(FLAG_IS_OUT, &desc->flags);
 		}
+
+		if (chip->free)
+			chip->free(chip, i);
 	}
 
 #ifdef CONFIG_PINCTRL
@@ -1604,6 +1615,9 @@ static int gpiochip_irq_map(struct irq_domain *d, unsigned int irq,
 {
 	struct gpio_chip *chip = d->host_data;
 
+	if (!gpiochip_irqchip_irq_valid(chip, hwirq))
+		return -ENXIO;
+
 	irq_set_chip_data(irq, chip);
 	/*
 	 * This lock class tells lockdep that GPIO irqs are in a different
@@ -1670,7 +1684,9 @@ static void gpiochip_irq_relres(struct irq_data *d)
 
 static int gpiochip_to_irq(struct gpio_chip *chip, unsigned offset)
 {
-	return irq_find_mapping(chip->irqdomain, offset);
+	if (!gpiochip_irqchip_irq_valid(chip, offset))
+		return -ENXIO;
+	return irq_create_mapping(chip->irqdomain, offset);
 }
 
 /**
@@ -1746,9 +1762,6 @@ int gpiochip_irqchip_add_key(struct gpio_chip *gpiochip,
 			     struct lock_class_key *lock_key)
 {
 	struct device_node *of_node;
-	bool irq_base_set = false;
-	unsigned int offset;
-	unsigned irq_base = 0;
 
 	if (!gpiochip || !irqchip)
 		return -EINVAL;
@@ -1803,25 +1816,6 @@ int gpiochip_irqchip_add_key(struct gpio_chip *gpiochip,
 	    !irqchip->irq_release_resources) {
 		irqchip->irq_request_resources = gpiochip_irq_reqres;
 		irqchip->irq_release_resources = gpiochip_irq_relres;
-	}
-
-	/*
-	 * Prepare the mapping since the irqchip shall be orthogonal to
-	 * any gpiochip calls. If the first_irq was zero, this is
-	 * necessary to allocate descriptors for all IRQs.
-	 */
-	for (offset = 0; offset < gpiochip->ngpio; offset++) {
-		if (!gpiochip_irqchip_irq_valid(gpiochip, offset))
-			continue;
-		irq_base = irq_create_mapping(gpiochip->irqdomain, offset);
-		if (!irq_base_set) {
-			/*
-			 * Store the base into the gpiochip to be used when
-			 * unmapping the irqs.
-			 */
-			gpiochip->irq_base = irq_base;
-			irq_base_set = true;
-		}
 	}
 
 	acpi_gpiochip_request_interrupts(gpiochip);
