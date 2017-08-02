@@ -107,39 +107,27 @@ static int iic_tpm_read(u8 addr, u8 *buffer, size_t len)
 		.len = len,
 		.buf = buffer
 	};
-	struct i2c_msg msgs[] = {msg1, msg2};
 
 	int rc = 0;
 	int count;
+	unsigned int adapterlimit = len;
 
 	/* Lock the adapter for the duration of the whole sequence. */
 	if (!tpm_dev.client->adapter->algo->master_xfer)
 		return -EOPNOTSUPP;
 	i2c_lock_adapter(tpm_dev.client->adapter);
 
-	if (tpm_dev.chip_type == SLB9645) {
-		/* use a combined read for newer chips
-		 * unfortunately the smbus functions are not suitable due to
-		 * the 32 byte limit of the smbus.
-		 * retries should usually not be needed, but are kept just to
-		 * be on the safe side.
-		 */
-		for (count = 0; count < MAX_COUNT; count++) {
-			rc = __i2c_transfer(tpm_dev.client->adapter, msgs, 2);
-			if (rc > 0)
-				break;	/* break here to skip sleep */
-			usleep_range(SLEEP_DURATION_LOW, SLEEP_DURATION_HI);
-		}
-	} else {
+	/* Expect to send one command message and one data message, but
+	 * support looping over each or both if necessary.
+	 */
+	while (len > 0) {
 		/* slb9635 protocol should work in all cases */
 		for (count = 0; count < MAX_COUNT; count++) {
 			rc = __i2c_transfer(tpm_dev.client->adapter, &msg1, 1);
 			if (rc > 0)
-				break;	/* break here to skip sleep */
-
+				break;
 			usleep_range(SLEEP_DURATION_LOW, SLEEP_DURATION_HI);
 		}
-
 		if (rc <= 0)
 			goto out;
 
@@ -148,11 +136,31 @@ static int iic_tpm_read(u8 addr, u8 *buffer, size_t len)
 		 * retrieving the data
 		 */
 		for (count = 0; count < MAX_COUNT; count++) {
+			unsigned int msglen = msg2.len =
+					min_t(unsigned int, adapterlimit, len);
 			usleep_range(SLEEP_DURATION_LOW, SLEEP_DURATION_HI);
 			rc = __i2c_transfer(tpm_dev.client->adapter, &msg2, 1);
-			if (rc > 0)
+			if (rc > 0) {
+				/* Since len is unsigned, make doubly sure we
+				 * do not underflow it.
+				 */
+				if (msglen > len)
+					len = 0;
+				else
+					len -= msglen;
+				msg2.buf += msglen;
 				break;
+			}
+			/* If the I2C adapter rejected the request,
+			 * try a smaller chunk.
+			 */
+			if (rc == -EINVAL) {
+				adapterlimit = (adapterlimit + 1) / 2;
+				adapterlimit = max(adapterlimit, 32U);
+			}
 		}
+		if (rc <= 0)
+			goto out;
 	}
 
 out:
