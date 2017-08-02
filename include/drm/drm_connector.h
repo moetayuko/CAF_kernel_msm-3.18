@@ -964,6 +964,8 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
 void drm_mode_connector_set_link_status_property(struct drm_connector *connector,
 						 uint64_t link_status);
 
+const char *drm_get_content_protection_name(int val);
+
 /**
  * struct drm_tile_group - Tile group metadata
  * @refcount: reference count
