@@ -66,6 +66,7 @@
 #include <linux/kthread.h>
 #include <linux/memcontrol.h>
 #include <linux/ftrace.h>
+#include <linux/low-mem-notify.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -4014,6 +4015,11 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 		return NULL;
 
 	finalise_ac(gfp_mask, order, &ac);
+
+#ifdef CONFIG_LOW_MEM_NOTIFY
+	if (is_low_mem_situation())
+		low_mem_notify();
+#endif
 
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
