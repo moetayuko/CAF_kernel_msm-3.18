@@ -179,14 +179,14 @@ static struct armada_37xx_pin_group armada_37xx_sb_groups[] = {
 	PIN_GRP("mii_col", 23, 1, BIT(8), "mii", "mii_err"),
 };
 
-const struct armada_37xx_pin_data armada_37xx_pin_nb = {
+static const struct armada_37xx_pin_data armada_37xx_pin_nb = {
 	.nr_pins = 36,
 	.name = "GPIO1",
 	.groups = armada_37xx_nb_groups,
 	.ngroups = ARRAY_SIZE(armada_37xx_nb_groups),
 };
 
-const struct armada_37xx_pin_data armada_37xx_pin_sb = {
+static const struct armada_37xx_pin_data armada_37xx_pin_sb = {
 	.nr_pins = 29,
 	.name = "GPIO2",
 	.groups = armada_37xx_sb_groups,
