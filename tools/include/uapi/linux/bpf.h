@@ -104,6 +104,7 @@ enum bpf_map_type {
 	BPF_MAP_TYPE_LPM_TRIE,
 	BPF_MAP_TYPE_ARRAY_OF_MAPS,
 	BPF_MAP_TYPE_HASH_OF_MAPS,
+	BPF_MAP_TYPE_DEVMAP,
 };
 
 enum bpf_prog_type {
@@ -591,7 +592,8 @@ union bpf_attr {
 	FN(get_socket_uid),		\
 	FN(set_hash),			\
 	FN(setsockopt),			\
-	FN(skb_adjust_room),
+	FN(skb_adjust_room),		\
+	FN(redirect_map),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call

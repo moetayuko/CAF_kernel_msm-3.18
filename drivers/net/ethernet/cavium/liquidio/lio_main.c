@@ -39,10 +39,14 @@ MODULE_AUTHOR("Cavium Networks, <support@cavium.com>");
 MODULE_DESCRIPTION("Cavium LiquidIO Intelligent Server Adapter Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(LIQUIDIO_VERSION);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210SV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210NV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_410NV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_23XX_NAME LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210SV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210NV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_410NV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_23XX_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
 
 static int ddr_timeout = 10000;
 module_param(ddr_timeout, int, 0644);
@@ -58,6 +62,21 @@ MODULE_PARM_DESC(debug, "NETIF_MSG debug bits");
 static char fw_type[LIO_MAX_FW_TYPE_LEN];
 module_param_string(fw_type, fw_type, sizeof(fw_type), 0000);
 MODULE_PARM_DESC(fw_type, "Type of firmware to be loaded. Default \"nic\"");
+
+static u32 console_bitmask;
+module_param(console_bitmask, int, 0644);
+MODULE_PARM_DESC(console_bitmask,
+		 "Bitmask indicating which consoles have debug output redirected to syslog.");
+
+/**
+ * \brief determines if a given console has debug enabled.
+ * @param console console to check
+ * @returns  1 = enabled. 0 otherwise
+ */
+int octeon_console_debug_enabled(u32 console)
+{
+	return (console_bitmask >> (console)) & 0x1;
+}
 
 static int ptp_enable = 1;
 
@@ -1825,6 +1844,11 @@ static int octeon_chip_specific_setup(struct octeon_device *oct)
 	case OCTEON_CN23XX_PCIID_PF:
 		oct->chip_id = OCTEON_CN23XX_PF_VID;
 		ret = setup_cn23xx_octeon_pf_device(oct);
+#ifdef CONFIG_PCI_IOV
+		if (!ret)
+			pci_sriov_set_totalvfs(oct->pci_dev,
+					       oct->sriov_info.max_vfs);
+#endif
 		s = "CN23XX";
 		break;
 
@@ -2544,8 +2568,8 @@ static inline int setup_io_queues(struct octeon_device *octeon_dev,
 {
 	struct octeon_droq_ops droq_ops;
 	struct net_device *netdev;
-	static int cpu_id;
-	static int cpu_id_modulus;
+	int cpu_id;
+	int cpu_id_modulus;
 	struct octeon_droq *droq;
 	struct napi_struct *napi;
 	int q, q_no, retval = 0;
