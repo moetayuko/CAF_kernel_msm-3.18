@@ -107,6 +107,7 @@ struct rsnd_ssi {
 	(rsnd_ssi_multi_slaves(io) & (1 << rsnd_mod_id(mod)))
 #define rsnd_ssi_is_run_mods(mod, io) \
 	(rsnd_ssi_run_mods(io) & (1 << rsnd_mod_id(mod)))
+#define rsnd_ssi_can_output_clk(mod) (!__rsnd_ssi_is_pin_sharing(mod))
 
 int rsnd_ssi_hdmi_port(struct rsnd_dai_stream *io)
 {
@@ -256,7 +257,6 @@ static int rsnd_ssi_master_clk_start(struct rsnd_mod *mod,
 	struct device *dev = rsnd_priv_to_dev(priv);
 	struct rsnd_dai *rdai = rsnd_io_to_rdai(io);
 	struct rsnd_ssi *ssi = rsnd_mod_to_ssi(mod);
-	struct rsnd_mod *ssi_parent_mod = rsnd_io_to_mod_ssip(io);
 	int chan = rsnd_runtime_channel_for_ssi(io);
 	int idx, ret;
 	unsigned int main_rate;
@@ -267,7 +267,7 @@ static int rsnd_ssi_master_clk_start(struct rsnd_mod *mod,
 	if (!rsnd_rdai_is_clk_master(rdai))
 		return 0;
 
-	if (ssi_parent_mod && !rsnd_ssi_is_parent(mod, io))
+	if (!rsnd_ssi_can_output_clk(mod))
 		return 0;
 
 	if (rsnd_ssi_is_multi_slave(mod, io))
@@ -318,12 +318,11 @@ static void rsnd_ssi_master_clk_stop(struct rsnd_mod *mod,
 {
 	struct rsnd_dai *rdai = rsnd_io_to_rdai(io);
 	struct rsnd_ssi *ssi = rsnd_mod_to_ssi(mod);
-	struct rsnd_mod *ssi_parent_mod = rsnd_io_to_mod_ssip(io);
 
 	if (!rsnd_rdai_is_clk_master(rdai))
 		return;
 
-	if (ssi_parent_mod && !rsnd_ssi_is_parent(mod, io))
+	if (!rsnd_ssi_can_output_clk(mod))
 		return;
 
 	if (ssi->usrcnt > 1)
@@ -345,6 +344,9 @@ static void rsnd_ssi_config_init(struct rsnd_mod *mod,
 	u32 cr_mode;
 	u32 wsr;
 	int is_tdm;
+
+	if (rsnd_ssi_is_parent(mod, io))
+		return;
 
 	is_tdm = rsnd_runtime_is_ssi_tdm(io);
 
@@ -484,8 +486,7 @@ static int rsnd_ssi_init(struct rsnd_mod *mod,
 	if (ret < 0)
 		return ret;
 
-	if (!rsnd_ssi_is_parent(mod, io))
-		rsnd_ssi_config_init(mod, io);
+	rsnd_ssi_config_init(mod, io);
 
 	rsnd_ssi_register_setup(mod);
 
@@ -1101,6 +1102,7 @@ int rsnd_ssi_probe(struct rsnd_priv *priv)
 		clk = devm_clk_get(dev, name);
 		if (IS_ERR(clk)) {
 			ret = PTR_ERR(clk);
+			of_node_put(np);
 			goto rsnd_ssi_probe_done;
 		}
 
@@ -1113,6 +1115,7 @@ int rsnd_ssi_probe(struct rsnd_priv *priv)
 		ssi->irq = irq_of_parse_and_map(np, 0);
 		if (!ssi->irq) {
 			ret = -EINVAL;
+			of_node_put(np);
 			goto rsnd_ssi_probe_done;
 		}
 
@@ -1123,8 +1126,10 @@ int rsnd_ssi_probe(struct rsnd_priv *priv)
 
 		ret = rsnd_mod_init(priv, rsnd_mod_get(ssi), ops, clk,
 				    rsnd_ssi_get_status, RSND_MOD_SSI, i);
-		if (ret)
+		if (ret) {
+			of_node_put(np);
 			goto rsnd_ssi_probe_done;
+		}
 
 		i++;
 	}
