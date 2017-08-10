@@ -188,7 +188,6 @@ static ssize_t power_ro_lock_store(struct device *dev,
 {
 	int ret;
 	struct mmc_blk_data *md, *part_md;
-	struct mmc_card *card;
 	struct mmc_queue *mq;
 	struct request *req;
 	unsigned long set;
@@ -201,7 +200,6 @@ static ssize_t power_ro_lock_store(struct device *dev,
 
 	md = mmc_blk_get(dev_to_disk(dev));
 	mq = &md->queue;
-	card = md->queue.card;
 
 	/* Dispatch locking to the block layer */
 	req = blk_get_request(mq->queue, REQ_OP_DRV_OUT, __GFP_RECLAIM);
@@ -2170,7 +2168,9 @@ static void mmc_blk_remove_req(struct mmc_blk_data *md)
 		 * from being accepted.
 		 */
 		card = md->queue.card;
+		spin_lock_irq(md->queue.queue->queue_lock);
 		queue_flag_set(QUEUE_FLAG_BYPASS, md->queue.queue);
+		spin_unlock_irq(md->queue.queue->queue_lock);
 		blk_set_queue_dying(md->queue.queue);
 		mmc_cleanup_queue(&md->queue);
 		if (md->disk->flags & GENHD_FL_UP) {
