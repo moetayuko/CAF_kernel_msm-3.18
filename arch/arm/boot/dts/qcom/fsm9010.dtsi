@@ -1110,10 +1110,11 @@
 
 	nss-gmac-common@fc800000 {
 		compatible = "qcom,nss-gmac-common";
-		reg-names = "nss_reg_base" , "qsgmii_reg_base", "clk_ctl_base";
+		reg-names = "nss_reg_base" , "qsgmii_reg_base", "clk_ctl_base", "tlmm_csr_base";
 		reg = <0xfc800000 0x0000ffff>,
 		      <0xfc900000 0x0000ffff>,
-		      <0xfc400000 0x00004000>;
+		      <0xfc400000 0x00004000>,
+		      <0xfd510000 0x00004000>;
 	};
 
 	gmac0: ethernet@e7000000 {
