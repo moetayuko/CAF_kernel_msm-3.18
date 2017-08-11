@@ -3749,7 +3749,10 @@ static int interrupt_window_interception(struct vcpu_svm *svm)
 
 static int pause_interception(struct vcpu_svm *svm)
 {
-	kvm_vcpu_on_spin(&(svm->vcpu));
+	struct kvm_vcpu *vcpu = &svm->vcpu;
+	bool in_kernel = (svm_get_cpl(vcpu) == 0);
+
+	kvm_vcpu_on_spin(vcpu, in_kernel);
 	return 1;
 }
 
@@ -4232,8 +4235,7 @@ static int handle_exit(struct kvm_vcpu *vcpu)
 	u32 exit_code = svm->vmcb->control.exit_code;
 
 	trace_kvm_exit(exit_code, vcpu, KVM_ISA_SVM);
-
-	vcpu->arch.gpa_available = (exit_code == SVM_EXIT_NPF);
+	vcpu->arch.gpa_available = false;
 
 	if (!is_cr_intercept(svm, INTERCEPT_CR0_WRITE))
 		vcpu->arch.cr0 = svm->vmcb->save.cr0;
@@ -5076,17 +5078,14 @@ static u64 svm_get_mt_mask(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_mmio)
 static void svm_cpuid_update(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
-	struct kvm_cpuid_entry2 *entry;
 
 	/* Update nrips enabled cache */
-	svm->nrips_enabled = !!guest_cpuid_has_nrips(&svm->vcpu);
+	svm->nrips_enabled = !!guest_cpuid_has(&svm->vcpu, X86_FEATURE_NRIPS);
 
 	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
 
-	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
-	if (entry)
-		entry->ecx &= ~bit(X86_FEATURE_X2APIC);
+	guest_cpuid_clear(vcpu, X86_FEATURE_X2APIC);
 }
 
 static void svm_set_supported_cpuid(u32 func, struct kvm_cpuid_entry2 *entry)
