@@ -712,7 +712,7 @@ static int hdmi_codec_pcm_new(struct snd_soc_pcm_runtime *rtd,
 static struct snd_soc_dai_driver hdmi_i2s_dai = {
 	.id = DAI_ID_I2S,
 	.playback = {
-		.stream_name = "Playback",
+		.stream_name = "I2S Playback",
 		.channels_min = 2,
 		.channels_max = 8,
 		.rates = HDMI_RATES,
@@ -726,7 +726,7 @@ static struct snd_soc_dai_driver hdmi_i2s_dai = {
 static const struct snd_soc_dai_driver hdmi_spdif_dai = {
 	.id = DAI_ID_SPDIF,
 	.playback = {
-		.stream_name = "Playback",
+		.stream_name = "SPDIF Playback",
 		.channels_min = 2,
 		.channels_max = 2,
 		.rates = HDMI_RATES,
