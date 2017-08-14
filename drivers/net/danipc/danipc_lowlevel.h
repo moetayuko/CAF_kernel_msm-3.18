@@ -26,150 +26,86 @@
 #include <linux/atomic.h>
 #include <asm/cacheflush.h>
 
-#define IPC_DUMMY_ADDR		  0
-#define PLATFORM_MAX_NUM_OF_NODES 16
-#define IPC_BUF_SIZE		  ((2 * IPC_BUF_COUNT_MAX) * IPC_BUF_SIZE_MAX)
+#include <ipc_api.h>
 
+#define PLATFORM_MAX_NUM_OF_NODES 16
+
+#define DEFAULT_HI_PRIO_M_FIFO	0
+#define DEFAULT_HI_PRIO_B_FIFO	1
+#define DEFAULT_LO_PRIO_M_FIFO	2
+#define DEFAULT_LO_PRIO_B_FIFO	3
+
+#define default_m_fifo(pri)	(((pri) == ipc_prio_hi) ? \
+	DEFAULT_HI_PRIO_M_FIFO : DEFAULT_LO_PRIO_M_FIFO)
+
+#define default_b_fifo(pri)	(((pri) == ipc_prio_hi) ? \
+	DEFAULT_HI_PRIO_B_FIFO : DEFAULT_LO_PRIO_B_FIFO)
+
+#define MAX_IPC_FIFO_PER_CDU	4
+#define CLK_DOMAIN_PER_CDU	2
+
+#define FIFO_RD_ACCESS_0_OFFSET	0x8
+#define FIFO_RD_OFFSET(n)	(FIFO_RD_ACCESS_0_OFFSET + (n) * 8)
+
+#define FIFO_WR_ACCESS_0_OFFSET	0x4
+#define FIFO_WR_OFFSET(n)	(FIFO_WR_ACCESS_0_OFFSET + (n) * 8)
+
+/* Status register offset */
+#define FIFO_0_STATUS		0x24
+#define FIFO_STATUS(n)		(FIFO_0_STATUS + (n) * 4)
 #define IPC_FIFO_EMPTY	1
 #define IPC_FIFO_FULL	0x10
 
-#define TCSR_IPC_IF_FIFO_RD_ACCESS_2_OFFSET		0x18
-#define TCSR_IPC_IF_FIFO_RD_ACCESS_0_OFFSET		0x8
+/* Almost Full(AF) interrupt threshold */
+#define AF_THRESHOLD		0x7D
 
-#define TCSR_IPC_IF_FIFO_0_STATS_OFFSET		0x24
-#define TCSR_IPC_IF_FIFO_1_STATS_OFFSET		0x28
-#define TCSR_IPC_IF_FIFO_2_STATS_OFFSET		0x2C
-#define TCSR_IPC_IF_FIFO_3_STATS_OFFSET		0x30
+/* IPC FIFO interrupt register offsets */
+#define FIFO_0_COUNTER		0x6c
+#define FIFO_COUNTER(n)		(FIFO_0_COUNTER + (n) * 4)
 
-#define TCSR_IPC_FIFO_RD_IN_LOW_ADDR(cpuid)				\
-	(ipc_regs[cpuid] + TCSR_IPC_IF_FIFO_RD_ACCESS_2_OFFSET)
-#define TCSR_IPC_FIFO_RD_IN_HIGH_ADDR(cpuid)				\
-	(ipc_regs[cpuid] + TCSR_IPC_IF_FIFO_RD_ACCESS_0_OFFSET)
+#define FIFO_THR_AF_CFG		0x34
+#define FIFO_THR_AE_CFG		0x38
 
-#define TCSR_IPC_FIFO_STATUS_LOW_ADDR(cpuid)				\
-	(ipc_regs[cpuid] + TCSR_IPC_IF_FIFO_2_STATS_OFFSET)
-#define TCSR_IPC_FIFO_STATUS_HIGH_ADDR(cpuid)				\
-	(ipc_regs[cpuid] + TCSR_IPC_IF_FIFO_0_STATS_OFFSET)
+#define CDU_INT0_MASK		0x44
+#define CDU_INT1_MASK		0x48
+#define CDU_INT0_ENABLE		0x4c
+#define CDU_INT1_ENABLE		0x50
+#define CDU_INT0_STATUS		0x54
+#define CDU_INT1_STATUS		0x58
+#define CDU_INT0_RAW_STATUS	0x5C
+#define CDU_INT1_RAW_STATUS	0x60
+#define CDU_INT0_CLEAR		0x64
+#define CDU_INT1_CLEAR		0x68
 
-#define IPC_FIFO_ACCESS(cpuid, odd, even)		({		\
-	const typeof(cpuid) __cpuid = cpuid;				\
-	ipc_regs[__cpuid] + ((__cpuid & 1) ? (odd) : (even)); })
+#define FIFO_0_POP_COUNTER	0x6C
+#define FIFO_POP_COUNTER_ENABLE 0x80
 
-#define IPC_REMOTE_FIFO_STATUS_HIGH_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, TCSR_IPC_IF_FIFO_1_STATS_OFFSET,		\
-		TCSR_IPC_IF_FIFO_1_STATS_OFFSET)
+/* Pop counter set FIFO'd*/
+#define FIFO_POP_SET_ALL_FIFOS 0x15
 
-#define IPC_REMOTE_FIFO_STATUS_LOW_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, TCSR_IPC_IF_FIFO_3_STATS_OFFSET,		\
-		TCSR_IPC_IF_FIFO_3_STATS_OFFSET)
+#define FIFO_SHIFT(n)		((n) * 8)
 
-#define IPC_FIFO_RD_OUT_HIGH_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_RD_5, DAN_IPC_IF_FIFO_RD_1)
+/* Almost Full(AF) interrupt indication bitmask */
+#define IPC_INT_FIFO_AF_0	0x20
+#define IPC_INT_FIFO_AF(n)	(IPC_INT_FIFO_AF_0 << FIFO_SHIFT(n))
+#define IPC_INT_FIFO_MASK	0xff
 
-#define IPC_FIFO_RD_OUT_LOW_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_RD_7, DAN_IPC_IF_FIFO_RD_3)
+/* AF threshold bitmap for a FIFO */
+#define IPC_AF_THR_FIFO_MASK	0x7f
+#define IPC_AF_THR_FIFO(v, n)	(((v) & IPC_AF_THR_FIFO_MASK) << FIFO_SHIFT(n))
 
-#define IPC_FIFO_WR_IN_HIGH_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_WR_4, DAN_IPC_IF_FIFO_WR_0)
-
-#define IPC_FIFO_WR_OUT_HIGH_ADDR(cpuid)			\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_WR_5, DAN_IPC_IF_FIFO_WR_1)
-
-#define IPC_FIFO_WR_IN_LOW_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_WR_6, DAN_IPC_IF_FIFO_WR_2)
-
-#define IPC_FIFO_WR_OUT_LOW_ADDR(cpuid)				\
-	IPC_FIFO_ACCESS(cpuid, DAN_IPC_IF_FIFO_WR_7, DAN_IPC_IF_FIFO_WR_3)
-
-extern void __iomem			*apps_ipc_mux;
-extern uint8_t __iomem			*ipc_buffers;
-extern uint32_t			ipc_regs_phys[];
-extern unsigned			ipc_regs_len[];
-extern uintptr_t			ipc_regs[];
-extern uint32_t			ipc_shared_mem_sizes[];
-extern struct agent_entry __iomem	*agent_table;
-extern const struct ipc_buf_desc	*ext_bufs;
-extern uint32_t				num_ext_bufs;
-
-struct ipc_to_virt_map {
-	/* Physical address of the FIFO data buffer *without* bit 31 set. */
-	uint32_t		paddr;
-
-	/* Virtual address of the FIFO data buffer. */
-	void __iomem		*vaddr;
-
-	/* Size of the address space */
-	uint32_t		size;
-
-	/* How many skbs destined for this core are on delayed_skb list */
-	atomic_t		pending_skbs;
-};
+/* AF threshold bitmap for a FIFO */
+#define IPC_AE_THR_FIFO_MASK	0x7f
+#define IPC_AE_THR_FIFO(v, n)	(((v) & IPC_AE_THR_FIFO_MASK) << FIFO_SHIFT(n))
 
 struct danipc_fifo;
-
-uint32_t virt_to_ipc(const int cpuid, const unsigned prio, void *v_addr);
-void *ipc_to_virt(const int cpuid, const unsigned prio,
-		  const uint32_t raw_ipc_addr);
+struct danipc_if_fifo;
 
 #define __IPC_AGENT_ID(cpuid, lid)			\
 	(((cpuid&(PLATFORM_MAX_NUM_OF_NODES-1)) << 4) +	\
 				(0x0f & (lid)))
 
-void ipc_trns_fifo_move_m_to_b(struct danipc_fifo *fifo);
-unsigned ipc_init(struct danipc_fifo *fifo);
-unsigned ipc_cleanup(uint8_t local_cpuid);
-void ipc_trns_fifo_buf_init(struct danipc_fifo *fifo);
-void ipc_trns_fifo_buf_flush(uint8_t cpuid);
-void ipc_route_table_init(uint8_t local_cpuid,
-			  struct ipc_trns_func const *ptr);
-char *ipc_trns_fifo_buf_alloc(uint8_t dest_aid,
-			      enum ipc_trns_prio pri);
-void ipc_trns_fifo_buf_free(char *ptr, uint8_t dest_aid,
-			    enum ipc_trns_prio pri);
-int32_t ipc_trns_fifo_buf_send(char *ptr, uint8_t dest_id,
-			       enum ipc_trns_prio pri);
-char *ipc_trns_fifo2eth_buf_alloc(uint8_t dest_aid,
-				  enum ipc_trns_prio pri);
-void ipc_trns_fifo2eth_buf_free(char *ptr, uint8_t dest_aid,
-				enum ipc_trns_prio pri);
-int32_t ipc_trns_fifo2eth_buf_send(char *ptr, uint8_t dest_id,
-				   enum ipc_trns_prio pri);
-char *ipc_trns_fifo_buf_read(enum ipc_trns_prio pri, uint8_t cpuid);
-
-void ipc_agent_table_clean(uint8_t local_cpuid);
-struct ipc_trns_func const *get_trns_funcs(uint8_t cpuid);
-
-extern struct ipc_to_virt_map	ipc_to_virt_map[PLATFORM_MAX_NUM_OF_NODES][2];
-
-void danipc_clear_interrupt(uint8_t fifo, uint32_t prio);
-void danipc_mask_interrupt(uint8_t fifo, uint32_t prio);
-void danipc_unmask_interrupt(uint8_t fifo, uint32_t prio);
-
-uint32_t danipc_read_af_threshold(uint8_t intf);
-uint32_t danipc_set_af_threshold(uint8_t intf, uint8_t n, uint8_t thr);
-uint32_t danipc_read_ae_threshold(uint8_t intf);
-uint32_t danipc_set_ae_threshold(uint8_t intf, uint8_t n, uint8_t thr);
-uint32_t danipc_read_fifo_status(uint8_t fifo, uint8_t n);
-uint32_t danipc_read_fifo_counter(uint8_t fifo, uint8_t n);
-uint32_t danipc_read_fifo_irq_mask(uint8_t fifo);
-uint32_t danipc_read_fifo_irq_enable(uint8_t fifo);
-uint32_t danipc_read_fifo_irq_status(uint8_t fifo);
-uint32_t danipc_read_fifo_irq_status_raw(uint8_t fifo);
-
-bool danipc_m_fifo_is_empty(uint8_t cpuid, enum ipc_trns_prio pri);
-bool danipc_b_fifo_is_full(uint8_t cpuid, enum ipc_trns_prio pri);
-
-void danipc_b_fifo_push(phys_addr_t paddr,
-			int cpuid,
-			enum ipc_trns_prio prio);
-
-void danipc_m_fifo_push(phys_addr_t paddr,
-			int cpuid,
-			enum ipc_trns_prio prio);
-
-phys_addr_t danipc_b_fifo_pop(int cpuid, enum ipc_trns_prio prio);
-
-void danipc_fifo_drain(int cpuid, enum ipc_trns_prio prio);
+void *ipc_to_virt(uint32_t cpuid, phys_addr_t addr);
 
 static inline bool valid_cpu_id(int cpuid)
 {
@@ -177,6 +113,48 @@ static inline bool valid_cpu_id(int cpuid)
 		return false;
 	return true;
 }
+
+static inline bool valid_fifo_unit(uint32_t unit)
+{
+	return (unit < MAX_IPC_FIFO_PER_CDU) ? true : false;
+}
+
+/* inline API to access the HW */
+static inline uint32_t danipc_hw_reg_read(void __iomem *base, uint32_t offset)
+{
+	return __raw_readl_no_log((char *)base + offset);
+}
+
+static inline void danipc_hw_reg_write(void __iomem *base,
+				       uint32_t offset,
+				       uint32_t val)
+{
+	__raw_writel_no_log(val, (char *)base + offset);
+}
+
+static inline void danipc_hw_reg_update(void __iomem *base,
+					uint32_t offset,
+					uint32_t val,
+					uint32_t mask)
+{
+	uint32_t v = danipc_hw_reg_read(base, offset);
+
+	v &= ~mask;
+	v |= (val & mask);
+	danipc_hw_reg_write(base, offset, v);
+}
+
+void danipc_fifo_init_irq(struct danipc_fifo *fifo);
+void danipc_fifo_disable_irq(struct danipc_fifo *fifo);
+void danipc_fifo_clear_interrupt(struct danipc_fifo *fifo);
+void danipc_fifo_mask_interrupt(struct danipc_fifo *fifo);
+void danipc_fifo_unmask_interrupt(struct danipc_fifo *fifo);
+
+void danipc_if_fifo_init_irq(struct danipc_if_fifo *if_fifo);
+void danipc_if_fifo_disable_irq(struct danipc_if_fifo *if_fifo);
+void danipc_if_fifo_clear_interrupt(struct danipc_if_fifo *if_fifo);
+void danipc_if_fifo_mask_interrupt(struct danipc_if_fifo *if_fifo);
+void danipc_if_fifo_unmask_interrupt(struct danipc_if_fifo *if_fifo);
 
 static inline void ipc_msg_payload_cache_invalid(struct ipc_msg_hdr *hdr)
 {

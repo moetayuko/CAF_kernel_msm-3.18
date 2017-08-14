@@ -26,15 +26,15 @@
 #include <linux/netdevice.h>
 #include <linux/debugfs.h>
 #include <asm/cacheflush.h>
+#include <net/arp.h>
 
 #include "ipc_api.h"
 
 #include "danipc_k.h"
 #include "danipc_lowlevel.h"
 
-#define TIMER_INTERVAL		1
-
-DEFINE_PER_CPU(atomic_t, danipc_rx_sched_state);
+#define HADDR_CB_OFFSET		40
+#define TX_TIMER_INTERVAL	(HZ/10)
 
 #define IPC_MSG_TYPE_PTR 0x10
 
@@ -55,183 +55,25 @@ struct ipc_fapi_msg_hdr {
 	void *msg_ptr;
 } __packed;
 
-int send_pkt(struct sk_buff *skb)
+static inline struct danipc_pair *danipc_skb_cb(const struct sk_buff *skb)
 {
-	struct danipc_pair	*pair =
-		(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
-	char			*msg;
-	struct danipc_if	*intf  =
-		(struct danipc_if *)netdev_priv(skb->dev);
-	struct danipc_pkt_histo *histo = &intf->pproc[pair->prio].pkt_hist;
-	int			 rc    = NETDEV_TX_OK;
-
-	netdev_dbg(skb->dev, "%s: pair={dst=0x%x src=0x%x}, len=%u\n", __func__,
-		   pair->dst, pair->src, skb->len);
-
-	if (DANIPC_IS_AGENT_DISCOVERED(pair->dst, intf->drvr->dst_aid)) {
-		msg = ipc_msg_alloc(pair->src,
-				    pair->dst,
-				    skb->data,
-				    skb->len,
-				    0x12,
-				    pair->prio,
-				    false
-			);
-
-		if (likely(msg)) {
-			ipc_msg_send(msg, pair->prio);
-			histo->stats->tx_packets++;
-			histo->stats->tx_bytes += skb->len;
-			histo->tx_histo[PACKT_HISTO_IDX(skb->len)]++;
-		} else {
-			netdev_dbg(skb->dev, "%s: ipc_msg_alloc failed!",
-				   __func__);
-			histo->stats->tx_dropped++;
-			histo->stats->tx_fifo_errors++;
-
-			/* If we are busy, qdisc will retry later with the same
-			 * skb, so return without freeing skb.
-			 */
-			return NETDEV_TX_BUSY;
-		}
-	} else {
-		netdev_dbg(skb->dev, "%s: Packet for un-identified agent",
-			   __func__);
-		histo->stats->tx_dropped++;
-		histo->stats->tx_heartbeat_errors++;
-	}
-
-	/* This is only called if the device is NOT busy. */
-	dev_kfree_skb(skb);
-
-	return rc;
-}
-
-static int delay_skb(struct sk_buff *skb, struct ipc_to_virt_map *map)
-{
-	int			 rc;
-	struct danipc_pair	*pair  =
-		(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
-	struct delayed_skb	*dskb  = kmalloc(sizeof(*dskb), GFP_ATOMIC);
-	struct danipc_if	*intf  =
-		(struct danipc_if *)netdev_priv(skb->dev);
-	struct danipc_pkt_histo *histo = &intf->pproc[pair->prio].pkt_hist;
-
-	if (dskb) {
-		unsigned long	flags;
-
-		dskb->skb = skb;
-		INIT_LIST_HEAD(&dskb->list);
-
-		spin_lock_irqsave(&skbs_lock, flags);
-		list_add_tail(&dskb->list, &delayed_skbs);
-		atomic_inc(&map->pending_skbs);
-		spin_unlock_irqrestore(&skbs_lock, flags);
-
-		schedule_work(&delayed_skbs_work);
-		histo->tx_delayed++;
-		rc = NETDEV_TX_OK;
-	} else {
-		netdev_err(skb->dev, "cannot allocate struct delayed_skb\n");
-		rc = NETDEV_TX_BUSY;	/* Try again sometime */
-		histo->stats->tx_dropped++;
-		histo->stats->tx_aborted_errors++;
-	}
-	return rc;
-}
-
-int danipc_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
-{
-	struct danipc_pair	*pair  =
-		(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
-	struct ipc_to_virt_map	*map   =
-		&ipc_to_virt_map[ipc_get_node(pair->dst)][pair->prio];
-	struct danipc_if	*intf  =
-		(struct danipc_if *)netdev_priv(skb->dev);
-	struct danipc_pkt_histo *histo = &intf->pproc[pair->prio].pkt_hist;
-	int			 rc    = NETDEV_TX_OK;
-
-	/* DANIPC is a network device, however it does not support regular IP
-	 * packets. All packets not identified by DANIPC protocol (marked with
-	 * COOKIE_BASE bits) are discarded.
-	 */
-	if (DANIPC_PROTOCOL_MATCH(skb->protocol)) {
-		if (map->paddr && atomic_read(&map->pending_skbs) == 0)
-			rc = send_pkt(skb);
-		else
-			rc = delay_skb(skb, map);
-	} else {
-		histo->stats->tx_dropped++;
-		histo->stats->tx_carrier_errors++;
-		netdev_dbg(dev, "%s() discard packet with protocol=0x%x\n",
-			   __func__, ntohs(skb->protocol));
-		dev_kfree_skb(skb);
-	}
-	return rc;
+	return ((struct danipc_pair *)(&((skb)->cb[HADDR_CB_OFFSET])));
 }
 
 static inline void *get_virt_addr(phys_addr_t phy_addr)
 {
-	struct danipc_mem_map *map = danipc_driver.proc_map;
+	struct danipc_resource *map = danipc_driver.proc_map;
 	int i;
 
 	for (i = 0; i < danipc_driver.proc_map_entry; i++) {
-		if (phy_addr >= map[i].paddr_base) {
-			phys_addr_t offset = phy_addr - map[i].paddr_base;
+		if (phy_addr >= map[i].start) {
+			phys_addr_t offset = phy_addr - map[i].start;
 
 			if (offset < map[i].size)
-				return (char *)map[i].vaddr_base + offset;
+				return (char *)map[i].base + offset;
 		}
 	}
 	return NULL;
-}
-
-static int
-read_ipc_message(struct danipc_fifo *fifo, char *buf,
-		 struct ipc_msg_hdr *first_hdr, enum ipc_trns_prio prio)
-{
-	unsigned		data_len = IPC_FIRST_BUF_DATA_SIZE_MAX;
-	unsigned		rest_len = first_hdr->msg_len;
-	uint8_t			*data_ptr = (uint8_t *)(first_hdr) +
-						sizeof(struct ipc_msg_hdr);
-	int ret = 0;
-
-	if (first_hdr->msg_type == IPC_MSG_TYPE_PTR) {
-		struct ipc_fapi_msg_hdr *fapi_hdr;
-		uint8_t *fapi_msg_ptr;
-
-		if (first_hdr->msg_len != sizeof(struct ipc_fapi_msg_hdr)) {
-			pr_debug("%s: unexpected msglen(%d)\n",
-				 __func__, first_hdr->msg_len);
-			ret = -EINVAL;
-			goto free_buf;
-		}
-
-		fapi_hdr = (struct ipc_fapi_msg_hdr *)(first_hdr+1);
-		fapi_msg_ptr = get_virt_addr((phys_addr_t)fapi_hdr->msg_ptr);
-		if (fapi_msg_ptr == NULL) {
-			pr_debug("%s: unexpected fapi message pointer(%p)\n",
-				 __func__, fapi_hdr->msg_ptr);
-			ret = -EINVAL;
-			goto free_buf;
-		}
-
-		rest_len = sizeof(struct fapi_msg_hdr);
-		dmac_inv_range(fapi_msg_ptr, fapi_msg_ptr + fapi_hdr->hdr.size);
-		memcpy(buf + sizeof(struct fapi_msg_hdr),
-		       fapi_msg_ptr,
-		       fapi_hdr->hdr.size);
-	}
-	data_len = min(rest_len, data_len);
-	memcpy(buf, data_ptr, data_len);
-free_buf:
-	ipc_buf_free((char *)first_hdr, fifo->node_id, prio);
-	return ret;
-}
-
-void drop_ipc_message(char *const packet, enum ipc_trns_prio prio, u8 cpuid)
-{
-	ipc_buf_free(packet, cpuid, prio);
 }
 
 static inline unsigned ipc_msg_len(struct ipc_msg_hdr *h)
@@ -251,68 +93,209 @@ static inline unsigned ipc_msg_len(struct ipc_msg_hdr *h)
 	return len;
 }
 
-void
-handle_incoming_packet(struct packet_proc_info *pproc, char *const packet)
+static void danipc_if_tx_timeout(unsigned long data)
 {
-	struct danipc_if	*intf = pproc->intf;
-	struct danipc_pktq	*rx_pool = &intf->rx_pkt_pool;
-	struct ipc_msg_hdr *const first_hdr = (struct ipc_msg_hdr *)packet;
-	const unsigned		msg_len = ipc_msg_len(first_hdr);
-	struct net_device	*dev = intf->dev;
-	struct sk_buff		*skb = netdev_alloc_skb(dev, msg_len);
-	uint8_t			prio = pproc - intf->pproc;
-	struct danipc_pkt_histo	*histo = &pproc->pkt_hist;
+	struct danipc_if *intf = (struct danipc_if *)data;
+	struct net_device *dev = intf->dev;
+	struct sk_buff *skb = intf->tx_skb;
+	struct danipc_pair *pair;
+	phys_addr_t addr;
 
-	/* for high-priority fifo, try from pre-allocated pool */
-	if (!skb && (prio == ipc_trns_prio_1)) {
-		netdev_dbg(dev, "%s: using skb from rx_pool\n", __func__);
-		skb = __skb_dequeue(&rx_pool->q);
-		if (skb) {
-			histo->rx_pool_used++;
-			rx_pool->used++;
-			rx_pool->refill = 1;
-		}
-	}
+	BUG_ON(skb == NULL);
 
-	if (skb) {
-		struct danipc_pair	*pair =
-			(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
+	pair = danipc_skb_cb(skb);
 
-		pair->dst = first_hdr->dest_aid;
-		pair->src = first_hdr->src_aid;
+	netdev_dbg(dev, "%s: intf/%p poll tx(dst=%u prio=%u)\n",
+		   __func__, intf, pair->dst, pair->prio);
 
-		if (read_ipc_message(intf->fifo, skb->data, first_hdr, prio)) {
-			netdev_warn(dev, "%s: read_ipc_message failed\n",
-				    __func__);
-			dev_kfree_skb(skb);
-			histo->stats->rx_dropped++;
-			return;
-		}
-
-		netdev_dbg(dev, "%s() pair={dst=0x%x src=0x%x}\n",
-			   __func__, pair->dst, pair->src);
-
-		skb_put(skb, msg_len);
-		skb_reset_mac_header(skb);
-
-		skb->protocol = cpu_to_be16(AGENTID_TO_COOKIE(pair->dst, prio));
-
-		if (NET_RX_SUCCESS != netif_rx(skb))
-			netdev_dbg(dev, "%s: netif_rx send failed\n", __func__);
-
-		histo->stats->rx_packets++;
-		histo->stats->rx_bytes += skb->len;
-		histo->rx_histo[PACKT_HISTO_IDX(skb->len)]++;
+	addr = danipc_hw_fifo_pop_raw(ipc_get_node(pair->dst),
+				      default_b_fifo(pair->prio));
+	if (addr) {
+		danipc_hw_fifo_push_raw(ipc_get_node(pair->dst),
+					default_b_fifo(pair->prio),
+					addr);
+		dev_kfree_skb_any(intf->tx_skb);
+		intf->tx_skb = NULL;
+		netif_wake_queue(dev);
+		intf->tx_queue_restart++;
 	} else {
-		netdev_warn(dev, "%s: skb alloc failed dropping message\n",
-			    __func__);
-		drop_ipc_message(packet, prio, intf->rx_fifo_idx);
-		histo->stats->rx_dropped++;
-		histo->stats->rx_missed_errors++;
+		mod_timer(&intf->tx_timer, jiffies + TX_TIMER_INTERVAL);
 	}
 }
 
-int danipc_change_mtu(struct net_device *dev, int new_mtu)
+static int danipc_if_xmit(struct danipc_if *intf, struct sk_buff *skb)
+{
+	struct danipc_pair	*pair = danipc_skb_cb(skb);
+	struct ipc_msg_hdr	*hdr;
+	struct net_device	*dev = intf->dev;
+	struct danipc_netif_fifo *intf_fifo;
+	int			rc;
+
+	netdev_dbg(dev, "%s: pair={dst=0x%x src=0x%x}, len=%u\n",
+		   __func__, pair->dst, pair->src, skb->len);
+
+	if (unlikely(!valid_ipc_prio(pair->prio))) {
+		netdev_dbg(dev, "%s: invalid priority(%u)\n",
+			   __func__, pair->prio);
+		goto out;
+	}
+
+	intf_fifo = &intf->intf_fifo[pair->prio];
+
+	/* DANIPC is a network device, however it does not support regular IP
+	 * packets. All packets not identified by DANIPC protocol (marked with
+	 * COOKIE_BASE bits) are discarded.
+	 */
+	if (unlikely(!DANIPC_PROTOCOL_MATCH(skb->protocol))) {
+		intf_fifo->status.tx_bad_proto++;
+		intf_fifo->status.tx_drop++;
+		dev->stats.tx_dropped++;
+		netdev_dbg(dev, "%s() discard packet with protocol=0x%x\n",
+			   __func__, ntohs(skb->protocol));
+		goto out;
+	}
+	if (unlikely(!DANIPC_IS_AGENT_DISCOVERED(pair->dst,
+						 intf->drvr->dst_aid))) {
+		netdev_dbg(dev, "%s: Packet for un-identified agent", __func__);
+		intf_fifo->status.tx_unknown_agent++;
+		intf_fifo->status.tx_drop++;
+		dev->stats.tx_dropped++;
+		goto out;
+	}
+
+	hdr = ipc_msg_alloc(pair->src,
+			    pair->dst,
+			    skb->len,
+			    0x12,
+			    default_b_fifo(pair->prio));
+	if (unlikely(hdr == NULL)) {
+		netdev_dbg(dev, "%s: ipc_msg_alloc failed!", __func__);
+		intf_fifo->status.tx_no_buf++;
+		BUG_ON(intf->tx_skb);
+		skb_get(skb);
+		intf->tx_skb = skb;
+		netif_stop_queue(dev);
+		mod_timer(&intf->tx_timer, jiffies + TX_TIMER_INTERVAL);
+		intf->tx_queue_stop++;
+		return NETDEV_TX_BUSY;
+	}
+
+	ipc_copy_from((char *)(hdr+1), skb->data, skb->len, false);
+
+	rc = ipc_msg_send(hdr, default_m_fifo(pair->prio));
+	if (!rc) {
+		intf_fifo->status.tx++;
+		intf_fifo->status.tx_bytes += skb->len;
+
+		dev->stats.tx_packets++;
+		dev->stats.tx_bytes += skb->len;
+	}
+
+out:
+	/* This is only called if the device is NOT busy. */
+	dev_kfree_skb(skb);
+
+	return NETDEV_TX_OK;
+}
+
+static int danipc_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct danipc_if *intf = (struct danipc_if *)netdev_priv(skb->dev);
+	int rc;
+
+	rc = danipc_if_xmit(intf, skb);
+
+	return rc;
+}
+
+static void danipc_netif_fifo_rx(struct danipc_netif_fifo *rx_fifo,
+				 struct ipc_msg_hdr *msg_hdr)
+{
+	struct danipc_if	*intf = rx_fifo->intf;
+	struct net_device	*dev = intf->dev;
+	unsigned		msg_len	= ipc_msg_len(msg_hdr);
+	struct sk_buff		*skb = netdev_alloc_skb(dev, msg_len);
+	struct danipc_pair	*pair;
+	struct ipc_fapi_msg_hdr *fapi_hdr;
+	uint8_t *fapi_msg_ptr;
+
+	if (unlikely(skb == NULL)) {
+		netdev_warn(dev, "%s: skb alloc failed dropping message\n",
+			    __func__);
+		danipc_if_fifo_free_msg(rx_fifo->if_fifo, msg_hdr);
+		rx_fifo->status.rx_no_skb++;
+		rx_fifo->status.rx_drop++;
+		dev->stats.rx_dropped++;
+		return;
+	}
+
+	pair = danipc_skb_cb(skb);
+	pair->dst = msg_hdr->dest_aid;
+	pair->src = msg_hdr->src_aid;
+	pair->prio = rx_fifo->prio;
+
+	switch (msg_hdr->msg_type) {
+	case IPC_MSG_TYPE_PTR:
+		if (msg_hdr->msg_len != sizeof(struct ipc_fapi_msg_hdr)) {
+			netdev_dbg(dev, "%s: unexpected msglen(%d)\n",
+				   __func__, msg_hdr->msg_len);
+			rx_fifo->status.rx_ptr_inv_len++;
+			rx_fifo->status.rx_drop++;
+			goto err;
+		}
+
+		fapi_hdr = (struct ipc_fapi_msg_hdr *)(msg_hdr+1);
+		fapi_msg_ptr = get_virt_addr((phys_addr_t)fapi_hdr->msg_ptr);
+		if (fapi_msg_ptr == NULL) {
+			netdev_dbg(dev,
+				   "%s: unexpected fapi message pointer(%p)\n",
+				   __func__, fapi_hdr->msg_ptr);
+			rx_fifo->status.rx_ptr_inv_addr++;
+			rx_fifo->status.rx_drop++;
+			goto err;
+		}
+
+		dmac_inv_range(fapi_msg_ptr, fapi_msg_ptr + fapi_hdr->hdr.size);
+		memcpy(skb->data, &fapi_hdr->hdr, sizeof(fapi_hdr->hdr));
+		memcpy(skb->data + sizeof(struct fapi_msg_hdr),
+		       fapi_msg_ptr,
+		       fapi_hdr->hdr.size);
+		rx_fifo->status.rx_ptr++;
+		break;
+	default:
+		memcpy(skb->data, (msg_hdr + 1), msg_hdr->msg_len);
+		break;
+	}
+
+	danipc_if_fifo_free_msg(rx_fifo->if_fifo, msg_hdr);
+
+	netdev_dbg(dev, "%s() pair={dst=0x%x src=0x%x prio=%d}\n",
+		   __func__, pair->dst, pair->src, pair->prio);
+
+	skb_put(skb, msg_len);
+	skb_reset_mac_header(skb);
+
+	skb->protocol = cpu_to_be16(AGENTID_TO_COOKIE(pair->dst, pair->prio));
+
+	if (NET_RX_SUCCESS != netif_rx(skb)) {
+		netdev_dbg(dev, "%s: netif_rx failed\n", __func__);
+		goto err_netif_rx;
+	}
+
+	rx_fifo->status.rx++;
+	rx_fifo->status.rx_bytes += skb->len;
+	dev->stats.rx_packets++;
+	dev->stats.rx_bytes += skb->len;
+
+	return;
+err:
+	dev_kfree_skb_any(skb);
+err_netif_rx:
+	danipc_if_fifo_free_msg(rx_fifo->if_fifo, msg_hdr);
+
+}
+
+static int danipc_change_mtu(struct net_device *dev, int new_mtu)
 {
 	if ((new_mtu < 68) || (new_mtu > IPC_BUF_SIZE_MAX))
 		return -EINVAL;
@@ -320,888 +303,396 @@ int danipc_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
-static inline void set_rxstate_schedule(uint8_t prio)
+static void danipc_if_poll(unsigned long cookie)
 {
-	set_bit(prio, (unsigned long *)this_cpu_ptr(&danipc_rx_sched_state));
+	struct danipc_if *intf = (struct danipc_if *)cookie;
+	int prio;
+
+	for (prio = ipc_prio_hi; prio >= 0; prio--) {
+		struct danipc_netif_fifo *rx_fifo = &intf->intf_fifo[prio];
+		struct danipc_if_fifo *if_fifo = rx_fifo->if_fifo;
+		struct ipc_msg_hdr *h;
+
+		if (!if_fifo->probed)
+			continue;
+
+		while ((h = danipc_if_fifo_rx_msg(if_fifo))) {
+			ipc_msg_hdr_cache_invalid(h);
+			if (!ipc_msg_valid(h,
+					   intf->fifo->node_id,
+					   &rx_fifo->status.rx_err_msg)) {
+				rx_fifo->status.rx_drop++;
+				danipc_if_fifo_free_msg(if_fifo, h);
+				continue;
+			}
+			ipc_msg_payload_cache_invalid(h);
+			danipc_netif_fifo_rx(rx_fifo, h);
+		}
+	}
 }
 
-static inline void set_rxstate_complete(uint8_t prio)
+static irqreturn_t danipc_interrupt(int irq, void *data)
 {
-	clear_bit(prio, (unsigned long *)this_cpu_ptr(&danipc_rx_sched_state));
+	struct danipc_if *intf = (struct danipc_if *)data;
+
+	danipc_fifo_mask_interrupt(intf->fifo);
+	danipc_poll_ctl_sched(&intf->poll_ctl);
+
+	return IRQ_HANDLED;
 }
 
-static inline unsigned long get_rxsched_state(void)
+static int danipc_open(struct net_device *dev)
 {
-	return (unsigned long)atomic_read(
-		(atomic_t *)this_cpu_ptr(&danipc_rx_sched_state));
-}
+	struct danipc_if *intf = netdev_priv(dev);
+	struct danipc_drvr *drv = intf->drvr;
+	struct danipc_fifo *fifo = intf->fifo;
+	int rc;
 
-/* Returns true if there are errors */
-static inline int check_errors(struct packet_proc_info *pproc, char *packet)
-{
-	struct ipc_msg_hdr *const first_hdr = (struct ipc_msg_hdr *)packet;
-
-	if (first_hdr->msg_len > IPC_FIRST_BUF_DATA_SIZE_MAX ||
-	    !first_hdr->msg_len) {
-		pproc->pkt_hist.stats->rx_dropped++;
-		pproc->pkt_hist.stats->rx_errors++;
-		pproc->pkt_hist.rx_err_len++;
-
-		return 1;
+	rc = acquire_local_fifo(fifo, intf);
+	if (rc) {
+		netdev_err(dev, "local fifo(%s) is in used\n",
+			   intf->fifo->probe_info->res_name);
+		return rc;
 	}
 
-	/* Destination AID should for a CPU ID/FIFO index we know about */
-	if (unlikely(ipc_get_node(first_hdr->dest_aid) !=
-		pproc->intf->rx_fifo_idx)) {
-		pproc->pkt_hist.stats->rx_dropped++;
-		pproc->pkt_hist.stats->rx_errors++;
-		pproc->pkt_hist.rx_err_dest_aid++;
-
-		return 1;
+	/* Polling is triggered by IRQ */
+	rc = request_irq(dev->irq, danipc_interrupt, 0, dev->name, intf);
+	if (rc) {
+		netdev_err(dev, "%s request_irq failed\n", dev->name);
+		return rc;
 	}
 
-	if (unlikely(first_hdr->next != NULL)) {
-		pproc->pkt_hist.stats->rx_dropped++;
-		pproc->pkt_hist.stats->rx_errors++;
-		pproc->pkt_hist.rx_err_chained_buf++;
+	danipc_fifo_init_irq(fifo);
 
-		return 1;
-	}
+	netif_start_queue(dev);
+	drv->ndev_active++;
 
 	return 0;
 }
 
-/* -----------------------------------------------------------
- * Function:    danipc_recv
- * Description: Processing IPC messages
- * Input:               pproc - Interface specific packet processign info.
- * Output:              number of processed messages
- * -----------------------------------------------------------
- */
-uint32_t danipc_recv(struct packet_proc_info *pproc)
+static int danipc_close(struct net_device *dev)
 {
-	struct danipc_if	*intf = pproc->intf;
-	unsigned	ix;
-	uint32_t	prio = pproc - intf->pproc;
-	char		*ipc_data;
+	struct danipc_if *intf = netdev_priv(dev);
+	struct danipc_drvr *drv = intf->drvr;
+	struct danipc_poll_ctl *ctl = &intf->poll_ctl;
 
-	for (ix = 0; ix < pproc->rxbound; ix++) {
-		ipc_data = ipc_trns_fifo_buf_read(prio, intf->rx_fifo_idx);
-
-		if (ipc_data) {
-			ipc_msg_hdr_cache_invalid(
-				(struct ipc_msg_hdr *)ipc_data);
-			if (check_errors(pproc, ipc_data)) {
-				drop_ipc_message(
-					ipc_data, prio,
-					intf->rx_fifo_idx);
-			} else {
-				/* IPC_msg_handler(ipc_data); */
-				ipc_msg_payload_cache_invalid(
-					(struct ipc_msg_hdr *)ipc_data);
-				handle_incoming_packet(pproc, ipc_data);
-			}
-		} else {
-			break; /* no more messages, queue empty */
-		}
+	netif_stop_queue(dev);
+	del_timer_sync(&intf->tx_timer);
+	if (intf->tx_skb) {
+		dev_kfree_skb_any(intf->tx_skb);
+		intf->tx_skb = NULL;
 	}
+	danipc_fifo_disable_irq(intf->fifo);
+	danipc_poll_ctl_stop(ctl);
+	free_irq(dev->irq, intf);
+	release_local_fifo(intf->fifo, intf);
+	mutex_destroy(&intf->lock);
 
-	/* If required refill skb pool */
-	if (intf->rx_pkt_pool.refill)
-		alloc_pool_buffers(intf);
+	drv->ndev_active--;
 
-	return ix;
+	return 0;
 }
 
-/* -----------------------------------------------------------
- * Function:    danipc_recv_concurrent
- * Description: Processing ipc messages only if fifo within
- *		current interface is highest priority.
- * Input:               pproc - Interface specific packet processign info.
- * Output:              number of processed messages
- * -----------------------------------------------------------
- */
-uint32_t danipc_recv_concurrent(struct packet_proc_info *pproc)
+static int danipc_set_mac_addr(struct net_device *dev, void *p)
 {
-/* Priority decreases from LSbit towards MSbit.
- * DANIPC_IF_MYPRIO -1 gives all high priority
- * fifo status.
- * NOTE: danipc_recv_concurrent on behalf of high priority
- * does not care to check if there are low-prioity
- * rx jobs pending.
- */
-#define DANIPC_IF_MYPRIO(p)	(1<<(p))
-#define IS_HIGHPRIO_FIFO(p)	\
-	(!((p) && ((DANIPC_IF_MYPRIO(p) - 1) & get_rxsched_state())))
-	struct danipc_if	*intf = pproc->intf;
-	unsigned	ix;
-	uint32_t	prio = pproc - intf->pproc;
-	char		*ipc_data;
+	struct sockaddr *addr = p;
 
-	for (ix = 0; (ix < pproc->rxbound) &&
-	     IS_HIGHPRIO_FIFO(intf->rx_fifo_prio); ix++) {
-		ipc_data = ipc_trns_fifo_buf_read(prio, intf->rx_fifo_idx);
+	if (!(dev->priv_flags & IFF_LIVE_ADDR_CHANGE) && netif_running(dev))
+		return -EBUSY;
 
-		if (ipc_data) {
-			/* IPC_msg_handler(ipc_data); */
-			handle_incoming_packet(pproc, ipc_data);
-		} else {
-			break; /* no more messages, queue empty */
-		}
-	}
-	return ix;
+	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
+	return 0;
 }
 
-void danipc_default_rcv_init(struct packet_proc_info *prio)
-{
-	pr_info("WARNING!!! default Danipc work init\n");
-}
-
-void danipc_default_work_sched(union rx_work *task)
-{
-	pr_info("WARNING!!! default Danipc work scheduled\n");
-}
-
-void danipc_default_rcv(unsigned long data)
-{
-	pr_info("WARNING!!! default Danipc rcv:%p\n", (void *)data);
-}
-
-void danipc_default_stop(struct packet_proc_info *pproc)
-{
-	pr_info("WARNING!!! default Danipc wrok rcv\n");
-}
-
-void danipc_tasklet_init(struct packet_proc_info *pproc)
-{
-	struct danipc_if		*intf = pproc->intf;
-	struct danipc_drvr	*drvr = intf->drvr;
-	pktproc_fn		fn =
-		 drvr->proc_rx[pproc->rxproc_type].proc_pkt.fn;
-	struct tasklet_struct   *task = &pproc->rx_work.rx_task;
-
-	tasklet_init(task, fn, (unsigned long)pproc);
-}
-
-void danipc_tasklet_stop(struct packet_proc_info *pproc)
-{
-	tasklet_kill(&pproc->rx_work.rx_task);
-}
-
-void danipc_tasklet_sched(union rx_work *task)
-{
-	tasklet_schedule(&task->rx_task);
-}
-
-void danipc_conc_tasklet_sched(union rx_work *task)
-{
-	struct packet_proc_info *pproc =
-		container_of(task, struct packet_proc_info, rx_work);
-
-	set_rxstate_schedule(pproc->intf->rx_fifo_prio);
-	tasklet_schedule(&task->rx_task);
-}
-
-void danipc_proc_parallel_rcv(unsigned long data)
-{
-	struct packet_proc_info *pproc = (struct packet_proc_info *)data;
-	struct danipc_if	*intf = pproc->intf;
-	uint8_t cnt;
-	uint32_t	prio = pproc - intf->pproc;
-
-	/* Process all messages. */
-	cnt = danipc_recv(pproc);
-	pproc->pending = (cnt == pproc->rxbound);
-	pproc->pkt_hist.rx_pkt_burst[cnt]++;
-
-	/* Skip interrupt enable if more packets to process */
-	if (pproc->pending) {
-		danipc_tasklet_sched(&pproc->rx_work);
-	} else {
-		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
-		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
-	}
-}
-
-void danipc_proc_concurrent_rcv(unsigned long data)
-{
-	struct packet_proc_info *pproc = (struct packet_proc_info *)data;
-	struct danipc_if	*intf = pproc->intf;
-	uint8_t cnt;
-	uint32_t	prio = pproc - intf->pproc;
-
-	/* Process all messages. */
-	cnt = danipc_recv_concurrent(pproc);
-	pproc->pending = (cnt == pproc->rxbound);
-	pproc->pkt_hist.rx_pkt_burst[cnt]++;
-
-	set_rxstate_complete(intf->rx_fifo_prio);
-
-	/* Skip interrupt enable if more packets to process */
-	if (pproc->pending) {
-		danipc_conc_tasklet_sched(&pproc->rx_work);
-	} else {
-		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
-		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
-	}
-}
-
-void danipc_wq_init(struct packet_proc_info *pproc)
-{
-	struct danipc_if		*intf = pproc->intf;
-	struct danipc_drvr		*drvr = intf->drvr;
-	pktproc_work		fn =
-		drvr->proc_rx[pproc->rxproc_type].proc_pkt.work;
-	struct work_struct	*work = &pproc->rx_work.rx_work;
-
-	INIT_WORK(work, fn);
-}
-
-void danipc_wq_stop(struct packet_proc_info *pproc)
-{
-	cancel_work_sync(&pproc->rx_work.rx_work);
-}
-
-void danipc_wq_sched(union rx_work *task)
-{
-	schedule_work(&task->rx_work);
-}
-
-void danipc_proc_wq_rcv(struct work_struct *work)
-{
-	struct packet_proc_info *pproc = container_of((union rx_work *)work,
-						      struct packet_proc_info,
-						      rx_work);
-	struct danipc_if	*intf = pproc->intf;
-	uint8_t cnt;
-	uint32_t	prio = pproc - intf->pproc;
-
-	/* Process all messages. */
-	cnt = danipc_recv(pproc);
-	pproc->pending = (cnt == pproc->rxbound);
-	pproc->pkt_hist.rx_pkt_burst[cnt]++;
-
-	/* Skip interrupt enable if more packets to process */
-	if (pproc->pending) {
-		danipc_wq_sched(&pproc->rx_work);
-	} else {
-		/* Clear interrupt source. */
-		danipc_clear_interrupt(intf->rx_fifo_idx, prio);
-		/* Unmask IPC AF interrupt again. */
-		danipc_unmask_interrupt(intf->rx_fifo_idx, prio);
-	}
-}
-
-void danipc_timer_init(struct packet_proc_info *pproc)
-{
-	struct danipc_if	*intf  = pproc->intf;
-	struct danipc_drvr	*drvr  = intf->drvr;
-	pktproc_fn		fn     =
-		drvr->proc_rx[pproc->rxproc_type].proc_pkt.fn;
-	struct timer_list	*timer = &pproc->rx_work.timer;
-
-	setup_timer(timer, fn, (unsigned long)pproc);
-	mod_timer(timer, jiffies +  TIMER_INTERVAL);
-}
-
-void danipc_timer_stop(struct packet_proc_info *pproc)
-{
-	del_timer_sync(&pproc->rx_work.timer);
-}
-
-void danipc_timer_sched(union rx_work *task)
-{
-	add_timer(&task->timer);
-}
-
-void danipc_rcv_timer(unsigned long data)
-{
-	struct packet_proc_info	*pproc = (struct packet_proc_info *)data;
-	struct timer_list	*timer = &pproc->rx_work.timer;
-	uint8_t cnt;
-
-	cnt = danipc_recv(pproc);
-	pproc->pkt_hist.rx_pkt_burst[cnt]++;
-
-	mod_timer(timer, jiffies + TIMER_INTERVAL);
-}
-
-/* DANIPC netdev debugfs interface */
-static void danipc_dump_fifo_info(struct seq_file *s)
-{
-	struct dbgfs_hdlr       *hdlr    = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if        *intf   = (struct danipc_if *)hdlr->data;
-	struct danipc_pktq             *rx_pool = &intf->rx_pkt_pool;
-	struct packet_proc_info *pproc   = intf->pproc;
-	static const char  *format  = "%-20s: %-d\n";
-
-	seq_puts(s, "\n\nDanipc driver fifo info:\n\n");
-	seq_printf(s, format, "Irq", intf->irq);
-	seq_printf(s, format, "If Index", intf->ifidx);
-	seq_printf(s, format, "HW fifo Index", intf->rx_fifo_idx);
-	seq_printf(s, format, "Inter fifo prio", intf->rx_fifo_prio);
-	seq_printf(s, format, "Interrupt affinity", intf->affinity);
-	seq_printf(s, format, "Hiprio rxbound",
-		   pproc[ipc_trns_prio_1].rxbound);
-	seq_printf(s, format, "Lowprio rxbound",
-		   pproc[ipc_trns_prio_0].rxbound);
-	seq_printf(s, format, "Rxpool maxsize", rx_pool->max_size);
-	seq_printf(s, format, "Rxpool cursize", skb_queue_len(&rx_pool->q));
-	seq_printf(s, "%-20s: %-lu\n", "Rxpool usage", rx_pool->used);
-}
-
-static void danipc_dump_pkt_hist(struct seq_file *s, unsigned long *pkt_histo,
-				 unsigned long totpkts)
-{
-	uint32_t i;
-
-	if (totpkts) {
-		char buf[50];
-
-		for (i = 0; i < MAX_PACKET_SIZES; i++) {
-			if ((i%4) == 0)
-				seq_puts(s, "\n");
-			snprintf(buf, sizeof(buf), "<=%-6d:%-lu(%%%-lu)",
-				 (i == 0) ? 2048 : i*64, pkt_histo[i],
-			(pkt_histo[i] * 100)/totpkts);
-			seq_printf(s, "%-25s", buf);
-		}
-		seq_puts(s, "\n\n");
-	}
-}
-
-static void danipc_dump_fifo_hist(struct seq_file *s,
-				  struct danipc_pkt_histo *histo)
-{
-	struct net_device_stats *stats = histo->stats;
-	static const char *fmt_lu = "%-25s: %-lu\n";
-
-	seq_printf(s, fmt_lu, "Tx packets", stats->tx_packets);
-	seq_printf(s, fmt_lu, "Tx delayed packets", histo->tx_delayed);
-	seq_printf(s, fmt_lu, "Tx bytes", stats->tx_bytes);
-	seq_printf(s, fmt_lu, "Tx errors", stats->tx_errors);
-	seq_printf(s, fmt_lu, "Tx dropped", stats->tx_dropped);
-	seq_printf(s, fmt_lu, "Tx Remote bfifo empty",
-		   stats->tx_fifo_errors);
-	seq_printf(s, fmt_lu, "Tx no dst agent",
-		   stats->tx_heartbeat_errors);
-	seq_printf(s, fmt_lu, "Tx not danipc packet",
-		   stats->tx_carrier_errors);
-	seq_printf(s, fmt_lu, "Tx dskb alloc failed",
-		   stats->tx_aborted_errors);
-	seq_printf(s, fmt_lu, "Tx unknown drops",
-		   stats->tx_dropped -
-		   (stats->tx_fifo_errors +
-		    stats->tx_heartbeat_errors +
-		    stats->tx_carrier_errors +
-		    stats->tx_aborted_errors));
-	seq_printf(s, fmt_lu, "Rx pool used", histo->rx_pool_used);
-	seq_printf(s, fmt_lu, "Rx packets", stats->rx_packets);
-	seq_printf(s, fmt_lu, "Rx bytes", stats->rx_bytes);
-	seq_printf(s, fmt_lu, "Rx errors", stats->rx_errors);
-	seq_printf(s, fmt_lu, "Rx dropped", stats->rx_dropped);
-	seq_printf(s, fmt_lu, "Rx nobuf", stats->rx_missed_errors);
-	seq_printf(
-		s, fmt_lu, "Rx invalid dest aid",
-		histo->rx_err_dest_aid);
-	seq_printf(s, fmt_lu, "Rx chained_buffers", histo->rx_err_chained_buf);
-	seq_printf(s, fmt_lu, "Rx invalid length", histo->rx_err_len);
-	seq_printf(s, fmt_lu, "Rx unknown drops", stats->rx_dropped -
-		(stats->rx_missed_errors + histo->rx_err_dest_aid
-		+ histo->rx_err_chained_buf + histo->rx_err_len));
-}
-
-static void danipc_dump_pkt_burst(struct seq_file *s, unsigned long *pkt_bust)
-{
-	uint32_t i;
-	char buf[50];
-
-	for (i = 0; i <= IPC_BUF_COUNT_MAX; i++) {
-		if ((i%4) == 0)
-			seq_puts(s, "\n");
-		snprintf(buf, sizeof(buf), "%-5d:%-lu", i, pkt_bust[i]);
-		seq_printf(s, "%-25s", buf);
-	}
-	seq_puts(s, "\n");
-}
-
-static void danipc_dump_fifo_stats(struct seq_file *s)
-{
-	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if *intf = (struct danipc_if *)hdlr->data;
-	struct packet_proc_info *pproc = intf->pproc;
-	struct danipc_pkt_histo *histo_hi = &pproc[ipc_trns_prio_1].pkt_hist;
-	struct danipc_pkt_histo *histo_lo = &pproc[ipc_trns_prio_0].pkt_hist;
-	struct net_device_stats *stats_hi = histo_hi->stats;
-	struct net_device_stats *stats_lo = histo_lo->stats;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	seq_puts(s, "\n\nfifo TX/RX stats:\n\n");
-	danipc_dump_fifo_hist(s, histo_hi);
-	seq_puts(s, "\n\nTx HI packet histogram(<=pkt-size:count):\n\n");
-	danipc_dump_pkt_hist(s, histo_hi->tx_histo, stats_hi->tx_packets);
-	seq_puts(s, "\n\nRx HI packet histogram(<=pkt-size:count):\n\n");
-	danipc_dump_pkt_hist(s, histo_hi->rx_histo, stats_hi->rx_packets);
-	seq_puts(s, "\n\nTx LO packet histogram(<=pkt-size:count):\n\n");
-	danipc_dump_pkt_hist(s, histo_lo->tx_histo, stats_lo->tx_packets);
-	seq_puts(s, "\n\nRx LO packet histogram(<=pkt-size:count):\n\n");
-	danipc_dump_pkt_hist(s, histo_lo->rx_histo, stats_lo->rx_packets);
-	seq_puts(s, "\n\nRx HI packet burst:\n");
-	danipc_dump_pkt_burst(s, histo_hi->rx_pkt_burst);
-	seq_puts(s, "\n\nRx LO packet burst:\n");
-	danipc_dump_pkt_burst(s, histo_lo->rx_pkt_burst);
-}
-
-struct fifo_threshold {
-	uint32_t fifo_0: 7;
-	uint32_t reserved_0: 1;
-	uint32_t fifo_1: 7;
-	uint32_t reserved_1: 1;
-	uint32_t fifo_2: 7;
-	uint32_t reserved_2: 1;
-	uint32_t fifo_3: 7;
-	uint32_t reserved_3: 1;
+static const struct net_device_ops danipc_netdev_ops = {
+	.ndo_open		= danipc_open,
+	.ndo_stop		= danipc_close,
+	.ndo_start_xmit		= danipc_hard_start_xmit,
+	.ndo_do_ioctl		= danipc_ioctl,
+	.ndo_change_mtu		= danipc_change_mtu,
+	.ndo_set_mac_address	= danipc_set_mac_addr,
 };
 
-static void danipc_dump_af_threshold(struct seq_file *s)
+static void danipc_setup(struct net_device *dev)
 {
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	thr;
-	struct fifo_threshold *thr_s;
+	dev->netdev_ops		= &danipc_netdev_ops;
 
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
+	dev->type		= ARPHRD_VOID;
+	dev->hard_header_len	= sizeof(struct ipc_msg_hdr);
+	dev->addr_len		= sizeof(danipc_addr_t);
+	dev->tx_queue_len	= 1000;
+
+	/* New-style flags. */
+	dev->flags		= IFF_NOARP;
+}
+
+/* Our vision of L2 header: it is of type struct danipc_pair
+ * it is stored at address skb->cb[HADDR_CB_OFFSET].
+ */
+
+static int danipc_header_parse(const struct sk_buff *skb, unsigned char *haddr)
+{
+	struct danipc_pair *pair = danipc_skb_cb(skb);
+
+	memcpy(haddr, &pair->src, sizeof(danipc_addr_t));
+	return sizeof(danipc_addr_t);
+}
+
+static int danipc_header(struct sk_buff *skb, struct net_device *dev,
+			 unsigned short type, const void *daddr,
+			 const void *saddr, unsigned len)
+{
+	struct danipc_pair *pair = danipc_skb_cb(skb);
+	const uint8_t *addr = daddr;
+
+	pair->src = COOKIE_TO_AGENTID(type);
+	pair->prio = COOKIE_TO_PRIO(type);
+	if (addr)
+		pair->dst = *addr;
+	return 0;
+}
+
+static const struct header_ops danipc_header_ops ____cacheline_aligned = {
+	.create	= danipc_header,
+	.parse	= danipc_header_parse,
+};
+
+static void danipc_netif_fifo_init(struct danipc_if *intf, enum ipc_prio prio)
+{
+	struct danipc_fifo *fifo = intf->fifo;
+	struct danipc_netif_fifo *rx_fifo = &intf->intf_fifo[prio];
+
+	rx_fifo->intf = intf;
+	rx_fifo->if_fifo = &fifo->if_fifo[prio];
+	rx_fifo->prio = prio;
+}
+
+static int danipc_if_init(struct platform_device *pdev,
+			  struct danipc_fifo *fifo,
+			  uint8_t ifidx)
+{
+	struct danipc_probe_info *probe_list = fifo->probe_info;
+	struct net_device *dev;
+	struct danipc_if *intf;
+	int prio, rc = 0;
+
+	dev = alloc_netdev(sizeof(struct danipc_if),
+			   probe_list->ifname, danipc_setup);
+	if (unlikely(dev == NULL))
+		return -ENOMEM;
+
+	intf = netdev_priv(dev);
+
+	intf->drvr = &danipc_driver;
+	intf->dev = dev;
+	intf->ifidx = ifidx;
+	intf->fifo = fifo;
+
+	for (prio = 0; prio < max_ipc_prio; prio++)
+		danipc_netif_fifo_init(intf, prio);
+
+	mutex_init(&intf->lock);
+	danipc_poll_ctl_init(&intf->poll_ctl,
+			     danipc_if_poll,
+			     (unsigned long)intf,
+			     DEFAULT_POLL_INTERVAL_IN_US);
+
+	setup_timer(&intf->tx_timer,
+		    danipc_if_tx_timeout,
+		    (unsigned long)intf);
+
+	strlcpy(dev->name, probe_list->ifname, sizeof(dev->name));
+	dev->header_ops = &danipc_header_ops;
+	dev->irq = fifo->irq;
+	dev->dev_addr[0] = fifo->node_id;
+	dev->mtu = IPC_BUF_SIZE_MAX;
+
+	rc = register_netdev(dev);
+	if (rc) {
+		netdev_err(dev, "%s: register_netdev failed\n",
+			   __func__);
+		mutex_destroy(&intf->lock);
+		goto danipc_iferr;
+	}
+
+	danipc_driver.if_list[ifidx] = intf;
+	danipc_driver.ndev++;
+danipc_iferr:
+	if (rc)
+		free_netdev(dev);
+	return rc;
+}
+
+static void danipc_if_remove(struct danipc_drvr *pdrv, uint8_t ifidx)
+{
+	struct danipc_if *intf = pdrv->if_list[ifidx];
+	struct net_device *netdev = (intf) ? intf->dev : NULL;
+
+	if (netdev == NULL)
 		return;
-	}
 
-	thr = danipc_read_af_threshold(intf->rx_fifo_idx);
-	thr_s = (struct fifo_threshold *)(&thr);
+	if (netdev->reg_state == NETREG_REGISTERED)
+		unregister_netdev(netdev);
 
-	seq_printf(s, "%#06x:\nfifo0=%d\nfifo1=%d\nfifo2=%d\nfifo3=%d\n", thr,
-		   thr_s->fifo_0,
-		   thr_s->fifo_1,
-		   thr_s->fifo_2,
-		   thr_s->fifo_3);
-	seq_puts(s, "# to change threshold write line following format\n");
-	seq_puts(s, "# fifo<n>=<thr>\n");
-	seq_puts(s, "# where:\n");
-	seq_puts(s, "# - n is fifo number 0-3\n");
-	seq_puts(s, "# - thr is new threshold 0-127\n");
+	free_netdev(netdev);
+
+	netdev_info(netdev,
+		    "Unregister DANIPC Network Interface(%s).\n",
+		    netdev->name);
+
+	pdrv->if_list[ifidx] = NULL;
+	pdrv->ndev--;
 }
 
-static void danipc_dump_ae_threshold(struct seq_file *s)
+int danipc_netdev_init(struct platform_device *pdev)
 {
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	thr;
-	struct fifo_threshold *thr_s;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-	thr = danipc_read_ae_threshold(intf->rx_fifo_idx);
-	thr_s = (struct fifo_threshold *)(&thr);
-
-	seq_printf(s, "%#06x:\nfifo0=%d\nfifo1=%d\nfifo2=%d\nfifo3=%d\n", thr,
-		   thr_s->fifo_0,
-		   thr_s->fifo_1,
-		   thr_s->fifo_2,
-		   thr_s->fifo_3);
-	seq_puts(s, "# to change threshold write line following format\n");
-	seq_puts(s, "# fifo<n>=<thr>\n");
-	seq_puts(s, "# where:\n");
-	seq_puts(s, "# - n is fifo number 0-3\n");
-	seq_puts(s, "# - thr is new threshold 0-127\n");
-}
-
-#define STATUS_IS_EMPTY(s) (s & 1)
-#define STATUS_IS_AEMPTY(s) (s & (1 << 1))
-#define STATUS_IS_HALFULL(s) (s & (1 << 2))
-#define STATUS_IS_AFULL(s) (s & (1 << 3))
-#define STATUS_IS_FULL(s) (s & (1 << 4))
-#define STATUS_IS_ERR(s) (s & (1 << 5))
-
-static void danipc_dump_fifo_n_stat(struct seq_file *s, uint32_t stat)
-{
-	seq_printf(s, "REGISTER: %#06x (", stat);
-	if (STATUS_IS_EMPTY(stat))
-		seq_puts(s, " empty");
-	if (STATUS_IS_AEMPTY(stat))
-		seq_puts(s, " aempty");
-	if (STATUS_IS_HALFULL(stat))
-		seq_puts(s, " halfull");
-	if (STATUS_IS_AFULL(stat))
-		seq_puts(s, " afull");
-	if (STATUS_IS_FULL(stat))
-		seq_puts(s, " full");
-	if (STATUS_IS_ERR(stat))
-		seq_puts(s, " err");
-	seq_puts(s, " )\n");
-}
-
-static void danipc_dump_fifo_counters(struct seq_file *s)
-{
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	status;
-	int		i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	for (i = 0 ; i < 4 ; i++) {
-		status = danipc_read_fifo_counter(intf->rx_fifo_idx, i);
-		seq_printf(s, "\n\nFIFO %d Counter: %d\n", i, status);
-	}
-}
-
-static void danipc_dump_fifo_status(struct seq_file *s)
-{
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	status;
-	int		i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	for (i = 0 ; i < 4 ; i++) {
-		seq_printf(s, "\n\nFIFO %d STATUS:\n", i);
-		status = danipc_read_fifo_status(intf->rx_fifo_idx, i);
-		danipc_dump_fifo_n_stat(s, status);
-	}
-}
-
-#define FIFO_N_IRQ_STAT(s, n) ((uint8_t)((s >> (n*8)) & 0xFF))
-#define IS_EMPTY_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<2))
-#define IS_AEMPTY_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<3))
-#define IS_HALFULL_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<4))
-#define IS_AFULL_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<5))
-#define IS_FULL_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<6))
-#define IS_ERR_IRQ(s, n) (FIFO_N_IRQ_STAT(s, n) & (1<<7))
-
-static void danipc_dump_fifo_n_status(struct seq_file *s, uint8_t n,
-				      uint32_t stat)
-{
-	seq_printf(s, "fifo %d %#02x (", n, FIFO_N_IRQ_STAT(stat, n));
-	if (IS_EMPTY_IRQ(stat, n))
-		seq_puts(s, " empty");
-	if (IS_AEMPTY_IRQ(stat, n))
-		seq_puts(s, " aempty");
-	if (IS_HALFULL_IRQ(stat, n))
-		seq_puts(s, " halfull");
-	if (IS_AFULL_IRQ(stat, n))
-		seq_puts(s, " afull");
-	if (IS_FULL_IRQ(stat, n))
-		seq_puts(s, " full");
-	if (IS_ERR_IRQ(stat, n))
-		seq_puts(s, " err");
-	seq_puts(s, " )\n");
-}
-
-static void danipc_dump_irq_raw_status(struct seq_file *s)
-{
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	status;
-	int		i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	status = danipc_read_fifo_irq_status_raw(intf->rx_fifo_idx);
-	seq_printf(s, "# %#06x\n", status);
-	for (i = 0 ; i < 4 ; i++)
-		danipc_dump_fifo_n_status(s, i, status);
-}
-
-static void danipc_dump_irq_status(struct seq_file *s)
-{
-	struct dbgfs_hdlr	 *hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	  status;
-	int		  i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	status = danipc_read_fifo_irq_status(intf->rx_fifo_idx);
-	seq_printf(s, "# %#06x\n", status);
-	for (i = 0 ; i < 4 ; i++)
-		danipc_dump_fifo_n_status(s, i, status);
-}
-
-static void danipc_dump_irq_enable(struct seq_file *s)
-{
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	enable;
-	int		i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	enable = danipc_read_fifo_irq_enable(intf->rx_fifo_idx);
-	seq_printf(s, "%#06x\n", enable);
-	for (i = 0 ; i < 4 ; i++)
-		danipc_dump_fifo_n_status(s, i, enable);
-}
-
-static void danipc_dump_irq_mask(struct seq_file *s)
-{
-	struct dbgfs_hdlr	*hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_if	*intf = (struct danipc_if *)hdlr->data;
-	uint32_t	mask;
-	int		i;
-
-	if (!netif_running(intf->dev)) {
-		seq_puts(s, "\n\nDevice is not up!\n\n");
-		return;
-	}
-
-	mask = danipc_read_fifo_irq_mask(intf->rx_fifo_idx);
-	for (i = 0 ; i < 4 ; i++)
-		danipc_dump_fifo_n_status(s, i, mask);
-}
-
-static int danipc_parse_fifo_threshold(struct net_device *dev,
-				       const char *buf, size_t len,
-				       u8 *fifo, u8 *threshold)
-{
-	char int_buf[20];
-	char *ibuf;
-	size_t skip;
+	struct danipc_drvr *pdrv = &danipc_driver;
+	uint8_t i;
 	int ret = 0;
 
-	ibuf = strnstr(buf, "fifo", len);
-	if (ibuf == 0)
-		return -EINVAL;
-	ibuf += 4;
+	for (i = 0; i < pdrv->num_lfifo && !ret; i++)
+		ret = danipc_if_init(pdev, &pdrv->lfifo[i], i);
 
-	/* look for fifo number */
-	skip = strspn(ibuf, " \t");
-	ibuf += skip;
-	skip = strcspn(ibuf, " \t=");
-	if (skip > sizeof(int_buf)) {
-		netdev_warn(dev, "%s: Fifo number too long %s\n",
-			    __func__, ibuf);
-		return -EINVAL;
-	}
-	strlcpy(int_buf, ibuf, skip+1);
-	ibuf += skip;
-	ret = kstrtou8(int_buf, 0, fifo);
-	if (ret != 0) {
-		netdev_warn(dev, "%s: Error(%d) parsing fifo number \"%s\"\n",
-			    __func__, ret, int_buf);
-		return ret;
-	}
-	if (*fifo > 3) {
-		netdev_warn(dev, "%s: fifo number(%d) out of range (0-3)\n",
-			    __func__, *fifo);
-		return -EINVAL;
-	}
-
-	/* look for threshold value */
-	skip = strspn(ibuf, " \t=");
-	ibuf += skip;
-	skip = strspn(ibuf, "0123456789ABCDEFabcdefXx");
-	if (skip > sizeof(int_buf)) {
-		netdev_warn(dev, "%s: Threshold too long %s\n", __func__, ibuf);
-		return -EINVAL;
-	}
-	strlcpy(int_buf, ibuf, skip+1);
-	ret = kstrtou8(int_buf, 0, threshold);
-	if (ret != 0) {
-		netdev_warn(dev, "%s: Error(%d) parsing threshold \"%s\"\n",
-			    __func__, ret, int_buf);
-		return ret;
-	}
-	if (*threshold > 127) {
-		netdev_warn(dev, "%s: threshold(%d) out of range (0-127)\n",
-			    __func__, *threshold);
-		return -EINVAL;
-	}
 	return ret;
 }
 
-static ssize_t
-danipc_write_af_threshold(struct file *filp, const char __user *ubuf,
-			  size_t cnt, loff_t *ppos)
+int danipc_netdev_cleanup(struct platform_device *pdev)
+{
+	struct danipc_drvr *pdrv = &danipc_driver;
+	uint8_t i = 0;
+
+	for (i = 0; i < DANIPC_MAX_IF; i++)
+		danipc_if_remove(pdrv, i);
+
+	pr_info("DANIPC Network driver unregistered.\n");
+	return 0;
+}
+
+/* DANIPC netdev debugfs interface */
+static void danipc_netif_dump_fifo_status(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_netif_fifo *intf_fifo =
+		(struct danipc_netif_fifo *)hdlr->data;
+	struct danipc_netif_fifo_status *stats = &intf_fifo->status;
+	struct ipc_msg_err_stats *msg_stats = &stats->rx_err_msg;
+
+	seq_printf(s, "%-25s: %u\n", "rx", stats->rx);
+	seq_printf(s, "%-25s: %u\n", "rx_bytes", stats->rx_bytes);
+	seq_printf(s, "%-25s: %u\n", "rx_ptr", stats->rx_ptr);
+	seq_printf(s, "%-25s: %u\n", "rx_drop", stats->rx_drop);
+	seq_printf(s, "%-25s: %u\n", "rx_error", stats->rx_error);
+	seq_printf(s, "%-25s: %u\n", "rx_no_skb", stats->rx_no_skb);
+	seq_printf(s, "%-25s: %u\n", "rx_ptr_inv_len", stats->rx_ptr_inv_len);
+	seq_printf(s, "%-25s: %u\n", "rx_ptr_inv_addr", stats->rx_ptr_inv_addr);
+
+	seq_printf(s, "%-25s: %u\n", "rx_zero_len_msg", msg_stats->zlen_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_oversize_msg",
+		   msg_stats->oversize_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_invalid_aid_msg",
+		   msg_stats->inval_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_chained_msg", msg_stats->chained_msg);
+
+	seq_printf(s, "%-25s: %u\n", "tx", stats->tx);
+	seq_printf(s, "%-25s: %u\n", "tx_bytes", stats->tx_bytes);
+	seq_printf(s, "%-25s: %u\n", "tx_drop", stats->tx_drop);
+	seq_printf(s, "%-25s: %u\n", "tx_unknown_agent",
+		   stats->tx_unknown_agent);
+	seq_printf(s, "%-25s: %u\n", "tx_bad_proto", stats->tx_bad_proto);
+	seq_printf(s, "%-25s: %u\n", "tx_no_buf", stats->tx_no_buf);
+}
+
+static void danipc_netif_dump_if_fifo(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_netif_fifo *intf_fifo =
+		(struct danipc_netif_fifo *)hdlr->data;
+
+	danipc_dbgfs_dump_if_fifo(s, intf_fifo->if_fifo);
+}
+
+static struct danipc_dbgfs netif_fifo_dbgfs[] = {
+	DBGFS_NODE("stats", 0444, danipc_netif_dump_fifo_status, NULL),
+	DBGFS_NODE("interface", 0444, danipc_netif_dump_if_fifo, NULL),
+	DBGFS_NODE_LAST
+};
+
+static void danipc_if_dump_poll_count(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_if *intf = (struct danipc_if *)hdlr->data;
+	struct danipc_poll_ctl *ctl = &intf->poll_ctl;
+
+	seq_printf(s, "%llu\n", ctl->poll_cnt);
+}
+
+static void danipc_if_dump_poll_intval(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_if *intf = (struct danipc_if *)hdlr->data;
+	struct danipc_poll_ctl *ctl = &intf->poll_ctl;
+
+	seq_printf(s, "%lldus\n", ktime_to_us(ctl->timer_intval));
+}
+
+static ssize_t danipc_if_set_poll_intval(struct file *filp,
+					 const char __user *ubuf,
+					 size_t cnt,
+					 loff_t *ppos)
 {
 	struct seq_file *m = filp->private_data;
 	struct dbgfs_hdlr *dbgfshdlr = (struct dbgfs_hdlr *)m->private;
 	struct danipc_if *intf = (struct danipc_if *)dbgfshdlr->data;
-	struct net_device *dev = intf->dev;
-	char buf[64];
-	int buf_size;
-	int ret;
-	u8 fifo;
-	u8 thr;
+	struct danipc_poll_ctl *ctl = &intf->poll_ctl;
+	uint32_t intval;
 
-	if (*ppos)
+	if (kstrtouint_from_user(ubuf, cnt, 0, &intval))
 		return -EINVAL;
 
-	buf_size = min(cnt, (sizeof(buf) - 1));
-	memset(buf, '\0', sizeof(buf));
-	if (strncpy_from_user(buf, ubuf, buf_size) < 0)
-		return -EFAULT;
+	if (!intval)
+		return -EINVAL;
 
-	ret = danipc_parse_fifo_threshold(dev, buf, buf_size, &fifo, &thr);
-	if (ret)
-		return ret;
-
-	danipc_set_af_threshold(intf->rx_fifo_idx, fifo, thr);
+	ctl->timer_intval = ns_to_ktime(intval * 1000);
 	return cnt;
 }
 
-static ssize_t
-danipc_write_ae_threshold(struct file *filp, const char __user *ubuf,
-			  size_t cnt, loff_t *ppos)
+static void danipc_if_dump_fifo(struct seq_file *s)
 {
-	struct seq_file *m = filp->private_data;
-	struct dbgfs_hdlr *dbgfshdlr = (struct dbgfs_hdlr *)m->private;
-	struct danipc_if *intf = (struct danipc_if *)dbgfshdlr->data;
-	struct net_device *dev = intf->dev;
-	char buf[64];
-	int buf_size;
-	int ret;
-	u8 fifo;
-	u8 thr;
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_if *intf = (struct danipc_if *)hdlr->data;
 
-	if (*ppos)
-		return -EINVAL;
-
-	buf_size = min(cnt, (sizeof(buf) - 1));
-	memset(buf, '\0', sizeof(buf));
-	if (strncpy_from_user(buf, ubuf, buf_size) < 0)
-		return -EFAULT;
-
-	ret = danipc_parse_fifo_threshold(dev, buf, buf_size, &fifo, &thr);
-	if (ret)
-		return ret;
-
-	danipc_set_ae_threshold(intf->rx_fifo_idx, fifo, thr);
-	return cnt;
+	danipc_dbgfs_dump_fifo(s, intf->fifo);
 }
 
-static ssize_t
-danipc_recv_pkt(struct file *filp, const char __user *ubuf,
-		size_t cnt, loff_t *ppos)
+static void danipc_if_dump_tx_queue(struct seq_file *s)
 {
-	struct seq_file *m = filp->private_data;
-	struct dbgfs_hdlr *dbgfshdlr = (struct dbgfs_hdlr *)m->private;
-	struct danipc_if *intf = (struct danipc_if *)dbgfshdlr->data;
-	struct net_device *dev = intf->dev;
-	char buf[64];
-	int buf_size;
-	int ret;
-	u8 fifo;
-	char *tok;
-	char *end;
-	int input[6];
-	int i;
-	char *ipc_buf;
-	struct ipc_msg_hdr *hdr;
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_if *intf = (struct danipc_if *)hdlr->data;
 
-	if (*ppos)
-		return -EINVAL;
-
-	buf_size = min(cnt, (sizeof(buf) - 1));
-	memset(buf, '\0', sizeof(buf));
-	if (strncpy_from_user(buf, ubuf, buf_size) < 0)
-		return -EFAULT;
-
-	tok = buf;
-	end = buf;
-	i = 0;
-
-	/* input[0] = interface index
-	 * input[1] = src aid
-	 * input[2] = dest aid
-	 * input[3] = priority
-	 * input[4] = size of message
-	 * input[5] = burst
-	 */
-	while (tok != NULL && i < sizeof(input)/sizeof(int)) {
-		strsep(&end, " ");
-		ret = kstrtou32(tok, 0, input + i);
-
-		if (ret != 0) {
-			netdev_warn(dev, "%s: Error(%d) parsing input \"%s\"\n",
-				    __func__, ret, tok);
-			return ret;
-		}
-
-		tok = end;
-		i++;
-	}
-
-	if (i != sizeof(input)/sizeof(int))
-		return 0;
-
-	fifo = intf->rx_fifo_idx;
-	i = 0;
-
-	while (i < input[5]) {
-		i++;
-		ipc_buf = ipc_trns_fifo_buf_alloc(fifo, input[3]);
-
-		if (ipc_buf == NULL)
-			continue;
-
-		hdr = (struct ipc_msg_hdr *)ipc_buf;
-		hdr->next = NULL;
-		hdr->msg_len = input[4];
-		hdr->src_aid = input[1];
-		hdr->dest_aid = input[2];
-
-		ipc_trns_fifo_buf_send(ipc_buf, fifo, input[3]);
-	}
-
-	return cnt;
-}
-
-static void danipc_recv_pkt_disp(struct seq_file *s)
-{
+	seq_printf(s, "tx_queue_stop:       %u\n", intf->tx_queue_stop);
+	seq_printf(s, "tx_queue_restart:    %u\n", intf->tx_queue_restart);
+	seq_printf(s, "tx_queue:            %s\n",
+		   (netif_queue_stopped(intf->dev)) ? "stopped" : "running");
 }
 
 static struct danipc_dbgfs netdev_dbgfs[] = {
-	DBGFS_NODE("fifo_info", 0444, danipc_dump_fifo_info, NULL),
-	DBGFS_NODE("fifo_stats", 0444, danipc_dump_fifo_stats, NULL),
-	DBGFS_NODE("af_threshold", 0644, danipc_dump_af_threshold,
-		   danipc_write_af_threshold),
-	DBGFS_NODE("ae_threshold", 0644, danipc_dump_ae_threshold,
-		   danipc_write_ae_threshold),
-	DBGFS_NODE("fifo_status", 0444, danipc_dump_fifo_status, NULL),
-	DBGFS_NODE("fifo_counters", 0444, danipc_dump_fifo_counters, NULL),
-	DBGFS_NODE("raw_irq_status", 0444, danipc_dump_irq_raw_status, NULL),
-	DBGFS_NODE("irq_enable", 0444, danipc_dump_irq_enable, NULL),
-	DBGFS_NODE("irq_mask", 0444, danipc_dump_irq_mask, NULL),
-	DBGFS_NODE("data_irq_status", 0444, danipc_dump_irq_status, NULL),
-	DBGFS_NODE("recv_pkt", 0644, danipc_recv_pkt_disp, danipc_recv_pkt),
-
+	DBGFS_NODE("timer_intval", 0644, danipc_if_dump_poll_intval,
+		   danipc_if_set_poll_intval),
+	DBGFS_NODE("poll_cnt", 0444, danipc_if_dump_poll_count, NULL),
+	DBGFS_NODE("fifo", 0444, danipc_if_dump_fifo, NULL),
+	DBGFS_NODE("tx_queue", 0444, danipc_if_dump_tx_queue, NULL),
 	DBGFS_NODE_LAST
 };
+
+static void danipc_dbgfs_netdev_remove_dent(struct danipc_if *intf)
+{
+	int prio;
+
+	for (prio = 0; prio < max_ipc_prio; prio++)
+		danipc_dbgfs_remove_dent(&intf->intf_fifo[prio].dent);
+
+	danipc_dbgfs_remove_dent(&intf->dent);
+}
 
 int danipc_dbgfs_netdev_init(void)
 {
@@ -1216,26 +707,34 @@ int danipc_dbgfs_netdev_init(void)
 		return PTR_ERR(dent);
 	}
 
-	for (i = 0; i < drvr->ndev; i++) {
+	for (i = 0; i < drvr->ndev && !ret; i++) {
 		struct danipc_if *intf = drvr->if_list[i];
+		struct danipc_netif_fifo *rx_fifo = intf->intf_fifo;
+		int prio;
 
-		intf->dbgfs = kzalloc(sizeof(netdev_dbgfs), GFP_KERNEL);
-		if (intf->dbgfs == NULL) {
-			ret = -ENOMEM;
+		ret = danipc_dbgfs_create_dent(&intf->dent,
+					       dent,
+					       intf->dev->name,
+					       netdev_dbgfs,
+					       intf);
+		if (ret) {
 			pr_err("%s: failed to allocate dbgfs\n", __func__);
 			break;
 		}
-		memcpy(intf->dbgfs, &netdev_dbgfs[0], sizeof(netdev_dbgfs));
-		intf->dirent = danipc_dbgfs_create_dir(dent,
-						       intf->dev->name,
-						       intf->dbgfs,
-						       intf);
-		if (intf->dirent == NULL) {
-			kfree(intf->dbgfs);
-			intf->dbgfs = NULL;
-			ret = PTR_ERR(intf->dirent);
-			break;
+
+		for (prio = 0; prio < max_ipc_prio && !ret; prio++, rx_fifo++) {
+			if (!rx_fifo->if_fifo->probed)
+				continue;
+			ret = danipc_dbgfs_create_dent(
+				&rx_fifo->dent,
+				intf->dent.dent,
+				(rx_fifo->prio == ipc_prio_hi) ?
+				"fifo(hi_prio)" : "fifo(lo_prio)",
+				netif_fifo_dbgfs,
+				rx_fifo);
 		}
+		if (ret)
+			danipc_dbgfs_netdev_remove_dent(intf);
 	}
 
 	return ret;
@@ -1249,10 +748,6 @@ void danipc_dbgfs_netdev_remove(void)
 	for (i = 0; i < drvr->ndev; i++) {
 		struct danipc_if *intf = drvr->if_list[i];
 
-		debugfs_remove_recursive(intf->dirent);
-		intf->dirent = NULL;
-
-		kfree(intf->dbgfs);
-		intf->dbgfs = NULL;
+		danipc_dbgfs_netdev_remove_dent(intf);
 	}
 }

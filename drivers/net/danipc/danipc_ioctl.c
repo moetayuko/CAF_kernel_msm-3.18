@@ -41,6 +41,8 @@ static int register_local_agent(struct danipc_fifo *fifo,
 				struct danipc_reg *danipc_reg,
 				void *owner)
 {
+	struct agent_entry *agent_table = (struct agent_entry *)
+		danipc_res_base(AGENT_TABLE_RES);
 	unsigned	agent_id = INVALID_ID;
 	uint8_t		lcpuid = fifo->node_id;
 	unsigned	agent_idx;
@@ -82,6 +84,8 @@ static int register_local_agent(struct danipc_fifo *fifo,
 static int discover_agent(struct danipc_name *danipc_name_p)
 {
 	struct danipc_drvr	*drv = &danipc_driver;
+	struct agent_entry	*agent_table = (struct agent_entry *)
+		danipc_res_base(AGENT_TABLE_RES);
 	int			rc = -ENODATA;
 	uint16_t		aid;
 
@@ -90,16 +94,18 @@ static int discover_agent(struct danipc_name *danipc_name_p)
 				   MAX_AGENT_NAME, MAX_AGENT_NAME_LEN)) {
 			const unsigned cpuid = ipc_get_node(aid);
 			const unsigned lid = ipc_lid(aid);
-			struct ipc_to_virt_map *map = &ipc_to_virt_map[cpuid]
-				[ipc_trns_prio_1];
 
-			if (!map->paddr) {
-				char *buf = ipc_buf_alloc(aid, ipc_trns_prio_1);
+			if (!danipc_shm_base(cpuid)) {
+				char *buf = danipc_hw_fifo_pop(
+					cpuid, default_b_fifo(ipc_prio_hi));
 
 				if (buf)
-					ipc_buf_free(buf,
-						     ipc_get_node(aid),
-						     ipc_trns_prio_1);
+					danipc_hw_fifo_push(
+						cpuid,
+						default_b_fifo(ipc_prio_hi),
+						buf);
+				else
+					break;
 			}
 
 			/* Mark destination agent discovered.
@@ -118,6 +124,8 @@ static int discover_agent(struct danipc_name *danipc_name_p)
 
 static int get_agent_name(struct danipc_name *danipc_name)
 {
+	struct agent_entry	*agent_table = (struct agent_entry *)
+		danipc_res_base(AGENT_TABLE_RES);
 	int	rc = -ENODATA;
 	uint8_t addr = danipc_name->addr;
 

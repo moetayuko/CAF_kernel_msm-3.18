@@ -39,25 +39,10 @@
 
 #define IPC_BUF_SIZE_MAX	1600		/* in bytes */
 #define IPC_BUF_COUNT_MAX	128
-#define IPC_MAX_MESSAGE_SIZE	(IPC_BUF_COUNT_MAX * IPC_BUF_SIZE_MAX)
-#define IPC_BUF_SIZE_PER_NODE	(IPC_BUF_COUNT_MAX * IPC_BUF_SIZE_MAX)
-#define IPC_FIFO_BUF_NUM_HIGH	(IPC_BUF_COUNT_MAX)
-#define IPC_FIFO_BUF_NUM_LOW	(IPC_BUF_COUNT_MAX)
 
-#define IPC_FIRST_BUF_DATA_SIZE_MAX	\
-			(IPC_BUF_SIZE_MAX - sizeof(struct ipc_msg_hdr))
-#define IPC_NEXT_BUF_DATA_SIZE_MAX	\
-			(IPC_BUF_SIZE_MAX - sizeof(struct ipc_buf_hdr))
+#define IPC_BUFS_SZ_PER_IF_FIFO	(IPC_BUF_SIZE_MAX * IPC_BUF_COUNT_MAX)
 
-#define IPC_BUF_TYPE_FULL	0	/* Single message buffer */
-#define IPC_BUF_TYPE_START	1	/* First buffer, more to come */
-#define IPC_BUF_TYPE_END	2	/* Last buffer, no more */
-#define IPC_BUF_TYPE_MID	3	/* Mid buffer, more to come */
-
-#define IPC_BUF_TYPE_MTC	1	/* There are more buffers */
-#define IPC_BUF_TYPE_BITS	3	/* mask for type bits  */
-/* 'Clean' the type part from the next_buffer field (clear 2 LSB bits) */
-#define IPC_NEXT_PTR_PART(next) (char *)(((uint32_t)next) & ~IPC_BUF_TYPE_BITS)
+#define IPC_MSG_MAX_LEN	(IPC_BUF_SIZE_MAX - sizeof(struct ipc_msg_hdr))
 
 #define MAX_AGENT_NAME_LEN	32
 
@@ -66,11 +51,6 @@
 #endif
 
 #define MAX_LOCAL_AGENT		16
-
-/* IPC result codes */
-#define IPC_SUCCESS		0
-#define IPC_GENERIC_ERROR	-1
-
 
 /*********************************
  *  Message header flag field
@@ -106,49 +86,14 @@ struct ipc_msg_hdr {
 						/* pointer */
 } __packed;
 
-
-/********************************************
- *  Buffer header
- *
- *  This is the header of the next buffer[s]
- *
- ********************************************
-*/
-struct ipc_buf_hdr {
-	struct ipc_buf_hdr	*next;		/* Points to the next buffer */
-						/* if exists. 2 LSB are used */
-						/* to identify buffer type */
-						/* (full, start, end, mid) */
-};
-
-/********************************************
- *  First Buffer structure
- *
- ********************************************
-*/
-struct ipc_first_buf {
-	struct ipc_msg_hdr	msg_hdr;
-	char			body[IPC_FIRST_BUF_DATA_SIZE_MAX];
-};
-
-/********************************************
- *  Next Buffer[s] structure
- *
- ********************************************
-*/
-struct ipc_next_buf {
-	struct ipc_buf_hdr	buf_hdr;
-	char			body[IPC_NEXT_BUF_DATA_SIZE_MAX];
-};
-
 /********************************************
  *  Priority (for transport)
  *
  ********************************************
 */
-enum ipc_trns_prio {
-	ipc_trns_prio_0,	/* Low */
-	ipc_trns_prio_1,	/* .. */
+enum ipc_prio {
+	ipc_prio_lo,	/* Low */
+	ipc_prio_hi,	/* High */
 	max_ipc_prio,
 };
 
@@ -157,45 +102,16 @@ static inline bool valid_ipc_prio(uint32_t prio)
 	return ((prio < max_ipc_prio) ? true : false);
 }
 
-typedef char *(*ipc_trns_alloc_t)(uint8_t dest_aid, enum ipc_trns_prio pri);
-typedef void (*ipc_trns_free_t)(char *buf, uint8_t dest_aid,
-					enum ipc_trns_prio pri);
-typedef int32_t (*ipc_trns_send_t)(char *buf, uint8_t dest_aid,
-					enum ipc_trns_prio pri);
-
-/********************************************
- *  Transport layer utility function vector
- *
- *  The structure hold the transport function
- *  to be used per destination node (alloc, send)
- *  and source (free)
- *
- ********************************************
-*/
-struct ipc_trns_func {
-	ipc_trns_alloc_t	trns_alloc;
-	ipc_trns_free_t		trns_free;
-	ipc_trns_send_t		trns_send;
-};
-
 struct agent_entry {
 	char	name[MAX_AGENT_NAME_LEN];
 };
 
-/* ===========================================================================
- * ipc_buf_alloc
- * ===========================================================================
- * Description:	buffer allocation API, should be called before building
- *		new message
- *
- * Parameters:		dest_aid	- Message destination AgentId
- *			pri		- Transport priority level
- *
- *
- * Returns: Pointer to a 128 Byte buffer
- *
- */
-char *ipc_buf_alloc(uint8_t dest_aid, enum ipc_trns_prio pri);
+struct ipc_msg_err_stats {
+	uint32_t	zlen_msg;
+	uint32_t	oversize_msg;
+	uint32_t	inval_msg;
+	uint32_t	chained_msg;
+};
 
 /* ===========================================================================
  * ipc_buf_free
@@ -204,45 +120,37 @@ char *ipc_buf_alloc(uint8_t dest_aid, enum ipc_trns_prio pri);
  *		or on sending node when need to free previously allocated
  *		buffers
  *
- * Parameters:		dest_aid	- Free buffer to this node.
- *			buf_first	- Pointer to first message buffer
- *			pri		- Transport priority level
+ * Parameters:		hdr	- Pointer to IPC message header
+ *			b_fifo	- B-FIFO HW FIFO Index
  *
  *
  * Returns: Result code
  *
  */
-int32_t ipc_buf_free(char *buf_first, uint8_t dest_aid, enum ipc_trns_prio pri);
-
+void ipc_msg_free(struct ipc_msg_hdr *hdr, uint32_t b_fifo);
 
 /* ===========================================================================
  * ipc_msg_alloc
  * ===========================================================================
  * Description:	Allocate message buffer[s] and set the type and length.
- *		Optionally copy message data into allocated buffers (if msg
- *		is not NULL.
  *
  *
  * Parameters:		src_aid		- Message source AgentId
  *			dest_aid	- Message destination AgentId
- *			msg		- Pointer to message data (optional)
  *			msg_len		- Message length
  *			msg_type	- Message type
- *			pri		- Transport priority level
- *			from_user_space	- Message from user space
+ *			b_fifo		- B-FIFO HW FIFO index
  *
- * Returns: Pointer to the message first buffer
+ * Returns: Pointer to the message header
  *
  */
-char *ipc_msg_alloc
+struct ipc_msg_hdr *ipc_msg_alloc
 (
-	uint8_t			src_aid,
-	uint8_t			dest_aid,
-	const char		*msg,
-	size_t			msg_len,
-	uint8_t			msg_type,
-	enum ipc_trns_prio	pri,
-	bool			from_user_space
+	uint8_t		src_aid,
+	uint8_t		dest_aid,
+	size_t		msg_len,
+	uint8_t		msg_type,
+	uint32_t	b_fifo
 );
 
 /* ===========================================================================
@@ -250,18 +158,48 @@ char *ipc_msg_alloc
  * ===========================================================================
  * Description:	Message send, first buffer of the message should be provided,
  *
- * Parameters:		buf_first	- Pointer to the first message buffer
- *			pri		- Transport priority level
- *
+ * Parameters:		hdr	- Pointer to IPC message header
+ *			m_fifo	- M-FIFO HW FIFO index
  *
  * Returns: Result code
  *
  */
-int32_t ipc_msg_send(char *buf_first, enum ipc_trns_prio pri);
+int ipc_msg_send(struct ipc_msg_hdr *hdr, uint32_t m_fifo);
+
+/* ===========================================================================
+ * ipc_msg_valid
+ * ===========================================================================
+ * Description:  Validate the IPC message
+ *
+ * Parameters:	hdr	- Pointer to IPC message header
+ *		node	- Receiving Node ID
+ *		stats	- Status Pointer
+ *
+ * Returns: True - The message is valid, otherwise False
+ *
+ */
+bool ipc_msg_valid(const struct ipc_msg_hdr *hdr,
+		   uint8_t node,
+		   struct ipc_msg_err_stats *stats);
+
+static inline int ipc_copy_from(
+	char *dst,
+	const char *src,
+	size_t size,
+	bool user_space)
+{
+	if (!user_space) {
+		memcpy(dst, src, size);
+		return 0;
+	}
+	if (copy_from_user(dst, src, size))
+		return -EFAULT;
+	return 0;
+}
+
+void ipc_agent_table_clean(uint8_t local_cpuid);
 
 extern uint8_t ipc_req_sn;
-
-extern const struct ipc_trns_func ipc_fifo_utils;
 
 /* Buffer Management */
 struct shm_region {

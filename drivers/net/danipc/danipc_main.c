@@ -32,13 +32,10 @@
 #include <linux/ioctl.h>
 #include <linux/cpumask.h>
 #include <linux/poll.h>
-#include <net/arp.h>
 
 #include "danipc_k.h"
 #include "ipc_api.h"
 #include "danipc_lowlevel.h"
-
-#define DANIPC_VERSION		"v1.0"
 
 #define TX_MMAP_REGION_BUF_NUM	512
 
@@ -48,79 +45,47 @@ struct shm_msg {
 	uint8_t			prio;
 };
 
-struct danipc_drvr danipc_driver = {
-	.proc_rx = {
-			{
-				danipc_default_rcv_init,
-				danipc_default_work_sched,
-				.proc_pkt.fn = danipc_default_rcv,
-				danipc_default_stop
-			},
-			{
-				danipc_tasklet_init,
-				danipc_tasklet_sched,
-				.proc_pkt.fn = danipc_proc_parallel_rcv,
-				danipc_tasklet_stop
-			},
-			{
-				danipc_tasklet_init,
-				danipc_tasklet_sched,
-				.proc_pkt.fn = danipc_proc_concurrent_rcv,
-				danipc_tasklet_stop
-			},
-			{
-				danipc_wq_init,
-				danipc_wq_sched,
-				.proc_pkt.work = danipc_proc_wq_rcv,
-				danipc_wq_stop
-			},
-			{
-				danipc_timer_init,
-				danipc_timer_sched,
-				.proc_pkt.fn = danipc_rcv_timer,
-				danipc_timer_stop
-			},
-	},
-};
+struct danipc_drvr danipc_driver;
 
-const struct ipc_buf_desc *ext_bufs = NULL;
-uint32_t num_ext_bufs = 0;
-
-void alloc_pool_buffers(struct danipc_if *intf)
+static void init_if_fifo_buf(struct danipc_if_fifo *if_fifo)
 {
-	struct net_device	*dev = intf->dev;
-	struct danipc_pktq	*rx_pool = &intf->rx_pkt_pool;
+	struct danipc_fifo *fifo = if_fifo->fifo;
+	char *base = danipc_res_base(IPC_BUFS_RES);
+	int n;
 
-	/* Pre-allocate or refill skb for selected interfaces */
-	if (intf->drvr->ndev > 1) {
-		uint16_t	fillsz = rx_pool->max_size -
-					 skb_queue_len(&rx_pool->q);
+	danipc_hw_fifo_drain(fifo->node_id, if_fifo->m_fifo_idx);
+	danipc_hw_fifo_drain(fifo->node_id, if_fifo->b_fifo_idx);
 
-		while (fillsz) {
-			struct sk_buff *nskb =
-			 netdev_alloc_skb(dev, IPC_BUF_SIZE_MAX);
-
-			if (nskb == NULL) {
-				pr_info("Failed alloc, rx packet pool\n");
-				/* TBD: Add counter for failure */
-				break;
-			}
-
-			__skb_queue_tail(&rx_pool->q, nskb);
-
-			fillsz--;
-		}
-
-		rx_pool->refill = (fillsz != 0);
-	}
+	base += if_fifo->unit_num * IPC_BUFS_SZ_PER_IF_FIFO;
+	for (n = 0; n < IPC_BUF_COUNT_MAX; n++, base += IPC_BUF_SIZE_MAX)
+		danipc_hw_fifo_push(fifo->node_id, if_fifo->b_fifo_idx, base);
 }
 
-void free_pool_buffers(struct danipc_if *intf)
+static int init_if_fifo(struct danipc_if_fifo *if_fifo,
+			struct danipc_fifo *fifo,
+			int m_fifo_idx,
+			int b_fifo_idx)
 {
-	struct danipc_pktq	  *rx_pool = &intf->rx_pkt_pool;
+	memset(if_fifo, 0, sizeof(*if_fifo));
 
-	while (!skb_queue_empty(&rx_pool->q))
-		dev_kfree_skb(__skb_dequeue(&rx_pool->q));
+	if_fifo->fifo = fifo;
+	if_fifo->unit_num = danipc_driver.num_l_if_fifo;
+
+	if (m_fifo_idx < 0 || b_fifo_idx < 0)
+		return 0;
+	if (!valid_fifo_unit(m_fifo_idx) || !valid_fifo_unit(b_fifo_idx))
+		return -EINVAL;
+
+	if_fifo->m_fifo_idx = m_fifo_idx;
+	if_fifo->b_fifo_idx = b_fifo_idx;
+	if_fifo->irq_mask = IPC_INT_FIFO_AF(m_fifo_idx);
+	if_fifo->probed = true;
+
+	init_if_fifo_buf(if_fifo);
+
+	danipc_driver.num_l_if_fifo++;
+
+	return 0;
 }
 
 static int init_local_fifo(struct platform_device *pdev,
@@ -142,26 +107,46 @@ static int init_local_fifo(struct platform_device *pdev,
 	}
 
 	mutex_init(&fifo->lock);
-	fifo->map = &ipc_to_virt_map[nodeid][0];
+
 	fifo->probe_info = info;
 	fifo->node_id = nodeid;
+	fifo->io_base = pdrv->io_res[nodeid].base;
 	fifo->owner = NULL;
-	fifo->flag = info->flags;
+	fifo->flag = 0;
 	fifo->idx = pdrv->num_lfifo;
-	ret = init_own_ipc_to_virt_map(fifo);
-	if (ret)
-		goto out;
+
+	memcpy(&danipc_driver.shm_res[fifo->node_id],
+	       &danipc_driver.res[IPC_BUFS_RES],
+	       sizeof(struct danipc_resource));
+
+	ret = init_if_fifo(&fifo->if_fifo[ipc_prio_hi],
+			   fifo,
+			   info->hi_prio_m_fifo,
+			   info->hi_prio_b_fifo);
+	if (ret) {
+		pr_err("failed to initialize hi-prio FIFO\n");
+		return ret;
+	}
+
+	ret = init_if_fifo(&fifo->if_fifo[ipc_prio_lo],
+			   fifo,
+			   info->lo_prio_m_fifo,
+			   info->lo_prio_b_fifo);
+	if (ret) {
+		pr_err("failed to initialize lo-prio FIFO\n");
+		return ret;
+	}
+
 	pdrv->num_lfifo++;
 
-out:
-	return ret;
+	return 0;
 }
 
-static int acquire_local_fifo(struct danipc_fifo *fifo,
-			      void *owner,
-			      uint8_t owner_type)
+int acquire_local_fifo(struct danipc_fifo *fifo, void *owner)
 {
 	int ret = 0;
+	int pri;
+	struct danipc_if_fifo *if_fifo = fifo->if_fifo;
 
 	mutex_lock(&fifo->lock);
 	if (fifo->flag & DANIPC_FIFO_F_INUSE) {
@@ -169,13 +154,22 @@ static int acquire_local_fifo(struct danipc_fifo *fifo,
 		goto out;
 	}
 
-	ret = ipc_init(fifo);
-	if (ret)
-		goto out;
-	fifo->flag |= DANIPC_FIFO_F_INIT;
+	for (pri = 0; pri < max_ipc_prio; pri++, if_fifo++) {
+		uint32_t val;
+
+		if (!if_fifo->probed)
+			continue;
+
+		while ((val = danipc_hw_fifo_pop_raw(fifo->node_id,
+						     if_fifo->m_fifo_idx)))
+			danipc_hw_fifo_push_raw(fifo->node_id,
+						if_fifo->b_fifo_idx,
+						val);
+	}
+
+	ipc_agent_table_clean(fifo->node_id);
 
 	fifo->owner = owner;
-	fifo->owner_type = owner_type;
 	fifo->flag |= DANIPC_FIFO_F_INUSE;
 
 out:
@@ -183,7 +177,7 @@ out:
 	return ret;
 }
 
-static int release_local_fifo(struct danipc_fifo *fifo, void *owner)
+int release_local_fifo(struct danipc_fifo *fifo, void *owner)
 {
 	int ret = 0;
 
@@ -192,434 +186,149 @@ static int release_local_fifo(struct danipc_fifo *fifo, void *owner)
 		ret = -EPERM;
 		goto out;
 	}
+	ipc_agent_table_clean(fifo->node_id);
 	fifo->owner = NULL;
 	fifo->flag &= ~DANIPC_FIFO_F_INUSE;
-
 out:
 	mutex_unlock(&fifo->lock);
 	return ret;
 }
 
-static void clear_stats(struct danipc_pkt_histo *histo)
+static enum hrtimer_restart danipc_poll_ctl_timeout(struct hrtimer *timer)
 {
-	uint32_t packet_size;
+	struct danipc_poll_ctl *ctl =
+		container_of(timer, struct danipc_poll_ctl, timer);
 
-	histo->stats->rx_packets = 0;
-	histo->stats->rx_bytes = 0;
+	ctl->poll_cnt++;
+	hrtimer_forward_now(timer, ctl->timer_intval);
+	tasklet_schedule(&ctl->task);
 
-	histo->stats->tx_packets = 0;
-	histo->stats->tx_bytes = 0;
-
-	for (packet_size = 0; packet_size < MAX_PACKET_SIZES; packet_size++) {
-		histo->rx_histo[packet_size] = 0;
-		histo->tx_histo[packet_size] = 0;
-	}
-
-	for (packet_size = 0; packet_size < IPC_FIFO_BUF_NUM_HIGH;
-		packet_size++)
-		histo->rx_pkt_burst[packet_size] = 0;
-
-	histo->stats->rx_dropped = 0;
-	histo->stats->rx_missed_errors = 0;
-
-	histo->stats->tx_dropped = 0;
-
-	histo->rx_pool_used = 0;
-	histo->tx_delayed = 0;
+	return HRTIMER_RESTART;
 }
 
-static void
-danipc_if_cleanup(struct danipc_if *intf)
+int danipc_poll_ctl_init(struct danipc_poll_ctl *ctl,
+			 void (*func)(unsigned long),
+			 unsigned long data,
+			 unsigned poll_intval)
 {
-	/* Clear counters */
-	clear_stats(&intf->pproc[ipc_trns_prio_1].pkt_hist);
-	clear_stats(&intf->pproc[ipc_trns_prio_0].pkt_hist);
-
-	/* Clean agent table entries and Flush B-FIFO buffers */
-	ipc_cleanup(intf->rx_fifo_idx);
-
-	mutex_destroy(&intf->lock);
-
-	/* Free rx pool buffers */
-	free_pool_buffers(intf);
-}
-
-static int danipc_open(struct net_device *dev)
-{
-	struct danipc_if	*intf = netdev_priv(dev);
-	struct danipc_drvr	*drv = intf->drvr;
-	struct danipc_fifo	*fifo = intf->fifo;
-	int			rc = -ENOMEM;
-	uint32_t		prio;
-	enum pkt_rx_proc_type	ptype;
-
-	rc = acquire_local_fifo(fifo, intf, DANIPC_FIFO_OWNER_TYPE_NETDEV);
-	if (rc) {
-		netdev_err(dev, "local fifo(%s) is in used\n",
-			   intf->fifo->probe_info->res_name);
-		return rc;
-	}
-
-	if (rc == 0) {
-		alloc_pool_buffers(intf);
-
-		for (prio = 0; prio < max_ipc_prio; prio++) {
-			ptype = intf->pproc[prio].rxproc_type;
-
-			if (ptype == rx_proc_parallel) {
-				rc = request_irq(dev->irq, danipc_interrupt, 0,
-						 dev->name, &intf->pproc[prio]);
-
-				irq_set_affinity(dev->irq,
-						 cpumask_of(intf->affinity));
-				(drv->proc_rx[ptype].init)(&intf->pproc[prio]);
-
-				danipc_init_irq(fifo, prio);
-			} else {
-				(drv->proc_rx[ptype].init)(&intf->pproc[prio]);
-			}
-		}
-
-		netif_start_queue(dev);
-		drv->ndev_active++;
-	}
-
-	return rc;
-}
-
-static int danipc_close(struct net_device *dev)
-{
-	struct danipc_if		*intf = netdev_priv(dev);
-	struct danipc_drvr		*drv = intf->drvr;
-	uint32_t			prio;
-	enum pkt_rx_proc_type	ptype;
-
-	netif_stop_queue(dev);
-
-	for (prio = 0; prio < max_ipc_prio; prio++) {
-		ptype = intf->pproc[prio].rxproc_type;
-
-		if (ptype != rx_proc_parallel) {
-			(drv->proc_rx[ptype].stop)(&intf->pproc[prio]);
-		} else {
-			danipc_disable_irq(intf->fifo, prio);
-			(drv->proc_rx[ptype].stop)(&intf->pproc[prio]);
-			free_irq(dev->irq, &intf->pproc[prio]);
-		}
-	}
-
-	danipc_if_cleanup(intf);
-
-	release_local_fifo(intf->fifo, intf);
-
-	drv->ndev_active--;
-
+	tasklet_init(&ctl->task, func, data);
+	hrtimer_init(&ctl->timer, CLOCK_MONOTONIC,
+		     HRTIMER_MODE_REL_PINNED);
+	ctl->timer.function = danipc_poll_ctl_timeout;
+	ctl->timer_intval = ns_to_ktime(poll_intval * 1000);
+	ctl->sched = false;
+	ctl->poll_cnt = 0;
 	return 0;
 }
 
-static int danipc_set_mac_addr(struct net_device *dev, void *p)
+void danipc_poll_ctl_sched(struct danipc_poll_ctl *ctl)
 {
-	struct sockaddr *addr = p;
+	if (ctl->sched)
+		return;
+	hrtimer_start(&ctl->timer, ctl->timer_intval, HRTIMER_MODE_REL_PINNED);
 
-	if (!(dev->priv_flags & IFF_LIVE_ADDR_CHANGE) && netif_running(dev))
-		return -EBUSY;
-
-	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
-	return 0;
+	ctl->sched = true;
 }
 
-static const struct net_device_ops danipc_netdev_ops = {
-	.ndo_open		= danipc_open,
-	.ndo_stop		= danipc_close,
-	.ndo_start_xmit	= danipc_hard_start_xmit,
-	.ndo_do_ioctl		= danipc_ioctl,
-	.ndo_change_mtu	= danipc_change_mtu,
-	.ndo_set_mac_address	= danipc_set_mac_addr,
-};
-
-static void danipc_setup(struct net_device *dev)
+void danipc_poll_ctl_stop(struct danipc_poll_ctl *ctl)
 {
-	dev->netdev_ops	 = &danipc_netdev_ops;
-
-	dev->type		= ARPHRD_VOID;
-	dev->hard_header_len    = sizeof(struct ipc_msg_hdr);
-	dev->addr_len	   = sizeof(danipc_addr_t);
-	dev->tx_queue_len       = 1000;
-
-	/* New-style flags. */
-	dev->flags	      = IFF_NOARP;
+	hrtimer_cancel(&ctl->timer);
+	tasklet_kill(&ctl->task);
+	ctl->sched = false;
 }
-
-/* Our vision of L2 header: it is of type struct danipc_pair
- * it is stored at address skb->cb[HADDR_CB_OFFSET].
- */
-
-static int danipc_header_parse(const struct sk_buff *skb, unsigned char *haddr)
-{
-	struct danipc_pair *pair =
-		(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
-	memcpy(haddr, &pair->src, sizeof(danipc_addr_t));
-	return sizeof(danipc_addr_t);
-}
-
-int danipc_header(struct sk_buff *skb, struct net_device *dev,
-		  unsigned short type, const void *daddr,
-		  const void *saddr, unsigned len)
-{
-	struct danipc_pair *pair =
-		(struct danipc_pair *)&skb->cb[HADDR_CB_OFFSET];
-	const uint8_t	*addr = daddr;
-
-	pair->src = COOKIE_TO_AGENTID(type);
-	pair->prio = COOKIE_TO_PRIO(type);
-	if (addr)
-		pair->dst = *addr;
-	return 0;
-}
-
-static const struct header_ops danipc_header_ops ____cacheline_aligned = {
-	.create		= danipc_header,
-	.parse		= danipc_header_parse,
-};
 
 static int parse_resources(struct platform_device *pdev, const char *regs[],
 			   const char *resource[], const char *shm_names[])
 {
-	struct device_node	*node = pdev->dev.of_node;
-	bool			parse_err = false;
-	int			rc = -ENODEV;
-	bool			has_ipc_bufs = false;
+	struct device_node *node = pdev->dev.of_node;
+	struct danipc_drvr *pdrv = &danipc_driver;
+	struct resource *res;
+	int r;
+	const struct ipc_buf_desc *desc;
+	uint32_t n, len = 0;
 
-	if (node) {
-		struct resource	*res;
-		int		shm_size = 0;
-		int		r;
-		const struct ipc_buf_desc *prop_mem_map;
-		uint32_t len = 0;
+	if (unlikely(node == NULL))
+		return -ENODEV;
 
-		for (r = 0; r < RESOURCE_NUM && !parse_err; r++) {
-			res = platform_get_resource_byname(pdev,
-							   IORESOURCE_MEM,
-							   resource[r]);
-			if (res) {
-				danipc_driver.res_start[r] = res->start;
-				danipc_driver.res_len[r] = resource_size(res);
-
-				if (strcmp(resource[r], "ipc_bufs") == 0)
-					has_ipc_bufs = true;
-			} else {
-				if (strcmp(resource[r], "ipc_bufs") == 0) {
-					has_ipc_bufs = false;
-				} else {
-					pr_err("cannot get resource %s\n",
-					       resource[r]);
-					parse_err = true;
-				}
-			}
-		}
-
-		if (!has_ipc_bufs) {
-			const struct ipc_buf_desc *buf_desc;
-
-			buf_desc = of_get_property(node, "ul-bufs", &len);
-
-			if (buf_desc == NULL) {
-				pr_err("could not find ul-bufs property\n");
-				parse_err = true;
-			} else {
-				danipc_driver.res_start[IPC_BUFS_RES] =
-					buf_desc->phy_addr;
-				danipc_driver.res_len[IPC_BUFS_RES] =
-					buf_desc->sz;
-			}
-
-			ext_bufs = of_get_property(node, "dl-bufs", &len);
-
-			if (ext_bufs == NULL) {
-				pr_err("could not find dl-bufs property\n");
-				parse_err = true;
-			}
-
-			danipc_driver.support_mem_map = true;
-			num_ext_bufs = len/sizeof(struct ipc_buf_desc);
-		}
-
-		prop_mem_map = of_get_property(node, "memory-region", &len);
-		if (prop_mem_map) {
-			struct danipc_mem_map *p;
-			int n = len/sizeof(struct ipc_buf_desc);
-			int i;
-
-			p = kzalloc((n * sizeof(*p)), GFP_KERNEL);
-			if (p == NULL)
-				return -ENOMEM;
-
-			for (i = 0; i < n; i++) {
-				p[i].paddr_base = prop_mem_map[i].phy_addr;
-				p[i].size = prop_mem_map[i].sz;
-				p[i].vaddr_base = ioremap_cache(
-					p[i].paddr_base, p[i].size);
-				if (p[i].vaddr_base == NULL) {
-					pr_err("failed to map the region\n");
-					while (--i >= 0)
-						iounmap(p[i].vaddr_base);
-					kfree(p);
-					return -ENOMEM;
-				}
-			}
-			danipc_driver.proc_map = p;
-			danipc_driver.proc_map_entry = n;
-		}
-		for (r = 0; r < PLATFORM_MAX_NUM_OF_NODES && !parse_err; r++) {
-			if (!regs[r])
+	for (r = 0; r < RESOURCE_NUM; r++) {
+		res = platform_get_resource_byname(pdev,
+						   IORESOURCE_MEM,
+						   resource[r]);
+		if (res == NULL) {
+			if (r == IPC_BUFS_RES)
 				continue;
-			res = platform_get_resource_byname(pdev,
-							   IORESOURCE_MEM,
-							   regs[r]);
-			if (res) {
-				ipc_regs_phys[r] = res->start;
-				ipc_regs_len[r] = resource_size(res);
+			pr_err("cannot get resource %s\n", resource[r]);
+			return -EINVAL;
+		}
+		pdrv->res[r].start = res->start;
+		pdrv->res[r].size = resource_size(res);
+	}
+
+	if (!pdrv->res[IPC_BUFS_RES].size) {
+		desc = of_get_property(node, "ul-bufs", NULL);
+
+		if (desc == NULL) {
+			pr_err("could not find ul-bufs property\n");
+			return -EINVAL;
+		}
+		pdrv->res[IPC_BUFS_RES].start = desc->phy_addr;
+		pdrv->res[IPC_BUFS_RES].size = desc->sz;
+	}
+
+	pdrv->region_desc = of_get_property(node, "dl-bufs", &n);
+	pdrv->num_region_desc = (pdrv->region_desc) ?
+		(n/sizeof(struct ipc_buf_desc)) : 0;
+
+	desc = of_get_property(node, "memory-region", &len);
+	if (desc) {
+		struct danipc_resource *p;
+		int i;
+
+		n = len/sizeof(struct ipc_buf_desc);
+		p = kzalloc((n * sizeof(*p)), GFP_KERNEL);
+		if (p == NULL)
+			return -ENOMEM;
+
+		for (i = 0; i < n; i++) {
+			p[i].start = desc[i].phy_addr;
+			p[i].size = desc[i].sz;
+			p[i].base = ioremap_cache(
+				p[i].start, p[i].size);
+			if (p[i].base == NULL) {
+				pr_err("failed to map the region\n");
+				while (--i >= 0)
+					iounmap(p[i].base);
+				kfree(p);
+				return -ENOMEM;
 			}
-
-			/* Don't look at shared memory regions if we support
-			 * flexible memory map
-			 */
-			if (!danipc_driver.support_mem_map &&
-			    (!shm_names[r] ||
-			    (of_property_read_u32(node,
-						  shm_names[r], &shm_size))))
-				ipc_shared_mem_sizes[r] = 0;
-			else
-				ipc_shared_mem_sizes[r] = shm_size;
 		}
-
-		rc = (!parse_err) ? 0 : -ENOMEM;
+		danipc_driver.proc_map = p;
+		danipc_driver.proc_map_entry = n;
 	}
 
-	return rc;
-}
-
-static void danipc_if_remove(struct danipc_drvr *pdrv, uint8_t ifidx)
-{
-	struct danipc_if *intf = pdrv->if_list[ifidx];
-	struct net_device *netdev = (intf) ? intf->dev : NULL;
-
-	if (netdev == NULL)
-		return;
-
-	if (netdev->reg_state == NETREG_REGISTERED)
-		unregister_netdev(netdev);
-
-	free_netdev(netdev);
-
-	netdev_info(netdev,
-		    "Unregister DANIPC Network Interface(%s).\n",
-		    netdev->name);
-
-	pdrv->if_list[ifidx] = NULL;
-	pdrv->ndev--;
-}
-
-static int danipc_if_init(struct platform_device *pdev,
-			  struct danipc_fifo *fifo,
-			  uint8_t ifidx)
-{
-	struct danipc_probe_info *probe_list = fifo->probe_info;
-	struct net_device	*dev;
-	int			rc = -ENOMEM;
-
-	dev = alloc_netdev(sizeof(struct danipc_if),
-			   probe_list->ifname, danipc_setup);
-	if (dev) {
-		int ncpus = num_online_cpus();
-
-		struct danipc_if	*intf = netdev_priv(dev);
-		struct packet_proc_info *pproc = intf->pproc;
-		struct danipc_pktq	*pktq = &intf->rx_pkt_pool;
-
-		intf->drvr = &danipc_driver;
-		intf->dev = dev;
-		intf->ifidx = danipc_driver.ndev;
-		intf->affinity = (danipc_driver.ndev + 1)%ncpus;
-		intf->fifo = fifo;
-		intf->rx_fifo_idx = fifo->node_id;
-		intf->rx_fifo_prio = danipc_driver.ndev;
-
-		mutex_init(&intf->lock);
-
-		 __skb_queue_head_init(&pktq->q);
-
-		intf->irq = fifo->irq;
-
-		pktq->max_size = probe_list->poolsz;
-
-		pproc[ipc_trns_prio_0].intf = intf;
-		pproc[ipc_trns_prio_1].intf = intf;
-		pproc[ipc_trns_prio_0].pkt_hist.stats = &dev->stats;
-		pproc[ipc_trns_prio_1].pkt_hist.stats = &dev->stats;
-
-		if (strcmp(dev->name, "danipc") == 0) {
-			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_timer;
-			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_parallel;
-		} else if (strcmp(dev->name, "danipc-hex2log") == 0) {
-			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_default;
-			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_parallel;
-		} else if (strcmp(dev->name, "danipc-hex3log") == 0) {
-			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_parallel;
-			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_default;
-		} else {
-			/* danipc-pcap */
-			pproc[ipc_trns_prio_0].rxproc_type = rx_proc_timer;
-			pproc[ipc_trns_prio_1].rxproc_type = rx_proc_parallel;
+	for (r = 0; r < PLATFORM_MAX_NUM_OF_NODES; r++) {
+		if (!regs[r])
+			continue;
+		res = platform_get_resource_byname(pdev,
+						   IORESOURCE_MEM,
+						   regs[r]);
+		if (res == NULL) {
+			pr_debug("reg resource %s not provided\n", regs[r]);
+			continue;
 		}
+		pdrv->io_res[r].start = res->start;
+		pdrv->io_res[r].size = resource_size(res);
 
-		pproc[ipc_trns_prio_0].rxbound = IPC_FIFO_BUF_NUM_HIGH;
-		pproc[ipc_trns_prio_1].rxbound = IPC_FIFO_BUF_NUM_HIGH;
-
-		strlcpy(dev->name, probe_list->ifname, sizeof(dev->name));
-		dev->header_ops = &danipc_header_ops;
-		dev->irq = intf->irq;
-		dev->dev_addr[0] = intf->rx_fifo_idx;
-
-		rc = register_netdev(dev);
-		if (rc) {
-			netdev_err(dev, "%s: register_netdev failed\n",
-				   __func__);
-			mutex_destroy(&intf->lock);
-			goto danipc_iferr;
-		}
-
-		danipc_driver.if_list[ifidx] = intf;
-		danipc_driver.ndev++;
+		/* Don't look at shared memory regions if we support
+		 * flexible memory map
+		 */
+		if (pdrv->num_region_desc)
+			continue;
+		if (shm_names[r] &&
+		    !of_property_read_u32(node, shm_names[r], &n))
+			pdrv->shm_res[r].size = n;
 	}
-danipc_iferr:
-	if (rc && dev)
-		free_netdev(dev);
-	return rc;
-}
 
-static int danipc_netdev_init(struct platform_device *pdev)
-{
-	struct danipc_drvr *pdrv = &danipc_driver;
-	uint8_t ifidx;
-	int ret = 0;
-
-	for (ifidx = 0; ifidx < pdrv->num_lfifo && !ret; ifidx++)
-		ret = danipc_if_init(pdev, &pdrv->lfifo[ifidx], ifidx);
-
-	return ret;
-}
-
-static int danipc_netdev_cleanup(struct platform_device *pdev)
-{
-	struct danipc_drvr *pdrv = &danipc_driver;
-	uint8_t	ifidx = 0;
-	(void)pdev;
-
-	for (ifidx = 0; ifidx < DANIPC_MAX_IF; ifidx++)
-		danipc_if_remove(pdrv, ifidx);
-
-	pr_info("DANIPC Network driver " DANIPC_VERSION " unregistered.\n");
 	return 0;
 }
 
@@ -627,11 +336,12 @@ static int probe_local_fifo(struct platform_device *pdev,
 			    struct danipc_probe_info *probe_list,
 			    const char *regs[])
 {
+	struct danipc_drvr *pdrv = &danipc_driver;
 	uint8_t nodeid;
-	int	rc = ENODEV;
+	int rc = ENODEV;
 
 	for (nodeid = 0; nodeid < PLATFORM_MAX_NUM_OF_NODES; nodeid++) {
-		if (ipc_regs_len[nodeid] &&
+		if (pdrv->io_res[nodeid].base &&
 		    (!strcmp(probe_list->res_name, regs[nodeid]))) {
 			rc = init_local_fifo(pdev, nodeid, probe_list);
 			break;
@@ -644,16 +354,16 @@ static int probe_local_fifo(struct platform_device *pdev,
 }
 
 static struct danipc_probe_info danipc_probe_list[DANIPC_MAX_LFIFO] = {
-	{"apps_ipc_data", "danipc", 256, 0},
-	{"apps_ipc_pcap", "danipc-pcap", 0, 0},
-	{"apps_hex_ipc_log", "danipc-hex2log", 0, DANIPC_FIFO_F_NO_LO_PRIO},
-	{"apps_hex_ipc_log", "danipc-hex3log", 0, DANIPC_FIFO_F_NO_LO_PRIO},
+	{ "apps_ipc_data", "danipc", 0, 1, 2, 3, 0, 0x00000001 },
+	{ "apps_ipc_pcap", "danipc-pcap", 0, 1, 2, 3, 0, 0x00004000 },
+	{ "apps_hex_ipc_log", "danipc-hex2log", 0, 1, -1, -1, 0, 0x00010000 },
+	{ "apps_hex_ipc_log", "danipc-hex3log", -1, -1, 2, 3, 1, 0x00020000 },
 };
 
 static int danipc_probe_lfifo(struct platform_device *pdev, const char *regs[])
 {
-	uint8_t		idx;
-	int		rc = 0;
+	uint8_t idx;
+	int rc = 0;
 
 	/* Probe for local fifos */
 	for (idx = 0; idx < DANIPC_MAX_LFIFO && !rc; idx++)
@@ -663,18 +373,20 @@ static int danipc_probe_lfifo(struct platform_device *pdev, const char *regs[])
 }
 
 /* Character device interface */
-static inline void __shm_msg_free(struct danipc_cdev *cdev, struct shm_msg *msg)
+static inline void __shm_msg_free(struct danipc_cdev_if_fifo *rx_fifo,
+				  struct shm_msg *msg)
 {
-	shm_bufpool_put_buf(&cdev->rx_queue[msg->prio].freeq, msg->shmbuf);
+	shm_bufpool_put_buf(&rx_fifo->rx_queue.freeq, msg->shmbuf);
 }
 
 static void shm_msg_free(struct danipc_cdev *cdev, struct shm_msg *msg)
 {
+	struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[msg->prio];
 	unsigned long flags;
 
 	spin_lock_irqsave(&cdev->rx_lock, flags);
-	__shm_msg_free(cdev, msg);
-	danipc_cdev_refill_rx_b_fifo(cdev, msg->prio);
+	__shm_msg_free(rx_fifo, msg);
+	danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
 
 	spin_unlock_irqrestore(&cdev->rx_lock, flags);
 }
@@ -686,13 +398,14 @@ static int __shm_msg_get(struct danipc_cdev *cdev, struct shm_msg *msg)
 	int prio;
 	int ret = -EAGAIN;
 
-	for (prio = ipc_trns_prio_1; prio >= 0; prio--) {
-		buf = shm_bufpool_get_buf(&cdev->rx_queue[prio].recvq);
+	for (prio = ipc_prio_hi; prio >= 0; prio--) {
+		struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[prio];
+
+		buf = shm_bufpool_get_buf(&rx_fifo->rx_queue.recvq);
 		if (buf) {
 			msg->prio = prio;
 			msg->shmbuf = buf;
-			msg->hdr = ipc_to_virt(fifo->node_id, prio,
-					       buf_paddr(buf));
+			msg->hdr = ipc_to_virt(fifo->node_id, buf_paddr(buf));
 
 			dev_dbg(cdev->dev, "get message at %p\n", msg->hdr);
 			ret = 0;
@@ -702,12 +415,12 @@ static int __shm_msg_get(struct danipc_cdev *cdev, struct shm_msg *msg)
 	return ret;
 }
 
-static ssize_t ipc_msg_copy_to_user(void *msg, enum ipc_trns_prio prio,
+static ssize_t ipc_msg_copy_to_user(void *msg, enum ipc_prio prio,
 				    char __user *buf, size_t count)
 {
 	struct ipc_msg_hdr *hdr = msg;
 	struct danipc_cdev_msghdr cdev_hdr;
-	ssize_t size = count-sizeof(cdev_hdr);
+	ssize_t size = count - sizeof(cdev_hdr);
 	ssize_t n = 0;
 
 	if (size <= 0)
@@ -739,34 +452,44 @@ static void reset_rx_queue_status(struct rx_queue *rxque)
 static int danipc_cdev_rx_buf_init(struct danipc_cdev *cdev)
 {
 	struct danipc_fifo *fifo = cdev->fifo;
+	int prio;
 
-	danipc_fifo_drain(fifo->node_id, ipc_trns_prio_1);
-	danipc_fifo_drain(fifo->node_id, ipc_trns_prio_0);
-	danipc_cdev_refill_rx_b_fifo(cdev, ipc_trns_prio_1);
-	danipc_cdev_refill_rx_b_fifo(cdev, ipc_trns_prio_0);
-	reset_rx_queue_status(&cdev->rx_queue[ipc_trns_prio_1]);
-	reset_rx_queue_status(&cdev->rx_queue[ipc_trns_prio_0]);
+	for (prio = 0; prio < max_ipc_prio; prio++) {
+		struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[prio];
+		struct danipc_if_fifo *if_fifo = rx_fifo->if_fifo;
+
+		if (if_fifo->probed) {
+			danipc_hw_fifo_drain(fifo->node_id,
+					     if_fifo->m_fifo_idx);
+			danipc_hw_fifo_drain(fifo->node_id,
+					     if_fifo->b_fifo_idx);
+			danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
+		}
+		reset_rx_queue_status(&rx_fifo->rx_queue);
+	}
 
 	return 0;
 }
 
 static int danipc_cdev_rx_buf_release(struct danipc_cdev *cdev)
 {
-	struct danipc_fifo *fifo = cdev->fifo;
-	enum ipc_trns_prio pri;
+	int pri;
 
-	for (pri = ipc_trns_prio_0; pri < max_ipc_prio; pri++)
-		danipc_fifo_drain(fifo->node_id, pri);
-	ipc_trns_fifo_buf_init(fifo);
+	for (pri = ipc_prio_lo; pri < max_ipc_prio; pri++) {
+		struct danipc_if_fifo *if_fifo = cdev->rx_fifo[pri].if_fifo;
+
+		if (if_fifo->probed)
+			init_if_fifo_buf(if_fifo);
+	}
 
 	return 0;
 }
 
-void danipc_cdev_refill_rx_b_fifo(struct danipc_cdev *cdev,
-				  enum ipc_trns_prio pri)
+void danipc_cdev_if_fifo_refill_b_fifo(struct danipc_cdev_if_fifo *rx_fifo)
 {
-	struct danipc_fifo *fifo = cdev->fifo;
-	struct rx_queue *rxq = &cdev->rx_queue[pri];
+	struct danipc_if_fifo *if_fifo = rx_fifo->if_fifo;
+	struct danipc_fifo *fifo = if_fifo->fifo;
+	struct rx_queue *rxq = &rx_fifo->rx_queue;
 	struct shm_bufpool *bq = &rxq->bq;
 	struct shm_bufpool *freeq = &rxq->freeq;
 	uint32_t n = 0;
@@ -779,7 +502,7 @@ void danipc_cdev_refill_rx_b_fifo(struct danipc_cdev *cdev,
 		if (buf == NULL)
 			break;
 
-		danipc_b_fifo_push(buf_paddr(buf), fifo->node_id, pri);
+		danipc_if_fifo_free_msg_raw(if_fifo, buf_paddr(buf));
 		shm_bufpool_put_buf(bq, buf);
 		n++;
 	}
@@ -789,38 +512,38 @@ void danipc_cdev_refill_rx_b_fifo(struct danipc_cdev *cdev,
 		rxq->status.bq_lo = bq->count;
 	if (n)
 		pr_debug("%s: fill fifo(%u/%u) with %d buffers\n",
-			 __func__, fifo->idx, pri, n);
+			__func__, fifo->idx, if_fifo->b_fifo_idx, n);
 }
 
 static int danipc_cdev_init_tx_region(struct danipc_cdev *cdev,
 				      uint8_t cpuid,
-				      enum ipc_trns_prio pri)
+				      enum ipc_prio pri)
 {
 	uint32_t size = SZ_256K;
 	phys_addr_t addr;
 	phys_addr_t start;
 
-	if (!valid_cpu_id(cpuid) || pri != ipc_trns_prio_1)
+	if (!valid_cpu_id(cpuid) || pri != ipc_prio_hi)
 		return -EINVAL;
 
-	addr = danipc_b_fifo_pop(cpuid, pri);
+	addr = danipc_hw_fifo_pop_raw(cpuid, DEFAULT_HI_PRIO_B_FIFO);
 	if (!addr)
 		return -EAGAIN;
 
-	danipc_b_fifo_push(addr, cpuid, pri);
+	danipc_hw_fifo_push_raw(cpuid, DEFAULT_HI_PRIO_B_FIFO, addr);
 
-	if (ipc_to_virt(cpuid, pri, addr) == NULL)
+	if (ipc_to_virt(cpuid, addr) == NULL)
 		return -EAGAIN;
 
-	start = ipc_to_virt_map[cpuid][pri].paddr;
-	size = ipc_to_virt_map[cpuid][pri].size;
+	start = danipc_driver.shm_res[cpuid].start;
+	size = danipc_driver.shm_res[cpuid].size;
 
 	dev_dbg(cdev->dev,
 		"%s: b_fifo(%u) start: 0x%x size: 0x%x\n",
 		__func__, cpuid, start, size);
 
 	cdev->tx_region = shm_region_create(start,
-					    ipc_to_virt_map[cpuid][pri].vaddr,
+					    danipc_shm_base(cpuid),
 					    size,
 					    IPC_BUF_SIZE_MAX,
 					    DANIPC_MMAP_TX_BUF_HEADROOM,
@@ -874,13 +597,17 @@ static ssize_t danipc_cdev_read(struct file *file, char __user *buf,
 	}
 
 	ret = ipc_msg_copy_to_user(msg.hdr, msg.prio, buf, count);
-	if (ret < 0)
+	if (ret < 0) {
 		cdev->status.rx_error++;
+	} else {
+		cdev->status.rx++;
+		cdev->status.rx_bytes += ret;
+	}
 
 	shm_msg_free(cdev, &msg);
 
 out:
-	 __set_current_state(TASK_RUNNING);
+	__set_current_state(TASK_RUNNING);
 	remove_wait_queue(&cdev->rx_wq, &wait);
 	return ret;
 }
@@ -888,6 +615,7 @@ out:
 int danipc_cdev_mmsg_rx(struct danipc_cdev *cdev,
 			struct danipc_cdev_mmsg *mmsg)
 {
+	struct danipc_cdev_if_fifo *rx_fifo;
 	struct rx_queue *rx_queue;
 	struct shm_bufpool msgs;
 	struct shm_buf *buf, *p;
@@ -902,13 +630,13 @@ int danipc_cdev_mmsg_rx(struct danipc_cdev *cdev,
 	if (!valid_ipc_prio(mmsg->hdr.prio))
 		return -EINVAL;
 
-	rx_queue = &cdev->rx_queue[mmsg->hdr.prio];
+	rx_fifo = &cdev->rx_fifo[mmsg->hdr.prio];
+	rx_queue = &rx_fifo->rx_queue;
 	shm_bufpool_init(&msgs);
 
 	spin_lock_irqsave(&cdev->rx_lock, flags);
 	list_for_each_entry_safe(buf, p, &rx_queue->recvq.head, list) {
 		struct ipc_msg_hdr *hdr = ipc_to_virt(cdev->fifo->node_id,
-						      mmsg->hdr.prio,
 						      buf_paddr(buf));
 		if (hdr->dest_aid == mmsg->hdr.dst &&
 		    hdr->src_aid == mmsg->hdr.src &&
@@ -926,10 +654,9 @@ int danipc_cdev_mmsg_rx(struct danipc_cdev *cdev,
 
 	list_for_each_entry(buf, &msgs.head, list) {
 		struct ipc_msg_hdr *hdr = ipc_to_virt(cdev->fifo->node_id,
-						      mmsg->hdr.prio,
 						      buf_paddr(buf));
 		if (copy_to_user(mmsg->msgs.entry[n].data,
-				 hdr+1,
+				 hdr + 1,
 				 hdr->msg_len)) {
 			cdev->status.rx_error++;
 			n = -EFAULT;
@@ -943,7 +670,7 @@ int danipc_cdev_mmsg_rx(struct danipc_cdev *cdev,
 	spin_lock_irqsave(&cdev->rx_lock, flags);
 	while ((buf = shm_bufpool_get_buf(&msgs)))
 		shm_bufpool_put_buf(&rx_queue->freeq, buf);
-	danipc_cdev_refill_rx_b_fifo(cdev, mmsg->hdr.prio);
+	danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
 	spin_unlock_irqrestore(&cdev->rx_lock, flags);
 
 	return n;
@@ -955,7 +682,7 @@ int danipc_cdev_tx(struct danipc_cdev *cdev,
 		   size_t count)
 {
 	struct danipc_drvr *pdrv;
-	char *msg;
+	struct ipc_msg_hdr *msg;
 
 	if (unlikely(cdev == NULL || hdr == NULL))
 		return -EINVAL;
@@ -980,9 +707,8 @@ int danipc_cdev_tx(struct danipc_cdev *cdev,
 		return -EAGAIN;
 	}
 
-	msg = ipc_msg_alloc(hdr->src, hdr->dst, buf,
-			    count, 0x12, hdr->prio, true);
-
+	msg = ipc_msg_alloc(hdr->src, hdr->dst, count, 0x12,
+			    default_b_fifo(hdr->prio));
 	if (msg == NULL) {
 		cdev->status.tx_no_buf++;
 		dev_dbg(cdev->dev, "%s: failed to alloc %d bytes from fifo\n",
@@ -990,7 +716,14 @@ int danipc_cdev_tx(struct danipc_cdev *cdev,
 		return -EBUSY;
 	}
 
-	if (ipc_msg_send(msg, hdr->prio) != IPC_SUCCESS) {
+	if (ipc_copy_from((char *)(msg+1), buf, count, true)) {
+		cdev->status.tx_error++;
+		ipc_msg_free(msg, default_b_fifo(hdr->prio));
+		dev_warn(cdev->dev, "%s: failed to copy from user space\n",
+			 __func__);
+	}
+
+	if (ipc_msg_send(msg, default_m_fifo(hdr->prio))) {
 		cdev->status.tx_error++;
 		dev_warn(cdev->dev, "%s: failed to send %d bytes\n",
 			 __func__, count);
@@ -1015,19 +748,12 @@ static ssize_t danipc_cdev_write(struct file *file, const char __user *buf,
 	if (copy_from_user(&hdr, buf, sizeof(hdr)))
 		return -EFAULT;
 
-	ret = danipc_cdev_tx(cdev, &hdr, buf+sizeof(hdr), count - sizeof(hdr));
+	ret = danipc_cdev_tx(cdev, &hdr, buf + sizeof(hdr),
+			     count - sizeof(hdr));
 	if (ret)
 		return ret;
 
 	return count;
-}
-
-static inline bool danipc_fifo_is_empty(struct danipc_fifo *fifo)
-{
-	if (!danipc_m_fifo_is_empty(fifo->node_id, ipc_trns_prio_0) ||
-	    !danipc_m_fifo_is_empty(fifo->node_id, ipc_trns_prio_1))
-		return false;
-	return true;
 }
 
 static unsigned int danipc_cdev_poll(struct file *file,
@@ -1041,12 +767,98 @@ static unsigned int danipc_cdev_poll(struct file *file,
 
 	poll_wait(file, &cdev->rx_wq, wait);
 	spin_lock_irqsave(&cdev->rx_lock, flags);
-	if (!list_empty(&cdev->rx_queue[ipc_trns_prio_1].recvq.head) ||
-	    !list_empty(&cdev->rx_queue[ipc_trns_prio_0].recvq.head))
+	if (!list_empty(&cdev->rx_fifo[ipc_prio_hi].rx_queue.recvq.head) ||
+	    !list_empty(&cdev->rx_fifo[ipc_prio_lo].rx_queue.recvq.head))
 		ret = POLLIN | POLLRDNORM;
 	spin_unlock_irqrestore(&cdev->rx_lock, flags);
 
 	return ret;
+}
+
+static int danipc_cdev_if_fifo_recv(struct danipc_cdev_if_fifo *rx_fifo)
+{
+	struct danipc_cdev *cdev = rx_fifo->cdev;
+	struct danipc_if_fifo *if_fifo = rx_fifo->if_fifo;
+	struct danipc_fifo *fifo = if_fifo->fifo;
+	struct rx_queue *pq = &rx_fifo->rx_queue;
+	uint32_t msg_paddr;
+	struct shm_buf *buf;
+	struct ipc_msg_hdr *hdr;
+	int n = 0;
+
+	while (1) {
+		msg_paddr = danipc_if_fifo_rx_msg_raw(if_fifo);
+		if (!msg_paddr)
+			break;
+		buf = shm_region_find_buf_by_pa(cdev->rx_region, msg_paddr);
+		if (buf == NULL) {
+			cdev->status.rx_error++;
+			dev_warn(cdev->dev,
+				 "%s: can't find buffer, paddr=0x%x\n",
+				 __func__, msg_paddr);
+			continue;
+		}
+
+		if (shm_bufpool_del_buf(&pq->bq, buf)) {
+			cdev->status.rx_error++;
+			dev_err(cdev->dev,
+				"%s: buffer %p not in the buffer queue\n",
+				__func__, buf);
+			continue;
+		}
+		hdr = buf_vaddr(buf);
+		ipc_msg_hdr_cache_invalid(hdr);
+
+		if (!ipc_msg_valid(hdr, fifo->node_id,
+				   &cdev->status.rx_err_stats)) {
+			cdev->status.rx_drop++;
+			dev_dbg(cdev->dev,
+				"%s: drop message paddr=0x%x, vaddr=%p\n",
+				__func__, msg_paddr, hdr);
+			shm_bufpool_put_buf(&pq->freeq, buf);
+		} else {
+			cdev->status.rx++;
+			cdev->status.rx_bytes += hdr->msg_len;
+			shm_bufpool_put_buf(&pq->recvq, buf);
+			ipc_msg_payload_cache_invalid(hdr);
+			if (pq->recvq.count > pq->status.recvq_hi)
+				pq->status.recvq_hi = pq->recvq.count;
+			n++;
+		}
+	}
+
+	danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
+
+	return n;
+}
+
+static void danipc_cdev_rx_poll(unsigned long data)
+{
+	struct danipc_cdev *cdev = (struct danipc_cdev *)data;
+	unsigned long flags;
+	int n, prio;
+
+	spin_lock_irqsave(&cdev->rx_lock, flags);
+	for (n = 0, prio = ipc_prio_hi; prio >= 0; prio--) {
+		struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[prio];
+
+		if (rx_fifo->if_fifo->probed)
+			n += danipc_cdev_if_fifo_recv(rx_fifo);
+	}
+	spin_unlock_irqrestore(&cdev->rx_lock, flags);
+
+	if (n)
+		wake_up(&cdev->rx_wq);
+}
+
+static irqreturn_t danipc_cdev_interrupt(int irq, void *data)
+{
+	struct danipc_cdev *cdev = (struct danipc_cdev *)data;
+
+	danipc_fifo_mask_interrupt(cdev->fifo);
+	danipc_poll_ctl_sched(&cdev->poll_ctl);
+
+	return IRQ_HANDLED;
 }
 
 static inline void *buf_vma_vaddr(struct shm_buf *buf,
@@ -1152,9 +964,9 @@ int danipc_cdev_mapped_recv(struct danipc_cdev *cdev,
 
 	spin_lock_irqsave(&cdev->rx_lock, flags);
 
-	for (i = ipc_trns_prio_1; (i >= ipc_trns_prio_0) && (n < num); i--) {
-		struct shm_bufpool *pq = &cdev->rx_queue[i].recvq;
-		struct shm_bufpool *mmapq = &cdev->rx_queue[i].mmapq;
+	for (i = ipc_prio_hi; (i >= ipc_prio_lo) && (n < num); i--) {
+		struct shm_bufpool *pq = &cdev->rx_fifo[i].rx_queue.recvq;
+		struct shm_bufpool *mmapq = &cdev->rx_fifo[i].rx_queue.mmapq;
 
 		list_for_each_entry_safe(buf, p, &pq->head, list) {
 			void *vma_addr = buf_vma_vaddr(buf, cdev->rx_vma);
@@ -1188,9 +1000,9 @@ int danipc_cdev_mapped_recv_done(struct danipc_cdev *cdev,
 				 struct vm_area_struct *vma,
 				 struct danipc_bufs *bufs)
 {
+	struct danipc_cdev_if_fifo *rx_fifo;
 	unsigned long flags;
 	int i;
-	bool refill_hi = false, refill_lo = false;
 
 	if (unlikely(!bufs || !vma || !cdev))
 		return -EINVAL;
@@ -1200,11 +1012,10 @@ int danipc_cdev_mapped_recv_done(struct danipc_cdev *cdev,
 
 	spin_lock_irqsave(&cdev->rx_lock, flags);
 
-	for (i = 0; i < bufs->num_entry; i++) {
+	for (i = 0, rx_fifo = NULL; i < bufs->num_entry; i++) {
 		phys_addr_t paddr = vma_rx_paddr(cdev, bufs->entry[i].data);
 		struct shm_buf *buf;
 		int pri;
-		bool found;
 
 		if (!paddr) {
 			cdev->status.mmap_rx_error++;
@@ -1223,8 +1034,8 @@ int danipc_cdev_mapped_recv_done(struct danipc_cdev *cdev,
 			continue;
 		}
 
-		for (pri = ipc_trns_prio_1, found = false; pri >= 0; pri--) {
-			struct rx_queue *pq = &cdev->rx_queue[pri];
+		for (pri = ipc_prio_hi; pri >= 0; pri--) {
+			struct rx_queue *pq = &cdev->rx_fifo[pri].rx_queue;
 
 			if (buf->head == &pq->mmapq.head) {
 				dev_dbg(cdev->dev,
@@ -1233,15 +1044,11 @@ int danipc_cdev_mapped_recv_done(struct danipc_cdev *cdev,
 				shm_bufpool_del_buf(&pq->mmapq, buf);
 				shm_bufpool_put_buf(&pq->freeq, buf);
 				cdev->status.mmap_rx_done++;
-				found = true;
-				if (pri == ipc_trns_prio_1)
-					refill_hi = true;
-				else
-					refill_lo = true;
+				rx_fifo = &cdev->rx_fifo[pri];
 				break;
 			}
 		}
-		if (!found) {
+		if (!rx_fifo) {
 			cdev->status.mmap_rx_error++;
 			dev_warn(cdev->dev,
 				 "%s: vaddr %p not in mmapq\n",
@@ -1249,10 +1056,8 @@ int danipc_cdev_mapped_recv_done(struct danipc_cdev *cdev,
 		}
 	}
 
-	if (refill_hi)
-		danipc_cdev_refill_rx_b_fifo(cdev, ipc_trns_prio_1);
-	if (refill_lo)
-		danipc_cdev_refill_rx_b_fifo(cdev, ipc_trns_prio_0);
+	if (rx_fifo)
+		danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
 
 	spin_unlock_irqrestore(&cdev->rx_lock, flags);
 
@@ -1282,12 +1087,14 @@ static void danipc_cdev_rx_vma_close(struct vm_area_struct *vma)
 
 	spin_lock_irqsave(&cdev->rx_lock, flags);
 	for (i = 0; i < max_ipc_prio; i++) {
-		struct rx_queue *pq = &cdev->rx_queue[i];
+		struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[i];
+		struct rx_queue *pq = &rx_fifo->rx_queue;
 		struct shm_buf *buf;
 
 		while ((buf = shm_bufpool_get_buf(&pq->mmapq)))
-			shm_bufpool_put_buf(&pq->freeq,  buf);
-		danipc_cdev_refill_rx_b_fifo(cdev, i);
+			shm_bufpool_put_buf(&pq->freeq, buf);
+		if (rx_fifo->if_fifo->probed)
+			danipc_cdev_if_fifo_refill_b_fifo(rx_fifo);
 	}
 
 	spin_unlock_irqrestore(&cdev->rx_lock, flags);
@@ -1446,11 +1253,11 @@ int danipc_cdev_mapped_tx(struct danipc_cdev *cdev, struct danipc_bufs *bufs)
 		dev_dbg(cdev->dev,
 			"%s: send %u bytes to %u, lid=%u paddr=%08x\n",
 			__func__, ipchdr->msg_len, ipchdr->dest_aid,
-			ipchdr->src_aid, paddr_buf+offset);
+			ipchdr->src_aid, paddr_buf + offset);
 
-		danipc_m_fifo_push(paddr_buf+offset,
-				   node,
-				   ipc_trns_prio_1);
+		danipc_hw_fifo_push_raw(node,
+					DEFAULT_HI_PRIO_M_FIFO,
+					paddr_buf + offset);
 
 		cdev->status.mmap_tx++;
 		cdev->status.tx++;
@@ -1463,7 +1270,9 @@ err:
 		tx_mmap_bufcacheq_put_buf(cdev, buf);
 		cdev->status.tx_drop++;
 		cdev->status.mmap_tx_error++;
-		danipc_b_fifo_push(paddr_buf, node, ipc_trns_prio_1);
+		danipc_hw_fifo_push_raw(node,
+					DEFAULT_HI_PRIO_B_FIFO,
+					paddr_buf);
 	}
 
 	return num_tx;
@@ -1495,7 +1304,7 @@ int danipc_cdev_mapped_tx_get_buf(struct danipc_cdev *cdev,
 	}
 
 	while (i < bufs->num_entry) {
-		paddr = danipc_b_fifo_pop(node, ipc_trns_prio_1);
+		paddr = danipc_hw_fifo_pop_raw(node, DEFAULT_HI_PRIO_B_FIFO);
 		if (!paddr)
 			break;
 
@@ -1552,7 +1361,7 @@ int danipc_cdev_mapped_tx_get_buf(struct danipc_cdev *cdev,
 
 	return ret;
 err:
-	danipc_b_fifo_push(paddr, node, ipc_trns_prio_1);
+	danipc_hw_fifo_push_raw(node, DEFAULT_HI_PRIO_B_FIFO, paddr);
 	return ret;
 }
 
@@ -1609,7 +1418,9 @@ int danipc_cdev_mapped_tx_put_buf(struct danipc_cdev *cdev,
 		dev_dbg(cdev->dev, "%s: buf(%p) is returned, paddr=%x\n",
 			__func__, buf, paddr_buf);
 
-		danipc_b_fifo_push(paddr_buf, node, ipc_trns_prio_1);
+		danipc_hw_fifo_push_raw(node,
+					DEFAULT_HI_PRIO_B_FIFO,
+					paddr_buf);
 
 		tx_mmap_bufcacheq_put_buf(cdev, buf);
 	}
@@ -1641,9 +1452,9 @@ static void danipc_cdev_tx_vma_close(struct vm_area_struct *vma)
 
 	node = vma_get_node(cdev->tx_vma);
 	while ((buf = shm_bufpool_get_buf(&pq->mmapq))) {
-		danipc_b_fifo_push(buf_paddr(buf),
-				   node,
-				   ipc_trns_prio_1);
+		danipc_hw_fifo_push_raw(node,
+					DEFAULT_HI_PRIO_B_FIFO,
+					buf_paddr(buf));
 		tx_mmap_bufcacheq_put_buf(cdev, buf);
 	}
 
@@ -1669,7 +1480,7 @@ static int danipc_tx_mmap(struct danipc_cdev *cdev, struct vm_area_struct *vma)
 	if (cdev->tx_region == NULL)
 		danipc_cdev_init_tx_region(cdev,
 					   vma_get_node(vma),
-					   ipc_trns_prio_1);
+					   ipc_prio_hi);
 
 	region = cdev->tx_region;
 	if (region == NULL)
@@ -1740,10 +1551,11 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 	struct danipc_cdev *cdev;
 	struct danipc_fifo *fifo;
 	struct device *dev;
-	struct ipc_to_virt_map *map;
+	struct danipc_resource *resource;
+	struct danipc_cdev_if_fifo *rx_fifo;
 	int i;
 	int ret = 0;
-	uint32_t off_netdev, off_cdev, sz_netdev, sz_cdev;
+	uint32_t off_cdev, sz_cdev;
 
 	if (minor >= DANIPC_MAX_CDEV)
 		return -ENODEV;
@@ -1751,33 +1563,34 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 	cdev = &danipc_driver.cdev[minor];
 	fifo = cdev->fifo;
 	dev = cdev->dev;
-	map = &ipc_to_virt_map[fifo->node_id][ipc_trns_prio_1];
+	resource = &danipc_driver.shm_res[fifo->node_id];
+	rx_fifo = cdev->rx_fifo;
 
 	dev_dbg(cdev->dev, "%s\n", __func__);
 
-	ret = acquire_local_fifo(fifo, cdev, DANIPC_FIFO_OWNER_TYPE_CDEV);
+	ret = acquire_local_fifo(fifo, cdev);
 	if (ret) {
 		dev_warn(cdev->dev, "%s: fifo(%s) is busy\n",
 			 __func__, fifo->probe_info->res_name);
 		goto out;
 	}
 
-	cdev->rx_region = shm_region_create(map->paddr,
-					    map->vaddr,
-					    map->size,
+	cdev->rx_region = shm_region_create(resource->start,
+					    resource->base,
+					    resource->size,
 					    IPC_BUF_SIZE_MAX,
 					    0,
-					    map->size/IPC_BUF_SIZE_MAX);
+					    resource->size / IPC_BUF_SIZE_MAX);
 	if (cdev->rx_region == NULL) {
 		ret = -ENOBUFS;
 		goto err;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(cdev->rx_queue); i++) {
-		shm_bufpool_init(&cdev->rx_queue[i].freeq);
-		shm_bufpool_init(&cdev->rx_queue[i].recvq);
-		shm_bufpool_init(&cdev->rx_queue[i].bq);
-		shm_bufpool_init(&cdev->rx_queue[i].mmapq);
+	for (i = 0; i < max_ipc_prio; i++, rx_fifo++) {
+		shm_bufpool_init(&rx_fifo->rx_queue.freeq);
+		shm_bufpool_init(&rx_fifo->rx_queue.recvq);
+		shm_bufpool_init(&rx_fifo->rx_queue.bq);
+		shm_bufpool_init(&rx_fifo->rx_queue.mmapq);
 	}
 
 	/* The netdev interface use 128 buffer for each priority fifo.
@@ -1785,25 +1598,29 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 	 * share memory space will be equally divided among the
 	 * cdev interface for high priority fifo
 	 */
-	off_netdev = IPC_BUF_SIZE * fifo->idx;
-	off_cdev = IPC_BUF_SIZE * DANIPC_MAX_IF;
-	sz_cdev = (map->size - off_cdev)/DANIPC_MAX_CDEV;
+	off_cdev = IPC_BUFS_SZ_PER_IF_FIFO * danipc_driver.num_l_if_fifo;
+	sz_cdev = (resource->size - off_cdev) / DANIPC_MAX_CDEV;
 	off_cdev += sz_cdev * minor;
-	sz_netdev = IPC_BUF_SIZE/ARRAY_SIZE(cdev->rx_queue);
 
-	for (i = 0; i < ARRAY_SIZE(cdev->rx_queue); i++) {
-		ret = shm_bufpool_acquire_region(&cdev->rx_queue[i].freeq,
-						 cdev->rx_region,
-						 off_netdev,
-						 sz_netdev);
-		if (ret)
-			goto err_release_region;
-		off_netdev += sz_netdev;
+	for (i = 0, rx_fifo = cdev->rx_fifo; i < max_ipc_prio; i++, rx_fifo++) {
+		struct rx_queue *rx_queue = &rx_fifo->rx_queue;
+		struct danipc_if_fifo *if_fifo = rx_fifo->if_fifo;
 
-		if (i != ipc_trns_prio_1)
+		if (!if_fifo->probed)
 			continue;
 
-		ret = shm_bufpool_acquire_region(&cdev->rx_queue[i].freeq,
+		ret = shm_bufpool_acquire_region(&rx_queue->freeq,
+						 cdev->rx_region,
+						 (if_fifo->unit_num *
+						  IPC_BUFS_SZ_PER_IF_FIFO),
+						 IPC_BUFS_SZ_PER_IF_FIFO);
+		if (ret)
+			goto err_release_region;
+
+		if (i != ipc_prio_hi)
+			continue;
+
+		ret = shm_bufpool_acquire_region(&rx_queue->freeq,
 						 cdev->rx_region,
 						 off_cdev,
 						 sz_cdev);
@@ -1816,8 +1633,6 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 
 	init_waitqueue_head(&cdev->rx_wq);
 
-	danipc_cdev_init_rx_work(cdev);
-
 	shm_bufpool_init(&cdev->tx_queue.mmapq);
 	shm_bufpool_init(&cdev->tx_queue.mmap_bufcacheq);
 
@@ -1829,7 +1644,7 @@ static int danipc_cdev_open(struct inode *inode, struct file *file)
 		goto err_release_ul_buf;
 	}
 
-	danipc_init_irq(fifo, ipc_trns_prio_1);
+	danipc_fifo_init_irq(fifo);
 
 	file->private_data = cdev;
 
@@ -1840,8 +1655,8 @@ out:
 
 err_release_ul_buf:
 	danipc_cdev_rx_buf_release(cdev);
-	for (i = 0; i < ARRAY_SIZE(cdev->rx_queue); i++)
-		shm_bufpool_release(&cdev->rx_queue[i].freeq);
+	for (i = 0, rx_fifo = cdev->rx_fifo; i < max_ipc_prio; i++, rx_fifo++)
+		shm_bufpool_release(&rx_fifo->rx_queue.freeq);
 err_release_region:
 	shm_region_release(cdev->rx_region);
 err:
@@ -1866,13 +1681,13 @@ static int danipc_cdev_release(struct inode *inode, struct file *file)
 
 	dev_dbg(cdev->dev, "%s\n", __func__);
 
-	danipc_disable_irq(fifo, ipc_trns_prio_1);
+	danipc_fifo_disable_irq(fifo);
 	free_irq(fifo->irq, cdev);
-	danipc_cdev_stop_rx_work(cdev);
+	danipc_poll_ctl_stop(&cdev->poll_ctl);
 
-	for (i = 0; i < ARRAY_SIZE(cdev->rx_queue); i++) {
-		shm_bufpool_release(&cdev->rx_queue[i].freeq);
-		shm_bufpool_release(&cdev->rx_queue[i].recvq);
+	for (i = 0; i < max_ipc_prio; i++) {
+		shm_bufpool_release(&cdev->rx_fifo[i].rx_queue.freeq);
+		shm_bufpool_release(&cdev->rx_fifo[i].rx_queue.recvq);
 	}
 	shm_region_release(cdev->rx_region);
 	shm_region_release(cdev->tx_region);
@@ -1900,6 +1715,8 @@ static int cdev_create(struct danipc_cdev *cdev,
 		       struct danipc_fifo *fifo,
 		       int minor)
 {
+	int prio;
+
 	cdev->dev = device_create(danipc_class, NULL,
 				  MKDEV(DANIPC_MAJOR, minor),
 				  NULL, DANIPC_CDEV_NAME "%d", minor);
@@ -1914,7 +1731,18 @@ static int cdev_create(struct danipc_cdev *cdev,
 	cdev->minor = minor;
 	spin_lock_init(&cdev->rx_lock);
 
-	return 0;
+	for (prio = 0; prio < max_ipc_prio; prio++) {
+		struct danipc_cdev_if_fifo *rx_fifo = &cdev->rx_fifo[prio];
+
+		rx_fifo->cdev = cdev;
+		rx_fifo->if_fifo = &fifo->if_fifo[prio];
+		rx_fifo->prio = prio;
+	}
+
+	return danipc_poll_ctl_init(&cdev->poll_ctl,
+				    danipc_cdev_rx_poll,
+				    (unsigned long)cdev,
+				    DEFAULT_POLL_INTERVAL_IN_US);
 }
 
 static void cdev_remove(struct danipc_cdev *cdev)
@@ -1965,22 +1793,89 @@ static void danipc_cdev_cleanup(void)
 }
 
 /* DANIPC DEBUGFS for character device interface */
+static void danipc_cdev_if_fifo_show_queue_info(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_cdev_if_fifo *rx_fifo =
+		(struct danipc_cdev_if_fifo *)hdlr->data;
+	struct rx_queue *rx_queue = &rx_fifo->rx_queue;
+
+	seq_puts(s, "\nReceiving:\n");
+	seq_printf(s, "%-25s: %u\n", "recv_queue", rx_queue->recvq.count);
+	seq_printf(s, "%-25s: %u\n",
+		   "recv_queue_hi", rx_queue->status.recvq_hi);
+	seq_printf(s, "%-25s: %u\n", "fifo_b_queue", rx_queue->bq.count);
+	seq_printf(s, "%-25s: %u\n",
+		   "fifo_b_queue_lo", rx_queue->status.bq_lo);
+	seq_printf(s, "%-25s: %u\n", "free_queue", rx_queue->freeq.count);
+	seq_printf(s, "%-25s: %u\n", "free_queue_lo",
+		   rx_queue->status.freeq_lo);
+	seq_printf(s, "%-25s: %u\n", "mmap_queue", rx_queue->mmapq.count);
+
+	if (rx_fifo->prio == ipc_prio_hi) {
+		struct tx_queue *tx_queue = &rx_fifo->cdev->tx_queue;
+
+		seq_puts(s, "\nSending:\n");
+		seq_printf(s, "%-25s: %u\n", "mmap_queue",
+			   tx_queue->mmapq.count);
+		seq_printf(s, "%-25s: %u\n", "mmap_bufcache_queue",
+			   tx_queue->mmap_bufcacheq.count);
+	}
+}
+
+static ssize_t danipc_cdev_if_fifo_reset_queue_info(struct file *filep,
+						    const char __user *ubuf,
+						    size_t cnt,
+						    loff_t *ppos)
+{
+	struct seq_file *m = filep->private_data;
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)m->private;
+	struct danipc_cdev_if_fifo *rx_fifo =
+		(struct danipc_cdev_if_fifo *)hdlr->data;
+	struct danipc_cdev *cdev = rx_fifo->cdev;
+	unsigned long flags;
+
+	spin_lock_irqsave(&cdev->rx_lock, flags);
+	reset_rx_queue_status(&rx_fifo->rx_queue);
+	spin_unlock_irqrestore(&cdev->rx_lock, flags);
+
+	return cnt;
+}
+
+static void danipc_cdev_if_fifo_show(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_cdev_if_fifo *rx_fifo =
+		(struct danipc_cdev_if_fifo *)hdlr->data;
+
+	danipc_dbgfs_dump_if_fifo(s, rx_fifo->if_fifo);
+}
+
+static struct danipc_dbgfs cdev_if_fifo_dbgfs[] = {
+	DBGFS_NODE("queue", 0666, danipc_cdev_if_fifo_show_queue_info,
+		   danipc_cdev_if_fifo_reset_queue_info),
+	DBGFS_NODE("interface", 0644, danipc_cdev_if_fifo_show, NULL),
+	DBGFS_NODE_LAST
+};
+
 static void danipc_cdev_show_status(struct seq_file *s)
 {
 	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
 	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
 	struct danipc_cdev_status *stats = &cdev->status;
+	struct ipc_msg_err_stats *err_stats = &cdev->status.rx_err_stats;
 
 	seq_printf(s, "%-25s: %u\n", "rx", stats->rx);
 	seq_printf(s, "%-25s: %u\n", "rx_bytes", stats->rx_bytes);
 	seq_printf(s, "%-25s: %u\n", "rx_drop", stats->rx_drop);
 	seq_printf(s, "%-25s: %u\n", "rx_no_buf", stats->rx_no_buf);
 	seq_printf(s, "%-25s: %u\n", "rx_error", stats->rx_error);
-	seq_printf(s, "%-25s: %u\n", "rx_zero_len_msg", stats->rx_zlen_msg);
-	seq_printf(s, "%-25s: %u\n", "rx_oversize_msg", stats->rx_oversize_msg);
-	seq_printf(s, "%-25s: %u\n", "rx_invalid_aid_msg", stats->rx_inval_msg);
-	seq_printf(s, "%-25s: %u\n", "rx_chained_msg", stats->rx_chained_msg);
-	seq_printf(s, "%-25s: %u\n", "rx_poll", stats->rx_poll);
+	seq_printf(s, "%-25s: %u\n", "rx_zero_len_msg", err_stats->zlen_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_oversize_msg",
+		   err_stats->oversize_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_invalid_aid_msg",
+		   err_stats->inval_msg);
+	seq_printf(s, "%-25s: %u\n", "rx_chained_msg", err_stats->chained_msg);
 
 	seq_printf(s, "%-25s: %u\n", "mmap_rx", stats->mmap_rx);
 	seq_printf(s, "%-25s: %u\n", "mmap_rx_done", stats->mmap_rx_done);
@@ -2000,56 +1895,6 @@ static void danipc_cdev_show_status(struct seq_file *s)
 	seq_printf(s, "%-25s: %u\n", "mmap_tx_error", stats->mmap_tx_error);
 
 	seq_printf(s, "%-25s: %u\n", "mmap_tx_bad_buf", stats->mmap_tx_bad_buf);
-}
-
-static void danipc_cdev_show_queue_info(struct seq_file *s)
-{
-	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
-	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
-	int i;
-
-	seq_puts(s, "\nReceiving:\n");
-	for (i = 0; i < max_ipc_prio; i++) {
-		seq_printf(s, "%s\n",
-			   (i == ipc_trns_prio_1) ? "high_prio" : "low_prio");
-		seq_printf(s, "%-25s: %u\n",
-			   "recv_queue", cdev->rx_queue[i].recvq.count);
-		seq_printf(s, "%-25s: %u\n",
-			   "recv_queue_hi", cdev->rx_queue[i].status.recvq_hi);
-		seq_printf(s, "%-25s: %u\n",
-			   "fifo_b_queue", cdev->rx_queue[i].bq.count);
-		seq_printf(s, "%-25s: %u\n",
-			   "fifo_b_queue_lo", cdev->rx_queue[i].status.bq_lo);
-		seq_printf(s, "%-25s: %u\n",
-			   "free_queue", cdev->rx_queue[i].freeq.count);
-		seq_printf(s, "%-25s: %u\n",
-			   "free_queue_lo", cdev->rx_queue[i].status.freeq_lo);
-		seq_printf(s, "%-25s: %u\n",
-			   "mmap_queue", cdev->rx_queue[i].mmapq.count);
-	}
-	seq_puts(s, "\nSending:\n");
-	seq_printf(s, "%-25s: %u\n",
-		   "mmap_queue", cdev->tx_queue.mmapq.count);
-	seq_printf(s, "%-25s: %u\n",
-		   "mmap_bufcache_queue", cdev->tx_queue.mmap_bufcacheq.count);
-}
-
-static ssize_t danipc_cdev_reset_queue_info(struct file *filep,
-					    const char __user *ubuf,
-					    size_t cnt,
-					    loff_t *ppos)
-{
-	struct seq_file *m = filep->private_data;
-	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)m->private;
-	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
-	unsigned long flags;
-
-	spin_lock_irqsave(&cdev->rx_lock, flags);
-	reset_rx_queue_status(&cdev->rx_queue[ipc_trns_prio_1]);
-	reset_rx_queue_status(&cdev->rx_queue[ipc_trns_prio_0]);
-	spin_unlock_irqrestore(&cdev->rx_lock, flags);
-
-	return cnt;
 }
 
 static void danipc_cdev_show_vma(struct seq_file *s,
@@ -2089,13 +1934,68 @@ static void danipc_cdev_show_mmap_mapping(struct seq_file *s)
 	}
 }
 
+static void danipc_cdev_show_poll_interval(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
+
+	seq_printf(s, "%lldus\n", ktime_to_us(cdev->poll_ctl.timer_intval));
+}
+
+static ssize_t danipc_cdev_set_poll_interval(struct file *filep,
+					     const char __user *ubuf,
+					     size_t cnt,
+					     loff_t *ppos)
+{
+	struct seq_file *m = filep->private_data;
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)m->private;
+	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
+	uint32_t val;
+
+	if (kstrtouint_from_user(ubuf, cnt, 0, &val))
+		return -EINVAL;
+	if (!val)
+		return -EINVAL;
+
+	cdev->poll_ctl.timer_intval = ns_to_ktime(val * 1000);
+	return cnt;
+}
+
+static void danipc_cdev_show_poll_count(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
+
+	seq_printf(s, "%llu\n", cdev->poll_ctl.poll_cnt);
+}
+
+static void danipc_cdev_show_fifo(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_cdev *cdev = (struct danipc_cdev *)hdlr->data;
+
+	danipc_dbgfs_dump_fifo(s, cdev->fifo);
+}
+
 static struct danipc_dbgfs cdev_dbgfs[] = {
+	DBGFS_NODE("fifo", 0444, danipc_cdev_show_fifo, NULL),
 	DBGFS_NODE("status", 0444, danipc_cdev_show_status, NULL),
-	DBGFS_NODE("queue", 0666, danipc_cdev_show_queue_info,
-		   danipc_cdev_reset_queue_info),
 	DBGFS_NODE("mmap-mapping", 0444, danipc_cdev_show_mmap_mapping, NULL),
+	DBGFS_NODE("poll-intval", 0644, danipc_cdev_show_poll_interval,
+		   danipc_cdev_set_poll_interval),
+	DBGFS_NODE("poll", 0644, danipc_cdev_show_poll_count, NULL),
 	DBGFS_NODE_LAST
 };
+
+static void danipc_dbgfs_cdev_remove_dent(struct danipc_cdev *cdev)
+{
+	int prio;
+
+	for (prio = 0; prio < max_ipc_prio; prio++)
+		danipc_dbgfs_remove_dent(&cdev->rx_fifo[prio].dent);
+
+	danipc_dbgfs_remove_dent(&cdev->dent);
+}
 
 int danipc_dbgfs_cdev_init(void)
 {
@@ -2112,22 +2012,32 @@ int danipc_dbgfs_cdev_init(void)
 
 	for (i = 0; i < DANIPC_MAX_CDEV; i++) {
 		struct danipc_cdev *cdev = &drvr->cdev[i];
+		struct danipc_cdev_if_fifo *rx_fifo = cdev->rx_fifo;
+		int prio;
 
-		cdev->dbgfs = kzalloc(sizeof(cdev_dbgfs), GFP_KERNEL);
-		if (cdev->dbgfs == NULL) {
-			ret = -ENOMEM;
-			pr_err("%s: failed to allocate dbgfs\n", __func__);
+		ret = danipc_dbgfs_create_dent(&cdev->dent,
+					       dent,
+					       cdev->dev->kobj.name,
+					       cdev_dbgfs,
+					       cdev);
+		if (ret) {
+			pr_err("%s: failed to create dbgfs\n", __func__);
 			break;
 		}
-		memcpy(cdev->dbgfs, &cdev_dbgfs[0], sizeof(cdev_dbgfs));
-		cdev->dirent = danipc_dbgfs_create_dir(dent,
-						       cdev->dev->kobj.name,
-						       cdev->dbgfs,
-						       cdev);
-		if (cdev->dirent == NULL) {
-			kfree(cdev->dbgfs);
-			cdev->dbgfs = NULL;
-			ret = PTR_ERR(cdev->dirent);
+
+		for (prio = 0; prio < max_ipc_prio && !ret; prio++, rx_fifo++) {
+			if (!rx_fifo->if_fifo->probed)
+				continue;
+			ret = danipc_dbgfs_create_dent(
+				&rx_fifo->dent,
+				cdev->dent.dent,
+				(rx_fifo->prio == ipc_prio_hi) ?
+				"fifo(hi_prio)" : "fifo(lo_prio)",
+				cdev_if_fifo_dbgfs,
+				rx_fifo);
+		}
+		if (ret) {
+			danipc_dbgfs_cdev_remove_dent(cdev);
 			break;
 		}
 	}
@@ -2143,12 +2053,141 @@ void danipc_dbgfs_cdev_remove(void)
 	for (i = 0; i < DANIPC_MAX_CDEV; i++) {
 		struct danipc_cdev *cdev = &drvr->cdev[i];
 
-		debugfs_remove_recursive(cdev->dirent);
-		cdev->dirent = NULL;
-
-		kfree(cdev->dbgfs);
-		cdev->dbgfs = NULL;
+		danipc_dbgfs_cdev_remove_dent(cdev);
 	}
+}
+
+/* DANIPC DEBUGFS FIFO */
+static void danipc_dump_fifo_info(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_fifo *fifo = (struct danipc_fifo *)hdlr->data;
+	static const char *format = "%-20s: %-d\n";
+
+	seq_printf(s, "FIFO %s:\n", fifo->probe_info->ifname);
+	seq_printf(s, format, "Irq", fifo->irq);
+	seq_printf(s, format, "If Index", fifo->idx);
+	seq_printf(s, format, "HW fifo Index", fifo->node_id);
+}
+
+static void danipc_dump_fifo_register(struct seq_file *s)
+{
+	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
+	struct danipc_fifo *fifo = (struct danipc_fifo *)hdlr->data;
+	void __iomem *base = danipc_io_base(fifo->node_id);
+	int i, clk_domain;
+	uint32_t val;
+
+	/* FIFO Status*/
+	for (i = 0; i < MAX_IPC_FIFO_PER_CDU; i++) {
+		uint32_t c;
+
+		val = danipc_hw_reg_read(base, FIFO_STATUS(i));
+		c = danipc_hw_reg_read(base, FIFO_COUNTER(i));
+		seq_printf(s, "FIFO %d: STATUS=%08x Count=%u", i, val, c);
+	}
+
+	for (clk_domain = 0; clk_domain < CLK_DOMAIN_PER_CDU; clk_domain++) {
+		val = danipc_hw_reg_read(base,
+					 (clk_domain) ? CDU_INT1_MASK :
+					 CDU_INT0_MASK);
+		seq_printf(s, "IRQ_MASK(clk_domain/%d): %08x\n",
+			   clk_domain, val);
+
+		val = danipc_hw_reg_read(base,
+					 (clk_domain) ? CDU_INT1_ENABLE :
+					 CDU_INT0_ENABLE);
+		seq_printf(s, "IRQ_ENABLE(clk_domain/%d): %08x\n",
+			   clk_domain, val);
+
+		val = danipc_hw_reg_read(base,
+					 (clk_domain) ? CDU_INT1_STATUS :
+					 CDU_INT0_STATUS);
+		seq_printf(s, "IRQ_STATUS(clk_domain/%d): %08x\n",
+			   clk_domain, val);
+
+		val = danipc_hw_reg_read(base,
+					 (clk_domain) ? CDU_INT1_RAW_STATUS :
+					 CDU_INT0_RAW_STATUS);
+		seq_printf(s, "IRQ_RAW_STATUS(clk_domain/%d): %08x\n",
+			   clk_domain, val);
+	}
+
+	val = danipc_hw_reg_read(base, FIFO_THR_AF_CFG);
+	seq_printf(s, "THR_AF_CFG: %08x\n", val);
+
+	val = danipc_hw_reg_read(base, FIFO_THR_AE_CFG);
+	seq_printf(s, "THR_AE_CFG: %08x\n", val);
+}
+
+static struct danipc_dbgfs fifo_dbgfs[] = {
+	DBGFS_NODE("fifo_info", 0444, danipc_dump_fifo_info, NULL),
+	DBGFS_NODE("fifo_register", 0444, danipc_dump_fifo_register, NULL),
+	DBGFS_NODE_LAST
+};
+
+static int danipc_dbgfs_fifo_init(void)
+{
+	struct danipc_drvr *drvr = &danipc_driver;
+	struct dentry *dent;
+	int ret = 0;
+	int i;
+
+	dent = debugfs_create_dir("fifo", drvr->dirent);
+	if (IS_ERR(dent)) {
+		pr_err("%s: failed to create cdev directory\n", __func__);
+		return PTR_ERR(dent);
+	}
+
+	for (i = 0; i < drvr->num_lfifo; i++) {
+		struct danipc_fifo *fifo = &drvr->lfifo[i];
+
+		ret = danipc_dbgfs_create_dent(&fifo->dent,
+					       dent,
+					       fifo->probe_info->ifname,
+					       fifo_dbgfs,
+					       fifo);
+		if (ret) {
+			ret = -ENOMEM;
+			pr_err("%s: failed to allocate dbgfs\n", __func__);
+			break;
+		}
+	}
+
+	return ret;
+}
+
+void danipc_dbgfs_fifo_remove(void)
+{
+	struct danipc_drvr *drvr = &danipc_driver;
+	int i;
+
+	for (i = 0; i < drvr->num_lfifo; i++)
+		danipc_dbgfs_remove_dent(&drvr->lfifo[i].dent);
+}
+
+void danipc_dbgfs_dump_fifo(struct seq_file *s, struct danipc_fifo *fifo)
+{
+	struct danipc_probe_info *probe_info = fifo->probe_info;
+
+	seq_printf(s, "index:           %u\n", fifo->idx);
+	seq_printf(s, "node_id:         %u\n", fifo->node_id);
+	seq_printf(s, "register base:   %08x\n",
+		   danipc_driver.io_res[fifo->node_id].start);
+	seq_printf(s, "irq_clk_domain:  %u\n", probe_info->irq_clk_domain);
+	seq_printf(s, "tcsr_mux:        %u\n", probe_info->mux_enable);
+}
+
+void danipc_dbgfs_dump_if_fifo(struct seq_file *s,
+			       struct danipc_if_fifo *if_fifo)
+{
+	if (!if_fifo->probed)
+		return;
+
+	seq_printf(s, "%-25s: %u\n", "unit", if_fifo->unit_num);
+	seq_printf(s, "%-25s: %u\n", "m-fifo", if_fifo->m_fifo_idx);
+	seq_printf(s, "%-25s: %u\n", "b-fifo", if_fifo->b_fifo_idx);
+	seq_printf(s, "%-25s: 0x%08x\n", "irq_mask", if_fifo->irq_mask);
 }
 
 /* DANIPC DEBUGFS ROOT interface */
@@ -2167,13 +2206,12 @@ static void danipc_dump_fifo_mmap(struct seq_file *s)
 	seq_puts(s, " -------------------------------------------------\n");
 	seq_puts(s, "| CPU ID | HW Address | Virtual Address | Size    |\n");
 	seq_puts(s, " -------------------------------------------------\n");
-	for (i = 0; (i < PLATFORM_MAX_NUM_OF_NODES); i++) {
-		if (ipc_regs_len[i]) {
+	for (i = 0; i < PLATFORM_MAX_NUM_OF_NODES; i++) {
+		struct danipc_resource *res = &drvr->io_res[i];
+
+		if (res->size)
 			seq_printf(s, "| %-6d | 0x%-8p | 0x%-12p | %-8d |\n", i,
-				   (void *)ipc_regs_phys[i],
-				   (void *)ipc_regs[i],
-				   ipc_regs_len[i]);
-		}
+				   (void *)res->start, res->base, res->size);
 	}
 }
 
@@ -2181,8 +2219,7 @@ static void danipc_dump_resource_map(struct seq_file *s)
 {
 	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
 	struct danipc_drvr *drvr = (struct danipc_drvr *)hdlr->data;
-	resource_size_t *res_addr = drvr->res_start;
-	resource_size_t *res_len = drvr->res_len;
+	struct danipc_resource *res;
 	static const char *format = "| %-11s | 0x%-11p | 0x%-14p | %-6d |\n";
 
 	if (drvr->ndev_active == 0) {
@@ -2195,24 +2232,29 @@ static void danipc_dump_resource_map(struct seq_file *s)
 	seq_puts(s, "| Name        | Phys Address  | Virtual Address | Size    |\n");
 	seq_puts(s, " --------------------------------------------------------\n");
 
-	seq_printf(s, format, "q6ul_ipcbuf", res_addr[IPC_BUFS_RES],
-		   ipc_buffers, res_len[IPC_BUFS_RES]);
-	seq_printf(s, format, "Agnt_tbl", res_addr[AGENT_TABLE_RES],
-		   agent_table, res_len[AGENT_TABLE_RES]);
-	seq_printf(s, format, "Intren_map", res_addr[KRAIT_IPC_MUX_RES],
-		   apps_ipc_mux, res_len[KRAIT_IPC_MUX_RES]);
+	res = &drvr->res[IPC_BUFS_RES];
+	seq_printf(s, format, "q6ul_ipcbuf", res->start, res->base, res->size);
+
+	res = &drvr->res[AGENT_TABLE_RES];
+	seq_printf(s, format, "Agnt_tbl", res->start, res->base, res->size);
+
+	res = &drvr->res[KRAIT_IPC_MUX_RES];
+	seq_printf(s, format, "Intren_map", res->start, res->base, res->size);
 }
 
 static void danipc_dump_local_agents(struct seq_file *s, uint8_t cpuid)
 {
 	int i;
-	char (*table)[MAX_AGENT_NAME_LEN] =
-	 (char (*)[MAX_AGENT_NAME_LEN])(&agent_table[cpuid*MAX_LOCAL_AGENT]);
+	struct agent_entry *entry = (struct agent_entry *)
+		(danipc_res_base(AGENT_TABLE_RES));
+
+	entry += cpuid * MAX_LOCAL_AGENT;
 
 	for (i = 0; i < MAX_LOCAL_AGENT; i++) {
-		if (table[i][0] != '\0')
+		if (entry->name[0] != '\0')
 			seq_printf(s, "| %-2d | %-35.32s |\n",
-				   (cpuid * MAX_LOCAL_AGENT) + i, table[i]);
+				   (cpuid * MAX_LOCAL_AGENT) + i,
+				   entry[i].name);
 	}
 }
 
@@ -2220,8 +2262,8 @@ static void danipc_dump_drvr_info(struct seq_file *s)
 {
 	struct dbgfs_hdlr *hdlr = (struct dbgfs_hdlr *)s->private;
 	struct danipc_drvr *drvr = (struct danipc_drvr *)hdlr->data;
-	char (*table)[MAX_AGENT_NAME_LEN] =
-		(char (*)[MAX_AGENT_NAME_LEN])agent_table;
+	struct agent_entry *entry = (struct agent_entry *)
+		(danipc_res_base(AGENT_TABLE_RES));
 	int i;
 
 	seq_puts(s, "\n\nDanipc driver status:\n\n");
@@ -2238,22 +2280,24 @@ static void danipc_dump_drvr_info(struct seq_file *s)
 
 	for (i = 0; i < MAX_AGENTS; i++) {
 		if (DANIPC_IS_AGENT_DISCOVERED(i, drvr->dst_aid))
-			seq_printf(s, "| %-2d | %-35.32s |\n", i, table[i]);
+			seq_printf(s, "| %-2d | %-35.32s |\n", i,
+				   entry[i].name);
 	}
 
-	seq_printf(s, "\n\nActive danipc interface local agents cpuid(%d):\n",
-		   drvr->if_list[0]->rx_fifo_idx);
-	seq_puts(s, " -------------------------------------------\n");
-	seq_puts(s, "| AID | Agent name                          |\n");
-	seq_puts(s, " -------------------------------------------\n");
-	danipc_dump_local_agents(s, drvr->if_list[0]->rx_fifo_idx);
-	seq_puts(s, "\n\n");
-	seq_printf(s, "Active danipc-pcap interface local agents cpuid(%d):\n",
-		   drvr->if_list[1]->rx_fifo_idx);
-	seq_puts(s, " -------------------------------------------\n");
-	seq_puts(s, "| AID | Agent name                          |\n");
-	seq_puts(s, " -------------------------------------------\n");
-	danipc_dump_local_agents(s, drvr->if_list[1]->rx_fifo_idx);
+	for (i = 0; i < drvr->ndev; i++) {
+		struct danipc_if *intf = drvr->if_list[i];
+
+		if (!netif_running(intf->dev))
+			continue;
+
+		seq_printf(s,
+			   "\n\nActive %s interface local agents cpuid(%d):\n",
+			   intf->dev->name, intf->fifo->node_id);
+		seq_puts(s, " -------------------------------------------\n");
+		seq_puts(s, "| AID | Agent name                          |\n");
+		seq_puts(s, " -------------------------------------------\n");
+		danipc_dump_local_agents(s, intf->fifo->node_id);
+	}
 }
 
 static struct danipc_dbgfs drvr_dbgfs[] = {
@@ -2358,10 +2402,59 @@ struct dentry *danipc_dbgfs_create_dir(struct dentry *parent_dent,
 	return dent;
 }
 
+int danipc_dbgfs_create_dent(struct danipc_dbgfs_dent *dbgfs_dent,
+			     struct dentry *parent_dent,
+			     const char *dir_name,
+			     struct danipc_dbgfs *nodes,
+			     void *private_data)
+{
+	struct danipc_dbgfs *dbgfs;
+	struct dentry *dent;
+	int dbgfs_size = 0, i = 0;
+
+	if (!dbgfs_dent || !dir_name || !nodes)
+		return -EINVAL;
+
+	while (nodes[i++].fname)
+		dbgfs_size += sizeof(struct danipc_dbgfs);
+
+	dbgfs = kzalloc((dbgfs_size + sizeof(struct danipc_dbgfs)), GFP_KERNEL);
+	if (dbgfs == NULL)
+		return -ENOMEM;
+
+	memcpy(dbgfs, nodes, dbgfs_size);
+
+	dent = danipc_dbgfs_create_dir(parent_dent, dir_name,
+				       dbgfs, private_data);
+	if (dent == NULL) {
+		kfree(dbgfs);
+		return -ENOMEM;
+	}
+
+	dbgfs_dent->dbgfs = dbgfs;
+	dbgfs_dent->dent = dent;
+	return 0;
+}
+
+void danipc_dbgfs_remove_dent(struct danipc_dbgfs_dent *dbgfs_dent)
+{
+	if (!dbgfs_dent)
+		return;
+
+	debugfs_remove_recursive(dbgfs_dent->dent);
+	kfree(dbgfs_dent->dbgfs);
+	dbgfs_dent->dent = NULL;
+	dbgfs_dent->dbgfs = NULL;
+}
+
 static void __init danipc_dbgfs_init(void)
 {
 	if (danipc_dbgfs_root_init()) {
 		pr_err("%s: Failed to create root debugfs node\n", __func__);
+		goto done;
+	}
+	if (danipc_dbgfs_fifo_init()) {
+		pr_err("%s: Failed to create fifo debugfs node\n", __func__);
 		goto done;
 	}
 	if (danipc_dbgfs_netdev_init()) {
@@ -2381,6 +2474,7 @@ static void danipc_dbgfs_remove(void)
 {
 	danipc_dbgfs_netdev_remove();
 	danipc_dbgfs_cdev_remove();
+	danipc_dbgfs_fifo_remove();
 	danipc_dbgfs_root_remove();
 }
 
@@ -2449,7 +2543,7 @@ int danipc_remove(struct platform_device *pdev)
 		int i;
 
 		for (i = 0; i < danipc_driver.proc_map_entry; i++)
-			iounmap(danipc_driver.proc_map[i].vaddr_base);
+			iounmap(danipc_driver.proc_map[i].base);
 		kfree(danipc_driver.proc_map);
 		danipc_driver.proc_map = NULL;
 		danipc_driver.proc_map_entry = 0;

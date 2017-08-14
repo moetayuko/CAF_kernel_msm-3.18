@@ -31,234 +31,23 @@
 #include "danipc_k.h"
 #include "danipc_lowlevel.h"
 
-/* -----------------------------------------------------------
- * MACRO (define) section
- * -----------------------------------------------------------
- */
-/* max. number of local agents per one Node */
-#define MAX_LOCAL_ID     (MAX_LOCAL_AGENT-1)
-
 uint8_t	ipc_req_sn;	/* Maintain node related sequence number */
-
-/* ===========================================================================
- * ipc_appl_init
- * ===========================================================================
- * Description:	This function initializes software/HW during startup
- *
- * Parameters:		def_trns_funcs	- pointer to default transport layer
- *					  function vector
- *
- * Returns: n/a
- *
- */
-static inline void ipc_appl_init(struct danipc_fifo *fifo,
-				 struct ipc_trns_func const *def_trns_funcs)
-{
-	ipc_agent_table_clean(fifo->node_id);
-
-	if ((fifo->flag & DANIPC_FIFO_F_INIT) == 0)
-		ipc_trns_fifo_buf_init(fifo);
-	else
-		ipc_trns_fifo_move_m_to_b(fifo);
-
-	/* Initialize IPC routing table (of CPU#) */
-	ipc_route_table_init(fifo->node_id, def_trns_funcs);
-}
-
-unsigned ipc_init(struct danipc_fifo *fifo)
-{
-	ipc_appl_init(fifo, &ipc_fifo_utils);
-	return 0;
-}
-
-unsigned ipc_cleanup(uint8_t local_cpuid)
-{
-	ipc_agent_table_clean(local_cpuid);
-
-	return 0;
-}
-
-/* ===========================================================================
- * ipc_buf_alloc
- * ===========================================================================
- * Description:	buffer allocation API, should be called before building
- *		new message
- *
- * Parameters:		dest_aid	- Message destination AgentId
- *			prio		- Transport priority level
- *
- *
- * Returns: Pointer to a 128 Byte buffer
- *
-*/
-char *ipc_buf_alloc(uint8_t dest_aid, enum ipc_trns_prio prio)
-{
-	char			*ptr = NULL;
-	struct ipc_trns_func const *trns_funcs;
-	ipc_trns_alloc_t	alloc_func;
-	const uint8_t		cpuid = ipc_get_node(dest_aid);
-
-	/* Allocate buffer of 128 Bytes using the allocation function */
-	/* associated with the given destination agentId */
-	trns_funcs = (void *)get_trns_funcs(cpuid);
-	if (likely(trns_funcs)) {
-		alloc_func = trns_funcs->trns_alloc;
-		if (likely(alloc_func)) {
-			ptr = alloc_func(cpuid, prio);
-
-			/* Clear the 'Next buffer' field. */
-			if (likely(ptr))
-				((struct ipc_buf_hdr *)ptr)->next = 0;
-		}
-	}
-
-	return ptr;
-}
 
 /* ===========================================================================
  * ipc_buf_free
  * ===========================================================================
- * Description:  Free the buffer, could be called on IPC message receiving node
+ * Description:	Free the buffer, could be called on IPC message receiving node
  *		or on sending node when need to free previously allocated
  *		buffers
  *
- * Parameters:	cpuid		- index for remote processor
- *		buf_first	- Pointer to first message buffer
- *		prio		- Transport priority level
- *
- *
- * Returns: Result code
+ * Parameters:		hdr	- Pointer to IPC message header
+ *			b_fifo	- B-FIFO HW FIFO Index
  *
  */
-int32_t ipc_buf_free(char *buf_first, uint8_t cpuid, enum ipc_trns_prio prio)
+void ipc_msg_free(struct ipc_msg_hdr *hdr, uint32_t b_fifo)
 {
-	struct ipc_buf_hdr		*cur_buf;
-	struct ipc_trns_func const	*trns_funcs;
-	ipc_trns_free_t			free_func;
-	int32_t				res = IPC_GENERIC_ERROR;
-
-	if (likely(buf_first)) {
-		cur_buf = (struct ipc_buf_hdr *)buf_first;
-		trns_funcs = get_trns_funcs(cpuid);
-		if (likely(trns_funcs)) {
-			free_func = trns_funcs->trns_free;
-			if (likely(free_func)) {
-				free_func(
-				IPC_NEXT_PTR_PART(cur_buf), cpuid,
-				prio);
-
-				res = IPC_SUCCESS;
-			}
-		}
-	}
-	return res;
-}
-
-/* ===========================================================================
- * ipc_buf_link
- * ===========================================================================
- * Description:	Link two buffers, should be called when message does not fit
- *		the single buffer
- *
- * Parameters:		buf_prev	- Pointer to a message buffer
- *			buf_next	- Pointer to the next message buffer
- *					  (to be linked to)
- *
- * Returns: Result code
- *
- */
-static int32_t ipc_buf_link(char *buf_prev, char *buf_next)
-{
-	if (buf_prev == NULL || buf_next == NULL)
-		return IPC_GENERIC_ERROR;
-
-	/* Set the next buffer pointer in place */
-	*(uint32_t *)buf_prev |= (uint32_t)buf_next & ~IPC_BUF_TYPE_BITS;
-	/* Set the LSB of the prev buffer to signal there are more to come */
-	*(uint32_t *)buf_prev |= IPC_BUF_TYPE_MTC;
-	/* Mark the next buffer as the last one */
-	*(uint32_t *)buf_next |= IPC_BUF_TYPE_END;
-	return IPC_SUCCESS;
-}
-
-/* ===========================================================================
- * ipc_msg_set_len
- * ===========================================================================
- * Description:	sets message length, first buffer of the message
- *		should be provided
- *
- * Parameters:		buf_first	- Pointer to the first message buffer
- *			len		- Message length (bytes)
- *
- *
- * Returns: Result code
- *
- */
-static int32_t ipc_msg_set_len(char *buf_first, size_t len)
-{
-	if (buf_first == NULL)
-		return IPC_GENERIC_ERROR;
-	(((struct ipc_first_buf *)buf_first)->msg_hdr).msg_len = len;
-	return IPC_SUCCESS;
-}
-
-/* ===========================================================================
- * ipc_msg_set_type
- * ===========================================================================
- * Description:  sets message type, first buffer of the message
- *		should be provided
- *
- * Parameters:		buf_first	- Pointer to the first message buffer
- *			type		- Message type
- *
- *
- * Returns: Result code
- *
- */
-static int32_t ipc_msg_set_type(char *buf_first, uint8_t type)
-{
-	if (buf_first == NULL)
-		return IPC_GENERIC_ERROR;
-	(((struct ipc_first_buf *)buf_first)->msg_hdr).msg_type = type;
-	return IPC_SUCCESS;
-}
-
-/* ===========================================================================
- * ipc_msg_set_reply_ptr
- * ===========================================================================
- * Description:  sets message reply buffer pointer
- *
- * Parameters:		buf_first	- Pointer to the first message buffer
- *			buf_rep		- Pointer to the expected replay message
- *
- *
- * Returns: Result code
- *
- */
-static int32_t ipc_msg_set_reply_ptr(
-	char			*buf_first,
-	char			*buf_rep
-)
-{
-	if (buf_first == NULL)
-		return IPC_GENERIC_ERROR;
-	(((struct ipc_first_buf *)buf_first)->msg_hdr).reply = buf_rep;
-	return IPC_SUCCESS;
-}
-
-static inline int ipc_buf_copy(
-	char		*dst,
-	const char	*src,
-	size_t		size,
-	bool		user_space)
-{
-	if (!user_space) {
-		memcpy(dst, src, size);
-		return 0;
-	}
-	if (copy_from_user(dst, src, size))
-		return -EFAULT;
-	return 0;
+	if (hdr)
+		danipc_hw_fifo_push(ipc_get_node(hdr->dest_aid), b_fifo, hdr);
 }
 
 /* ===========================================================================
@@ -268,118 +57,38 @@ static inline int ipc_buf_copy(
  *		Copy message data into allocated buffers.
  *
  *
- * Parameters:		src_aid	- Message source AgentId
+ * Parameters:		src_aid		- Message source AgentId
  *			dest_aid	- Message destination AgentId
- *			msg		- Pointer to message data
  *			msg_len		- Message length
  *			msg_type	- Message type
- *			prio		- Transport priority level
- *			from_user_space	- Message from user space
- *
+ *			b_fifo		- B_FIFO HW FIFO index
  *
  * Returns: Pointer to the message first buffer
  *
  */
-char *ipc_msg_alloc(
-	uint8_t			src_aid,
-	uint8_t			dest_aid,
-	const char		*msg,
-	size_t			msg_len,
-	uint8_t			msg_type,
-	enum ipc_trns_prio	prio,
-	bool			from_user_space
-)
+struct ipc_msg_hdr *ipc_msg_alloc(
+	uint8_t		src_aid,
+	uint8_t		dest_aid,
+	size_t		msg_len,
+	uint8_t		msg_type,
+	uint32_t	b_fifo)
 {
-	char			*first_buf = NULL;
-	char			*prev_buf = NULL;
-	char			*next_buf = NULL;
-	unsigned		buf;
-	unsigned		next_bufs_num = 0;
-	size_t			tmp_size, reminder;
-	const char		*last_data;
-	int			ret = 0;
+	struct ipc_msg_hdr *hdr;
 
-	if ((msg_len > IPC_MAX_MESSAGE_SIZE) || (msg_len == 0))
+	if ((msg_len > IPC_MSG_MAX_LEN) || (msg_len == 0))
 		return NULL;
 
-	/* Calculate number of 'next' buffers required */
-	/* (i.e. buffers additional to the first buffer) */
-	if (msg_len > IPC_FIRST_BUF_DATA_SIZE_MAX) {
-		next_bufs_num = (msg_len - IPC_FIRST_BUF_DATA_SIZE_MAX) /
-					IPC_NEXT_BUF_DATA_SIZE_MAX;
-		if ((msg_len - IPC_FIRST_BUF_DATA_SIZE_MAX) %
-					IPC_NEXT_BUF_DATA_SIZE_MAX)
-			next_bufs_num++;
+	hdr = danipc_hw_fifo_pop(ipc_get_node(dest_aid), b_fifo);
+	if (hdr) {
+		hdr->msg_type = msg_type;
+		hdr->msg_len = msg_len;
+		hdr->reply = NULL;
+		hdr->dest_aid = dest_aid;
+		hdr->src_aid = src_aid;
+		hdr->request_num = ipc_req_sn++;
 	}
 
-	first_buf = ipc_buf_alloc(dest_aid, prio);
-	prev_buf = first_buf;
-	for (buf = 0; buf < next_bufs_num; buf++) {
-		if (prev_buf == NULL)
-			break;
-		next_buf = ipc_buf_alloc(dest_aid, prio);
-		if (next_buf != NULL)
-			ipc_buf_link(prev_buf, next_buf);
-		prev_buf = next_buf;
-	}
-
-	/* If buffer allocation failed free the entire buffers */
-	if ((prev_buf == NULL) && (first_buf != NULL)) {
-		ipc_buf_free(first_buf, ipc_get_node(dest_aid), prio);
-		first_buf = NULL;
-	} else if (first_buf) {
-		ipc_msg_set_type(first_buf, msg_type);
-		ipc_msg_set_len(first_buf, msg_len);
-		ipc_msg_set_reply_ptr(first_buf, NULL);
-		((struct ipc_msg_hdr *)first_buf)->dest_aid = dest_aid;
-		((struct ipc_msg_hdr *)first_buf)->src_aid = src_aid;
-		((struct ipc_msg_hdr *)first_buf)->request_num = ipc_req_sn;
-		((struct ipc_msg_hdr *)first_buf)->next  = NULL;
-		ipc_req_sn++;
-
-		if (msg) {
-			last_data = msg + msg_len;
-
-			/* Now copy the Data */
-			reminder = msg_len;
-			tmp_size = min_t(size_t, reminder,
-					 IPC_FIRST_BUF_DATA_SIZE_MAX);
-
-			ret = ipc_buf_copy(
-				((struct ipc_first_buf *)first_buf)->body,
-				last_data - reminder,
-				tmp_size,
-				from_user_space);
-			if (ret)
-				goto err;
-
-			reminder -= tmp_size;
-			prev_buf = first_buf;
-
-			while (reminder > 0) {
-				next_buf = IPC_NEXT_PTR_PART(
-					((struct ipc_msg_hdr *)prev_buf)->next);
-				tmp_size = min_t(size_t, reminder,
-						 IPC_NEXT_BUF_DATA_SIZE_MAX);
-
-				ret = ipc_buf_copy(
-					((struct ipc_next_buf *)next_buf)->body,
-					last_data - reminder,
-					tmp_size,
-					from_user_space);
-				if (ret)
-					goto err;
-
-				reminder -= tmp_size;
-				prev_buf = next_buf;
-			}
-		}
-	}
-
-	return first_buf;
-err:
-	ipc_buf_free(first_buf, ipc_get_node(dest_aid), prio);
-	return NULL;
+	return hdr;
 }
 
 /* ===========================================================================
@@ -387,44 +96,75 @@ err:
  * ===========================================================================
  * Description:  Message send, first buffer of the message should be provided,
  *
- * Parameters:		buf_first	- Pointer to the first message buffer
- *			prio		- Transport priority level
- *
+ * Parameters:		hdr	- Pointer to IPC message header
+ *			m_fifo	- M-FIFO HW FIFO index
  *
  * Returns: Result code
  *
  */
-int32_t ipc_msg_send(char *buf_first, enum ipc_trns_prio prio)
+int ipc_msg_send(struct ipc_msg_hdr *hdr, uint32_t m_fifo)
 {
-	struct ipc_first_buf		*buf;
-	struct ipc_trns_func const	*trns_funcs;
-	ipc_trns_send_t			send_func;
-	uint8_t				dest_aid;
-	uint8_t				cpuid;
-	int32_t				res = IPC_GENERIC_ERROR;
+	if (unlikely(hdr == NULL))
+		return -EINVAL;
 
-	if (likely(buf_first)) {
-		dest_aid	= (((struct ipc_first_buf *)buf_first)->
-							msg_hdr).dest_aid;
-		cpuid		= ipc_get_node(dest_aid);
-		buf		= (struct ipc_first_buf *)buf_first;
+	/* Flush to DDR entire message */
+	/* No data offset in IPC message */
+	/* Flush the cache with the length indicated in IPC header */
+	dmac_flush_range(hdr, (char *)(hdr + 1) + hdr->msg_len);
+	danipc_hw_fifo_push(ipc_get_node(hdr->dest_aid), m_fifo, hdr);
 
-		/* Flush to DDR entire message */
-		/* No data offset in IPC message */
-		/* Flush the cache with the length indicated in IPC header */
-		dmac_flush_range(
-			buf_first,
-			buf_first +
-			buf->msg_hdr.msg_len + sizeof(struct ipc_msg_hdr));
+	return 0;
+}
 
-		trns_funcs	= get_trns_funcs(cpuid);
-		if (likely(trns_funcs)) {
-			send_func = trns_funcs->trns_send;
-			if (send_func)
-				res = send_func((char *)buf, cpuid, prio);
-		}
+/* ===========================================================================
+ * ipc_msg_valid
+ * ===========================================================================
+ * Description:  Validate the IPC message
+ *
+ * Parameters:	hdr	- Pointer to IPC message header
+ *		node	- Receiving Node ID
+ *		stats	- Status Pointer
+ *
+ * Returns: True - The message is valid, otherwise False
+ *
+ */
+bool ipc_msg_valid(const struct ipc_msg_hdr *hdr,
+		   uint8_t node,
+		   struct ipc_msg_err_stats *stats)
+{
+	if (hdr->msg_len > IPC_MSG_MAX_LEN) {
+		pr_debug("%s: receive the message with bad message len(%u)\n",
+			 __func__, hdr->msg_len);
+		stats->oversize_msg++;
+		return false;
 	}
-	return res;
+	if (!hdr->msg_len) {
+		stats->zlen_msg++;
+		return false;
+	}
+	if (ipc_get_node(hdr->dest_aid) != node) {
+		pr_debug("%s: receive the message with bad dest_aid(%u)\n",
+			 __func__, hdr->dest_aid);
+		stats->inval_msg++;
+		return false;
+	}
+	/* no buffer chain */
+	if (hdr->next != NULL) {
+		pr_debug("%s: receive the message with next point(%p)\n",
+			 __func__, hdr->next);
+		stats->chained_msg++;
+		return false;
+	}
+	return true;
+}
+
+void ipc_agent_table_clean(uint8_t cpuid)
+{
+	unsigned aid = __IPC_AGENT_ID(cpuid, 0);
+	struct agent_entry *entry = (struct agent_entry *)
+		danipc_driver.res[AGENT_TABLE_RES].base;
+
+	memset(entry+aid, 0, (sizeof(struct agent_entry) * MAX_LOCAL_AGENT));
 }
 
 #define MAX_SHM_REGION_NUM	4
