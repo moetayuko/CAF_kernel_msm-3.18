@@ -39,10 +39,14 @@ MODULE_AUTHOR("Cavium Networks, <support@cavium.com>");
 MODULE_DESCRIPTION("Cavium LiquidIO Intelligent Server Adapter Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(LIQUIDIO_VERSION);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210SV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210NV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_410NV_NAME LIO_FW_NAME_SUFFIX);
-MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_23XX_NAME LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210SV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210NV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_410NV_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_23XX_NAME
+		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
 
 static int ddr_timeout = 10000;
 module_param(ddr_timeout, int, 0644);
@@ -59,7 +63,20 @@ static char fw_type[LIO_MAX_FW_TYPE_LEN];
 module_param_string(fw_type, fw_type, sizeof(fw_type), 0000);
 MODULE_PARM_DESC(fw_type, "Type of firmware to be loaded. Default \"nic\"");
 
-static int ptp_enable = 1;
+static u32 console_bitmask;
+module_param(console_bitmask, int, 0644);
+MODULE_PARM_DESC(console_bitmask,
+		 "Bitmask indicating which consoles have debug output redirected to syslog.");
+
+/**
+ * \brief determines if a given console has debug enabled.
+ * @param console console to check
+ * @returns  1 = enabled. 0 otherwise
+ */
+static int octeon_console_debug_enabled(u32 console)
+{
+	return (console_bitmask >> (console)) & 0x1;
+}
 
 /* Polling interval for determining when NIC application is alive */
 #define LIQUIDIO_STARTER_POLL_INTERVAL_MS 100
@@ -167,6 +184,9 @@ struct octeon_device_priv {
 #ifdef CONFIG_PCI_IOV
 static int liquidio_enable_sriov(struct pci_dev *dev, int num_vfs);
 #endif
+
+static int octeon_dbg_console_print(struct octeon_device *oct, u32 console_num,
+				    char *prefix, char *suffix);
 
 static int octeon_device_init(struct octeon_device *);
 static int liquidio_stop(struct net_device *netdev);
@@ -1344,6 +1364,13 @@ liquidio_probe(struct pci_dev *pdev,
 	if (pdev->device == OCTEON_CN23XX_PF_VID)
 		oct_dev->msix_on = LIO_FLAG_MSIX_ENABLED;
 
+	/* Enable PTP for 6XXX Device */
+	if (((pdev->device == OCTEON_CN66XX) ||
+	     (pdev->device == OCTEON_CN68XX)))
+		oct_dev->ptp_enable = true;
+	else
+		oct_dev->ptp_enable = false;
+
 	dev_info(&pdev->dev, "Initializing device %x:%x.\n",
 		 (u32)pdev->vendor, (u32)pdev->device);
 
@@ -1717,6 +1744,10 @@ static void liquidio_destroy_nic_device(struct octeon_device *oct, int ifidx)
 			oct->droq[0]->ops.poll_mode = 0;
 	}
 
+	/* Delete NAPI */
+	list_for_each_entry_safe(napi, n, &netdev->napi_list, dev_list)
+		netif_napi_del(napi);
+
 	if (atomic_read(&lio->ifstate) & LIO_IFSTATE_REGISTERED)
 		unregister_netdev(netdev);
 
@@ -1825,6 +1856,11 @@ static int octeon_chip_specific_setup(struct octeon_device *oct)
 	case OCTEON_CN23XX_PCIID_PF:
 		oct->chip_id = OCTEON_CN23XX_PF_VID;
 		ret = setup_cn23xx_octeon_pf_device(oct);
+#ifdef CONFIG_PCI_IOV
+		if (!ret)
+			pci_sriov_set_totalvfs(oct->pci_dev,
+					       oct->sriov_info.max_vfs);
+#endif
 		s = "CN23XX";
 		break;
 
@@ -2360,9 +2396,7 @@ liquidio_push_packet(u32 octeon_id __attribute__((unused)),
 
 		r_dh_off = (rh->r_dh.len - 1) * BYTES_PER_DHLEN_UNIT;
 
-		if (((oct->chip_id == OCTEON_CN66XX) ||
-		     (oct->chip_id == OCTEON_CN68XX)) &&
-		    ptp_enable) {
+		if (oct->ptp_enable) {
 			if (rh->r_dh.has_hwtstamp) {
 				/* timestamp is included from the hardware at
 				 * the beginning of the packet.
@@ -2544,8 +2578,8 @@ static inline int setup_io_queues(struct octeon_device *octeon_dev,
 {
 	struct octeon_droq_ops droq_ops;
 	struct net_device *netdev;
-	static int cpu_id;
-	static int cpu_id_modulus;
+	int cpu_id;
+	int cpu_id_modulus;
 	struct octeon_droq *droq;
 	struct napi_struct *napi;
 	int q, q_no, retval = 0;
@@ -2707,8 +2741,7 @@ static int liquidio_open(struct net_device *netdev)
 			oct->droq[0]->ops.poll_mode = 1;
 	}
 
-	if ((oct->chip_id == OCTEON_CN66XX || oct->chip_id == OCTEON_CN68XX) &&
-	    ptp_enable)
+	if (oct->ptp_enable)
 		oct_ptp_open(netdev);
 
 	ifstate_set(lio, LIO_IFSTATE_RUNNING);
@@ -2746,6 +2779,17 @@ static int liquidio_stop(struct net_device *netdev)
 {
 	struct lio *lio = GET_LIO(netdev);
 	struct octeon_device *oct = lio->oct_dev;
+	struct napi_struct *napi, *n;
+
+	if (oct->props[lio->ifidx].napi_enabled) {
+		list_for_each_entry_safe(napi, n, &netdev->napi_list, dev_list)
+			napi_disable(napi);
+
+		oct->props[lio->ifidx].napi_enabled = 0;
+
+		if (OCTEON_CN23XX_PF(oct))
+			oct->droq[0]->ops.poll_mode = 0;
+	}
 
 	ifstate_reset(lio, LIO_IFSTATE_RUNNING);
 
@@ -3052,8 +3096,7 @@ static int liquidio_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 
 	switch (cmd) {
 	case SIOCSHWTSTAMP:
-		if ((lio->oct_dev->chip_id == OCTEON_CN66XX ||
-		     lio->oct_dev->chip_id == OCTEON_CN68XX) && ptp_enable)
+		if (lio->oct_dev->ptp_enable)
 			return hwtstamp_ioctl(netdev, ifr);
 	default:
 		return -EOPNOTSUPP;
@@ -4516,6 +4559,7 @@ static int octeon_device_init(struct octeon_device *octeon_dev)
 	int j, ret;
 	int fw_loaded = 0;
 	char bootcmd[] = "\n";
+	char *dbg_enb = NULL;
 	struct octeon_device_priv *oct_priv =
 		(struct octeon_device_priv *)octeon_dev->priv;
 	atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
@@ -4722,10 +4766,19 @@ static int octeon_device_init(struct octeon_device *octeon_dev)
 			dev_err(&octeon_dev->pci_dev->dev, "Could not access board consoles\n");
 			return 1;
 		}
-		ret = octeon_add_console(octeon_dev, 0);
+		/* If console debug enabled, specify empty string to use default
+		 * enablement ELSE specify NULL string for 'disabled'.
+		 */
+		dbg_enb = octeon_console_debug_enabled(0) ? "" : NULL;
+		ret = octeon_add_console(octeon_dev, 0, dbg_enb);
 		if (ret) {
 			dev_err(&octeon_dev->pci_dev->dev, "Could not access board console\n");
 			return 1;
+		} else if (octeon_console_debug_enabled(0)) {
+			/* If console was added AND we're logging console output
+			 * then set our console print function.
+			 */
+			octeon_dev->console[0].print = octeon_dbg_console_print;
 		}
 
 		atomic_set(&octeon_dev->status, OCT_DEV_CONSOLE_INIT_DONE);
@@ -4757,6 +4810,33 @@ static int octeon_device_init(struct octeon_device *octeon_dev)
 		       octeon_dev->droq[j]->pkts_credit_reg);
 
 	/* Packets can start arriving on the output queues from this point. */
+	return 0;
+}
+
+/**
+ * \brief Debug console print function
+ * @param octeon_dev  octeon device
+ * @param console_num console number
+ * @param prefix      first portion of line to display
+ * @param suffix      second portion of line to display
+ *
+ * The OCTEON debug console outputs entire lines (excluding '\n').
+ * Normally, the line will be passed in the 'prefix' parameter.
+ * However, due to buffering, it is possible for a line to be split into two
+ * parts, in which case they will be passed as the 'prefix' parameter and
+ * 'suffix' parameter.
+ */
+static int octeon_dbg_console_print(struct octeon_device *oct, u32 console_num,
+				    char *prefix, char *suffix)
+{
+	if (prefix && suffix)
+		dev_info(&oct->pci_dev->dev, "%u: %s%s\n", console_num, prefix,
+			 suffix);
+	else if (prefix)
+		dev_info(&oct->pci_dev->dev, "%u: %s\n", console_num, prefix);
+	else if (suffix)
+		dev_info(&oct->pci_dev->dev, "%u: %s\n", console_num, suffix);
+
 	return 0;
 }
 

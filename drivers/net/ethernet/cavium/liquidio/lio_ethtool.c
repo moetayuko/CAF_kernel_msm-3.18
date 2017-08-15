@@ -105,6 +105,7 @@ static const char oct_stats_strings[][ETH_GSTRING_LEN] = {
 	"tx_total_sent",
 	"tx_total_fwd",
 	"tx_err_pko",
+	"tx_err_pki",
 	"tx_err_link",
 	"tx_err_drop",
 
@@ -577,23 +578,18 @@ static int lio_set_phys_id(struct net_device *netdev,
 		break;
 
 	case ETHTOOL_ID_ON:
-		if (oct->chip_id == OCTEON_CN66XX) {
+		if (oct->chip_id == OCTEON_CN66XX)
 			octnet_gpio_access(netdev, VITESSE_PHY_GPIO_CFG,
 					   VITESSE_PHY_GPIO_HIGH);
+		else
+			return -EINVAL;
 
-		} else if (oct->chip_id == OCTEON_CN68XX) {
-			return -EINVAL;
-		} else {
-			return -EINVAL;
-		}
 		break;
 
 	case ETHTOOL_ID_OFF:
 		if (oct->chip_id == OCTEON_CN66XX)
 			octnet_gpio_access(netdev, VITESSE_PHY_GPIO_CFG,
 					   VITESSE_PHY_GPIO_LOW);
-		else if (oct->chip_id == OCTEON_CN68XX)
-			return -EINVAL;
 		else
 			return -EINVAL;
 
@@ -648,33 +644,21 @@ lio_ethtool_get_ringparam(struct net_device *netdev,
 		rx_max_pending = CN6XXX_MAX_OQ_DESCRIPTORS;
 		rx_pending = CFG_GET_NUM_RX_DESCS_NIC_IF(conf6x, lio->ifidx);
 		tx_pending = CFG_GET_NUM_TX_DESCS_NIC_IF(conf6x, lio->ifidx);
-	} else if (OCTEON_CN23XX_PF(oct)) {
-		struct octeon_config *conf23 = CHIP_CONF(oct, cn23xx_pf);
-
+	} else if (OCTEON_CN23XX_PF(oct) || OCTEON_CN23XX_VF(oct)) {
 		tx_max_pending = CN23XX_MAX_IQ_DESCRIPTORS;
 		rx_max_pending = CN23XX_MAX_OQ_DESCRIPTORS;
-		rx_pending = CFG_GET_NUM_RX_DESCS_NIC_IF(conf23, lio->ifidx);
-		tx_pending = CFG_GET_NUM_TX_DESCS_NIC_IF(conf23, lio->ifidx);
-	}
-
-	if (lio->mtu > OCTNET_DEFAULT_FRM_SIZE - OCTNET_FRM_HEADER_SIZE) {
-		ering->rx_pending = 0;
-		ering->rx_max_pending = 0;
-		ering->rx_mini_pending = 0;
-		ering->rx_jumbo_pending = rx_pending;
-		ering->rx_mini_max_pending = 0;
-		ering->rx_jumbo_max_pending = rx_max_pending;
-	} else {
-		ering->rx_pending = rx_pending;
-		ering->rx_max_pending = rx_max_pending;
-		ering->rx_mini_pending = 0;
-		ering->rx_jumbo_pending = 0;
-		ering->rx_mini_max_pending = 0;
-		ering->rx_jumbo_max_pending = 0;
+		rx_pending = oct->droq[0]->max_count;
+		tx_pending = oct->instr_queue[0]->max_count;
 	}
 
 	ering->tx_pending = tx_pending;
 	ering->tx_max_pending = tx_max_pending;
+	ering->rx_pending = rx_pending;
+	ering->rx_max_pending = rx_max_pending;
+	ering->rx_mini_pending = 0;
+	ering->rx_jumbo_pending = 0;
+	ering->rx_mini_max_pending = 0;
+	ering->rx_jumbo_max_pending = 0;
 }
 
 static u32 lio_get_msglevel(struct net_device *netdev)
@@ -826,6 +810,8 @@ lio_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = CVM_CAST64(oct_dev->link_stats.fromhost.fw_total_fwd);
 	/*per_core_stats[j].link_stats[i].fromhost.fw_err_pko */
 	data[i++] = CVM_CAST64(oct_dev->link_stats.fromhost.fw_err_pko);
+	/*per_core_stats[j].link_stats[i].fromhost.fw_err_pki */
+	data[i++] = CVM_CAST64(oct_dev->link_stats.fromhost.fw_err_pki);
 	/*per_core_stats[j].link_stats[i].fromhost.fw_err_link */
 	data[i++] = CVM_CAST64(oct_dev->link_stats.fromhost.fw_err_link);
 	/*per_core_stats[cvmx_get_core_num()].link_stats[idx].fromhost.
@@ -1568,6 +1554,7 @@ octnet_nic_stats_callback(struct octeon_device *oct_dev,
 		tstats->fw_total_sent = rsp_tstats->fw_total_sent;
 		tstats->fw_total_fwd = rsp_tstats->fw_total_fwd;
 		tstats->fw_err_pko = rsp_tstats->fw_err_pko;
+		tstats->fw_err_pki = rsp_tstats->fw_err_pki;
 		tstats->fw_err_link = rsp_tstats->fw_err_link;
 		tstats->fw_err_drop = rsp_tstats->fw_err_drop;
 		tstats->fw_tso = rsp_tstats->fw_tso;
