@@ -36,9 +36,10 @@ struct analogix_dp_plat_data {
 		      struct drm_connector *);
 	int (*get_modes)(struct analogix_dp_plat_data *,
 			 struct drm_connector *);
+	void (*cleanup)(struct analogix_dp_plat_data *);
 };
 
-int analogix_dp_psr_supported(struct device *dev);
+int analogix_dp_psr_enabled(struct device *dev);
 int analogix_dp_enable_psr(struct device *dev);
 int analogix_dp_disable_psr(struct device *dev);
 
@@ -48,6 +49,7 @@ int analogix_dp_suspend(struct device *dev);
 int analogix_dp_bind(struct device *dev, struct drm_device *drm_dev,
 		     struct analogix_dp_plat_data *plat_data);
 void analogix_dp_unbind(struct device *dev, struct device *master, void *data);
+void analogix_dp_shutdown(struct device *dev);
 
 int analogix_dp_start_crc(struct drm_connector *connector);
 int analogix_dp_stop_crc(struct drm_connector *connector);
