@@ -97,6 +97,9 @@ static const int bxt_rates[] = { 162000, 216000, 243000, 270000,
 				  324000, 432000, 540000 };
 static const int skl_rates[] = { 162000, 216000, 270000,
 				  324000, 432000, 540000 };
+static const int cnl_rates[] = { 162000, 216000, 270000,
+				 324000, 432000, 540000,
+				 648000, 810000 };
 static const int default_rates[] = { 162000, 270000, 540000 };
 
 /**
@@ -229,8 +232,10 @@ intel_dp_set_source_rates(struct intel_dp *intel_dp)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
 	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
+	enum port port = dig_port->port;
 	const int *source_rates;
 	int size;
+	u32 voltage;
 
 	/* This should only be done once */
 	WARN_ON(intel_dp->source_rates || intel_dp->num_source_rates);
@@ -238,6 +243,13 @@ intel_dp_set_source_rates(struct intel_dp *intel_dp)
 	if (IS_GEN9_LP(dev_priv)) {
 		source_rates = bxt_rates;
 		size = ARRAY_SIZE(bxt_rates);
+	} else if (IS_CANNONLAKE(dev_priv)) {
+		source_rates = cnl_rates;
+		size = ARRAY_SIZE(cnl_rates);
+		voltage = I915_READ(CNL_PORT_COMP_DW3) & VOLTAGE_INFO_MASK;
+		if (port == PORT_A || port == PORT_D ||
+		    voltage == VOLTAGE_INFO_0_85V)
+			size -= 2;
 	} else if (IS_GEN9_BC(dev_priv)) {
 		source_rates = skl_rates;
 		size = ARRAY_SIZE(skl_rates);
@@ -4566,7 +4578,7 @@ static bool bxt_digital_port_connected(struct drm_i915_private *dev_priv,
 	enum port port;
 	u32 bit;
 
-	intel_hpd_pin_to_port(intel_encoder->hpd_pin, &port);
+	port = intel_hpd_pin_to_port(intel_encoder->hpd_pin);
 	switch (port) {
 	case PORT_A:
 		bit = BXT_DE_PORT_HP_DDIA;
@@ -5904,26 +5916,22 @@ intel_dp_init_connector_port_info(struct intel_digital_port *intel_dig_port)
 	struct intel_encoder *encoder = &intel_dig_port->base;
 	struct intel_dp *intel_dp = &intel_dig_port->dp;
 
+	encoder->hpd_pin = intel_hpd_pin(intel_dig_port->port);
+
 	switch (intel_dig_port->port) {
 	case PORT_A:
-		encoder->hpd_pin = HPD_PORT_A;
 		intel_dp->aux_power_domain = POWER_DOMAIN_AUX_A;
 		break;
 	case PORT_B:
-		encoder->hpd_pin = HPD_PORT_B;
 		intel_dp->aux_power_domain = POWER_DOMAIN_AUX_B;
 		break;
 	case PORT_C:
-		encoder->hpd_pin = HPD_PORT_C;
 		intel_dp->aux_power_domain = POWER_DOMAIN_AUX_C;
 		break;
 	case PORT_D:
-		encoder->hpd_pin = HPD_PORT_D;
 		intel_dp->aux_power_domain = POWER_DOMAIN_AUX_D;
 		break;
 	case PORT_E:
-		encoder->hpd_pin = HPD_PORT_E;
-
 		/* FIXME: Check VBT for actual wiring of PORT E */
 		intel_dp->aux_power_domain = POWER_DOMAIN_AUX_D;
 		break;
