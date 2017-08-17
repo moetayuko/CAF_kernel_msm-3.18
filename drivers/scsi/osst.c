@@ -619,7 +619,7 @@ static int osst_verify_frame(struct osst_tape * STp, int frame_seq_number, int q
 	os_aux_t           * aux  = STp->buffer->aux;
 	os_partition_t     * par  = &(aux->partition);
 	struct st_partstat * STps = &(STp->ps[STp->partition]);
-	int		     blk_cnt, blk_sz, i;
+	unsigned int	     blk_cnt, blk_sz, i;
 
 	if (STp->raw) {
 		if (STp->buffer->syscall_result) {
@@ -5434,7 +5434,7 @@ static int append_to_buffer(const char __user *ubp, struct osst_buffer *st_bp, i
 
 	for (i=0, offset=st_bp->buffer_bytes;
 	     i < st_bp->sg_segs && offset >= st_bp->sg[i].length; i++)
-	offset -= st_bp->sg[i].length;
+		offset -= st_bp->sg[i].length;
 	if (i == st_bp->sg_segs) {  /* Should never happen */
 		printk(KERN_WARNING "osst :A: Append_to_buffer offset overflow.\n");
 		return (-EIO);
