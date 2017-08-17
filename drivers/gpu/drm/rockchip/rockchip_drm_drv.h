@@ -36,6 +36,7 @@ struct rockchip_crtc_state {
 	struct drm_crtc_state base;
 	int output_type;
 	int output_mode;
+	int output_bpc;
 };
 #define to_rockchip_crtc_state(s) \
 		container_of(s, struct rockchip_crtc_state, base)
@@ -55,7 +56,7 @@ struct rockchip_drm_private {
 	struct mutex mm_lock;
 	struct drm_mm mm;
 	struct list_head psr_list;
-	spinlock_t psr_list_lock;
+	struct mutex psr_list_lock;
 };
 
 int rockchip_drm_dma_attach_device(struct drm_device *drm_dev,
@@ -64,6 +65,7 @@ void rockchip_drm_dma_detach_device(struct drm_device *drm_dev,
 				    struct device *dev);
 int rockchip_drm_wait_line_flag(struct drm_crtc *crtc, unsigned int line_num,
 				unsigned int mstimeout);
+void rockchip_drm_set_win_enabled(struct drm_crtc *ctrc, bool enabled);
 
 extern struct platform_driver cdn_dp_driver;
 extern struct platform_driver dw_hdmi_rockchip_pltfm_driver;
