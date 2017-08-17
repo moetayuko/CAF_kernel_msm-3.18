@@ -16,6 +16,7 @@
 #include <linux/rbtree_latch.h>
 
 struct perf_event;
+struct bpf_prog;
 struct bpf_map;
 
 /* map is generic key/value storage optionally accesible by eBPF programs */
@@ -37,6 +38,8 @@ struct bpf_map_ops {
 	void (*map_fd_put_ptr)(void *ptr);
 	u32 (*map_gen_lookup)(struct bpf_map *map, struct bpf_insn *insn_buf);
 	u32 (*map_fd_sys_lookup_elem)(void *ptr);
+	int (*map_attach)(struct bpf_map *map,
+			  struct bpf_prog *p1, struct bpf_prog *p2);
 };
 
 struct bpf_map {
@@ -117,38 +120,26 @@ enum bpf_access_type {
 };
 
 /* types of values stored in eBPF registers */
+/* Pointer types represent:
+ * pointer
+ * pointer + imm
+ * pointer + (u16) var
+ * pointer + (u16) var + imm
+ * if (range > 0) then [ptr, ptr + range - off) is safe to access
+ * if (id > 0) means that some 'var' was added
+ * if (off > 0) means that 'imm' was added
+ */
 enum bpf_reg_type {
 	NOT_INIT = 0,		 /* nothing was written into register */
-	UNKNOWN_VALUE,		 /* reg doesn't contain a valid pointer */
+	SCALAR_VALUE,		 /* reg doesn't contain a valid pointer */
 	PTR_TO_CTX,		 /* reg points to bpf_context */
 	CONST_PTR_TO_MAP,	 /* reg points to struct bpf_map */
 	PTR_TO_MAP_VALUE,	 /* reg points to map element value */
 	PTR_TO_MAP_VALUE_OR_NULL,/* points to map elem value or NULL */
-	FRAME_PTR,		 /* reg == frame_pointer */
-	PTR_TO_STACK,		 /* reg == frame_pointer + imm */
-	CONST_IMM,		 /* constant integer value */
-
-	/* PTR_TO_PACKET represents:
-	 * skb->data
-	 * skb->data + imm
-	 * skb->data + (u16) var
-	 * skb->data + (u16) var + imm
-	 * if (range > 0) then [ptr, ptr + range - off) is safe to access
-	 * if (id > 0) means that some 'var' was added
-	 * if (off > 0) menas that 'imm' was added
-	 */
-	PTR_TO_PACKET,
+	PTR_TO_STACK,		 /* reg == frame_pointer + offset */
+	PTR_TO_PACKET,		 /* reg points to skb->data */
 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
-
-	/* PTR_TO_MAP_VALUE_ADJ is used for doing pointer math inside of a map
-	 * elem value.  We only allow this if we can statically verify that
-	 * access from this register are going to fall within the size of the
-	 * map element.
-	 */
-	PTR_TO_MAP_VALUE_ADJ,
 };
-
-struct bpf_prog;
 
 /* The information passed from prog-specific *_is_valid_access
  * back to the verifier.
@@ -262,6 +253,7 @@ struct bpf_prog *bpf_prog_get_type(u32 ufd, enum bpf_prog_type type);
 struct bpf_prog * __must_check bpf_prog_add(struct bpf_prog *prog, int i);
 void bpf_prog_sub(struct bpf_prog *prog, int i);
 struct bpf_prog * __must_check bpf_prog_inc(struct bpf_prog *prog);
+struct bpf_prog * __must_check bpf_prog_inc_not_zero(struct bpf_prog *prog);
 void bpf_prog_put(struct bpf_prog *prog);
 int __bpf_prog_charge(struct user_struct *user, u32 pages);
 void __bpf_prog_uncharge(struct user_struct *user, u32 pages);
@@ -318,6 +310,12 @@ static inline void bpf_long_memcpy(void *dst, const void *src, u32 size)
 
 /* verify correctness of eBPF program */
 int bpf_check(struct bpf_prog **fp, union bpf_attr *attr);
+
+/* Map specifics */
+struct net_device  *__dev_map_lookup_elem(struct bpf_map *map, u32 key);
+void __dev_map_insert_ctx(struct bpf_map *map, u32 index);
+void __dev_map_flush(struct bpf_map *map);
+
 #else
 static inline struct bpf_prog *bpf_prog_get(u32 ufd)
 {
@@ -348,6 +346,12 @@ static inline struct bpf_prog * __must_check bpf_prog_inc(struct bpf_prog *prog)
 	return ERR_PTR(-EOPNOTSUPP);
 }
 
+static inline struct bpf_prog *__must_check
+bpf_prog_inc_not_zero(struct bpf_prog *prog)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
 static inline int __bpf_prog_charge(struct user_struct *user, u32 pages)
 {
 	return 0;
@@ -356,7 +360,30 @@ static inline int __bpf_prog_charge(struct user_struct *user, u32 pages)
 static inline void __bpf_prog_uncharge(struct user_struct *user, u32 pages)
 {
 }
+
+static inline struct net_device  *__dev_map_lookup_elem(struct bpf_map *map,
+						       u32 key)
+{
+	return NULL;
+}
+
+static inline void __dev_map_insert_ctx(struct bpf_map *map, u32 index)
+{
+}
+
+static inline void __dev_map_flush(struct bpf_map *map)
+{
+}
 #endif /* CONFIG_BPF_SYSCALL */
+
+#if defined(CONFIG_STREAM_PARSER) && defined(CONFIG_BPF_SYSCALL)
+struct sock  *__sock_map_lookup_elem(struct bpf_map *map, u32 key);
+#else
+static inline struct sock  *__sock_map_lookup_elem(struct bpf_map *map, u32 key)
+{
+	return NULL;
+}
+#endif
 
 /* verifier prototypes for helper functions called from eBPF programs */
 extern const struct bpf_func_proto bpf_map_lookup_elem_proto;
@@ -374,6 +401,7 @@ extern const struct bpf_func_proto bpf_get_current_comm_proto;
 extern const struct bpf_func_proto bpf_skb_vlan_push_proto;
 extern const struct bpf_func_proto bpf_skb_vlan_pop_proto;
 extern const struct bpf_func_proto bpf_get_stackid_proto;
+extern const struct bpf_func_proto bpf_sock_map_update_proto;
 
 /* Shared helpers among cBPF and eBPF. */
 void bpf_user_rnd_init_once(void);
