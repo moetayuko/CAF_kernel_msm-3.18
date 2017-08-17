@@ -284,9 +284,10 @@ struct intel_panel {
 		/* Connector and platform specific backlight functions */
 		int (*setup)(struct intel_connector *connector, enum pipe pipe);
 		uint32_t (*get)(struct intel_connector *connector);
-		void (*set)(struct intel_connector *connector, uint32_t level);
-		void (*disable)(struct intel_connector *connector);
-		void (*enable)(struct intel_connector *connector);
+		void (*set)(const struct drm_connector_state *conn_state, uint32_t level);
+		void (*disable)(const struct drm_connector_state *conn_state);
+		void (*enable)(const struct intel_crtc_state *crtc_state,
+			       const struct drm_connector_state *conn_state);
 		uint32_t (*hz_to_pwm)(struct intel_connector *connector,
 				      uint32_t hz);
 		void (*power)(struct intel_connector *, bool enable);
@@ -941,13 +942,17 @@ struct intel_dp {
 	uint8_t psr_dpcd[EDP_PSR_RECEIVER_CAP_SIZE];
 	uint8_t downstream_ports[DP_MAX_DOWNSTREAM_PORTS];
 	uint8_t edp_dpcd[EDP_DISPLAY_CTL_CAP_SIZE];
-	/* sink rates as reported by DP_SUPPORTED_LINK_RATES */
-	uint8_t num_sink_rates;
+	/* source rates */
+	int num_source_rates;
+	const int *source_rates;
+	/* sink rates as reported by DP_MAX_LINK_RATE/DP_SUPPORTED_LINK_RATES */
+	int num_sink_rates;
 	int sink_rates[DP_MAX_SUPPORTED_RATES];
+	bool use_rate_select;
 	/* Max lane count for the sink as per DPCD registers */
 	uint8_t max_sink_lane_count;
 	/* Max link BW for the sink as per DPCD registers */
-	int max_sink_link_bw;
+	int max_sink_link_rate;
 	/* sink or branch descriptor */
 	struct drm_dp_desc desc;
 	struct drm_dp_aux aux;
@@ -1479,8 +1484,9 @@ bool intel_dp_compute_config(struct intel_encoder *encoder,
 bool intel_dp_is_edp(struct drm_i915_private *dev_priv, enum port port);
 enum irqreturn intel_dp_hpd_pulse(struct intel_digital_port *intel_dig_port,
 				  bool long_hpd);
-void intel_edp_backlight_on(struct intel_dp *intel_dp);
-void intel_edp_backlight_off(struct intel_dp *intel_dp);
+void intel_edp_backlight_on(const struct intel_crtc_state *crtc_state,
+			    const struct drm_connector_state *conn_state);
+void intel_edp_backlight_off(const struct drm_connector_state *conn_state);
 void intel_edp_panel_vdd_on(struct intel_dp *intel_dp);
 void intel_edp_panel_on(struct intel_dp *intel_dp);
 void intel_edp_panel_off(struct intel_dp *intel_dp);
@@ -1660,12 +1666,13 @@ void intel_pch_panel_fitting(struct intel_crtc *crtc,
 void intel_gmch_panel_fitting(struct intel_crtc *crtc,
 			      struct intel_crtc_state *pipe_config,
 			      int fitting_mode);
-void intel_panel_set_backlight_acpi(struct intel_connector *connector,
+void intel_panel_set_backlight_acpi(const struct drm_connector_state *conn_state,
 				    u32 level, u32 max);
 int intel_panel_setup_backlight(struct drm_connector *connector,
 				enum pipe pipe);
-void intel_panel_enable_backlight(struct intel_connector *connector);
-void intel_panel_disable_backlight(struct intel_connector *connector);
+void intel_panel_enable_backlight(const struct intel_crtc_state *crtc_state,
+				  const struct drm_connector_state *conn_state);
+void intel_panel_disable_backlight(const struct drm_connector_state *old_conn_state);
 void intel_panel_destroy_backlight(struct drm_connector *connector);
 enum drm_connector_status intel_panel_detect(struct drm_i915_private *dev_priv);
 extern struct drm_display_mode *intel_find_panel_downclock(
