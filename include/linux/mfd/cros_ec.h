@@ -19,11 +19,14 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/notifier.h>
+#include <linux/power_supply.h>
 #include <linux/mfd/cros_ec_commands.h>
 #include <linux/mutex.h>
 
 #define CROS_EC_DEV_NAME "cros_ec"
 #define CROS_EC_DEV_PD_NAME "cros_pd"
+#define CROS_EC_DEV_FP_NAME "cros_fp"
+#define CROS_EC_DEV_TP_NAME "cros_tp"
 
 /*
  * The EC is unresponsive for a time after a reboot command.  Add a
@@ -115,6 +118,7 @@ struct cros_ec_command {
  * @event_notifier: interrupt event notifier for transport devices.
  * @event_data: raw payload transferred with the MKBP event.
  * @event_size: size in bytes of the event data.
+ * @features: stores the EC features.
  */
 struct cros_ec_device {
 
@@ -143,21 +147,26 @@ struct cros_ec_device {
 			struct cros_ec_command *msg);
 	int (*pkt_xfer)(struct cros_ec_device *ec,
 			struct cros_ec_command *msg);
+	struct power_supply *charger;
 	struct mutex lock;
 	bool mkbp_event_supported;
 	struct blocking_notifier_head event_notifier;
 
 	struct ec_response_get_next_event event_data;
 	int event_size;
+	u32 features[2];
 };
 
 /**
  * struct cros_ec_sensor_platform - ChromeOS EC sensor platform information
  *
  * @sensor_num: Id of the sensor, as reported by the EC.
+ * @cmd_offset: offset to apply for each command. Set when
+ * registering a devicde behind another one.
  */
 struct cros_ec_sensor_platform {
 	u8 sensor_num;
+	u16 cmd_offset;
 };
 
 /* struct cros_ec_platform - ChromeOS EC platform information
@@ -172,6 +181,8 @@ struct cros_ec_platform {
 	u16 cmd_offset;
 };
 
+struct cros_ec_debugfs;
+
 /*
  * struct cros_ec_dev - ChromeOS EC device entry point
  *
@@ -179,6 +190,7 @@ struct cros_ec_platform {
  * @cdev: Character device structure in /dev
  * @ec_dev: cros_ec_device structure to talk to the physical device
  * @dev: pointer to the platform device
+ * @debug_info: cros_ec_debugfs structure for debugging information
  * @cmd_offset: offset to apply for each command.
  */
 struct cros_ec_dev {
@@ -186,8 +198,8 @@ struct cros_ec_dev {
 	struct cdev cdev;
 	struct cros_ec_device *ec_dev;
 	struct device *dev;
+	struct cros_ec_debugfs *debug_info;
 	u16 cmd_offset;
-	u32 features[2];
 };
 
 /**
@@ -300,10 +312,21 @@ int cros_ec_query_all(struct cros_ec_device *ec_dev);
  */
 int cros_ec_get_next_event(struct cros_ec_device *ec_dev);
 
+/**
+ * cros_ec_get_host_event - Return a mask of event set by the EC.
+ *
+ * When MKBP is supported, when the EC raises an interrupt,
+ * We collect the events raised and call the functions in the ec notifier.
+ *
+ * This function is a helper to know which events are raised.
+ */
+u32 cros_ec_get_host_event(struct cros_ec_device *ec_dev);
+
 /* sysfs stuff */
 extern struct attribute_group cros_ec_attr_group;
 extern struct attribute_group cros_ec_lightbar_attr_group;
 extern struct attribute_group cros_ec_vbc_attr_group;
+extern struct attribute_group cros_ec_pd_attr_group;
 
 /* ACPI GPE handler */
 #ifdef CONFIG_ACPI
