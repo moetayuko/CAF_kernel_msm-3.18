@@ -175,9 +175,22 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 }
 
 static void
+rockchip_drm_psr_flush_state(struct drm_atomic_state *state)
+{
+	struct drm_crtc_state *crtc_state;
+	struct drm_crtc *crtc;
+	int i;
+
+	for_each_crtc_in_state(state, crtc, crtc_state, i)
+		rockchip_drm_psr_flush(crtc);
+}
+
+static void
 rockchip_atomic_commit_tail(struct drm_atomic_state *state)
 {
 	struct drm_device *dev = state->dev;
+
+	rockchip_drm_psr_flush_state(state);
 
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 
