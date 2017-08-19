@@ -42,6 +42,10 @@ struct pamu_isr_data {
 static struct paace *ppaact;
 static struct paace *spaact;
 
+static bool probed;			/* Has PAMU been probed? */
+
+struct iommu_device pamu_iommu;	/* IOMMU core code handle */
+
 /*
  * Table for matching compatible strings, for device tree
  * guts node, for QorIQ SOCs.
@@ -530,8 +534,8 @@ u32 get_stash_id(u32 stash_dest_hint, u32 vcpu)
 		if (node) {
 			prop = of_get_property(node, "cache-stash-id", NULL);
 			if (!prop) {
-				pr_debug("missing cache-stash-id at %s\n",
-					 node->full_name);
+				pr_debug("missing cache-stash-id at %pOF\n",
+					 node);
 				of_node_put(node);
 				return ~(u32)0;
 			}
@@ -557,8 +561,8 @@ found_cpu_node:
 		if (stash_dest_hint == cache_level) {
 			prop = of_get_property(node, "cache-stash-id", NULL);
 			if (!prop) {
-				pr_debug("missing cache-stash-id at %s\n",
-					 node->full_name);
+				pr_debug("missing cache-stash-id at %pOF\n",
+					 node);
 				of_node_put(node);
 				return ~(u32)0;
 			}
@@ -568,8 +572,7 @@ found_cpu_node:
 
 		prop = of_get_property(node, "next-level-cache", NULL);
 		if (!prop) {
-			pr_debug("can't find next-level-cache at %s\n",
-				 node->full_name);
+			pr_debug("can't find next-level-cache at %pOF\n", node);
 			of_node_put(node);
 			return ~(u32)0;  /* can't traverse any further */
 		}
@@ -1033,6 +1036,9 @@ static int fsl_pamu_probe(struct platform_device *pdev)
 	 * NOTE : All PAMUs share the same LIODN tables.
 	 */
 
+	if (WARN_ON(probed))
+		return -EBUSY;
+
 	pamu_regs = of_iomap(dev->of_node, 0);
 	if (!pamu_regs) {
 		dev_err(dev, "ioremap of PAMU node failed\n");
@@ -1063,8 +1069,7 @@ static int fsl_pamu_probe(struct platform_device *pdev)
 
 	guts_node = of_find_matching_node(NULL, guts_device_ids);
 	if (!guts_node) {
-		dev_err(dev, "could not find GUTS node %s\n",
-			dev->of_node->full_name);
+		dev_err(dev, "could not find GUTS node %pOF\n", dev->of_node);
 		ret = -ENODEV;
 		goto error;
 	}
@@ -1149,6 +1154,18 @@ static int fsl_pamu_probe(struct platform_device *pdev)
 	if (ret)
 		goto error_genpool;
 
+	ret = iommu_device_sysfs_add(&pamu_iommu, dev, NULL, "iommu0");
+	if (ret)
+		goto error_genpool;
+
+	iommu_device_set_ops(&pamu_iommu, &fsl_pamu_ops);
+
+	ret = iommu_device_register(&pamu_iommu);
+	if (ret) {
+		dev_err(dev, "Can't register iommu device\n");
+		goto error_sysfs;
+	}
+
 	pamubypenr = in_be32(&guts_regs->pamubypenr);
 
 	for (pamu_reg_off = 0, pamu_counter = 0x80000000; pamu_reg_off < size;
@@ -1172,7 +1189,12 @@ static int fsl_pamu_probe(struct platform_device *pdev)
 
 	setup_liodns();
 
+	probed = true;
+
 	return 0;
+
+error_sysfs:
+	iommu_device_sysfs_remove(&pamu_iommu);
 
 error_genpool:
 	gen_pool_destroy(spaace_pool);
@@ -1246,8 +1268,7 @@ static __init int fsl_pamu_init(void)
 
 	pdev = platform_device_alloc("fsl-of-pamu", 0);
 	if (!pdev) {
-		pr_err("could not allocate device %s\n",
-		       np->full_name);
+		pr_err("could not allocate device %pOF\n", np);
 		ret = -ENOMEM;
 		goto error_device_alloc;
 	}
@@ -1259,8 +1280,7 @@ static __init int fsl_pamu_init(void)
 
 	ret = platform_device_add(pdev);
 	if (ret) {
-		pr_err("could not add device %s (err=%i)\n",
-		       np->full_name, ret);
+		pr_err("could not add device %pOF (err=%i)\n", np, ret);
 		goto error_device_add;
 	}
 

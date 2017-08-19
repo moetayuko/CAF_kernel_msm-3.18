@@ -225,6 +225,7 @@ struct iommu_ops {
 	u32 (*domain_get_windows)(struct iommu_domain *domain);
 
 	int (*of_xlate)(struct device *dev, struct of_phandle_args *args);
+	bool (*is_attach_deferred)(struct iommu_domain *domain, struct device *dev);
 
 	unsigned long pgsize_bitmap;
 };
@@ -430,13 +431,13 @@ static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
 }
 
 static inline int iommu_map(struct iommu_domain *domain, unsigned long iova,
-			    phys_addr_t paddr, int gfp_order, int prot)
+			    phys_addr_t paddr, size_t size, int prot)
 {
 	return -ENODEV;
 }
 
 static inline int iommu_unmap(struct iommu_domain *domain, unsigned long iova,
-			      int gfp_order)
+			      size_t size)
 {
 	return -ENODEV;
 }
