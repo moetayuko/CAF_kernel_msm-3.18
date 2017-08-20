@@ -859,10 +859,10 @@ static inline void forward_timer_base(struct timer_base *base)
 	unsigned long jnow = READ_ONCE(jiffies);
 
 	/*
-	 * We only forward the base when it's idle and we have a delta between
-	 * base clock and jiffies.
+	 * We only forward the base when we have a delta between base clock
+	 * and jiffies. In the common case, run_timers will take care of it.
 	 */
-	if (!base->is_idle || (long) (jnow - base->clk) < 2)
+	if ((long) (jnow - base->clk) < 2)
 		return;
 
 	/*
@@ -938,6 +938,13 @@ __mod_timer(struct timer_list *timer, unsigned long expires, bool pending_only)
 	 * same array bucket then just return:
 	 */
 	if (timer_pending(timer)) {
+		/*
+		 * The downside of this optimization is that it can result in
+		 * larger granularity than you would get from adding a new
+		 * timer with this expiry. Would a timer flag for networking
+		 * be appropriate, then we can try to keep expiry of general
+		 * timers within ~1/8th of their interval?
+		 */
 		if (timer->expires == expires)
 			return 1;
 
