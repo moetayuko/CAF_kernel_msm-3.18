@@ -327,6 +327,11 @@ static void update_pageblock_skip(struct compact_control *cc,
 			bool migrate_scanner)
 {
 }
+
+static bool pageblock_skip_persistent(struct page *page, unsigned int order)
+{
+	return false;
+}
 #endif /* CONFIG_COMPACTION */
 
 /*
