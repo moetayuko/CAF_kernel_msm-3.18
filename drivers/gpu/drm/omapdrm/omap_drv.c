@@ -57,13 +57,13 @@ static void omap_fb_output_poll_changed(struct drm_device *dev)
 static void omap_atomic_wait_for_completion(struct drm_device *dev,
 					    struct drm_atomic_state *old_state)
 {
-	struct drm_crtc_state *old_crtc_state;
+	struct drm_crtc_state *new_crtc_state;
 	struct drm_crtc *crtc;
 	unsigned int i;
 	int ret;
 
-	for_each_crtc_in_state(old_state, crtc, old_crtc_state, i) {
-		if (!crtc->state->enable)
+	for_each_new_crtc_in_state(old_state, crtc, new_crtc_state, i) {
+		if (!new_crtc_state->active)
 			continue;
 
 		ret = omap_crtc_wait_pending(crtc);
@@ -324,6 +324,32 @@ static int omap_modeset_init(struct drm_device *dev)
 }
 
 /*
+ * Enable the HPD in external components if supported
+ */
+static void omap_modeset_enable_external_hpd(void)
+{
+	struct omap_dss_device *dssdev = NULL;
+
+	for_each_dss_dev(dssdev) {
+		if (dssdev->driver->enable_hpd)
+			dssdev->driver->enable_hpd(dssdev);
+	}
+}
+
+/*
+ * Disable the HPD in external components if supported
+ */
+static void omap_modeset_disable_external_hpd(void)
+{
+	struct omap_dss_device *dssdev = NULL;
+
+	for_each_dss_dev(dssdev) {
+		if (dssdev->driver->disable_hpd)
+			dssdev->driver->disable_hpd(dssdev);
+	}
+}
+
+/*
  * drm ioctl funcs
  */
 
@@ -438,43 +464,10 @@ static int dev_open(struct drm_device *dev, struct drm_file *file)
  */
 static void dev_lastclose(struct drm_device *dev)
 {
-	int i;
-
-	/* we don't support vga_switcheroo.. so just make sure the fbdev
-	 * mode is active
-	 */
 	struct omap_drm_private *priv = dev->dev_private;
 	int ret;
 
 	DBG("lastclose: dev=%p", dev);
-
-	/* need to restore default rotation state.. not sure
-	 * if there is a cleaner way to restore properties to
-	 * default state?  Maybe a flag that properties should
-	 * automatically be restored to default state on
-	 * lastclose?
-	 */
-	for (i = 0; i < priv->num_crtcs; i++) {
-		struct drm_crtc *crtc = priv->crtcs[i];
-
-		if (!crtc->primary->rotation_property)
-			continue;
-
-		drm_object_property_set_value(&crtc->base,
-					      crtc->primary->rotation_property,
-					      DRM_MODE_ROTATE_0);
-	}
-
-	for (i = 0; i < priv->num_planes; i++) {
-		struct drm_plane *plane = priv->planes[i];
-
-		if (!plane->rotation_property)
-			continue;
-
-		drm_object_property_set_value(&plane->base,
-					      plane->rotation_property,
-					      DRM_MODE_ROTATE_0);
-	}
 
 	if (priv->fbdev) {
 		ret = drm_fb_helper_restore_fbdev_mode_unlocked(priv->fbdev);
@@ -517,7 +510,6 @@ static struct drm_driver omap_drm_driver = {
 	.gem_vm_ops = &omap_gem_vm_ops,
 	.dumb_create = omap_gem_dumb_create,
 	.dumb_map_offset = omap_gem_dumb_map_offset,
-	.dumb_destroy = drm_gem_dumb_destroy,
 	.ioctls = ioctls,
 	.num_ioctls = DRM_OMAP_NUM_IOCTLS,
 	.fops = &omapdriver_fops,
@@ -549,6 +541,12 @@ static int pdev_probe(struct platform_device *pdev)
 
 	if (omapdss_is_initialized() == false)
 		return -EPROBE_DEFER;
+
+	ret = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to set the DMA mask\n");
+		return ret;
+	}
 
 	omap_crtc_pre_init();
 
@@ -603,6 +601,7 @@ static int pdev_probe(struct platform_device *pdev)
 	priv->fbdev = omap_fbdev_init(ddev);
 
 	drm_kms_helper_poll_init(ddev);
+	omap_modeset_enable_external_hpd();
 
 	/*
 	 * Register the DRM device with the core and the connectors with
@@ -615,6 +614,7 @@ static int pdev_probe(struct platform_device *pdev)
 	return 0;
 
 err_cleanup_helpers:
+	omap_modeset_disable_external_hpd();
 	drm_kms_helper_poll_fini(ddev);
 	if (priv->fbdev)
 		omap_fbdev_free(ddev);
@@ -643,6 +643,7 @@ static int pdev_remove(struct platform_device *pdev)
 
 	drm_dev_unregister(ddev);
 
+	omap_modeset_disable_external_hpd();
 	drm_kms_helper_poll_fini(ddev);
 
 	if (priv->fbdev)
@@ -734,7 +735,7 @@ static SIMPLE_DEV_PM_OPS(omapdrm_pm_ops, omap_drm_suspend, omap_drm_resume);
 
 static struct platform_driver pdev = {
 	.driver = {
-		.name = DRIVER_NAME,
+		.name = "omapdrm",
 		.pm = &omapdrm_pm_ops,
 	},
 	.probe = pdev_probe,
