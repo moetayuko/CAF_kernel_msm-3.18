@@ -93,7 +93,7 @@ MODULE_PARM_DESC(mode, "0 = 320x240, 1 = 160x120, 2 = 640x480");
 
 /* Devices supported by this driver
  * .driver_info contains the init method used by the camera */
-static struct usb_device_id device_table[] = {
+static const struct usb_device_id device_table[] = {
 	{USB_DEVICE(0x08ca, 0x0109), .driver_info = METHOD0 },
 	{USB_DEVICE(0x041e, 0x4024), .driver_info = METHOD0 },
 	{USB_DEVICE(0x0d64, 0x0108), .driver_info = METHOD0 },
@@ -439,7 +439,7 @@ static void buffer_release(struct videobuf_queue *vq,
 	free_buffer(vq, buf);
 }
 
-static struct videobuf_queue_ops zr364xx_video_qops = {
+static const struct videobuf_queue_ops zr364xx_video_qops = {
 	.buf_setup = buffer_setup,
 	.buf_prepare = buffer_prepare,
 	.buf_queue = buffer_queue,
