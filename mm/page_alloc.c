@@ -2536,8 +2536,11 @@ void drain_all_pages(struct zone *zone)
 
 #ifdef CONFIG_HIBERNATION
 
-/* Touch watchdog for every WD_INTERVAL_PAGE pages. */
-#define WD_INTERVAL_PAGE	(100*1024)
+/*
+ * Touch the watchdog for every WD_INTERVAL_PAGE pages,
+ * choose a power of 2 to avoid the modulus operation.
+ */
+#define WD_INTERVAL_PAGE	(128*1024)
 
 void mark_free_pages(struct zone *zone)
 {
