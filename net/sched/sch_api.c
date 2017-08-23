@@ -621,30 +621,16 @@ EXPORT_SYMBOL(qdisc_watchdog_cancel);
 
 static struct hlist_head *qdisc_class_hash_alloc(unsigned int n)
 {
-	unsigned int size = n * sizeof(struct hlist_head), i;
 	struct hlist_head *h;
+	unsigned int i;
 
-	if (size <= PAGE_SIZE)
-		h = kmalloc(size, GFP_KERNEL);
-	else
-		h = (struct hlist_head *)
-			__get_free_pages(GFP_KERNEL, get_order(size));
+	h = kvmalloc_array(n, sizeof(struct hlist_head), GFP_KERNEL);
 
 	if (h != NULL) {
 		for (i = 0; i < n; i++)
 			INIT_HLIST_HEAD(&h[i]);
 	}
 	return h;
-}
-
-static void qdisc_class_hash_free(struct hlist_head *h, unsigned int n)
-{
-	unsigned int size = n * sizeof(struct hlist_head);
-
-	if (size <= PAGE_SIZE)
-		kfree(h);
-	else
-		free_pages((unsigned long)h, get_order(size));
 }
 
 void qdisc_class_hash_grow(struct Qdisc *sch, struct Qdisc_class_hash *clhash)
@@ -679,7 +665,7 @@ void qdisc_class_hash_grow(struct Qdisc *sch, struct Qdisc_class_hash *clhash)
 	clhash->hashmask = nmask;
 	sch_tree_unlock(sch);
 
-	qdisc_class_hash_free(ohash, osize);
+	kvfree(ohash);
 }
 EXPORT_SYMBOL(qdisc_class_hash_grow);
 
@@ -699,7 +685,7 @@ EXPORT_SYMBOL(qdisc_class_hash_init);
 
 void qdisc_class_hash_destroy(struct Qdisc_class_hash *clhash)
 {
-	qdisc_class_hash_free(clhash->hash, clhash->hashsize);
+	kvfree(clhash->hash);
 }
 EXPORT_SYMBOL(qdisc_class_hash_destroy);
 
@@ -749,6 +735,7 @@ void qdisc_tree_reduce_backlog(struct Qdisc *sch, unsigned int n,
 	const struct Qdisc_class_ops *cops;
 	unsigned long cl;
 	u32 parentid;
+	bool notify;
 	int drops;
 
 	if (n == 0 && len == 0)
@@ -761,6 +748,13 @@ void qdisc_tree_reduce_backlog(struct Qdisc *sch, unsigned int n,
 
 		if (sch->flags & TCQ_F_NOPARENT)
 			break;
+		/* Notify parent qdisc only if child qdisc becomes empty.
+		 *
+		 * If child was empty even before update then backlog
+		 * counter is screwed and we skip notification because
+		 * parent class is already passive.
+		 */
+		notify = !sch->q.qlen && !WARN_ON_ONCE(!n);
 		/* TODO: perform the search on a per txq basis */
 		sch = qdisc_lookup(qdisc_dev(sch), TC_H_MAJ(parentid));
 		if (sch == NULL) {
@@ -768,7 +762,7 @@ void qdisc_tree_reduce_backlog(struct Qdisc *sch, unsigned int n,
 			break;
 		}
 		cops = sch->ops->cl_ops;
-		if (cops->qlen_notify) {
+		if (notify && cops->qlen_notify) {
 			cl = cops->get(sch, parentid);
 			cops->qlen_notify(sch, cl);
 			cops->put(sch, cl);
@@ -1949,14 +1943,14 @@ static int __init pktsched_init(void)
 	register_qdisc(&mq_qdisc_ops);
 	register_qdisc(&noqueue_qdisc_ops);
 
-	rtnl_register(PF_UNSPEC, RTM_NEWQDISC, tc_modify_qdisc, NULL, NULL);
-	rtnl_register(PF_UNSPEC, RTM_DELQDISC, tc_get_qdisc, NULL, NULL);
+	rtnl_register(PF_UNSPEC, RTM_NEWQDISC, tc_modify_qdisc, NULL, 0);
+	rtnl_register(PF_UNSPEC, RTM_DELQDISC, tc_get_qdisc, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_GETQDISC, tc_get_qdisc, tc_dump_qdisc,
-		      NULL);
-	rtnl_register(PF_UNSPEC, RTM_NEWTCLASS, tc_ctl_tclass, NULL, NULL);
-	rtnl_register(PF_UNSPEC, RTM_DELTCLASS, tc_ctl_tclass, NULL, NULL);
+		      0);
+	rtnl_register(PF_UNSPEC, RTM_NEWTCLASS, tc_ctl_tclass, NULL, 0);
+	rtnl_register(PF_UNSPEC, RTM_DELTCLASS, tc_ctl_tclass, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_GETTCLASS, tc_ctl_tclass, tc_dump_tclass,
-		      NULL);
+		      0);
 
 	return 0;
 }
