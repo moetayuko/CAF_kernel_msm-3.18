@@ -6355,6 +6355,7 @@ F:	drivers/scsi/storvsc_drv.c
 F:	drivers/uio/uio_hv_generic.c
 F:	drivers/video/fbdev/hyperv_fb.c
 F:	include/linux/hyperv.h
+F:	include/uapi/linux/hyperv.h
 F:	tools/hv/
 F:	Documentation/ABI/stable/sysfs-bus-vmbus
 
@@ -8753,7 +8754,7 @@ M:	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 M:	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
-F:	kernel/membarrier.c
+F:	kernel/sched/membarrier.c
 F:	include/uapi/linux/membarrier.h
 
 MEMORY MANAGEMENT
@@ -11270,7 +11271,7 @@ M:	Fenghua Yu <fenghua.yu@intel.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 F:	arch/x86/kernel/cpu/intel_rdt*
-F:	arch/x86/include/asm/intel_rdt*
+F:	arch/x86/include/asm/intel_rdt_sched.h
 F:	Documentation/x86/intel_rdt*
 
 READ-COPY UPDATE (RCU)
