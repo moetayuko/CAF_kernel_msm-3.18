@@ -2093,6 +2093,7 @@ __acquires(&pool->lock)
 
 	lock_map_acquire_read(&pwq->wq->lockdep_map);
 	lock_map_acquire(&lockdep_map);
+	crossrelease_hist_start(XHLOCK_PROC);
 	trace_workqueue_execute_start(work);
 	worker->current_func(work);
 	/*
@@ -2100,6 +2101,7 @@ __acquires(&pool->lock)
 	 * point will only record its address.
 	 */
 	trace_workqueue_execute_end(work);
+	crossrelease_hist_end(XHLOCK_PROC);
 	lock_map_release(&lockdep_map);
 	lock_map_release(&pwq->wq->lockdep_map);
 
@@ -2474,7 +2476,16 @@ static void insert_wq_barrier(struct pool_workqueue *pwq,
 	 */
 	INIT_WORK_ONSTACK(&barr->work, wq_barrier_func);
 	__set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&barr->work));
-	init_completion(&barr->done);
+
+	/*
+	 * Explicitly init the crosslock for wq_barrier::done, make its lock
+	 * key a subkey of the corresponding work. As a result we won't
+	 * build a dependency between wq_barrier::done and unrelated work.
+	 */
+	lockdep_init_map_crosslock((struct lockdep_map *)&barr->done.map,
+				   "(complete)wq_barr::done",
+				   target->lockdep_map.key, 1);
+	__init_completion(&barr->done);
 	barr->task = current;
 
 	/*
