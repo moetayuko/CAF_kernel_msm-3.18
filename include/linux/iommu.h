@@ -225,6 +225,7 @@ struct iommu_ops {
 	u32 (*domain_get_windows)(struct iommu_domain *domain);
 
 	int (*of_xlate)(struct device *dev, struct of_phandle_args *args);
+	bool (*is_attach_deferred)(struct iommu_domain *domain, struct device *dev);
 
 	unsigned long pgsize_bitmap;
 };
@@ -240,7 +241,7 @@ struct iommu_device {
 	struct list_head list;
 	const struct iommu_ops *ops;
 	struct fwnode_handle *fwnode;
-	struct device dev;
+	struct device *dev;
 };
 
 int  iommu_device_register(struct iommu_device *iommu);
@@ -263,6 +264,11 @@ static inline void iommu_device_set_fwnode(struct iommu_device *iommu,
 					   struct fwnode_handle *fwnode)
 {
 	iommu->fwnode = fwnode;
+}
+
+static inline struct iommu_device *dev_to_iommu_device(struct device *dev)
+{
+	return (struct iommu_device *)dev_get_drvdata(dev);
 }
 
 #define IOMMU_GROUP_NOTIFY_ADD_DEVICE		1 /* Device added */
@@ -425,13 +431,13 @@ static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
 }
 
 static inline int iommu_map(struct iommu_domain *domain, unsigned long iova,
-			    phys_addr_t paddr, int gfp_order, int prot)
+			    phys_addr_t paddr, size_t size, int prot)
 {
 	return -ENODEV;
 }
 
 static inline int iommu_unmap(struct iommu_domain *domain, unsigned long iova,
-			      int gfp_order)
+			      size_t size)
 {
 	return -ENODEV;
 }
@@ -587,6 +593,11 @@ static inline void iommu_device_set_ops(struct iommu_device *iommu,
 static inline void iommu_device_set_fwnode(struct iommu_device *iommu,
 					   struct fwnode_handle *fwnode)
 {
+}
+
+static inline struct iommu_device *dev_to_iommu_device(struct device *dev)
+{
+	return NULL;
 }
 
 static inline void iommu_device_unregister(struct iommu_device *iommu)
