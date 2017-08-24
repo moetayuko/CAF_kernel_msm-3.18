@@ -60,8 +60,8 @@ int qla_nvme_register_remote(struct scsi_qla_host *vha, struct fc_port *fcport)
 	rport->req.port_id = fcport->d_id.b24;
 
 	ql_log(ql_log_info, vha, 0x2102,
-	    "%s: traddr=pn-0x%016llx:nn-0x%016llx PortID:%06x\n",
-	    __func__, rport->req.port_name, rport->req.node_name,
+	    "%s: traddr=nn-0x%016llx:pn-0x%016llx PortID:%06x\n",
+	    __func__, rport->req.node_name, rport->req.port_name,
 	    rport->req.port_id);
 
 	ret = nvme_fc_register_remoteport(vha->nvme_local_port, &rport->req,
@@ -154,6 +154,16 @@ static void qla_nvme_sp_ls_done(void *ptr, int res)
 	qla2x00_rel_sp(sp);
 }
 
+void qla_nvme_cmpl_io(struct srb_iocb *nvme)
+{
+	srb_t *sp;
+	struct nvmefc_fcp_req *fd = nvme->u.nvme.desc;
+
+	sp = container_of(nvme, srb_t, u.iocb_cmd);
+	fd->done(fd);
+	qla2xxx_rel_qpair_sp(sp->qpair, sp);
+}
+
 static void qla_nvme_sp_done(void *ptr, int res)
 {
 	srb_t *sp = ptr;
@@ -175,7 +185,8 @@ static void qla_nvme_sp_done(void *ptr, int res)
 		fd->status = 0;
 
 	fd->rcv_rsplen = nvme->u.nvme.rsp_pyld_len;
-	fd->done(fd);
+	list_add_tail(&nvme->u.nvme.entry, &sp->qpair->nvme_done_list);
+	return;
 rel:
 	qla2xxx_rel_qpair_sp(sp->qpair, sp);
 }
@@ -712,8 +723,8 @@ void qla_nvme_register_hba(struct scsi_qla_host *vha)
 	pinfo.port_id = vha->d_id.b24;
 
 	ql_log(ql_log_info, vha, 0xffff,
-	    "register_localport: host-traddr=pn-0x%llx:nn-0x%llx on portID:%x\n",
-	    pinfo.port_name, pinfo.node_name, pinfo.port_id);
+	    "register_localport: host-traddr=nn-0x%llx:pn-0x%llx on portID:%x\n",
+	    pinfo.node_name, pinfo.port_name, pinfo.port_id);
 	qla_nvme_fc_transport.dma_boundary = vha->host->dma_boundary;
 
 	ret = nvme_fc_register_localport(&pinfo, tmpl,

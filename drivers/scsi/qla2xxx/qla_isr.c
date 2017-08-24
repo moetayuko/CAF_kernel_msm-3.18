@@ -799,6 +799,11 @@ skip_rio:
 
 		vha->flags.management_server_logged_in = 0;
 		qla2x00_post_aen_work(vha, FCH_EVT_LINKUP, ha->link_data_rate);
+
+		if (AUTO_DETECT_SFP_SUPPORT(vha)) {
+			set_bit(DETECT_SFP_CHANGE, &vha->dpc_flags);
+			qla2xxx_wake_dpc(vha);
+		}
 		break;
 
 	case MBA_LOOP_DOWN:		/* Loop Down Event */
@@ -1228,6 +1233,11 @@ global_port_update:
 			schedule_work(&ha->board_disable);
 		break;
 
+	case MBA_TRANS_INSERT:
+		ql_dbg(ql_dbg_async, vha, 0x5091,
+		    "Transceiver Insertion: %04x\n", mb[1]);
+		break;
+
 	default:
 		ql_dbg(ql_dbg_async, vha, 0x5057,
 		    "Unknown AEN:%04x %04x %04x %04x\n",
@@ -1537,8 +1547,6 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 	sp = qla2x00_get_sp_from_handle(vha, func, req, pkt);
 	if (!sp)
 		return;
-	bsg_job = sp->u.bsg_job;
-	bsg_reply = bsg_job->reply;
 
 	type = NULL;
 	switch (sp->type) {
@@ -1577,6 +1585,8 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 	/* return FC_CTELS_STATUS_OK and leave the decoding of the ELS/CT
 	 * fc payload  to the caller
 	 */
+	bsg_job = sp->u.bsg_job;
+	bsg_reply = bsg_job->reply;
 	bsg_reply->reply_data.ctels_reply.status = FC_CTELS_STATUS_OK;
 	bsg_job->reply_len = sizeof(struct fc_bsg_reply) + sizeof(fw_status);
 
@@ -3157,7 +3167,6 @@ qla24xx_msix_rsp_q(int irq, void *dev_id)
 	struct device_reg_24xx __iomem *reg;
 	struct scsi_qla_host *vha;
 	unsigned long flags;
-	uint32_t stat = 0;
 
 	rsp = (struct rsp_que *) dev_id;
 	if (!rsp) {
@@ -3171,19 +3180,11 @@ qla24xx_msix_rsp_q(int irq, void *dev_id)
 	spin_lock_irqsave(&ha->hardware_lock, flags);
 
 	vha = pci_get_drvdata(ha->pdev);
-	/*
-	 * Use host_status register to check to PCI disconnection before we
-	 * we process the response queue.
-	 */
-	stat = RD_REG_DWORD(&reg->host_status);
-	if (qla2x00_check_reg32_for_disconnect(vha, stat))
-		goto out;
 	qla24xx_process_response_queue(vha, rsp);
 	if (!ha->flags.disable_msix_handshake) {
 		WRT_REG_DWORD(&reg->hccr, HCCRX_CLR_RISC_INT);
 		RD_REG_DWORD_RELAXED(&reg->hccr);
 	}
-out:
 	spin_unlock_irqrestore(&ha->hardware_lock, flags);
 
 	return IRQ_HANDLED;
@@ -3454,7 +3455,7 @@ msix_register_fail:
 	}
 
 	/* Enable MSI-X vector for response queue update for queue 0 */
-	if (IS_QLA25XX(ha) || IS_QLA83XX(ha) || IS_QLA27XX(ha)) {
+	if (IS_QLA83XX(ha) || IS_QLA27XX(ha)) {
 		if (ha->msixbase && ha->mqiobase &&
 		    (ha->max_rsp_queues > 1 || ha->max_req_queues > 1 ||
 		     ql2xmqsupport))
