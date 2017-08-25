@@ -916,7 +916,6 @@ megasas_ioc_init_fusion(struct megasas_instance *instance)
 		ret = 1;
 		goto fail_fw_init;
 	}
-	dev_info(&instance->pdev->dev, "Init cmd success\n");
 
 	ret = 0;
 
@@ -927,6 +926,10 @@ fail_fw_init:
 				  sizeof(struct MPI2_IOC_INIT_REQUEST),
 				  IOCInitMessage, ioc_init_handle);
 fail_get_cmd:
+	dev_err(&instance->pdev->dev,
+		"Init cmd return status %s for SCSI host %d\n",
+		ret ? "FAILED" : "SUCCESS", instance->host->host_no);
+
 	return ret;
 }
 
@@ -1263,6 +1266,80 @@ megasas_display_intel_branding(struct megasas_instance *instance)
 }
 
 /**
+ * megasas_allocate_raid_maps -	Allocate memory for RAID maps
+ * @instance:				Adapter soft state
+ *
+ * return:				if success: return 0
+ *					failed:  return -ENOMEM
+ */
+static inline int megasas_allocate_raid_maps(struct megasas_instance *instance)
+{
+	struct fusion_context *fusion;
+	int i = 0;
+
+	fusion = instance->ctrl_context;
+
+	fusion->drv_map_pages = get_order(fusion->drv_map_sz);
+
+	for (i = 0; i < 2; i++) {
+		fusion->ld_map[i] = NULL;
+
+		fusion->ld_drv_map[i] = (void *)
+			__get_free_pages(__GFP_ZERO | GFP_KERNEL,
+					 fusion->drv_map_pages);
+
+		if (!fusion->ld_drv_map[i]) {
+			fusion->ld_drv_map[i] = vzalloc(fusion->drv_map_sz);
+
+			if (!fusion->ld_drv_map[i]) {
+				dev_err(&instance->pdev->dev,
+					"Could not allocate memory for local map"
+					" size requested: %d\n",
+					fusion->drv_map_sz);
+				goto ld_drv_map_alloc_fail;
+			}
+		}
+	}
+
+	for (i = 0; i < 2; i++) {
+		fusion->ld_map[i] = dma_alloc_coherent(&instance->pdev->dev,
+						       fusion->max_map_sz,
+						       &fusion->ld_map_phys[i],
+						       GFP_KERNEL);
+		if (!fusion->ld_map[i]) {
+			dev_err(&instance->pdev->dev,
+				"Could not allocate memory for map info %s:%d\n",
+				__func__, __LINE__);
+			goto ld_map_alloc_fail;
+		}
+	}
+
+	return 0;
+
+ld_map_alloc_fail:
+	for (i = 0; i < 2; i++) {
+		if (fusion->ld_map[i])
+			dma_free_coherent(&instance->pdev->dev,
+					  fusion->max_map_sz,
+					  fusion->ld_map[i],
+					  fusion->ld_map_phys[i]);
+	}
+
+ld_drv_map_alloc_fail:
+	for (i = 0; i < 2; i++) {
+		if (fusion->ld_drv_map[i]) {
+			if (is_vmalloc_addr(fusion->ld_drv_map[i]))
+				vfree(fusion->ld_drv_map[i]);
+			else
+				free_pages((ulong)fusion->ld_drv_map[i],
+					   fusion->drv_map_pages);
+		}
+	}
+
+	return -ENOMEM;
+}
+
+/**
  * megasas_init_adapter_fusion -	Initializes the FW
  * @instance:		Adapter soft state
  *
@@ -1381,45 +1458,14 @@ megasas_init_adapter_fusion(struct megasas_instance *instance)
 	instance->r1_ldio_hint_default =  MR_R1_LDIO_PIGGYBACK_DEFAULT;
 	fusion->fast_path_io = 0;
 
-	fusion->drv_map_pages = get_order(fusion->drv_map_sz);
-	for (i = 0; i < 2; i++) {
-		fusion->ld_map[i] = NULL;
-		fusion->ld_drv_map[i] = (void *)__get_free_pages(GFP_KERNEL,
-			fusion->drv_map_pages);
-		if (!fusion->ld_drv_map[i]) {
-			dev_err(&instance->pdev->dev, "Could not allocate "
-				"memory for local map info for %d pages\n",
-				fusion->drv_map_pages);
-			if (i == 1)
-				free_pages((ulong)fusion->ld_drv_map[0],
-					fusion->drv_map_pages);
-			goto fail_ioc_init;
-		}
-		memset(fusion->ld_drv_map[i], 0,
-			((1 << PAGE_SHIFT) << fusion->drv_map_pages));
-	}
-
-	for (i = 0; i < 2; i++) {
-		fusion->ld_map[i] = dma_alloc_coherent(&instance->pdev->dev,
-						       fusion->max_map_sz,
-						       &fusion->ld_map_phys[i],
-						       GFP_KERNEL);
-		if (!fusion->ld_map[i]) {
-			dev_err(&instance->pdev->dev, "Could not allocate memory "
-			       "for map info\n");
-			goto fail_map_info;
-		}
-	}
+	if (megasas_allocate_raid_maps(instance))
+		goto fail_ioc_init;
 
 	if (!megasas_get_map_info(instance))
 		megasas_sync_map_info(instance);
 
 	return 0;
 
-fail_map_info:
-	if (i == 1)
-		dma_free_coherent(&instance->pdev->dev, fusion->max_map_sz,
-				  fusion->ld_map[0], fusion->ld_map_phys[0]);
 fail_ioc_init:
 	megasas_free_cmds_fusion(instance);
 fail_alloc_cmds:
@@ -3289,7 +3335,7 @@ build_mpt_mfi_pass_thru(struct megasas_instance *instance,
 	mpi25_ieee_chain->Flags = IEEE_SGE_FLAGS_CHAIN_ELEMENT |
 		MPI2_IEEE_SGE_FLAGS_IOCPLBNTA_ADDR;
 
-	mpi25_ieee_chain->Length = cpu_to_le32(instance->max_chain_frame_sz);
+	mpi25_ieee_chain->Length = cpu_to_le32(instance->mfi_frame_size);
 }
 
 /**
@@ -3371,17 +3417,13 @@ megasas_alloc_host_crash_buffer(struct megasas_instance *instance)
 {
 	unsigned int i;
 
-	instance->crash_buf_pages = get_order(CRASH_DMA_BUF_SIZE);
 	for (i = 0; i < MAX_CRASH_DUMP_SIZE; i++) {
-		instance->crash_buf[i] = (void	*)__get_free_pages(GFP_KERNEL,
-				instance->crash_buf_pages);
+		instance->crash_buf[i] = vzalloc(CRASH_DMA_BUF_SIZE);
 		if (!instance->crash_buf[i]) {
 			dev_info(&instance->pdev->dev, "Firmware crash dump "
 				"memory allocation failed at index %d\n", i);
 			break;
 		}
-		memset(instance->crash_buf[i], 0,
-			((1 << PAGE_SHIFT) << instance->crash_buf_pages));
 	}
 	instance->drv_buf_alloc = i;
 }
@@ -3393,12 +3435,10 @@ megasas_alloc_host_crash_buffer(struct megasas_instance *instance)
 void
 megasas_free_host_crash_buffer(struct megasas_instance *instance)
 {
-	unsigned int i
-;
+	unsigned int i;
 	for (i = 0; i < instance->drv_buf_alloc; i++) {
 		if (instance->crash_buf[i])
-			free_pages((ulong)instance->crash_buf[i],
-					instance->crash_buf_pages);
+			vfree(instance->crash_buf[i]);
 	}
 	instance->drv_buf_index = 0;
 	instance->drv_buf_alloc = 0;
@@ -3558,6 +3598,7 @@ int megasas_wait_for_outstanding_fusion(struct megasas_instance *instance,
 			}
 		}
 
+		megasas_complete_cmd_dpc_fusion((unsigned long)instance);
 		outstanding = atomic_read(&instance->fw_outstanding);
 		if (!outstanding)
 			goto out;
@@ -3566,8 +3607,6 @@ int megasas_wait_for_outstanding_fusion(struct megasas_instance *instance,
 			dev_notice(&instance->pdev->dev, "[%2d]waiting for %d "
 			       "commands to complete for scsi%d\n", i,
 			       outstanding, instance->host->host_no);
-			megasas_complete_cmd_dpc_fusion(
-				(unsigned long)instance);
 		}
 		msleep(1000);
 	}
@@ -3625,6 +3664,15 @@ void megasas_refire_mgmt_cmd(struct megasas_instance *instance)
 
 		if (!smid)
 			continue;
+
+		/* Do not refire shutdown command */
+		if (le32_to_cpu(cmd_mfi->frame->dcmd.opcode) ==
+			MR_DCMD_CTRL_SHUTDOWN) {
+			cmd_mfi->frame->dcmd.cmd_status = MFI_STAT_OK;
+			megasas_complete_cmd(instance, cmd_mfi, DID_OK);
+			continue;
+		}
+
 		req_desc = megasas_get_request_descriptor
 					(instance, smid - 1);
 		refire_cmd = req_desc && ((cmd_mfi->frame->dcmd.opcode !=
@@ -3752,7 +3800,7 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 	struct megasas_cmd_fusion *cmd_fusion;
 	struct megasas_cmd *cmd_mfi;
 	union MEGASAS_REQUEST_DESCRIPTOR_UNION *req_desc;
-	struct fusion_context *fusion;
+	struct fusion_context *fusion = NULL;
 	struct megasas_cmd_fusion *scsi_lookup;
 	int rc;
 	struct MPI2_SCSI_TASK_MANAGE_REPLY *mpi_reply;
@@ -3778,8 +3826,6 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 
 	cmd_fusion->request_desc = req_desc;
 	req_desc->Words = 0;
-
-	scsi_lookup = fusion->cmd_list[smid_task - 1];
 
 	mr_request = (struct MR_TASK_MANAGE_REQUEST *) cmd_fusion->io_request;
 	memset(mr_request, 0, sizeof(struct MR_TASK_MANAGE_REQUEST));
@@ -3827,13 +3873,13 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 	rc = SUCCESS;
 	switch (type) {
 	case MPI2_SCSITASKMGMT_TASKTYPE_ABORT_TASK:
+		scsi_lookup = fusion->cmd_list[smid_task - 1];
+
 		if (scsi_lookup->scmd == NULL)
 			break;
 		else {
 			instance->instancet->disable_intr(instance);
 			megasas_sync_irqs((unsigned long)instance);
-			megasas_complete_cmd_dpc_fusion
-					((unsigned long)instance);
 			instance->instancet->enable_intr(instance);
 			if (scsi_lookup->scmd == NULL)
 				break;
@@ -3845,9 +3891,7 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 		if ((channel == 0xFFFFFFFF) && (id == 0xFFFFFFFF))
 			break;
 		instance->instancet->disable_intr(instance);
-		msleep(1000);
-		megasas_complete_cmd_dpc_fusion
-				((unsigned long)instance);
+		megasas_sync_irqs((unsigned long)instance);
 		rc = megasas_track_scsiio(instance, id, channel);
 		instance->instancet->enable_intr(instance);
 
@@ -4273,9 +4317,6 @@ transition_to_ready:
 			megasas_fusion_update_can_queue(instance, OCR_CONTEXT);
 
 			if (megasas_ioc_init_fusion(instance)) {
-				dev_warn(&instance->pdev->dev,
-				       "megasas_ioc_init_fusion() failed! for "
-				       "scsi%d\n", instance->host->host_no);
 				if (instance->requestorId && !reason)
 					goto fail_kill_adapter;
 				else
@@ -4321,6 +4362,10 @@ transition_to_ready:
 			instance->instancet->enable_intr(instance);
 			atomic_set(&instance->adprecovery, MEGASAS_HBA_OPERATIONAL);
 
+			dev_info(&instance->pdev->dev, "Interrupts are enabled and"
+				" controller is OPERATIONAL for scsi:%d\n",
+				instance->host->host_no);
+
 			/* Restart SR-IOV heartbeat */
 			if (instance->requestorId) {
 				if (!megasas_sriov_start_heartbeat(instance, 0))
@@ -4332,11 +4377,6 @@ transition_to_ready:
 					instance->skip_heartbeat_timer_del = 1;
 			}
 
-			/* Adapter reset completed successfully */
-			dev_warn(&instance->pdev->dev, "Reset "
-			       "successful for scsi%d.\n",
-				instance->host->host_no);
-
 			if (instance->crash_dump_drv_support &&
 				instance->crash_dump_app_support)
 				megasas_set_crash_dump_params(instance,
@@ -4346,6 +4386,12 @@ transition_to_ready:
 					MR_CRASH_BUF_TURN_OFF);
 
 			retval = SUCCESS;
+
+			/* Adapter reset completed successfully */
+			dev_warn(&instance->pdev->dev,
+				 "Reset successful for scsi%d.\n",
+				 instance->host->host_no);
+
 			goto out;
 		}
 fail_kill_adapter:
