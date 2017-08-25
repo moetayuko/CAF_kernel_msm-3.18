@@ -125,8 +125,7 @@ static void mvs_free(struct mvs_info *mvi)
 	else
 		slot_nr = MVS_CHIP_SLOT_SZ;
 
-	if (mvi->dma_pool)
-		pci_pool_destroy(mvi->dma_pool);
+	dma_pool_destroy(mvi->dma_pool);
 
 	if (mvi->tx)
 		dma_free_coherent(mvi->dev,
@@ -296,7 +295,8 @@ static int mvs_alloc(struct mvs_info *mvi, struct Scsi_Host *shost)
 		goto err_out;
 
 	sprintf(pool_name, "%s%d", "mvs_dma_pool", mvi->id);
-	mvi->dma_pool = pci_pool_create(pool_name, mvi->pdev, MVS_SLOT_BUF_SZ, 16, 0);
+	mvi->dma_pool = dma_pool_create(pool_name, &mvi->pdev->dev,
+					MVS_SLOT_BUF_SZ, 16, 0);
 	if (!mvi->dma_pool) {
 			printk(KERN_DEBUG "failed to create dma pool %s.\n", pool_name);
 			goto err_out;
@@ -557,14 +557,14 @@ static int mvs_pci_init(struct pci_dev *pdev, const struct pci_device_id *ent)
 	SHOST_TO_SAS_HA(shost) =
 		kcalloc(1, sizeof(struct sas_ha_struct), GFP_KERNEL);
 	if (!SHOST_TO_SAS_HA(shost)) {
-		kfree(shost);
+		scsi_host_put(shost);
 		rc = -ENOMEM;
 		goto err_out_regions;
 	}
 
 	rc = mvs_prep_sas_ha_init(shost, chip);
 	if (rc) {
-		kfree(shost);
+		scsi_host_put(shost);
 		rc = -ENOMEM;
 		goto err_out_regions;
 	}

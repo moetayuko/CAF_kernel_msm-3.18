@@ -452,7 +452,7 @@ qla83xx_handle_8200_aen(scsi_qla_host_t *vha, uint16_t *mb)
 			uint16_t peg_fw_state, nw_interface_link_up;
 			uint16_t nw_interface_signal_detect, sfp_status;
 			uint16_t htbt_counter, htbt_monitor_enable;
-			uint16_t sfp_additonal_info, sfp_multirate;
+			uint16_t sfp_additional_info, sfp_multirate;
 			uint16_t sfp_tx_fault, link_speed, dcbx_status;
 
 			/*
@@ -492,7 +492,7 @@ qla83xx_handle_8200_aen(scsi_qla_host_t *vha, uint16_t *mb)
 			sfp_status = ((mb[2] & 0x0c00) >> 10);
 			htbt_counter = ((mb[2] & 0x7000) >> 12);
 			htbt_monitor_enable = ((mb[2] & 0x8000) >> 15);
-			sfp_additonal_info = (mb[6] & 0x0003);
+			sfp_additional_info = (mb[6] & 0x0003);
 			sfp_multirate = ((mb[6] & 0x0004) >> 2);
 			sfp_tx_fault = ((mb[6] & 0x0008) >> 3);
 			link_speed = ((mb[6] & 0x0070) >> 4);
@@ -507,9 +507,9 @@ qla83xx_handle_8200_aen(scsi_qla_host_t *vha, uint16_t *mb)
 			    sfp_status);
 			ql_log(ql_log_warn, vha, 0x5067,
 			    "htbt_counter=0x%x, htbt_monitor_enable=0x%x, "
-			    "sfp_additonal_info=0x%x, sfp_multirate=0x%x.\n ",
+			    "sfp_additional_info=0x%x, sfp_multirate=0x%x.\n ",
 			    htbt_counter, htbt_monitor_enable,
-			    sfp_additonal_info, sfp_multirate);
+			    sfp_additional_info, sfp_multirate);
 			ql_log(ql_log_warn, vha, 0x5068,
 			    "sfp_tx_fault=0x%x, link_state=0x%x, "
 			    "dcbx_status=0x%x.\n", sfp_tx_fault, link_speed,
@@ -1823,7 +1823,7 @@ qla24xx_nvme_iocb_entry(scsi_qla_host_t *vha, struct req_que *req, void *tsk)
 	nvme = &sp->u.iocb_cmd;
 
 	if (unlikely(nvme->u.nvme.aen_op))
-		atomic_dec(&sp->vha->nvme_active_aen_cnt);
+		atomic_dec(&sp->vha->hw->nvme_active_aen_cnt);
 
 	/*
 	 * State flags: Bit 6 and 0.
@@ -1856,17 +1856,42 @@ qla24xx_nvme_iocb_entry(scsi_qla_host_t *vha, struct req_que *req, void *tsk)
 	fd->transferred_length = fd->payload_length -
 	    le32_to_cpu(sts->residual_len);
 
+	/*
+	 * If transport error then Failure (HBA rejects request)
+	 * otherwise transport will handle.
+	 */
 	if (sts->entry_status) {
 		ql_log(ql_log_warn, fcport->vha, 0x5038,
 		    "NVME-%s error - hdl=%x entry-status(%x).\n",
 		    sp->name, sp->handle, sts->entry_status);
 		ret = QLA_FUNCTION_FAILED;
-	} else if (sts->comp_status != cpu_to_le16(CS_COMPLETE)) {
-		ql_log(ql_log_warn, fcport->vha, 0x5039,
-		    "NVME-%s error - hdl=%x completion status(%x) resid=%x  ox_id=%x\n",
-		    sp->name, sp->handle, sts->comp_status,
-		    le32_to_cpu(sts->residual_len), sts->ox_id);
-		ret = QLA_FUNCTION_FAILED;
+	} else  {
+		switch (le16_to_cpu(sts->comp_status)) {
+			case CS_COMPLETE:
+				ret = 0;
+			break;
+
+			case CS_ABORTED:
+			case CS_RESET:
+			case CS_PORT_UNAVAILABLE:
+			case CS_PORT_LOGGED_OUT:
+			case CS_PORT_BUSY:
+				ql_log(ql_log_warn, fcport->vha, 0x5060,
+				"NVME-%s ERR Handling - hdl=%x completion status(%x) resid=%x  ox_id=%x\n",
+				sp->name, sp->handle, sts->comp_status,
+				le32_to_cpu(sts->residual_len), sts->ox_id);
+				fd->transferred_length = fd->payload_length;
+				ret = QLA_ABORTED;
+			break;
+
+			default:
+				ql_log(ql_log_warn, fcport->vha, 0x5060,
+				"NVME-%s error - hdl=%x completion status(%x) resid=%x  ox_id=%x\n",
+				sp->name, sp->handle, sts->comp_status,
+				le32_to_cpu(sts->residual_len), sts->ox_id);
+				ret = QLA_FUNCTION_FAILED;
+				break;
+		}
 	}
 	sp->done(sp, ret);
 }
@@ -2827,8 +2852,8 @@ qla24xx_abort_iocb_entry(scsi_qla_host_t *vha, struct req_que *req,
 	sp->done(sp, 0);
 }
 
-void qla24xx_nvme_ls4_iocb(scsi_qla_host_t *vha, struct pt_ls4_request *pkt,
-    struct req_que *req)
+void qla24xx_nvme_ls4_iocb(struct scsi_qla_host *vha,
+    struct pt_ls4_request *pkt, struct req_que *req)
 {
 	srb_t *sp;
 	const char func[] = "LS4_IOCB";
