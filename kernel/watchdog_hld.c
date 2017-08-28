@@ -223,7 +223,17 @@ int watchdog_nmi_enable(unsigned int cpu)
 		firstcpu = 1;
 
 	wd_attr = &wd_hw_attr;
-	wd_attr->sample_period = hw_nmi_get_sample_period(watchdog_thresh);
+	/*
+	 * TODO: revert this 3x factor once the NMI timer is constant
+	 * upstream and the fix backported here, see
+	 * https://partnerissuetracker.corp.google.com/issues/35587084
+	 * On some systems the turbo frequency can go higher than 5/2
+	 * times the TSC_MHz.  This makes this timer tick too fast and
+	 * trigger spurious hard LOCKUPs. Slow it down by a factor of
+	 * 3 as a temporary workaround.
+	 * See also https://crrev.com/c/502789/
+	 */
+	wd_attr->sample_period = hw_nmi_get_sample_period(watchdog_thresh) * 3;
 
 	/* Try to register using hardware perf events */
 	event = perf_event_create_kernel_counter(wd_attr, cpu, NULL, watchdog_overflow_callback, NULL);
