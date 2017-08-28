@@ -23,33 +23,18 @@
 #ifndef __AMD_SHARED_H__
 #define __AMD_SHARED_H__
 
+#include <drm/amd_asic_type.h>
+
 #define AMD_MAX_USEC_TIMEOUT		200000  /* 200 ms */
 
 /*
- * Supported ASIC types
- */
-enum amd_asic_type {
-	CHIP_TAHITI = 0,
-	CHIP_PITCAIRN,
-	CHIP_VERDE,
-	CHIP_OLAND,
-	CHIP_HAINAN,
-	CHIP_BONAIRE,
-	CHIP_KAVERI,
-	CHIP_KABINI,
-	CHIP_HAWAII,
-	CHIP_MULLINS,
-	CHIP_TOPAZ,
-	CHIP_TONGA,
-	CHIP_FIJI,
-	CHIP_CARRIZO,
-	CHIP_STONEY,
-	CHIP_POLARIS10,
-	CHIP_POLARIS11,
-	CHIP_POLARIS12,
-	CHIP_VEGA10,
-	CHIP_LAST,
-};
+* Supported GPU families (aligned with amdgpu_drm.h)
+*/
+#define AMD_FAMILY_UNKNOWN              0
+#define AMD_FAMILY_CI                   120 /* Bonaire, Hawaii */
+#define AMD_FAMILY_KV                   125 /* Kaveri, Kabini, Mullins */
+#define AMD_FAMILY_VI                   130 /* Iceland, Tonga */
+#define AMD_FAMILY_CZ                   135 /* Carrizo */
 
 /*
  * Chip flags
