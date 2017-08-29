@@ -543,7 +543,8 @@ static int i2c_hid_alloc_buffers(struct i2c_hid *ihid, size_t report_size)
 {
 	/* the worst case is computed from the set_report command with a
 	 * reportID > 15 and the maximum report length */
-	int args_len = sizeof(__u8) + /* optional ReportID byte */
+	int args_len = sizeof(__u8) + /* ReportID */
+		       sizeof(__u8) + /* optional ReportID byte */
 		       sizeof(__u16) + /* data register */
 		       sizeof(__u16) + /* size of the report */
 		       report_size; /* report */
@@ -927,6 +928,7 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 		struct i2c_hid_platform_data *pdata)
 {
 	struct device *dev = &client->dev;
+	union i2c_smbus_data dummy;
 	u32 val;
 	int ret;
 
@@ -946,6 +948,24 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 				   &val);
 	if (!ret)
 		pdata->post_power_delay_ms = val;
+
+	/*
+	 * Unfortunately vendors like to interchange touchpad parts
+	 * between factory runs, but keep the same DTS, so we can't
+	 * be quite sure that the device is actually present in the
+	 * system even if it is described in the DTS.
+	 * Before trying to properly initialize the touchpad let's
+	 * first see it there is anything at the given address.
+	 */
+
+	ret = i2c_smbus_xfer(client->adapter, client->addr, 0,
+			     I2C_SMBUS_READ, 0, I2C_SMBUS_BYTE, &dummy);
+	if (ret) {
+		dev_dbg(&client->dev,
+			"basic IO failed (%d), assuming device is not present\n",
+			ret);
+		return -ENXIO;
+	}
 
 	return 0;
 }
