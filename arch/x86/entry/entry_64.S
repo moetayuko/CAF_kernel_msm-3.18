@@ -142,14 +142,8 @@ ENTRY(entry_SYSCALL_64)
 	 * We do not frame this tiny irq-off block with TRACE_IRQS_OFF/ON,
 	 * it is too small to ever cause noticeable irq latency.
 	 */
-	SWAPGS_UNSAFE_STACK
-	/*
-	 * A hypervisor implementation might want to use a label
-	 * after the swapgs, so that it can do the swapgs
-	 * for the guest and jump here on syscall.
-	 */
-GLOBAL(entry_SYSCALL_64_after_swapgs)
 
+	swapgs
 	movq	%rsp, PER_CPU_VAR(rsp_scratch)
 	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp
 
@@ -161,6 +155,7 @@ GLOBAL(entry_SYSCALL_64_after_swapgs)
 	pushq	%r11				/* pt_regs->flags */
 	pushq	$__USER_CS			/* pt_regs->cs */
 	pushq	%rcx				/* pt_regs->ip */
+GLOBAL(entry_SYSCALL_64_after_hwframe)
 	pushq	%rax				/* pt_regs->orig_ax */
 	pushq	%rdi				/* pt_regs->di */
 	pushq	%rsi				/* pt_regs->si */
@@ -753,18 +748,6 @@ ENTRY(\sym)
 END(\sym)
 .endm
 
-#ifdef CONFIG_TRACING
-#define trace(sym) trace_##sym
-#define smp_trace(sym) smp_trace_##sym
-
-.macro trace_apicinterrupt num sym
-apicinterrupt3 \num trace(\sym) smp_trace(\sym)
-.endm
-#else
-.macro trace_apicinterrupt num sym do_sym
-.endm
-#endif
-
 /* Make sure APIC interrupt handlers end up in the irqentry section: */
 #define PUSH_SECTION_IRQENTRY	.pushsection .irqentry.text, "ax"
 #define POP_SECTION_IRQENTRY	.popsection
@@ -772,7 +755,6 @@ apicinterrupt3 \num trace(\sym) smp_trace(\sym)
 .macro apicinterrupt num sym do_sym
 PUSH_SECTION_IRQENTRY
 apicinterrupt3 \num \sym \do_sym
-trace_apicinterrupt \num \sym
 POP_SECTION_IRQENTRY
 .endm
 
@@ -917,17 +899,6 @@ ENTRY(\sym)
 	.endif
 END(\sym)
 .endm
-
-#ifdef CONFIG_TRACING
-.macro trace_idtentry sym do_sym has_error_code:req
-idtentry trace(\sym) trace(\do_sym) has_error_code=\has_error_code
-idtentry \sym \do_sym has_error_code=\has_error_code
-.endm
-#else
-.macro trace_idtentry sym do_sym has_error_code:req
-idtentry \sym \do_sym has_error_code=\has_error_code
-.endm
-#endif
 
 idtentry divide_error			do_divide_error			has_error_code=0
 idtentry overflow			do_overflow			has_error_code=0
@@ -1096,7 +1067,7 @@ idtentry xen_stack_segment	do_stack_segment	has_error_code=1
 #endif
 
 idtentry general_protection	do_general_protection	has_error_code=1
-trace_idtentry page_fault	do_page_fault		has_error_code=1
+idtentry page_fault		do_page_fault		has_error_code=1
 
 #ifdef CONFIG_KVM_GUEST
 idtentry async_page_fault	do_async_page_fault	has_error_code=1

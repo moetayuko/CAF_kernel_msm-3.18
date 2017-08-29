@@ -501,7 +501,7 @@ static void __init xen_load_gdt_boot(const struct desc_ptr *dtr)
 static inline bool desc_equal(const struct desc_struct *d1,
 			      const struct desc_struct *d2)
 {
-	return d1->a == d2->a && d1->b == d2->b;
+	return !memcmp(d1, d2, sizeof(*d1));
 }
 
 static void load_TLS_descriptor(struct thread_struct *t,
@@ -591,12 +591,12 @@ static int cvt_gate_to_trap(int vector, const gate_desc *val,
 {
 	unsigned long addr;
 
-	if (val->type != GATE_TRAP && val->type != GATE_INTERRUPT)
+	if (val->bits.type != GATE_TRAP && val->bits.type != GATE_INTERRUPT)
 		return 0;
 
 	info->vector = vector;
 
-	addr = gate_offset(*val);
+	addr = gate_offset(val);
 #ifdef CONFIG_X86_64
 	/*
 	 * Look for known traps using IST, and substitute them
@@ -629,16 +629,16 @@ static int cvt_gate_to_trap(int vector, const gate_desc *val,
 		;
 	else {
 		/* Some other trap using IST? */
-		if (WARN_ON(val->ist != 0))
+		if (WARN_ON(val->bits.ist != 0))
 			return 0;
 	}
 #endif	/* CONFIG_X86_64 */
 	info->address = addr;
 
-	info->cs = gate_segment(*val);
-	info->flags = val->dpl;
+	info->cs = gate_segment(val);
+	info->flags = val->bits.dpl;
 	/* interrupt gates clear IF */
-	if (val->type == GATE_INTERRUPT)
+	if (val->bits.type == GATE_INTERRUPT)
 		info->flags |= 1 << 2;
 
 	return 1;
@@ -988,59 +988,6 @@ void __ref xen_setup_vcpu_info_placement(void)
 	}
 }
 
-static unsigned xen_patch(u8 type, u16 clobbers, void *insnbuf,
-			  unsigned long addr, unsigned len)
-{
-	char *start, *end, *reloc;
-	unsigned ret;
-
-	start = end = reloc = NULL;
-
-#define SITE(op, x)							\
-	case PARAVIRT_PATCH(op.x):					\
-	if (xen_have_vcpu_info_placement) {				\
-		start = (char *)xen_##x##_direct;			\
-		end = xen_##x##_direct_end;				\
-		reloc = xen_##x##_direct_reloc;				\
-	}								\
-	goto patch_site
-
-	switch (type) {
-		SITE(pv_irq_ops, irq_enable);
-		SITE(pv_irq_ops, irq_disable);
-		SITE(pv_irq_ops, save_fl);
-		SITE(pv_irq_ops, restore_fl);
-#undef SITE
-
-	patch_site:
-		if (start == NULL || (end-start) > len)
-			goto default_patch;
-
-		ret = paravirt_patch_insns(insnbuf, len, start, end);
-
-		/* Note: because reloc is assigned from something that
-		   appears to be an array, gcc assumes it's non-null,
-		   but doesn't know its relationship with start and
-		   end. */
-		if (reloc > start && reloc < end) {
-			int reloc_off = reloc - start;
-			long *relocp = (long *)(insnbuf + reloc_off);
-			long delta = start - (char *)addr;
-
-			*relocp += delta;
-		}
-		break;
-
-	default_patch:
-	default:
-		ret = paravirt_patch_default(type, clobbers, insnbuf,
-					     addr, len);
-		break;
-	}
-
-	return ret;
-}
-
 static const struct pv_info xen_info __initconst = {
 	.shared_kernel_pmd = 0,
 
@@ -1048,10 +995,6 @@ static const struct pv_info xen_info __initconst = {
 	.extra_user_64bit_cs = FLAT_USER_CS64,
 #endif
 	.name = "Xen",
-};
-
-static const struct pv_init_ops xen_init_ops __initconst = {
-	.patch = xen_patch,
 };
 
 static const struct pv_cpu_ops xen_cpu_ops __initconst = {
@@ -1251,7 +1194,7 @@ asmlinkage __visible void __init xen_start_kernel(void)
 
 	/* Install Xen paravirt ops */
 	pv_info = xen_info;
-	pv_init_ops = xen_init_ops;
+	pv_init_ops.patch = paravirt_patch_default;
 	pv_cpu_ops = xen_cpu_ops;
 
 	x86_platform.get_nmi_reason = xen_get_nmi_reason;
