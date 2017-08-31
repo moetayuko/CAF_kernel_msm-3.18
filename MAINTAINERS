@@ -6354,6 +6354,7 @@ F:	drivers/uio/uio_hv_generic.c
 F:	drivers/video/fbdev/hyperv_fb.c
 F:	net/vmw_vsock/hyperv_transport.c
 F:	include/linux/hyperv.h
+F:	include/uapi/linux/hyperv.h
 F:	tools/hv/
 F:	Documentation/ABI/stable/sysfs-bus-vmbus
 
@@ -7728,17 +7729,6 @@ T:	git git://linuxtv.org/mkrufky/tuners.git
 S:	Maintained
 F:	drivers/media/dvb-frontends/lgdt3305.*
 
-LGUEST
-M:	Rusty Russell <rusty@rustcorp.com.au>
-L:	lguest@lists.ozlabs.org
-W:	http://lguest.ozlabs.org/
-S:	Odd Fixes
-F:	arch/x86/include/asm/lguest*.h
-F:	arch/x86/lguest/
-F:	drivers/lguest/
-F:	include/linux/lguest*.h
-F:	tools/lguest/
-
 LIBATA PATA ARASAN COMPACT FLASH CONTROLLER
 M:	Viresh Kumar <vireshk@kernel.org>
 L:	linux-ide@vger.kernel.org
@@ -8756,7 +8746,7 @@ M:	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 M:	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
-F:	kernel/membarrier.c
+F:	kernel/sched/membarrier.c
 F:	include/uapi/linux/membarrier.h
 
 MEMORY MANAGEMENT
@@ -11295,7 +11285,7 @@ M:	Fenghua Yu <fenghua.yu@intel.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 F:	arch/x86/kernel/cpu/intel_rdt*
-F:	arch/x86/include/asm/intel_rdt*
+F:	arch/x86/include/asm/intel_rdt_sched.h
 F:	Documentation/x86/intel_rdt*
 
 READ-COPY UPDATE (RCU)
