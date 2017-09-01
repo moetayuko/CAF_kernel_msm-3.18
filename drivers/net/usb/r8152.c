@@ -841,12 +841,6 @@ int pla_ocp_write(struct r8152 *tp, u16 index, u16 byteen, u16 size, void *data)
 }
 
 static inline
-int usb_ocp_read(struct r8152 *tp, u16 index, u16 size, void *data)
-{
-	return generic_ocp_read(tp, index, size, data, MCU_TYPE_USB);
-}
-
-static inline
 int usb_ocp_write(struct r8152 *tp, u16 index, u16 byteen, u16 size, void *data)
 {
 	return generic_ocp_write(tp, index, byteen, size, data, MCU_TYPE_USB);
@@ -4360,6 +4354,7 @@ static u8 rtl_get_version(struct usb_interface *intf)
 		version = RTL_VER_05;
 		break;
 	case 0x5c30:
+	case 0x6010:
 		version = RTL_VER_06;
 		break;
 	default:
