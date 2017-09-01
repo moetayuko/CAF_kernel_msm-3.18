@@ -89,6 +89,9 @@
 #define VOP_WIN_GET_YRGBADDR(vop, win) \
 		vop_readl(vop, win->base + win->phy->yrgb_mst.offset)
 
+#define VOP_WIN_TO_INDEX(vop_win) \
+	((vop_win) - (vop_win)->vop->win)
+
 #define to_vop(x) container_of(x, struct vop, crtc)
 #define to_vop_win(x) container_of(x, struct vop_win, base)
 
@@ -108,9 +111,8 @@ struct vop {
 	struct drm_device *drm_dev;
 	bool is_enabled;
 
-	/* mutex vsync_ work */
-	struct mutex vsync_mutex;
-	bool vsync_work_pending;
+	unsigned int win_enabled;
+
 	struct completion dsp_hold_completion;
 
 	/* protected by dev->event_lock */
@@ -133,6 +135,7 @@ struct vop {
 	spinlock_t reg_lock;
 	/* lock vop irq reg */
 	spinlock_t irq_lock;
+	struct mutex vop_lock;
 
 	unsigned int irq;
 
@@ -564,6 +567,27 @@ err_put_pm_runtime:
 	return ret;
 }
 
+void rockchip_drm_set_win_enabled(struct drm_crtc *crtc, bool enabled)
+{
+	struct vop *vop = to_vop(crtc);
+	int i;
+
+	spin_lock(&vop->reg_lock);
+
+	for (i = 0; i < vop->data->win_size; i++) {
+		struct vop_win *vop_win = &vop->win[i];
+		const struct vop_win_data *win = vop_win->data;
+
+		VOP_WIN_SET(vop, win, enable,
+			    enabled && (vop->win_enabled & BIT(i)));
+	}
+
+	vop_cfg_done(vop);
+
+	spin_unlock(&vop->reg_lock);
+}
+EXPORT_SYMBOL(rockchip_drm_set_win_enabled);
+
 static void vop_crtc_disable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -571,8 +595,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 
 	WARN_ON(vop->event);
 
-	rockchip_drm_psr_deactivate(&vop->crtc);
-
+	mutex_lock(&vop->vop_lock);
 	/*
 	 * We need to make sure that all windows are disabled before we
 	 * disable that crtc. Otherwise we might try to scan from a destroyed
@@ -584,6 +607,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 
 		spin_lock(&vop->reg_lock);
 		VOP_WIN_SET(vop, win, enable, 0);
+		vop->win_enabled &= ~BIT(i);
 		spin_unlock(&vop->reg_lock);
 	}
 
@@ -624,6 +648,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	clk_disable(vop->aclk);
 	clk_disable(vop->hclk);
 	pm_runtime_put(vop->dev);
+	mutex_unlock(&vop->vop_lock);
 
 	if (crtc->state->event && !crtc->state->active) {
 		spin_lock_irq(&crtc->dev->event_lock);
@@ -702,6 +727,7 @@ static void vop_plane_atomic_disable(struct drm_plane *plane,
 	spin_lock(&vop->reg_lock);
 
 	VOP_WIN_SET(vop, win, enable, 0);
+	vop->win_enabled &= ~BIT(VOP_WIN_TO_INDEX(vop_win));
 
 	spin_unlock(&vop->reg_lock);
 }
@@ -809,6 +835,8 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	}
 
 	VOP_WIN_SET(vop, win, enable, 1);
+	vop->win_enabled |= BIT(VOP_WIN_TO_INDEX(vop_win));
+
 	spin_unlock(&vop->reg_lock);
 }
 
@@ -891,10 +919,13 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	uint32_t pin_pol, val;
 	int ret;
 
+	mutex_lock(&vop->vop_lock);
+
 	WARN_ON(vop->event);
 
 	ret = vop_enable(crtc);
 	if (ret) {
+		mutex_unlock(&vop->vop_lock);
 		DRM_DEV_ERROR(vop->dev, "Failed to enable vop (%d)\n", ret);
 		return;
 	}
@@ -975,6 +1006,12 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	if (s->output_mode == ROCKCHIP_OUT_MODE_AAAA &&
 	    !(vop_data->feature & VOP_FEATURE_OUTPUT_RGB10))
 		s->output_mode = ROCKCHIP_OUT_MODE_P888;
+
+	if (s->output_mode == ROCKCHIP_OUT_MODE_AAAA && s->output_bpc == 8)
+		VOP_CTRL_SET(vop, pre_dither_down, 1);
+	else
+		VOP_CTRL_SET(vop, pre_dither_down, 0);
+
 	VOP_CTRL_SET(vop, out_mode, s->output_mode);
 
 	VOP_CTRL_SET(vop, htotal_pw, (htotal << 16) | hsync_len);
@@ -992,8 +1029,7 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	clk_set_rate(vop->dclk, adjusted_mode->clock * 1000);
 
 	VOP_CTRL_SET(vop, standby, 0);
-
-	rockchip_drm_psr_activate(&vop->crtc);
+	mutex_unlock(&vop->vop_lock);
 }
 
 static bool vop_fs_irq_is_pending(struct vop *vop)
@@ -1071,18 +1107,11 @@ static void vop_crtc_atomic_flush(struct drm_crtc *crtc,
 	}
 }
 
-static void vop_crtc_atomic_begin(struct drm_crtc *crtc,
-				  struct drm_crtc_state *old_crtc_state)
-{
-	rockchip_drm_psr_flush(crtc);
-}
-
 static const struct drm_crtc_helper_funcs vop_crtc_helper_funcs = {
 	.enable = vop_crtc_enable,
 	.disable = vop_crtc_disable,
 	.mode_fixup = vop_crtc_mode_fixup,
 	.atomic_flush = vop_crtc_atomic_flush,
-	.atomic_begin = vop_crtc_atomic_begin,
 };
 
 static void vop_crtc_destroy(struct drm_crtc *crtc)
@@ -1460,6 +1489,7 @@ static int vop_initial(struct vop *vop)
 		const struct vop_win_data *win = &vop_data->win[i];
 
 		VOP_WIN_SET(vop, win, enable, 0);
+		vop->win_enabled &= ~BIT(i);
 	}
 
 	vop_cfg_done(vop);
@@ -1531,15 +1561,22 @@ int rockchip_drm_wait_line_flag(struct drm_crtc *crtc, unsigned int line_num,
 {
 	struct vop *vop = to_vop(crtc);
 	unsigned long jiffies_left;
+	int ret = 0;
 
 	if (!crtc || !vop->is_enabled)
 		return -ENODEV;
 
-	if (line_num > crtc->mode.vtotal || mstimeout <= 0)
-		return -EINVAL;
+	mutex_lock(&vop->vop_lock);
 
-	if (vop_line_flag_irq_is_enabled(vop))
-		return -EBUSY;
+	if (line_num > crtc->mode.vtotal || mstimeout <= 0) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (vop_line_flag_irq_is_enabled(vop)) {
+		ret = -EBUSY;
+		goto out;
+	}
 
 	reinit_completion(&vop->line_flag_completion);
 	vop_line_flag_irq_enable(vop, line_num);
@@ -1550,10 +1587,13 @@ int rockchip_drm_wait_line_flag(struct drm_crtc *crtc, unsigned int line_num,
 
 	if (jiffies_left == 0) {
 		dev_err(vop->dev, "Timeout waiting for IRQ\n");
-		return -ETIMEDOUT;
+		ret = -ETIMEDOUT;
+		goto out;
 	}
 
-	return 0;
+out:
+	mutex_unlock(&vop->vop_lock);
+	return ret;
 }
 EXPORT_SYMBOL(rockchip_drm_wait_line_flag);
 
@@ -1603,8 +1643,7 @@ static int vop_bind(struct device *dev, struct device *master, void *data)
 
 	spin_lock_init(&vop->reg_lock);
 	spin_lock_init(&vop->irq_lock);
-
-	mutex_init(&vop->vsync_mutex);
+	mutex_init(&vop->vop_lock);
 
 	ret = devm_request_irq(dev, vop->irq, vop_isr,
 			       IRQF_SHARED, dev_name(dev), vop);
