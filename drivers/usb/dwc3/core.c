@@ -1194,6 +1194,8 @@ static int dwc3_probe(struct platform_device *pdev)
 	dwc3_debugfs_init(dwc);
 	pm_runtime_put(dev);
 
+	device_enable_async_suspend(dev);
+
 	return 0;
 
 err5:
