@@ -712,6 +712,7 @@ config HMM
 config HMM_MIRROR
 	bool "HMM mirror CPU page table into a device page table"
 	depends on ARCH_HAS_HMM
+	depends on BROKEN
 	select MMU_NOTIFIER
 	select HMM
 	help
