@@ -120,20 +120,6 @@ static void hmm_invalidate_range(struct hmm *hmm,
 	up_read(&hmm->mirrors_sem);
 }
 
-static void hmm_invalidate_page(struct mmu_notifier *mn,
-				struct mm_struct *mm,
-				unsigned long addr)
-{
-	unsigned long start = addr & PAGE_MASK;
-	unsigned long end = start + PAGE_SIZE;
-	struct hmm *hmm = mm->hmm;
-
-	VM_BUG_ON(!hmm);
-
-	atomic_inc(&hmm->sequence);
-	hmm_invalidate_range(mm->hmm, HMM_UPDATE_INVALIDATE, start, end);
-}
-
 static void hmm_invalidate_range_start(struct mmu_notifier *mn,
 				       struct mm_struct *mm,
 				       unsigned long start,
@@ -159,7 +145,6 @@ static void hmm_invalidate_range_end(struct mmu_notifier *mn,
 }
 
 static const struct mmu_notifier_ops hmm_mmu_notifier_ops = {
-	.invalidate_page	= hmm_invalidate_page,
 	.invalidate_range_start	= hmm_invalidate_range_start,
 	.invalidate_range_end	= hmm_invalidate_range_end,
 };
