@@ -345,6 +345,7 @@ static asmlinkage long alt_sys_prctl(int option, unsigned long arg2,
 #define __NR_compat_settimeofday	__NR_ia32_settimeofday
 #define __NR_compat_setuid	__NR_ia32_setuid
 #define __NR_compat_setxattr	__NR_ia32_setxattr
+#define __NR_compat_signalfd4	__NR_ia32_signalfd4
 #define __NR_compat_sigaltstack	__NR_ia32_sigaltstack
 #define __NR_compat_socketcall	__NR_ia32_socketcall
 #define __NR_compat_splice	__NR_ia32_splice
@@ -793,6 +794,7 @@ static struct syscall_whitelist_entry android_whitelist[] = {
 	SYSCALL_ENTRY(setsid),
 	SYSCALL_ENTRY(settimeofday),
 	SYSCALL_ENTRY(setxattr),
+	SYSCALL_ENTRY(signalfd4),
 	SYSCALL_ENTRY(sigaltstack),
 	SYSCALL_ENTRY(splice),
 	SYSCALL_ENTRY(statfs),
@@ -1323,6 +1325,7 @@ static struct syscall_whitelist_entry android_compat_whitelist[] = {
 	COMPAT_SYSCALL_ENTRY(setsid),
 	COMPAT_SYSCALL_ENTRY(settimeofday),
 	COMPAT_SYSCALL_ENTRY(setxattr),
+	COMPAT_SYSCALL_ENTRY(signalfd4),
 	COMPAT_SYSCALL_ENTRY(sigaltstack),
 	COMPAT_SYSCALL_ENTRY(splice),
 	COMPAT_SYSCALL_ENTRY(stat),
