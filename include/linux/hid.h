@@ -344,6 +344,7 @@ struct hid_item {
 #define HID_GROUP_MULTITOUCH			0x0002
 #define HID_GROUP_SENSOR_HUB			0x0003
 #define HID_GROUP_MULTITOUCH_WIN_8		0x0004
+#define HID_GROUP_GENERIC_OVERRIDE		0x0005
 
 /*
  * Vendor specific HID device groups
@@ -529,10 +530,12 @@ struct hid_device {							/* device report descriptor */
 	 * battery is non-NULL.
 	 */
 	struct power_supply *battery;
+	__s32 battery_capacity;
 	__s32 battery_min;
 	__s32 battery_max;
 	__s32 battery_report_type;
 	__s32 battery_report_id;
+	bool battery_reported;
 #endif
 
 	unsigned int status;						/* see STAT flags above */
