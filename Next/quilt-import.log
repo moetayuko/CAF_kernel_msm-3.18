@@ -1,0 +1,13 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 46c1e79fee417f151547aa46fae04ab06cb666f4
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 46c1e79fee417f151547aa46fae04ab06cb666f4
+HEAD is now at 46c1e79fee41 Merge branch 'perf-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am -s --patch-format=mbox ../quilt/dmi/dmi-mark-all-struct-dmi_system_id-instances-const.patch
+Applying: dmi: Mark all struct dmi_system_id instances const
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+ + f996c4155d0d...a5f479c65e01 master     -> dmi/master  (forced update)
