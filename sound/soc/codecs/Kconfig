@@ -72,6 +72,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_DA9055 if I2C
 	select SND_SOC_DIO2125
 	select SND_SOC_DMIC
+	select SND_SOC_DMIC if GPIOLIB
 	select SND_SOC_ES8328_SPI if SPI_MASTER
 	select SND_SOC_ES8328_I2C if I2C
 	select SND_SOC_ES7134
@@ -536,6 +537,7 @@ config SND_SOC_DMIC
 
 config SND_SOC_HDMI_CODEC
 	tristate
+	select HDMI_NOTIFIERS
 	select SND_PCM_ELD
 	select SND_PCM_IEC958
 	select HDMI
