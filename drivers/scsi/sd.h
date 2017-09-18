@@ -70,6 +70,7 @@ struct scsi_disk {
 	struct scsi_driver *driver;	/* always &sd_template */
 	struct scsi_device *device;
 	struct device	dev;
+	struct work_struct	resume_work;
 	struct gendisk	*disk;
 #ifdef CONFIG_BLK_DEV_ZONED
 	unsigned int	nr_zones;
