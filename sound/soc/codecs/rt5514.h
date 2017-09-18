@@ -117,6 +117,8 @@
 #define RT5514_POW_ADCFEDL_BIT			0
 
 /* RT5514_I2S_CTRL1 (0x2010) */
+#define RT5514_TDM_MODE2			(0x1 << 30)
+#define RT5514_TDM_MODE2_SFT			30
 #define RT5514_TDM_MODE				(0x1 << 28)
 #define RT5514_TDM_MODE_SFT			28
 #define RT5514_I2S_LR_MASK			(0x1 << 26)
@@ -136,6 +138,8 @@
 #define RT5514_TDMSLOT_SEL_RX_MASK		(0x3 << 10)
 #define RT5514_TDMSLOT_SEL_RX_SFT		10
 #define RT5514_TDMSLOT_SEL_RX_4CH		(0x1 << 10)
+#define RT5514_TDMSLOT_SEL_RX_6CH		(0x2 << 10)
+#define RT5514_TDMSLOT_SEL_RX_8CH		(0x3 << 10)
 #define RT5514_CH_LEN_RX_MASK			(0x3 << 8)
 #define RT5514_CH_LEN_RX_SFT			8
 #define RT5514_CH_LEN_RX_16			(0x0 << 8)
@@ -145,6 +149,8 @@
 #define RT5514_TDMSLOT_SEL_TX_MASK		(0x3 << 6)
 #define RT5514_TDMSLOT_SEL_TX_SFT		6
 #define RT5514_TDMSLOT_SEL_TX_4CH		(0x1 << 6)
+#define RT5514_TDMSLOT_SEL_TX_6CH		(0x2 << 6)
+#define RT5514_TDMSLOT_SEL_TX_8CH		(0x3 << 6)
 #define RT5514_CH_LEN_TX_MASK			(0x3 << 4)
 #define RT5514_CH_LEN_TX_SFT			4
 #define RT5514_CH_LEN_TX_16			(0x0 << 4)
@@ -230,6 +236,7 @@
 
 #define RT5514_FIRMWARE1	"rt5514_dsp_fw1.bin"
 #define RT5514_FIRMWARE2	"rt5514_dsp_fw2.bin"
+#define RT5514_FIRMWARE3	"rt5514_dsp_fw3.bin"
 
 /* System Clock Source */
 enum {
@@ -256,6 +263,8 @@ struct rt5514_priv {
 	int pll_in;
 	int pll_out;
 	int dsp_enabled;
+	u8 *model_buf;
+	unsigned int model_len;
 };
 
 #endif /* __RT5514_H__ */
