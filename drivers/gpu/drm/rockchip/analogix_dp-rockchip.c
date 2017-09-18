@@ -71,63 +71,51 @@ struct rockchip_dp_device {
 	struct regmap            *grf;
 	struct reset_control     *rst;
 
-	struct work_struct	 psr_work;
-	spinlock_t		 psr_lock;
-	unsigned int             psr_state;
-
 	const struct rockchip_dp_chip_data *data;
 
 	struct analogix_dp_plat_data plat_data;
 };
 
-static void analogix_dp_psr_set(struct drm_encoder *encoder, bool enabled)
+static int analogix_dp_psr_set(struct drm_encoder *encoder, bool enabled)
 {
 	struct rockchip_dp_device *dp = to_dp(encoder);
-	unsigned long flags;
-
-	if (!analogix_dp_psr_supported(dp->dev))
-		return;
-
-	dev_dbg(dp->dev, "%s PSR...\n", enabled ? "Entry" : "Exit");
-
-	spin_lock_irqsave(&dp->psr_lock, flags);
-	if (enabled)
-		dp->psr_state = EDP_VSC_PSR_STATE_ACTIVE;
-	else
-		dp->psr_state = ~EDP_VSC_PSR_STATE_ACTIVE;
-
-	schedule_work(&dp->psr_work);
-	spin_unlock_irqrestore(&dp->psr_lock, flags);
-}
-
-static void analogix_dp_psr_work(struct work_struct *work)
-{
-	struct rockchip_dp_device *dp =
-				container_of(work, typeof(*dp), psr_work);
 	struct drm_crtc *crtc = dp->encoder.crtc;
-	int psr_state = dp->psr_state;
 	int vact_end;
 	int ret;
-	unsigned long flags;
+
+	if (!analogix_dp_psr_enabled(dp->dev))
+		return 0;
+
+	dev_dbg(dp->dev, "%s PSR...\n", enabled ? "enable" : "disable");
 
 	if (!crtc)
-		return;
+		return -EINVAL;
 
-	vact_end = crtc->mode.vtotal - crtc->mode.vsync_start + crtc->mode.vdisplay;
+	if (enabled) {
+		vact_end = crtc->mode.vtotal - crtc->mode.vsync_start +
+			crtc->mode.vdisplay;
+		ret = rockchip_drm_wait_line_flag(dp->encoder.crtc, vact_end,
+						PSR_WAIT_LINE_FLAG_TIMEOUT_MS);
+		if (ret) {
+			dev_err(dp->dev, "line flag interrupt did not arrive\n");
+			return -ETIMEDOUT;
+		}
 
-	ret = rockchip_drm_wait_line_flag(dp->encoder.crtc, vact_end,
-					  PSR_WAIT_LINE_FLAG_TIMEOUT_MS);
-	if (ret) {
-		dev_err(dp->dev, "line flag interrupt did not arrive\n");
-		return;
+		ret = analogix_dp_enable_psr(dp->dev);
+		if (ret) {
+			dev_err(dp->dev, "failed to enable psr %d\n", ret);
+			return ret;
+		}
+		rockchip_drm_set_win_enabled(crtc, false);
+	} else {
+		rockchip_drm_set_win_enabled(crtc, true);
+		ret = analogix_dp_disable_psr(dp->dev);
+		if (ret) {
+			dev_err(dp->dev, "failed to disable psr %d\n", ret);
+			return ret;
+		}
 	}
-
-	spin_lock_irqsave(&dp->psr_lock, flags);
-	if (psr_state == EDP_VSC_PSR_STATE_ACTIVE)
-		analogix_dp_enable_psr(dp->dev);
-	else
-		analogix_dp_disable_psr(dp->dev);
-	spin_unlock_irqrestore(&dp->psr_lock, flags);
+	return 0;
 }
 
 static int rockchip_dp_pre_init(struct rockchip_dp_device *dp)
@@ -139,12 +127,10 @@ static int rockchip_dp_pre_init(struct rockchip_dp_device *dp)
 	return 0;
 }
 
-static int rockchip_dp_poweron(struct analogix_dp_plat_data *plat_data)
+static int rockchip_dp_poweron_start(struct analogix_dp_plat_data *plat_data)
 {
 	struct rockchip_dp_device *dp = to_dp(plat_data);
 	int ret;
-
-	cancel_work_sync(&dp->psr_work);
 
 	ret = clk_prepare_enable(dp->pclk);
 	if (ret < 0) {
@@ -159,12 +145,24 @@ static int rockchip_dp_poweron(struct analogix_dp_plat_data *plat_data)
 		return ret;
 	}
 
-	return 0;
+	return ret;
+}
+
+static int rockchip_dp_poweron_end(struct analogix_dp_plat_data *plat_data)
+{
+	struct rockchip_dp_device *dp = to_dp(plat_data);
+
+	return rockchip_drm_psr_activate(&dp->encoder);
 }
 
 static int rockchip_dp_powerdown(struct analogix_dp_plat_data *plat_data)
 {
 	struct rockchip_dp_device *dp = to_dp(plat_data);
+	int ret;
+
+	ret = rockchip_drm_psr_deactivate(&dp->encoder);
+	if (ret != 0)
+		return ret;
 
 	clk_disable_unprepare(dp->pclk);
 
@@ -186,6 +184,13 @@ static int rockchip_dp_get_modes(struct analogix_dp_plat_data *plat_data,
 	}
 
 	return 0;
+}
+
+static void rockchip_dp_cleanup(struct analogix_dp_plat_data *plat_data)
+{
+	struct rockchip_dp_device *dp = to_dp(plat_data);
+
+	rockchip_drm_psr_unregister(&dp->encoder);
 }
 
 static bool
@@ -245,6 +250,7 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 				      struct drm_connector_state *conn_state)
 {
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
+	struct drm_display_info *di = &conn_state->connector->display_info;
 
 	/*
 	 * The hardware IC designed that VOP must output the RGB10 video
@@ -256,6 +262,7 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 
 	s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 	s->output_type = DRM_MODE_CONNECTOR_eDP;
+	s->output_bpc = di->bpc;
 
 	return 0;
 }
@@ -385,13 +392,11 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 	dp->plat_data.encoder = &dp->encoder;
 
 	dp->plat_data.dev_type = dp->data->chip_type;
-	dp->plat_data.power_on = rockchip_dp_poweron;
+	dp->plat_data.power_on_start = rockchip_dp_poweron_start;
+	dp->plat_data.power_on_end = rockchip_dp_poweron_end;
 	dp->plat_data.power_off = rockchip_dp_powerdown;
 	dp->plat_data.get_modes = rockchip_dp_get_modes;
-
-	spin_lock_init(&dp->psr_lock);
-	dp->psr_state = ~EDP_VSC_PSR_STATE_ACTIVE;
-	INIT_WORK(&dp->psr_work, analogix_dp_psr_work);
+	dp->plat_data.cleanup = rockchip_dp_cleanup;
 
 	rockchip_drm_psr_register(&dp->encoder, analogix_dp_psr_set);
 
@@ -402,8 +407,6 @@ static void rockchip_dp_unbind(struct device *dev, struct device *master,
 			       void *data)
 {
 	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
-
-	rockchip_drm_psr_unregister(&dp->encoder);
 
 	analogix_dp_unbind(dev, master, data);
 	clk_disable_unprepare(dp->pclk);
@@ -450,6 +453,11 @@ static int rockchip_dp_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static void rockchip_dp_shutdown(struct platform_device *pdev)
+{
+	analogix_dp_shutdown(&pdev->dev);
+}
+
 static const struct dev_pm_ops rockchip_dp_pm_ops = {
 #ifdef CONFIG_PM_SLEEP
 	.suspend = analogix_dp_suspend,
@@ -481,6 +489,7 @@ MODULE_DEVICE_TABLE(of, rockchip_dp_dt_ids);
 struct platform_driver rockchip_dp_driver = {
 	.probe = rockchip_dp_probe,
 	.remove = rockchip_dp_remove,
+	.shutdown = rockchip_dp_shutdown,
 	.driver = {
 		   .name = "rockchip-dp",
 		   .pm = &rockchip_dp_pm_ops,
