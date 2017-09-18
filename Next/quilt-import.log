@@ -1,0 +1,13 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 711aab1dbb324d321e3d84368a435a78908c7bce
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 711aab1dbb324d321e3d84368a435a78908c7bce
+HEAD is now at 711aab1dbb32 vfs: constify path argument to kernel_read_file_from_path
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-optimize-dmi_matches.patch
+Applying: firmware: dmi: Optimize dmi_matches
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+ + a5f479c65e01...18f317345038 master     -> dmi/master  (forced update)
