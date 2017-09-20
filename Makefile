@@ -1170,13 +1170,18 @@ headers_check: headers_install
 # ---------------------------------------------------------------------------
 # Kernel selftest
 
+PHONY += __kselftest
+	kselftest_src := tools/testing/selftests
+	ifneq ($(KBUILD_SRC),)
+		kselftest_src := $(KBUILD_SRC)/tools/testing/selftests
+	endif
 PHONY += kselftest
-kselftest:
-	$(Q)$(MAKE) -C tools/testing/selftests run_tests
+kselftest: __kselftest
+	$(Q)$(MAKE) -C $(kselftest_src) run_tests
 
 PHONY += kselftest-clean
-kselftest-clean:
-	$(Q)$(MAKE) -C tools/testing/selftests clean
+kselftest-clean: __kselftest
+	$(Q)$(MAKE) -C $(kselftest_src) clean
 
 PHONY += kselftest-merge
 kselftest-merge:
