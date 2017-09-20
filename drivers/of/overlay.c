@@ -108,7 +108,7 @@ static struct property *dup_and_fixup_symbol_prop(struct of_overlay *ov,
 	int overlay_name_len;
 	int target_path_len;
 
-	if (!prop->value)
+	if (!ov->count || !prop->value)
 		return NULL;
 	symbol_path = prop->value;
 
