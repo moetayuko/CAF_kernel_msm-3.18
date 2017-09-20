@@ -1130,7 +1130,6 @@ static int cs47l24_codec_probe(struct snd_soc_codec *codec)
 
 	arizona_init_gpio(codec);
 	arizona_init_mono(codec);
-	arizona_init_notifiers(codec);
 
 	ret = wm_adsp2_codec_probe(&priv->core.adsp[1], codec);
 	if (ret)
@@ -1230,6 +1229,14 @@ static int cs47l24_probe(struct platform_device *pdev)
 	if (!cs47l24)
 		return -ENOMEM;
 
+	if (IS_ENABLED(CONFIG_OF)) {
+		if (!dev_get_platdata(arizona->dev)) {
+			ret = arizona_of_get_audio_pdata(arizona);
+			if (ret < 0)
+				return ret;
+		}
+	}
+
 	platform_set_drvdata(pdev, cs47l24);
 
 	cs47l24->core.arizona = arizona;
@@ -1287,6 +1294,8 @@ static int cs47l24_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to request DSP IRQ: %d\n", ret);
 		return ret;
 	}
+
+	arizona_init_common(arizona);
 
 	ret = arizona_init_spk_irqs(arizona);
 	if (ret < 0)
