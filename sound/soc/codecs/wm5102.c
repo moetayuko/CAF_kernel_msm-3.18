@@ -1951,7 +1951,6 @@ static int wm5102_codec_probe(struct snd_soc_codec *codec)
 		return ret;
 
 	arizona_init_gpio(codec);
-	arizona_init_notifiers(codec);
 
 	snd_soc_component_disable_pin(component, "HAPTICS");
 
@@ -2043,6 +2042,14 @@ static int wm5102_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	platform_set_drvdata(pdev, wm5102);
 
+	if (IS_ENABLED(CONFIG_OF)) {
+		if (!dev_get_platdata(arizona->dev)) {
+			ret = arizona_of_get_audio_pdata(arizona);
+			if (ret < 0)
+				return ret;
+		}
+	}
+
 	mutex_init(&arizona->dac_comp_lock);
 
 	wm5102->core.arizona = arizona;
@@ -2097,6 +2104,8 @@ static int wm5102_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to request DSP IRQ: %d\n", ret);
 		return ret;
 	}
+
+	arizona_init_common(arizona);
 
 	ret = arizona_init_spk_irqs(arizona);
 	if (ret < 0)
