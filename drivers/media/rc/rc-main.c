@@ -855,7 +855,6 @@ int rc_open(struct rc_dev *rdev)
 
 	return rval;
 }
-EXPORT_SYMBOL_GPL(rc_open);
 
 static int ir_open(struct input_dev *idev)
 {
@@ -875,7 +874,6 @@ void rc_close(struct rc_dev *rdev)
 		mutex_unlock(&rdev->lock);
 	}
 }
-EXPORT_SYMBOL_GPL(rc_close);
 
 static void ir_close(struct input_dev *idev)
 {
@@ -950,23 +948,6 @@ struct rc_filter_attribute {
 		.mask = (_mask),					\
 	}
 
-static bool lirc_is_present(void)
-{
-#if defined(CONFIG_LIRC_MODULE)
-	struct module *lirc;
-
-	mutex_lock(&module_mutex);
-	lirc = find_module("lirc_dev");
-	mutex_unlock(&module_mutex);
-
-	return lirc ? true : false;
-#elif defined(CONFIG_LIRC)
-	return true;
-#else
-	return false;
-#endif
-}
-
 /**
  * show_protocols() - shows the current IR protocol(s)
  * @device:	the device descriptor
@@ -1011,8 +992,10 @@ static ssize_t show_protocols(struct device *device,
 			allowed &= ~proto_names[i].type;
 	}
 
-	if (dev->driver_type == RC_DRIVER_IR_RAW && lirc_is_present())
+#ifdef CONFIG_LIRC
+	if (dev->driver_type == RC_DRIVER_IR_RAW)
 		tmp += sprintf(tmp, "[lirc] ");
+#endif
 
 	if (tmp != buf)
 		tmp--;
@@ -1768,8 +1751,7 @@ int rc_register_device(struct rc_dev *dev)
 		dev->sysfs_groups[attr++] = &rc_dev_wakeup_filter_attr_grp;
 	dev->sysfs_groups[attr++] = NULL;
 
-	if (dev->driver_type == RC_DRIVER_IR_RAW ||
-	    dev->driver_type == RC_DRIVER_IR_RAW_TX) {
+	if (dev->driver_type == RC_DRIVER_IR_RAW) {
 		rc = ir_raw_event_prepare(dev);
 		if (rc < 0)
 			goto out_minor;
@@ -1796,11 +1778,17 @@ int rc_register_device(struct rc_dev *dev)
 			goto out_dev;
 	}
 
-	if (dev->driver_type == RC_DRIVER_IR_RAW ||
-	    dev->driver_type == RC_DRIVER_IR_RAW_TX) {
-		rc = ir_raw_event_register(dev);
+	/* Ensure that the lirc kfifo is setup before we start the thread */
+	if (dev->driver_type != RC_DRIVER_SCANCODE) {
+		rc = ir_lirc_register(dev);
 		if (rc < 0)
 			goto out_rx;
+	}
+
+	if (dev->driver_type == RC_DRIVER_IR_RAW) {
+		rc = ir_raw_event_register(dev);
+		if (rc < 0)
+			goto out_lirc;
 	}
 
 	IR_dprintk(1, "Registered rc%u (driver: %s)\n",
@@ -1809,6 +1797,9 @@ int rc_register_device(struct rc_dev *dev)
 
 	return 0;
 
+out_lirc:
+	if (dev->driver_type != RC_DRIVER_SCANCODE)
+		ir_lirc_unregister(dev);
 out_rx:
 	rc_free_rx_device(dev);
 out_dev:
@@ -1862,6 +1853,9 @@ void rc_unregister_device(struct rc_dev *dev)
 
 	rc_free_rx_device(dev);
 
+	if (dev->driver_type != RC_DRIVER_SCANCODE)
+		ir_lirc_unregister(dev);
+
 	device_del(&dev->dev);
 
 	ida_simple_remove(&rc_ida, dev->minor);
@@ -1884,6 +1878,13 @@ static int __init rc_core_init(void)
 		return rc;
 	}
 
+	rc = lirc_dev_init();
+	if (rc) {
+		pr_err("rc_core: unable to init lirc\n");
+		class_unregister(&rc_class);
+		return 0;
+	}
+
 	led_trigger_register_simple("rc-feedback", &led_feedback);
 	rc_map_register(&empty_map);
 
@@ -1892,6 +1893,7 @@ static int __init rc_core_init(void)
 
 static void __exit rc_core_exit(void)
 {
+	lirc_dev_exit();
 	class_unregister(&rc_class);
 	led_trigger_unregister_simple(led_feedback);
 	rc_map_unregister(&empty_map);
