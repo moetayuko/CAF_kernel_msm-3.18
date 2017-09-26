@@ -1818,6 +1818,8 @@ int rc_register_device(struct rc_dev *dev)
 			goto out_lirc;
 	}
 
+	dev->registered = true;
+
 	IR_dprintk(1, "Registered rc%u (driver: %s)\n",
 		   dev->minor,
 		   dev->driver_name ? dev->driver_name : "unknown");
@@ -1880,6 +1882,14 @@ void rc_unregister_device(struct rc_dev *dev)
 
 	rc_free_rx_device(dev);
 
+	mutex_lock(&dev->lock);
+	dev->registered = false;
+	mutex_unlock(&dev->lock);
+
+	/*
+	 * lirc device should be freed with dev->registered = false, so
+	 * that userspace polling will get notified.
+	 */
 	if (dev->driver_type != RC_DRIVER_SCANCODE)
 		ir_lirc_unregister(dev);
 
