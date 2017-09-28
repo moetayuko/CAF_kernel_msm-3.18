@@ -1,0 +1,17 @@
+Importing jdelvare-hwmon based on 08d27eb2066622cd659b91d877d0406ebd651225
+Unchanged quilt series jdelvare-hwmon
+Importing dmi based on 0666f560b71b899cd11a7caf39fd45129e9030fd
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 0666f560b71b899cd11a7caf39fd45129e9030fd
+HEAD is now at 0666f560b71b Merge branch 'core-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-optimize-dmi_matches.patch
+Applying: firmware: dmi: Optimize dmi_matches
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-remove-dmi_initialized.patch
+Applying: firmware: dmi_scan: Drop dmi_initialized
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-fix-dmi_empty_string-handling.patch
+Applying: firmware: dmi_scan: Fix handling of empty DMI strings
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+ + 18f317345038...e181b8c089da master     -> dmi/master  (forced update)
