@@ -208,7 +208,7 @@ static int ci_read_smc_sram_dword(struct pp_hwmgr *hwmgr, uint32_t smc_addr,
 	return 0;
 }
 
-int ci_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg)
+int sumgr_ci_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg)
 {
 	int ret;
 
@@ -231,7 +231,7 @@ int ci_send_msg_to_smc_with_parameter(struct pp_hwmgr *hwmgr,
 					uint16_t msg, uint32_t parameter)
 {
 	cgs_write_register(hwmgr->device, mmSMC_MSG_ARG_0, parameter);
-	return ci_send_msg_to_smc(hwmgr, msg);
+	return sumgr_ci_send_msg_to_smc(hwmgr, msg);
 }
 
 static void ci_initialize_power_tune_defaults(struct pp_hwmgr *hwmgr)

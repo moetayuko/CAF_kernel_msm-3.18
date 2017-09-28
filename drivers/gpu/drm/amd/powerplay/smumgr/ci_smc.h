@@ -32,7 +32,7 @@ struct amd_pp_profile;
 
 int ci_send_msg_to_smc_with_parameter(struct pp_hwmgr *hwmgr,
 					uint16_t msg, uint32_t parameter);
-int ci_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg);
+int sumgr_ci_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg);
 int ci_populate_all_graphic_levels(struct pp_hwmgr *hwmgr);
 int ci_populate_all_memory_levels(struct pp_hwmgr *hwmgr);
 int ci_init_smc_table(struct pp_hwmgr *hwmgr);
