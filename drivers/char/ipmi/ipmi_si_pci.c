@@ -3,7 +3,7 @@
  *
  * Handling for IPMI devices on the PCI bus.
  */
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <linux/pci.h>
 #include "ipmi_si.h"
 
