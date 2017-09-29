@@ -341,20 +341,8 @@ Description: Linux kernel headers for $KERNELRELEASE on \${kernel:debarch}
  This is useful for people who need to build external modules
 EOF
 
-cat <<EOF >> debian/control
-
-Package: $libc_headers_packagename
-Section: devel
-Provides: linux-kernel-headers
-Architecture: any
-Description: Linux support headers for userspace development
- This package provides userspaces headers from the Linux kernel.  These headers
- are used by the installed headers for GNU glibc and other system libraries.
-EOF
-
 if [ "$ARCH" != "um" ]; then
 	create_package "$kernel_headers_packagename" "$kernel_headers_dir"
-	create_package "$libc_headers_packagename" "$libc_headers_dir"
 fi
 
 create_package "$packagename" "$tmpdir"
