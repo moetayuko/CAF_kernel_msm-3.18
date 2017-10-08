@@ -435,6 +435,9 @@ help_start: T_HELP T_EOL
 
 help: help_start T_HELPTEXT
 {
+	if (current_entry->help)
+		/* Weird menu node with two help strings */
+		free(current_entry->help);
 	current_entry->help = $2;
 };
 
