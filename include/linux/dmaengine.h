@@ -422,8 +422,8 @@ enum dma_residue_granularity {
  * resubmitted multiple times
  */
 struct dma_slave_caps {
-	u32 src_addr_widths;
-	u32 dst_addr_widths;
+	u64 src_addr_widths;
+	u64 dst_addr_widths;
 	u32 directions;
 	u32 max_burst;
 	bool cmd_pause;
