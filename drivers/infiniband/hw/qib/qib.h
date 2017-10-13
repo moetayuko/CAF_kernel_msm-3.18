@@ -443,14 +443,12 @@ struct qib_irq_notify;
 #endif
 
 struct qib_msix_entry {
-	int irq;
 	void *arg;
 #ifdef CONFIG_INFINIBAND_QIB_DCA
 	int dca;
 	int rcv;
 	struct qib_irq_notify *notifier;
 #endif
-	char name[MAX_NAME_SIZE];
 	cpumask_var_t mask;
 };
 
@@ -1188,7 +1186,7 @@ int qib_set_lid(struct qib_pportdata *, u32, u8);
 void qib_hol_down(struct qib_pportdata *);
 void qib_hol_init(struct qib_pportdata *);
 void qib_hol_up(struct qib_pportdata *);
-void qib_hol_event(unsigned long);
+void qib_hol_event(struct timer_list *);
 void qib_disable_after_error(struct qib_devdata *);
 int qib_set_uevent_bits(struct qib_pportdata *, const int);
 
@@ -1302,7 +1300,7 @@ void qib_get_eeprom_info(struct qib_devdata *);
 #define qib_inc_eeprom_err(dd, eidx, incr)
 void qib_dump_lookup_output_queue(struct qib_devdata *);
 void qib_force_pio_avail_update(struct qib_devdata *);
-void qib_clear_symerror_on_linkup(unsigned long opaque);
+void qib_clear_symerror_on_linkup(struct timer_list *t);
 
 /*
  * Set LED override, only the two LSBs have "public" meaning, but
@@ -1434,10 +1432,8 @@ int qib_pcie_ddinit(struct qib_devdata *, struct pci_dev *,
 		    const struct pci_device_id *);
 void qib_pcie_ddcleanup(struct qib_devdata *);
 int qib_pcie_params(struct qib_devdata *dd, u32 minw, u32 *nent);
-int qib_reinit_intr(struct qib_devdata *);
-void qib_enable_intx(struct qib_devdata *dd);
-void qib_nomsi(struct qib_devdata *);
-void qib_nomsix(struct qib_devdata *);
+void qib_free_irq(struct qib_devdata *dd);
+int qib_reinit_intr(struct qib_devdata *dd);
 void qib_pcie_getcmd(struct qib_devdata *, u16 *, u8 *, u8 *);
 void qib_pcie_reenable(struct qib_devdata *, u16, u8, u8);
 /* interrupts for device */
