@@ -1107,8 +1107,16 @@ endif
 # Make sure compiler does not have buggy stack-protector support.
 ifdef stackp-check
   ifneq ($(shell $(CONFIG_SHELL) $(stackp-check) $(CC) $(KBUILD_CPPFLAGS) $(biarch)),y)
+    # The stack-protector is known-broken on gcc 4.4. In AUTO mode, this
+    # can just be a warning. Any breakage in other compilers should still
+    # abort the build, as that would be unexpected.
+    ifeq ($(call cc-ifversion, -eq, 0404,$(stackp-name)),AUTO)
+	@echo CONFIG_CC_STACKPROTECTOR_$(stackp-name): \
+		$(stackp-flag) available but compiler is broken >&2
+    else
 	@echo Cannot use CONFIG_CC_STACKPROTECTOR_$(stackp-name): \
-                  $(stackp-flag) available but compiler is broken >&2 && exit 1
+		$(stackp-flag) available but compiler is broken >&2 && exit 1
+    endif
   endif
 endif
 	@:
