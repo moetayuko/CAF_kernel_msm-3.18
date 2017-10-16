@@ -1497,6 +1497,73 @@ static const struct hash_testvec crct10dif_tv_template[] = {
 	}
 };
 
+/* Example vectors below taken from
+ * http://www.oscca.gov.cn/UpFile/20101222141857786.pdf
+ *
+ * The rest taken from
+ * https://github.com/adamws/oscca-sm3
+ */
+static const struct hash_testvec sm3_tv_template[] = {
+	{
+		.plaintext = "",
+		.psize = 0,
+		.digest = (u8 *)(u8 []) {
+			0x1A, 0xB2, 0x1D, 0x83, 0x55, 0xCF, 0xA1, 0x7F,
+			0x8e, 0x61, 0x19, 0x48, 0x31, 0xE8, 0x1A, 0x8F,
+			0x22, 0xBE, 0xC8, 0xC7, 0x28, 0xFE, 0xFB, 0x74,
+			0x7E, 0xD0, 0x35, 0xEB, 0x50, 0x82, 0xAA, 0x2B }
+	}, {
+		.plaintext = "a",
+		.psize = 1,
+		.digest = (u8 *)(u8 []) {
+			0x62, 0x34, 0x76, 0xAC, 0x18, 0xF6, 0x5A, 0x29,
+			0x09, 0xE4, 0x3C, 0x7F, 0xEC, 0x61, 0xB4, 0x9C,
+			0x7E, 0x76, 0x4A, 0x91, 0xA1, 0x8C, 0xCB, 0x82,
+			0xF1, 0x91, 0x7A, 0x29, 0xC8, 0x6C, 0x5E, 0x88 }
+	}, {
+		/* A.1. Example 1 */
+		.plaintext = "abc",
+		.psize = 3,
+		.digest = (u8 *)(u8 []) {
+			0x66, 0xC7, 0xF0, 0xF4, 0x62, 0xEE, 0xED, 0xD9,
+			0xD1, 0xF2, 0xD4, 0x6B, 0xDC, 0x10, 0xE4, 0xE2,
+			0x41, 0x67, 0xC4, 0x87, 0x5C, 0xF2, 0xF7, 0xA2,
+			0x29, 0x7D, 0xA0, 0x2B, 0x8F, 0x4B, 0xA8, 0xE0 }
+	}, {
+		.plaintext = "abcdefghijklmnopqrstuvwxyz",
+		.psize = 26,
+		.digest = (u8 *)(u8 []) {
+			0xB8, 0x0F, 0xE9, 0x7A, 0x4D, 0xA2, 0x4A, 0xFC,
+			0x27, 0x75, 0x64, 0xF6, 0x6A, 0x35, 0x9E, 0xF4,
+			0x40, 0x46, 0x2A, 0xD2, 0x8D, 0xCC, 0x6D, 0x63,
+			0xAD, 0xB2, 0x4D, 0x5C, 0x20, 0xA6, 0x15, 0x95 }
+	}, {
+		/* A.1. Example 2 */
+		.plaintext = "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdab"
+			     "cdabcdabcdabcdabcd",
+		.psize = 64,
+		.digest = (u8 *)(u8 []) {
+			0xDE, 0xBE, 0x9F, 0xF9, 0x22, 0x75, 0xB8, 0xA1,
+			0x38, 0x60, 0x48, 0x89, 0xC1, 0x8E, 0x5A, 0x4D,
+			0x6F, 0xDB, 0x70, 0xE5, 0x38, 0x7E, 0x57, 0x65,
+			0x29, 0x3D, 0xCB, 0xA3, 0x9C, 0x0C, 0x57, 0x32 }
+	}, {
+		.plaintext = "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+			     "abcdabcdabcdabcdabcdabcdabcdabcd",
+		.psize = 256,
+		.digest = (u8 *)(u8 []) {
+			0xB9, 0x65, 0x76, 0x4C, 0x8B, 0xEB, 0xB0, 0x91,
+			0xC7, 0x60, 0x2B, 0x74, 0xAF, 0xD3, 0x4E, 0xEF,
+			0xB5, 0x31, 0xDC, 0xCB, 0x4E, 0x00, 0x76, 0xD9,
+			0xB7, 0xCD, 0x81, 0x31, 0x99, 0xB4, 0x59, 0x71 }
+	}
+};
+
 /*
  * SHA1 test vectors  from from FIPS PUB 180-1
  * Long vector from CAVS 5.0
@@ -34638,4 +34705,75 @@ static const struct comp_testvec lz4hc_decomp_tv_template[] = {
 	},
 };
 
+static const struct comp_testvec zstd_comp_tv_template[] = {
+	{
+		.inlen	= 68,
+		.outlen	= 39,
+		.input	= "The algorithm is zstd. "
+			  "The algorithm is zstd. "
+			  "The algorithm is zstd.",
+		.output	= "\x28\xb5\x2f\xfd\x00\x50\xf5\x00\x00\xb8\x54\x68\x65"
+			  "\x20\x61\x6c\x67\x6f\x72\x69\x74\x68\x6d\x20\x69\x73"
+			  "\x20\x7a\x73\x74\x64\x2e\x20\x01\x00\x55\x73\x36\x01"
+			  ,
+	},
+	{
+		.inlen	= 244,
+		.outlen	= 151,
+		.input	= "zstd, short for Zstandard, is a fast lossless "
+			  "compression algorithm, targeting real-time "
+			  "compression scenarios at zlib-level and better "
+			  "compression ratios. The zstd compression library "
+			  "provides in-memory compression and decompression "
+			  "functions.",
+		.output	= "\x28\xb5\x2f\xfd\x00\x50\x75\x04\x00\x42\x4b\x1e\x17"
+			  "\x90\x81\x31\x00\xf2\x2f\xe4\x36\xc9\xef\x92\x88\x32"
+			  "\xc9\xf2\x24\x94\xd8\x68\x9a\x0f\x00\x0c\xc4\x31\x6f"
+			  "\x0d\x0c\x38\xac\x5c\x48\x03\xcd\x63\x67\xc0\xf3\xad"
+			  "\x4e\x90\xaa\x78\xa0\xa4\xc5\x99\xda\x2f\xb6\x24\x60"
+			  "\xe2\x79\x4b\xaa\xb6\x6b\x85\x0b\xc9\xc6\x04\x66\x86"
+			  "\xe2\xcc\xe2\x25\x3f\x4f\x09\xcd\xb8\x9d\xdb\xc1\x90"
+			  "\xa9\x11\xbc\x35\x44\x69\x2d\x9c\x64\x4f\x13\x31\x64"
+			  "\xcc\xfb\x4d\x95\x93\x86\x7f\x33\x7f\x1a\xef\xe9\x30"
+			  "\xf9\x67\xa1\x94\x0a\x69\x0f\x60\xcd\xc3\xab\x99\xdc"
+			  "\x42\xed\x97\x05\x00\x33\xc3\x15\x95\x3a\x06\xa0\x0e"
+			  "\x20\xa9\x0e\x82\xb9\x43\x45\x01",
+	},
+};
+
+static const struct comp_testvec zstd_decomp_tv_template[] = {
+	{
+		.inlen	= 43,
+		.outlen	= 68,
+		.input	= "\x28\xb5\x2f\xfd\x04\x50\xf5\x00\x00\xb8\x54\x68\x65"
+			  "\x20\x61\x6c\x67\x6f\x72\x69\x74\x68\x6d\x20\x69\x73"
+			  "\x20\x7a\x73\x74\x64\x2e\x20\x01\x00\x55\x73\x36\x01"
+			  "\x6b\xf4\x13\x35",
+		.output	= "The algorithm is zstd. "
+			  "The algorithm is zstd. "
+			  "The algorithm is zstd.",
+	},
+	{
+		.inlen	= 155,
+		.outlen	= 244,
+		.input	= "\x28\xb5\x2f\xfd\x04\x50\x75\x04\x00\x42\x4b\x1e\x17"
+			  "\x90\x81\x31\x00\xf2\x2f\xe4\x36\xc9\xef\x92\x88\x32"
+			  "\xc9\xf2\x24\x94\xd8\x68\x9a\x0f\x00\x0c\xc4\x31\x6f"
+			  "\x0d\x0c\x38\xac\x5c\x48\x03\xcd\x63\x67\xc0\xf3\xad"
+			  "\x4e\x90\xaa\x78\xa0\xa4\xc5\x99\xda\x2f\xb6\x24\x60"
+			  "\xe2\x79\x4b\xaa\xb6\x6b\x85\x0b\xc9\xc6\x04\x66\x86"
+			  "\xe2\xcc\xe2\x25\x3f\x4f\x09\xcd\xb8\x9d\xdb\xc1\x90"
+			  "\xa9\x11\xbc\x35\x44\x69\x2d\x9c\x64\x4f\x13\x31\x64"
+			  "\xcc\xfb\x4d\x95\x93\x86\x7f\x33\x7f\x1a\xef\xe9\x30"
+			  "\xf9\x67\xa1\x94\x0a\x69\x0f\x60\xcd\xc3\xab\x99\xdc"
+			  "\x42\xed\x97\x05\x00\x33\xc3\x15\x95\x3a\x06\xa0\x0e"
+			  "\x20\xa9\x0e\x82\xb9\x43\x45\x01\xaa\x6d\xda\x0d",
+		.output	= "zstd, short for Zstandard, is a fast lossless "
+			  "compression algorithm, targeting real-time "
+			  "compression scenarios at zlib-level and better "
+			  "compression ratios. The zstd compression library "
+			  "provides in-memory compression and decompression "
+			  "functions.",
+	},
+};
 #endif	/* _CRYPTO_TESTMGR_H */

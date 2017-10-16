@@ -26,6 +26,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_of.h>
 
 #include "malidp_drv.h"
@@ -221,9 +222,8 @@ static void malidp_atomic_commit_tail(struct drm_atomic_state *state)
 	struct drm_crtc_state *old_crtc_state;
 	int i;
 
-	pm_runtime_get_sync(drm->dev);
-
 	drm_atomic_helper_commit_modeset_disables(drm, state);
+	drm_atomic_helper_commit_modeset_enables(drm, state);
 
 	for_each_old_crtc_in_state(state, crtc, old_crtc_state, i) {
 		malidp_atomic_commit_update_gamma(crtc, old_crtc_state);
@@ -231,15 +231,11 @@ static void malidp_atomic_commit_tail(struct drm_atomic_state *state)
 		malidp_atomic_commit_se_config(crtc, old_crtc_state);
 	}
 
-	drm_atomic_helper_commit_planes(drm, state, 0);
-
-	drm_atomic_helper_commit_modeset_enables(drm, state);
+	drm_atomic_helper_commit_planes(drm, state, DRM_PLANE_COMMIT_ACTIVE_ONLY);
 
 	malidp_atomic_commit_hw_done(state);
 
 	drm_atomic_helper_wait_for_vblanks(drm, state);
-
-	pm_runtime_put(drm->dev);
 
 	drm_atomic_helper_cleanup_planes(drm, state);
 }
@@ -249,7 +245,7 @@ static const struct drm_mode_config_helper_funcs malidp_mode_config_helpers = {
 };
 
 static const struct drm_mode_config_funcs malidp_mode_config_funcs = {
-	.fb_create = drm_fb_cma_create,
+	.fb_create = drm_gem_fb_create,
 	.output_poll_changed = malidp_output_poll_changed,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
@@ -683,12 +679,12 @@ static void malidp_unbind(struct device *dev)
 	struct malidp_drm *malidp = drm->dev_private;
 
 	drm_dev_unregister(drm);
+	pm_runtime_get_sync(dev);
 	if (malidp->fbdev) {
 		drm_fbdev_cma_fini(malidp->fbdev);
 		malidp->fbdev = NULL;
 	}
 	drm_kms_helper_poll_fini(drm);
-	pm_runtime_get_sync(dev);
 	malidp_se_irq_fini(drm);
 	malidp_de_irq_fini(drm);
 	component_unbind_all(dev, drm);

@@ -829,6 +829,11 @@ struct vmbus_channel {
 	struct rcu_head rcu;
 
 	/*
+	 * For sysfs per-channel properties.
+	 */
+	struct kobject			kobj;
+
+	/*
 	 * For performance critical channels (storage, networking
 	 * etc,), Hyper-V has a mechanism to enhance the throughput
 	 * at the expense of latency:
@@ -1089,6 +1094,7 @@ struct hv_device {
 	struct device device;
 
 	struct vmbus_channel *channel;
+	struct kset	     *channels_kset;
 };
 
 
@@ -1403,7 +1409,7 @@ extern bool vmbus_prep_negotiate_resp(struct icmsg_hdr *icmsghdrp, u8 *buf,
 				const int *srv_version, int srv_vercnt,
 				int *nego_fw_version, int *nego_srv_version);
 
-void hv_process_channel_removal(struct vmbus_channel *channel, u32 relid);
+void hv_process_channel_removal(u32 relid);
 
 void vmbus_setevent(struct vmbus_channel *channel);
 /*
