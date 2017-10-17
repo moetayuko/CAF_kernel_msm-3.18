@@ -3099,6 +3099,8 @@ void i915_gem_reset_finish(struct drm_i915_private *dev_priv)
 
 static void nop_submit_request(struct drm_i915_gem_request *request)
 {
+	unsigned long flags;
+
 	dma_fence_set_error(&request->fence, -EIO);
 
 	spin_lock_irqsave(&request->engine->timeline->lock, flags);
