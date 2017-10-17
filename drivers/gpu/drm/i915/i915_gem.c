@@ -3101,7 +3101,10 @@ static void nop_submit_request(struct drm_i915_gem_request *request)
 {
 	dma_fence_set_error(&request->fence, -EIO);
 
-	i915_gem_request_submit(request);
+	spin_lock_irqsave(&request->engine->timeline->lock, flags);
+	__i915_gem_request_submit(request);
+	intel_engine_init_global_seqno(request->engine, request->global_seqno);
+	spin_unlock_irqrestore(&request->engine->timeline->lock, flags);
 }
 
 static void nop_complete_submit_request(struct drm_i915_gem_request *request)

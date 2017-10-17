@@ -867,6 +867,7 @@ static int tpm2_do_selftest(struct tpm_chip *chip)
 			break;
 
 		tpm_msleep(delay_msec);
+
 		duration -= delay_msec;
 
 		/* wait longer the next round */
