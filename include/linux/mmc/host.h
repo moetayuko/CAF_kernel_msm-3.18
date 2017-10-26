@@ -403,6 +403,7 @@ struct mmc_host {
 	struct delayed_work	sdio_irq_work;
 	bool			sdio_irq_pending;
 	atomic_t		sdio_irq_thread_abort;
+	atomic_t		sdio_irq_thread_suspend;
 
 	mmc_pm_flag_t		pm_flags;	/* requested pm features */
 
