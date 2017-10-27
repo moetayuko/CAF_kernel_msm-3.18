@@ -312,6 +312,7 @@ SYSCALL_DEFINE1(adjtimex, struct timex __user *, txc_p)
 	ret = do_adjtimex(&txc);
 	return copy_to_user(txc_p, &txc, sizeof(struct timex)) ? -EFAULT : ret;
 }
+EXPORT_SYMBOL(sys_adjtimex);
 
 #ifdef CONFIG_COMPAT
 
@@ -332,6 +333,7 @@ COMPAT_SYSCALL_DEFINE1(adjtimex, struct compat_timex __user *, utp)
 
 	return ret;
 }
+EXPORT_SYMBOL(compat_sys_adjtimex);
 #endif
 
 /*
