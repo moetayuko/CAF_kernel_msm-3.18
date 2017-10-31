@@ -1203,7 +1203,7 @@ static int cow_file_range_async(struct inode *inode, struct page *locked_page,
 	u64 cur_end;
 
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, start, end, EXTENT_LOCKED,
-			 1, 0, NULL, GFP_NOFS);
+			 1, 0, NULL);
 	while (start < end) {
 		async_cow = kmalloc(sizeof(*async_cow), GFP_NOFS);
 		BUG_ON(!async_cow); /* -ENOMEM */
@@ -3000,7 +3000,7 @@ static int btrfs_finish_ordered_io(struct btrfs_ordered_extent *ordered_extent)
 
 		clear_extent_bit(io_tree, ordered_extent->file_offset,
 			ordered_extent->file_offset + ordered_extent->len - 1,
-			EXTENT_DEFRAG, 0, 0, &cached_state, GFP_NOFS);
+			EXTENT_DEFRAG, 0, 0, &cached_state);
 	}
 
 	if (nolock)
@@ -3068,7 +3068,7 @@ out:
 				 ordered_extent->len - 1,
 				 clear_bits,
 				 (clear_bits & EXTENT_LOCKED) ? 1 : 0,
-				 0, &cached_state, GFP_NOFS);
+				 0, &cached_state);
 	}
 
 	if (trans)
@@ -4810,7 +4810,7 @@ again:
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, block_start, block_end,
 			  EXTENT_DIRTY | EXTENT_DELALLOC |
 			  EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG,
-			  0, 0, &cached_state, GFP_NOFS);
+			  0, 0, &cached_state);
 
 	ret = btrfs_set_extent_delalloc(inode, block_start, block_end, 0,
 					&cached_state, 0);
@@ -5246,8 +5246,7 @@ static void evict_inode_truncate_pages(struct inode *inode)
 		clear_extent_bit(io_tree, start, end,
 				 EXTENT_LOCKED | EXTENT_DIRTY |
 				 EXTENT_DELALLOC | EXTENT_DO_ACCOUNTING |
-				 EXTENT_DEFRAG, 1, 1,
-				 &cached_state, GFP_NOFS);
+				 EXTENT_DEFRAG, 1, 1, &cached_state);
 
 		cond_resched();
 		spin_lock(&io_tree->lock);
@@ -7934,7 +7933,7 @@ unlock:
 	if (lockstart < lockend) {
 		clear_extent_bit(&BTRFS_I(inode)->io_tree, lockstart,
 				 lockend, unlock_bits, 1, 0,
-				 &cached_state, GFP_NOFS);
+				 &cached_state);
 	} else {
 		free_extent_state(cached_state);
 	}
@@ -7945,7 +7944,7 @@ unlock:
 
 unlock_err:
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, lockstart, lockend,
-			 unlock_bits, 1, 0, &cached_state, GFP_NOFS);
+			 unlock_bits, 1, 0, &cached_state);
 err:
 	if (dio_data)
 		current->journal_info = dio_data;
@@ -8987,8 +8986,7 @@ again:
 					 EXTENT_DIRTY | EXTENT_DELALLOC |
 					 EXTENT_DELALLOC_NEW |
 					 EXTENT_LOCKED | EXTENT_DO_ACCOUNTING |
-					 EXTENT_DEFRAG, 1, 0, &cached_state,
-					 GFP_NOFS);
+					 EXTENT_DEFRAG, 1, 0, &cached_state);
 		/*
 		 * whoever cleared the private bit is responsible
 		 * for the finish_ordered_io
@@ -9045,7 +9043,7 @@ again:
 				 EXTENT_LOCKED | EXTENT_DIRTY |
 				 EXTENT_DELALLOC | EXTENT_DELALLOC_NEW |
 				 EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG, 1, 1,
-				 &cached_state, GFP_NOFS);
+				 &cached_state);
 
 		__btrfs_releasepage(page, GFP_NOFS);
 	}
@@ -9173,7 +9171,7 @@ again:
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, page_start, end,
 			  EXTENT_DIRTY | EXTENT_DELALLOC |
 			  EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG,
-			  0, 0, &cached_state, GFP_NOFS);
+			  0, 0, &cached_state);
 
 	ret = btrfs_set_extent_delalloc(inode, page_start, end, 0,
 					&cached_state, 0);
