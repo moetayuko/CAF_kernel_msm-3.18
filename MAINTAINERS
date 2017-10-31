@@ -13583,7 +13583,7 @@ TPM DEVICE DRIVER
 M:	Peter Huewe <peterhuewe@gmx.de>
 M:	Marcel Selhorst <tpmdd@selhorst.net>
 M:	Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
-R:	Jason Gunthorpe <jgunthorpe@obsidianresearch.com>
+R:	Jason Gunthorpe <jgg@ziepe.ca>
 W:	http://tpmdd.sourceforge.net
 L:	tpmdd-devel@lists.sourceforge.net (moderated for non-subscribers)
 Q:	https://patchwork.kernel.org/project/tpmdd-devel/list/
