@@ -138,6 +138,7 @@ static inline size_t br_port_info_size(void)
 		+ nla_total_size(1)	/* IFLA_BRPORT_PROXYARP */
 		+ nla_total_size(1)	/* IFLA_BRPORT_PROXYARP_WIFI */
 		+ nla_total_size(1)	/* IFLA_BRPORT_VLAN_TUNNEL */
+		+ nla_total_size(1)	/* IFLA_BRPORT_NEIGH_SUPPRESS */
 		+ nla_total_size(sizeof(struct ifla_bridge_id))	/* IFLA_BRPORT_ROOT_ID */
 		+ nla_total_size(sizeof(struct ifla_bridge_id))	/* IFLA_BRPORT_BRIDGE_ID */
 		+ nla_total_size(sizeof(u16))	/* IFLA_BRPORT_DESIGNATED_PORT */
@@ -152,6 +153,7 @@ static inline size_t br_port_info_size(void)
 #ifdef CONFIG_BRIDGE_IGMP_SNOOPING
 		+ nla_total_size(sizeof(u8))	/* IFLA_BRPORT_MULTICAST_ROUTER */
 #endif
+		+ nla_total_size(sizeof(u16))	/* IFLA_BRPORT_GROUP_FWD_MASK */
 		+ 0;
 }
 
@@ -208,7 +210,10 @@ static int br_port_fill_attrs(struct sk_buff *skb,
 		       p->topology_change_ack) ||
 	    nla_put_u8(skb, IFLA_BRPORT_CONFIG_PENDING, p->config_pending) ||
 	    nla_put_u8(skb, IFLA_BRPORT_VLAN_TUNNEL, !!(p->flags &
-							BR_VLAN_TUNNEL)))
+							BR_VLAN_TUNNEL)) ||
+	    nla_put_u16(skb, IFLA_BRPORT_GROUP_FWD_MASK, p->group_fwd_mask) ||
+	    nla_put_u8(skb, IFLA_BRPORT_NEIGH_SUPPRESS,
+		       !!(p->flags & BR_NEIGH_SUPPRESS)))
 		return -EMSGSIZE;
 
 	timerval = br_timer_value(&p->message_age_timer);
@@ -501,8 +506,9 @@ int br_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 }
 
 static int br_vlan_info(struct net_bridge *br, struct net_bridge_port *p,
-			int cmd, struct bridge_vlan_info *vinfo)
+			int cmd, struct bridge_vlan_info *vinfo, bool *changed)
 {
+	bool curr_change;
 	int err = 0;
 
 	switch (cmd) {
@@ -511,22 +517,27 @@ static int br_vlan_info(struct net_bridge *br, struct net_bridge_port *p,
 			/* if the MASTER flag is set this will act on the global
 			 * per-VLAN entry as well
 			 */
-			err = nbp_vlan_add(p, vinfo->vid, vinfo->flags);
-			if (err)
-				break;
+			err = nbp_vlan_add(p, vinfo->vid, vinfo->flags,
+					   &curr_change);
 		} else {
 			vinfo->flags |= BRIDGE_VLAN_INFO_BRENTRY;
-			err = br_vlan_add(br, vinfo->vid, vinfo->flags);
+			err = br_vlan_add(br, vinfo->vid, vinfo->flags,
+					  &curr_change);
 		}
+		if (curr_change)
+			*changed = true;
 		break;
 
 	case RTM_DELLINK:
 		if (p) {
-			nbp_vlan_delete(p, vinfo->vid);
-			if (vinfo->flags & BRIDGE_VLAN_INFO_MASTER)
-				br_vlan_delete(p->br, vinfo->vid);
-		} else {
-			br_vlan_delete(br, vinfo->vid);
+			if (!nbp_vlan_delete(p, vinfo->vid))
+				*changed = true;
+
+			if ((vinfo->flags & BRIDGE_VLAN_INFO_MASTER) &&
+			    !br_vlan_delete(p->br, vinfo->vid))
+				*changed = true;
+		} else if (!br_vlan_delete(br, vinfo->vid)) {
+			*changed = true;
 		}
 		break;
 	}
@@ -537,7 +548,8 @@ static int br_vlan_info(struct net_bridge *br, struct net_bridge_port *p,
 static int br_process_vlan_info(struct net_bridge *br,
 				struct net_bridge_port *p, int cmd,
 				struct bridge_vlan_info *vinfo_curr,
-				struct bridge_vlan_info **vinfo_last)
+				struct bridge_vlan_info **vinfo_last,
+				bool *changed)
 {
 	if (!vinfo_curr->vid || vinfo_curr->vid >= VLAN_VID_MASK)
 		return -EINVAL;
@@ -567,7 +579,7 @@ static int br_process_vlan_info(struct net_bridge *br,
 		       sizeof(struct bridge_vlan_info));
 		for (v = (*vinfo_last)->vid; v <= vinfo_curr->vid; v++) {
 			tmp_vinfo.vid = v;
-			err = br_vlan_info(br, p, cmd, &tmp_vinfo);
+			err = br_vlan_info(br, p, cmd, &tmp_vinfo, changed);
 			if (err)
 				break;
 		}
@@ -576,13 +588,13 @@ static int br_process_vlan_info(struct net_bridge *br,
 		return err;
 	}
 
-	return br_vlan_info(br, p, cmd, vinfo_curr);
+	return br_vlan_info(br, p, cmd, vinfo_curr, changed);
 }
 
 static int br_afspec(struct net_bridge *br,
 		     struct net_bridge_port *p,
 		     struct nlattr *af_spec,
-		     int cmd)
+		     int cmd, bool *changed)
 {
 	struct bridge_vlan_info *vinfo_curr = NULL;
 	struct bridge_vlan_info *vinfo_last = NULL;
@@ -602,7 +614,8 @@ static int br_afspec(struct net_bridge *br,
 				return err;
 			err = br_process_vlan_tunnel_info(br, p, cmd,
 							  &tinfo_curr,
-							  &tinfo_last);
+							  &tinfo_last,
+							  changed);
 			if (err)
 				return err;
 			break;
@@ -611,7 +624,7 @@ static int br_afspec(struct net_bridge *br,
 				return -EINVAL;
 			vinfo_curr = nla_data(attr);
 			err = br_process_vlan_info(br, p, cmd, vinfo_curr,
-						   &vinfo_last);
+						   &vinfo_last, changed);
 			if (err)
 				return err;
 			break;
@@ -637,6 +650,8 @@ static const struct nla_policy br_port_policy[IFLA_BRPORT_MAX + 1] = {
 	[IFLA_BRPORT_MCAST_TO_UCAST] = { .type = NLA_U8 },
 	[IFLA_BRPORT_MCAST_FLOOD] = { .type = NLA_U8 },
 	[IFLA_BRPORT_BCAST_FLOOD] = { .type = NLA_U8 },
+	[IFLA_BRPORT_GROUP_FWD_MASK] = { .type = NLA_U16 },
+	[IFLA_BRPORT_NEIGH_SUPPRESS] = { .type = NLA_U8 },
 };
 
 /* Change the state of the port and notify spanning tree */
@@ -773,6 +788,20 @@ static int br_setport(struct net_bridge_port *p, struct nlattr *tb[])
 			return err;
 	}
 #endif
+
+	if (tb[IFLA_BRPORT_GROUP_FWD_MASK]) {
+		u16 fwd_mask = nla_get_u16(tb[IFLA_BRPORT_GROUP_FWD_MASK]);
+
+		if (fwd_mask & BR_GROUPFWD_MACPAUSE)
+			return -EINVAL;
+		p->group_fwd_mask = fwd_mask;
+	}
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_NEIGH_SUPPRESS,
+			       BR_NEIGH_SUPPRESS);
+	if (err)
+		return err;
+
 	br_port_flags_change(p, old_flags ^ p->flags);
 	return 0;
 }
@@ -784,6 +813,7 @@ int br_setlink(struct net_device *dev, struct nlmsghdr *nlh, u16 flags)
 	struct nlattr *afspec;
 	struct net_bridge_port *p;
 	struct nlattr *tb[IFLA_BRPORT_MAX + 1];
+	bool changed = false;
 	int err = 0;
 
 	protinfo = nlmsg_find_attr(nlh, sizeof(struct ifinfomsg), IFLA_PROTINFO);
@@ -819,14 +849,15 @@ int br_setlink(struct net_device *dev, struct nlmsghdr *nlh, u16 flags)
 		}
 		if (err)
 			goto out;
+		changed = true;
 	}
 
 	if (afspec) {
 		err = br_afspec((struct net_bridge *)netdev_priv(dev), p,
-				afspec, RTM_SETLINK);
+				afspec, RTM_SETLINK, &changed);
 	}
 
-	if (err == 0)
+	if (changed)
 		br_ifinfo_notify(RTM_NEWLINK, p);
 out:
 	return err;
@@ -837,6 +868,7 @@ int br_dellink(struct net_device *dev, struct nlmsghdr *nlh, u16 flags)
 {
 	struct nlattr *afspec;
 	struct net_bridge_port *p;
+	bool changed = false;
 	int err = 0;
 
 	afspec = nlmsg_find_attr(nlh, sizeof(struct ifinfomsg), IFLA_AF_SPEC);
@@ -849,8 +881,8 @@ int br_dellink(struct net_device *dev, struct nlmsghdr *nlh, u16 flags)
 		return -EINVAL;
 
 	err = br_afspec((struct net_bridge *)netdev_priv(dev), p,
-			afspec, RTM_DELLINK);
-	if (err == 0)
+			afspec, RTM_DELLINK, &changed);
+	if (changed)
 		/* Send RTM_NEWLINK because userspace
 		 * expects RTM_NEWLINK for vlan dels
 		 */
