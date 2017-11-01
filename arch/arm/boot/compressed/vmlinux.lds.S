@@ -85,6 +85,21 @@ SECTIONS
 
   _edata = .;
 
+  /*
+   * The image_end section appears after any additional loadable
+   * sections that the linker may decide to insert in the binary
+   * image.
+   */
+  .image_end (NOLOAD) : {
+    /*
+     * EFI requires that the image is aligned to 512 bytes, and appended
+     * DTB requires that we know where the end of the image is.  Ensure
+     * that both are satisfied by ensuring that there are no additional
+     * sections emitted into the decompressor image.
+     */
+    ASSERT(. == _edata, "error: zImage file size is incorrect");
+  }
+
   _magic_sig = ZIMAGE_MAGIC(0x016f2818);
   _magic_start = ZIMAGE_MAGIC(_start);
   _magic_end = ZIMAGE_MAGIC(_edata);
