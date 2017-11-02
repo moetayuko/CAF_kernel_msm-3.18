@@ -343,7 +343,7 @@
 
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_hx8379a_fwvga_truly_vid>;
+	qcom,dsi-pref-prim-pan = <&dsi_hx83100_720p_video>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active &mdss_disp_bkl_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend &mdss_disp_bkl_suspend>;
@@ -546,6 +546,26 @@
 			synaptics,irq-gpio = <&tlmm 125 0x2008>;
 			synaptics,button-map = <139 102 158>;
 			synaptics,disable-gpios;
+			/* Underlying clocks used by secure touch */
+			clock-names = "iface_clk", "core_clk";
+			clocks = <&clock_gcc clk_gcc_blsp2_ahb_clk>,
+				 <&clock_gcc clk_gcc_blsp2_qup6_i2c_apps_clk>;
+		};
+		himax_ts@48 {
+			compatible             	= "himax,hxcommon";
+			reg                    	= <0x48>;
+			interrupt-parent       	= <&tlmm>;
+			interrupts             	= <125 0x2008>;
+			vdd-supply 		= <&pm8994_l15>;
+			avdd-supply 		= <&pm8994_l22>;
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+			pinctrl-0 = <&ts_active>;
+			pinctrl-1 = <&ts_suspend>;
+			himax,panel-coords   	= <0 1080 0 2160>;
+			himax,display-coords 	= <0 1080 0 2160>;
+			himax,irq-gpio       	= <&tlmm 125 0x2008>;
+//			himax,rst-gpio 		= <&tlmm 101 0x00>;
+			report_type             = <1>;
 			/* Underlying clocks used by secure touch */
 			clock-names = "iface_clk", "core_clk";
 			clocks = <&clock_gcc clk_gcc_blsp2_ahb_clk>,
