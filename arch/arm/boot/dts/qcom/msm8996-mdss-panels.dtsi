@@ -36,7 +36,7 @@
 #include "dsi-panel-jdi-1080p-video.dtsi"
 #include "dsi-panel-truly-1080p-video.dtsi"
 #include "dsi-panel-truly-1080p-cmd.dtsi"
-#include "dsi-panel-hx83100-720p-video.dtsi"
+#include "dsi-panel-hx83100-800p-video.dtsi"
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -291,7 +291,7 @@
 		23 1f 07 09 05 03 04 a0
 		23 19 08 08 05 03 04 a0];
 };
-&dsi_hx83100_720p_video {
+&dsi_hx83100_800p_video {
 	qcom,mdss-dsi-panel-timings-phy-v2 = [1f 1c 05 06 03 03 04 a0
 		1f 1c 05 06 03 03 04 a0
 		1f 1c 05 06 03 03 04 a0

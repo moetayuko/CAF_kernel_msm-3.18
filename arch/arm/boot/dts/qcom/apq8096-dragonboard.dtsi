@@ -343,7 +343,7 @@
 
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_hx83100_720p_video>;
+	qcom,dsi-pref-prim-pan = <&dsi_hx83100_800p_video>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active &mdss_disp_bkl_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend &mdss_disp_bkl_suspend>;
