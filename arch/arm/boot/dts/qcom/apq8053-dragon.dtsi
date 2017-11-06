@@ -225,6 +225,24 @@
                 focaltech,fw-auto-cal;
                 focaltech,resume-in-workqueue;
         };
+       himax_ts@48 {  
+ 							compatible             	= "himax,hxcommon";  
+							reg                    	= <0x48>;  
+							interrupt-parent       	= <&tlmm>;  
+							interrupts             	= <65 0x2>;  
+							vdd-supply 							= <&pm8953_l10>;  
+							avdd-supply 						= <&pm8953_l5>;  
+              pinctrl-names = "pmx_ts_active","pmx_ts_suspend",
+                                                "pmx_ts_release";
+              pinctrl-0 = <&ts_int_active &ts_reset_active>;
+              pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+              pinctrl-2 = <&ts_release>; 
+							himax,panel-coords   	= <0 800 0 1280>;  
+							himax,display-coords 	= <0 800 0 1280>;  
+							himax,irq-gpio       	= <&tlmm 65 0x2008>;  
+							//himax,rst-gpio 			= <&tlmm 64 0x0>;  
+							report_type             = <1>;
+							};
 };
 
 &soc {
@@ -321,7 +339,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_truly_wuxga_vid>;
+	qcom,dsi-pref-prim-pan = <&dsi_boyi_hx83100a_800p_video>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
