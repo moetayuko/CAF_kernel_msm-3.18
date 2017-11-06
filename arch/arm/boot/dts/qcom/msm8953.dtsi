@@ -26,32 +26,6 @@
 		bootargs = "sched_enable_hmp=1 sched_enable_power_aware=1";
 	};
 
-	firmware: firmware {
-		android {
-			compatible = "android,firmware";
-			fstab {
-				compatible = "android,fstab";
-				vendor {
-					compatible = "android,vendor";
-					dev = "/dev/block/platform/soc/7824900.sdhci/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1,discard";
-					fsmgr_flags = "wait";
-					status = "ok";
-				};
-				system {
-					compatible = "android,system";
-					dev = "/dev/block/platform/soc/7824900.sdhci/by-name/system";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1,discard";
-					fsmgr_flags = "wait";
-					status = "ok";
-				};
-
-			};
-		};
-	};
-
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -701,6 +675,42 @@
 		status = "disabled";
 	};
 
+	blsp2_uart1: uart@7af0000 {
+		compatible = "qcom,msm-hsuart-v14";
+		reg = <0x7af0000 0x200>,
+			<0x7ac4000 0x1f000>;
+		reg-names = "core_mem", "bam_mem";
+
+		interrupt-names = "core_irq", "bam_irq", "wakeup_irq";
+		#address-cells = <0>;
+		interrupt-parent = <&blsp2_uart1>;
+		interrupts = <0 1 2>;
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0xffffffff>;
+		interrupt-map = <0 &intc 0 307 0
+				1 &intc 0 239 0
+				2 &tlmm 21 0>;
+
+		qcom,inject-rx-on-wakeup;
+		qcom,rx-char-to-inject = <0xFD>;
+		qcom,master-id = <84>;
+		clock-names = "core_clk", "iface_clk";
+		clocks = <&clock_gcc clk_gcc_blsp2_uart2_apps_clk>,
+			<&clock_gcc clk_gcc_blsp2_ahb_clk>;
+		pinctrl-names = "sleep", "default";
+		pinctrl-0 = <&blsp2_uart1_sleep>;
+		pinctrl-1 = <&blsp2_uart1_active>;
+		qcom,bam-tx-ep-pipe-index = <2>;
+		qcom,bam-rx-ep-pipe-index = <3>;
+		qcom,msm-bus,name = "blsp2_uart1";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<84 512 0 0>,
+				<84 512 500 800>;
+		status = "disabled";
+	};
+
 	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
 		#dma-cells = <4>;
 		compatible = "qcom,sps-dma";
@@ -867,9 +877,8 @@
 
 	clock_gcc: qcom,gcc@1800000 {
 		compatible = "qcom,gcc-8953";
-		reg = <0x1800000 0x80000>,
-			<0x00a4124 0x08>;
-		reg-names = "cc_base", "efuse";
+		reg = <0x1800000 0x80000>;
+		reg-names = "cc_base";
 		vdd_dig-supply = <&pm8953_s2_level>;
 		#clock-cells = <1>;
 	};
@@ -1680,6 +1689,7 @@
 		qcom,qsee-ce-hw-instance = <0>;
 		qcom,disk-encrypt-pipe-pair = <2>;
 		qcom,support-fde;
+		qcom,appsbl-qseecom-support;
 		qcom,msm-bus,name = "qseecom-noc";
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;
@@ -2084,6 +2094,7 @@
 		interrupt-names = "hs_phy_irq", "ss_phy_irq", "pwr_event_irq";
 
 		USB3_GDSC-supply = <&gdsc_usb30>;
+		vbus_dwc3-supply = <&smbcharger_charger_otg>;
 		qcom,usb-dbm = <&dbm_1p5>;
 		qcom,msm-bus,name = "usb3";
 		qcom,msm-bus,num-cases = <3>;
@@ -2348,11 +2359,32 @@
 		reg = <0x086000c8 0xc8>;
 		qcom,pm-qos-latency = <2 213 11028>;
 	};
+
+        cnss_sdio: qcom,cnss_sdio {
+                compatible = "qcom,cnss_sdio";
+                subsys-name = "AR6320";
+
+                /**
+                 * There is no vdd-wlan on board and this is not for DSRC.
+                 * IO and XTAL share the same vreg.
+                 */
+                /*vdd-wlan-io-supply = <&pm8916_l5>;*/
+                qcom,wlan-ramdump-dynamic = <0x200000>;
+                qcom,msm-bus,name = "msm-cnss";
+                qcom,msm-bus,num-cases = <4>;
+                qcom,msm-bus,num-paths = <1>;
+                qcom,msm-bus,vectors-KBps =
+                        <79 512 0 0>,             /* No vote */
+                        <79 512 6250 200000>,     /* 50 Mbps */
+                        <79 512 25000 200000>,    /* 200 Mbps */
+                        <79 512 2048000 4096000>; /* MAX */
+        };
 };
 
 #include "msm-pm8953-rpm-regulator.dtsi"
 #include "msm-pm8953.dtsi"
 #include "msm8953-regulator.dtsi"
+#include "msm-pmi8950.dtsi"
 #include "msm-audio.dtsi"
 #include "msm8953-audio.dtsi"
 #include "msm-gdsc-8916.dtsi"

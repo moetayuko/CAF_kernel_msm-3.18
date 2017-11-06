@@ -65,10 +65,10 @@
 
 	pinctrl-0 = <&cdc_pdm_lines_sus &cdc_pdm_comp_lines_sus
 		&cdc_pdm_lines_2_sus &cross_conn_det_sus
-		&pri_tlmm_lines_sus &pri_tlmm_ws_sus>;
+		&pri_tlmm_lines_sus &pri_tlmm_ws_sus &cdc_dmic0_clk_sus &cdc_dmic0_data_sus>;
 	pinctrl-1 = <&cdc_pdm_lines_act &cdc_pdm_comp_lines_sus
 		&cdc_pdm_lines_2_act &cross_conn_det_sus
-		&pri_tlmm_lines_sus &pri_tlmm_ws_sus>;
+		&pri_tlmm_lines_sus &pri_tlmm_ws_sus &cdc_dmic0_clk_act &cdc_dmic0_data_act>;
 	pinctrl-2 = <&cdc_pdm_lines_sus &cdc_pdm_comp_lines_sus
 		&cdc_pdm_lines_2_sus &cross_conn_det_act
 		&pri_tlmm_lines_sus &pri_tlmm_ws_sus>;

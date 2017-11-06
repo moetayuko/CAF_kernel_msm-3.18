@@ -20,25 +20,6 @@
 	qcom,board-id = <0x1e 0>;
 };
 
-&pmd9650_l13 {
-	regulator-always-on;
-};
-
-&i2c_1 {
-	status = "ok";
-	bmi160@68{
-		compatible = "bosch-sensortec,bmi160";
-		reg = <0x68>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&bmi160_int1_default &bmi160_int2_default>;
-		interrupt-parent = <&tlmm_pinmux>;
-		interrupts = <0x0 0x2002>;
-		bmi,init-interval = <200>;
-		bmi,place = <1>;
-		bmi,gpio_irq = <&tlmm_pinmux 0x0 0x2002>;
-	};
-};
-
 &i2c_3 {
 	status = "ok";
 	smb1351_otg_supply: smb1351-charger@55{
@@ -75,37 +56,6 @@
 	};
 };
 
-&blsp1_uart4b_hs {
-	status = "ok";
-};
-
 &blsp1_uart2_hs {
 	status = "disabled";
-};
-&sec_master {
-	compatible = "qcom,wcd-gpio-ctrl";
-	pinctrl-names = "aud_active", "aud_sleep";
-	pinctrl-0 = <&sec_ws_b_active_master
-			&sec_sck_b_active_master
-			&sec_dout_b_active
-			&sec_din_b_active>;
-	pinctrl-1 = <&sec_ws_b_sleep
-			&sec_sck_b_sleep
-			&sec_dout_b_sleep
-			&sec_din_b_sleep>;
-	qcom,mi2s-auxpcm-cdc-gpios;
-};
-
-&sec_slave {
-	compatible = "qcom,wcd-gpio-ctrl";
-	pinctrl-names = "aud_active", "aud_sleep";
-	pinctrl-0 = <&sec_ws_b_active_slave
-			&sec_sck_b_active_slave
-			&sec_dout_b_active
-			&sec_din_b_active>;
-	pinctrl-1 = <&sec_ws_b_sleep
-			&sec_sck_b_sleep
-			&sec_dout_b_sleep
-			&sec_din_b_sleep>;
-	qcom,mi2s-auxpcm-cdc-gpios;
 };

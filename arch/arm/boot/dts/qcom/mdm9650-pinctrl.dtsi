@@ -192,28 +192,6 @@
 				};
 			};
 		};
-		bmi160_int1_default: bmi160_int1_default {
-			     mux {
-				     pins = "gpio0";
-				     function = "gpio";
-			     };
-			     config {
-				     pins = "gpio0";
-				     drive-strength = <12>;
-				     bias-pull-down;
-			     };
-		};
-		bmi160_int2_default: bmi160_int2_default {
-			     mux {
-				     pins = "gpio1";
-				     function = "gpio";
-			     };
-			     config {
-				     pins = "gpio1";
-				     drive-strength = <12>;
-				     bias-pull-down;
-			     };
-		};
 
 		cnss_pins {
 			cnss_wlan_en_active: cnss_wlan_en_active {
@@ -590,32 +568,6 @@
 
 			config {
 				pins = "gpio12", "gpio13", "gpio14", "gpio15";
-				drive-strength = <2>;
-				bias-disable;
-			};
-		};
-
-		blsp1_uart4b_active: blsp1_uart4b_active {
-			mux {
-				pins = "gpio16", "gpio17", "gpio18", "gpio19";
-				function = "blsp_uart4";
-			};
-
-			config {
-				pins = "gpio16", "gpio17", "gpio18", "gpio19";
-				drive-strength = <2>;
-				bias-disable;
-			};
-		};
-
-		blsp1_uart4b_sleep: blsp1_uart4b_sleep {
-			mux {
-				pins = "gpio16", "gpio17", "gpio18", "gpio19";
-				function = "gpio";
-			};
-
-			config {
-				pins = "gpio16", "gpio17", "gpio18", "gpio19";
 				drive-strength = <2>;
 				bias-disable;
 			};
@@ -1059,147 +1011,6 @@
 
 				config {
 					pins = "gpio17";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL */
-				};
-			};
-		};
-
-		pmx_sec_mi2s_b_aux {
-			sec_ws_b_sleep: sec_ws_b_sleep {
-				mux {
-					pins = "gpio20";
-					function = "gpio";
-				};
-
-				config {
-					pins = "gpio20";
-					drive-strength = <2>;	/* 2 mA */
-					bias-pull-down;		/* PULL DOWN */
-					input-enable;
-				};
-			};
-
-			sec_sck_b_sleep: sec_sck_b_sleep {
-				mux {
-					pins = "gpio23";
-					function = "gpio";
-				};
-
-				config {
-					pins = "gpio23";
-					drive-strength = <2>;	/* 2 mA */
-					bias-pull-down;		/* PULL DOWN */
-					input-enable;
-				};
-			};
-
-			sec_dout_b_sleep: sec_dout_b_sleep {
-				mux {
-					pins = "gpio22";
-					function = "gpio";
-				};
-
-				config {
-					pins = "gpio22";
-					drive-strength = <2>;	/* 2 mA */
-					bias-pull-down;		/* PULL DOWN */
-					input-enable;
-				};
-			};
-
-			sec_ws_b_active_master: sec_ws_b_active_master {
-				mux {
-					pins = "gpio20";
-					function = "sec_mi2s_ws_b";
-				};
-
-				config {
-					pins = "gpio20";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL*/
-					output-high;
-				};
-			};
-
-			sec_sck_b_active_master: sec_sck_b_active_master {
-				mux {
-					pins = "gpio23";
-					function = "sec_mi2s_sck_b";
-				};
-
-				config {
-					pins = "gpio23";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL*/
-					output-high;
-				};
-			};
-
-			sec_ws_b_active_slave: sec_ws_b_active_slave {
-				mux {
-					pins = "gpio20";
-					function = "sec_mi2s_ws_b";
-				};
-
-				config {
-					pins = "gpio20";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL*/
-				};
-			};
-
-			sec_sck_b_active_slave: sec_sck_b_active_slave {
-				mux {
-					pins = "gpio23";
-					function = "sec_mi2s_sck_b";
-				};
-
-				config {
-					pins = "gpio23";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL*/
-				};
-			};
-
-			sec_dout_b_active: sec_dout_b_active {
-				mux {
-					pins = "gpio22";
-					function = "sec_mi2s_data1_b";
-				};
-
-				config {
-					pins = "gpio22";
-					drive-strength = <8>;	/* 8 mA */
-					bias-disable;		/* NO PULL*/
-					output-high;
-				};
-			};
-		};
-
-		pmx_sec_mi2s_b_aux_din {
-			sec_din_b_sleep: sec_din_b_sleep {
-				mux {
-					pins = "gpio21";
-					function = "gpio";
-				};
-
-				config {
-					pins = "gpio21";
-					drive-strength = <2>;	/* 2 mA */
-					bias-pull-down;		/* PULL DOWN */
-					input-enable;
-				};
-			};
-
-			sec_din_b_active: sec_din_b_active {
-				mux {
-					pins = "gpio21";
-					function = "sec_mi2s_data0_b";
-				};
-
-				config {
-					pins = "gpio21";
 					drive-strength = <8>;	/* 8 mA */
 					bias-disable;		/* NO PULL */
 				};
