@@ -90,7 +90,6 @@ static bool acpi_sleep_state_supported(u8 sleep_state)
 			&& acpi_gbl_FADT.sleep_status.address));
 }
 
-#ifdef CONFIG_ACPI_SLEEP
 static u32 acpi_target_sleep_state = ACPI_STATE_S0;
 
 u32 acpi_target_system_state(void)
@@ -157,6 +156,14 @@ static int __init init_old_suspend_ordering(const struct dmi_system_id *d)
 static int __init init_nvs_nosave(const struct dmi_system_id *d)
 {
 	acpi_nvs_nosave();
+	return 0;
+}
+
+static bool acpi_sleep_no_lps0;
+
+static int __init init_no_lps0(const struct dmi_system_id *d)
+{
+	acpi_sleep_no_lps0 = true;
 	return 0;
 }
 
@@ -343,6 +350,19 @@ static const struct dmi_system_id acpisleep_dmi_table[] __initconst = {
 		DMI_MATCH(DMI_PRODUCT_NAME, "80E3"),
 		},
 	},
+	/*
+	 * https://bugzilla.kernel.org/show_bug.cgi?id=196907
+	 * Some Dell XPS13 9360 cannot do suspend-to-idle using the Low Power
+	 * S0 Idle firmware interface.
+	 */
+	{
+	.callback = init_no_lps0,
+	.ident = "Dell XPS13 9360",
+	.matches = {
+		DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+		DMI_MATCH(DMI_PRODUCT_NAME, "XPS 13 9360"),
+		},
+	},
 	{},
 };
 
@@ -483,10 +503,6 @@ static void acpi_pm_end(void)
 	acpi_target_sleep_state = ACPI_STATE_S0;
 	acpi_sleep_tts_switch(acpi_target_sleep_state);
 }
-#else /* !CONFIG_ACPI_SLEEP */
-#define acpi_target_sleep_state	ACPI_STATE_S0
-static inline void acpi_sleep_dmi_check(void) {}
-#endif /* CONFIG_ACPI_SLEEP */
 
 #ifdef CONFIG_SUSPEND
 static u32 acpi_suspend_states[] = {
@@ -862,6 +878,12 @@ static int lps0_device_attach(struct acpi_device *adev,
 
 	if (lps0_device_handle)
 		return 0;
+
+	if (acpi_sleep_no_lps0) {
+		acpi_handle_info(adev->handle,
+				 "Low Power S0 Idle interface disabled\n");
+		return 0;
+	}
 
 	if (!(acpi_gbl_FADT.flags & ACPI_FADT_LOW_POWER_S0))
 		return 0;
