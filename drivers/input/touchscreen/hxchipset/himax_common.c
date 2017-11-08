@@ -1491,8 +1491,6 @@ int himax_chip_common_probe(struct i2c_client *client, const struct i2c_device_i
 		goto err_check_functionality_failed;
 	}
 
-	if(himax_burst_enable(client, 0))
-		goto err_check_functionality_failed;
 	ts = kzalloc(sizeof(struct himax_ts_data), GFP_KERNEL);
 	if (ts == NULL) {
 		E("%s: allocate himax_ts_data failed\n", __func__);
@@ -1542,6 +1540,7 @@ himax_gpio_power_config(ts->client, pdata);
 	}
 #endif
 	private_ts = ts;
+	himax_burst_enable(client, 0);
 
 	//Get Himax IC Type / FW information / Calculate the point number
 	if (himax_check_chip_version(ts->client) == false) {
