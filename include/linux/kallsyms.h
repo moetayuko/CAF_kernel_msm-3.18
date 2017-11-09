@@ -22,6 +22,8 @@
 
 struct module;
 
+void *dereference_symbol_descriptor(void *ptr);
+
 #ifdef CONFIG_KALLSYMS
 /* Lookup the address for a symbol. Returns 0 if not found. */
 unsigned long kallsyms_lookup_name(const char *name);
