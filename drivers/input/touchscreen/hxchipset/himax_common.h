@@ -49,7 +49,7 @@
 #ifdef CONFIG_OF
 #include <linux/of_gpio.h>
 #endif
-#define HIMAX_DRIVER_VER "0.1.9.0"
+#define HIMAX_DRIVER_VER "0.1.9.1"
 
 #define FLASH_DUMP_FILE "/data/user/Flash_Dump.bin"
 #define DIAG_COORDINATE_FILE "/sdcard/Coordinate_Dump.csv"
@@ -267,6 +267,8 @@ struct himax_ts_data {
 	uint8_t usb_connected;
 	uint8_t *cable_config;
 #endif
+	struct workqueue_struct *himax_init_wq;
+	struct delayed_work work_init_func;
 };
 
 #define HX_CMD_NOP					 0x00	

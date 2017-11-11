@@ -1478,9 +1478,210 @@ static void himax_ts_diag_work_func(struct work_struct *work)
 }
 #endif
 
-int himax_chip_common_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static void himax_ts_init_work_func(struct work_struct *work)
 {
 	int ret = 0, err = 0;
+	struct himax_ts_data *ts;
+	struct himax_i2c_platform_data *pdata;
+	struct i2c_client *client;
+
+	ts = private_ts;
+	client = private_ts->client;
+	pdata = private_ts->pdata;
+
+	I("%s: Start.\n", __func__);
+
+
+	himax_burst_enable(client, 0);
+
+	//Get Himax IC Type / FW information / Calculate the point number
+	if (himax_check_chip_version(ts->client) == false) {
+		E("Himax chip doesn NOT EXIST");
+		goto err_ic_package_failed;
+	}
+	if (himax_ic_package_check(ts->client) == false) {
+		E("Himax chip doesn NOT EXIST");
+		goto err_ic_package_failed;
+	}
+
+	if (pdata->virtual_key)
+		ts->button = pdata->virtual_key;
+#ifdef  HX_TP_PROC_FLASH_DUMP
+		ts->flash_wq = create_singlethread_workqueue("himax_flash_wq");
+		if (!ts->flash_wq)
+		{
+			E("%s: create flash workqueue failed\n", __func__);
+			err = -ENOMEM;
+			goto err_create_wq_failed;
+		}
+
+		INIT_WORK(&ts->flash_work, himax_ts_flash_work_func);
+
+		setSysOperation(0);
+		setFlashBuffer();
+#endif
+
+#ifdef  HX_TP_PROC_DIAG
+		ts->himax_diag_wq = create_singlethread_workqueue("himax_diag");
+		if (!ts->himax_diag_wq)
+		{
+			E("%s: create diag workqueue failed\n", __func__);
+				err = -ENOMEM;
+				goto err_create_wq_failed;
+			}
+			INIT_DELAYED_WORK(&ts->himax_diag_delay_wrok, himax_ts_diag_work_func);
+#endif
+
+	himax_read_FW_ver(client);
+
+#ifdef HX_AUTO_UPDATE_FW
+		I(" %s in", __func__);
+		if(i_update_FW() == false)
+				I("NOT Have new FW=NOT UPDATE=\n");
+		else
+				I("Have new FW=UPDATE=\n");
+#endif
+
+		//Himax Power On and Load Config
+		if (himax_loadSensorConfig(client, pdata) < 0) {
+			E("%s: Load Sesnsor configuration failed, unload driver.\n", __func__);
+			goto err_detect_failed;
+		}
+
+		calculate_point_number();
+#ifdef HX_TP_PROC_DIAG
+		setXChannel(ic_data->HX_RX_NUM); // X channel
+		setYChannel(ic_data->HX_TX_NUM); // Y channel
+
+		setMutualBuffer();
+		setMutualNewBuffer();
+		setMutualOldBuffer();
+		if (getMutualBuffer() == NULL) {
+			E("%s: mutual buffer allocate fail failed\n", __func__);
+			return;
+		}
+#ifdef HX_TP_PROC_2T2R
+		if(Is_2T2R){
+			setXChannel_2(ic_data->HX_RX_NUM_2); // X channel
+			setYChannel_2(ic_data->HX_TX_NUM_2); // Y channel
+
+			setMutualBuffer_2();
+
+			if (getMutualBuffer_2() == NULL) {
+				E("%s: mutual buffer 2 allocate fail failed\n", __func__);
+				return;
+			}
+		}
+#endif
+#endif
+#ifdef CONFIG_OF
+		ts->power = pdata->power;
+#endif
+		ts->pdata = pdata;
+
+		ts->x_channel = ic_data->HX_RX_NUM;
+		ts->y_channel = ic_data->HX_TX_NUM;
+		ts->nFinger_support = ic_data->HX_MAX_PT;
+		//calculate the i2c data size
+		calcDataSize(ts->nFinger_support);
+		I("%s: calcDataSize complete\n", __func__);
+#ifdef CONFIG_OF
+		ts->pdata->abs_pressure_min 	   = 0;
+		ts->pdata->abs_pressure_max 	   = 200;
+		ts->pdata->abs_width_min		   = 0;
+		ts->pdata->abs_width_max		   = 200;
+		pdata->cable_config[0]			   = 0x90;
+		pdata->cable_config[1]			   = 0x00;
+#endif
+		ts->suspended					   = false;
+#if defined(HX_USB_DETECT)||defined(HX_USB_DETECT2)
+		ts->usb_connected = 0x00;
+		ts->cable_config = pdata->cable_config;
+#endif
+		ts->protocol_type = pdata->protocol_type;
+		I("%s: Use Protocol Type %c\n", __func__,
+		ts->protocol_type == PROTOCOL_TYPE_A ? 'A' : 'B');
+
+		ret = himax_input_register(ts);
+		if (ret) {
+			E("%s: Unable to register %s input device\n",
+				__func__, ts->input_dev->name);
+			goto err_input_register_device_failed;
+		}
+#ifdef CONFIG_FB
+			ts->himax_att_wq = create_singlethread_workqueue("HMX_ATT_reuqest");
+			if (!ts->himax_att_wq) {
+				E(" allocate syn_att_wq failed\n");
+				err = -ENOMEM;
+				goto err_get_intr_bit_failed;
+			}
+			INIT_DELAYED_WORK(&ts->work_att, himax_fb_register);
+			queue_delayed_work(ts->himax_att_wq, &ts->work_att, msecs_to_jiffies(15000));
+#endif
+	
+#ifdef HX_SMART_WAKEUP
+		ts->SMWP_enable=0;
+		wake_lock_init(&ts->ts_SMWP_wake_lock, WAKE_LOCK_SUSPEND, HIMAX_common_NAME);
+
+		ts->himax_smwp_wq = create_singlethread_workqueue("HMX_SMWP_WORK");
+			if (!ts->himax_smwp_wq) {
+				E(" allocate himax_smwp_wq failed\n");
+				err = -ENOMEM;
+				goto err_smwp_wq_failed;
+			}
+			INIT_DELAYED_WORK(&ts->smwp_work, himax_SMWP_work);
+#endif
+#ifdef HX_HIGH_SENSE
+		ts->HSEN_enable=0;
+		ts->himax_hsen_wq = create_singlethread_workqueue("HMX_HSEN_WORK");
+			if (!ts->himax_hsen_wq) {
+				E(" allocate himax_hsen_wq failed\n");
+				err = -ENOMEM;
+				goto err_hsen_wq_failed;
+			}
+			INIT_DELAYED_WORK(&ts->hsen_work, himax_HSEN_func);
+#endif
+
+#if defined(CONFIG_TOUCHSCREEN_HIMAX_DEBUG)
+		himax_touch_proc_init();
+#endif
+
+#if defined(HX_USB_DETECT)
+		if (ts->cable_config)
+			cable_detect_register_notifier(&himax_cable_status_handler);
+#endif
+
+		err = himax_ts_register_interrupt(ts->client);
+		if (err)
+			goto err_register_interrupt_failed;
+
+	return;
+
+	err_register_interrupt_failed:
+#ifdef HX_HIGH_SENSE
+	err_hsen_wq_failed:
+#endif
+#ifdef HX_SMART_WAKEUP
+	err_smwp_wq_failed:
+		wake_lock_destroy(&ts->ts_SMWP_wake_lock);
+#endif
+#ifdef CONFIG_FB
+	err_get_intr_bit_failed:
+#endif
+	err_input_register_device_failed:
+		input_free_device(ts->input_dev);
+	err_detect_failed:
+#ifdef  HX_TP_PROC_FLASH_DUMP
+	err_create_wq_failed:
+#endif
+	err_ic_package_failed:
+
+	return;
+}
+
+int himax_chip_common_probe(struct i2c_client *client, const struct i2c_device_id *id)
+{
+	int err = 0;
 	struct himax_ts_data *ts;
 	struct himax_i2c_platform_data *pdata;
 
@@ -1532,197 +1733,29 @@ himax_gpio_power_config(ts->client, pdata);
 
 #ifndef CONFIG_OF
 	if (pdata->power) {
-		ret = pdata->power(1);
-		if (ret < 0) {
+		err = pdata->power(1);
+		if (err < 0) {
 			E("%s: power on failed\n", __func__);
 			goto err_power_failed;
 		}
 	}
 #endif
-	private_ts = ts;
-	himax_burst_enable(client, 0);
-
-	//Get Himax IC Type / FW information / Calculate the point number
-	if (himax_check_chip_version(ts->client) == false) {
-		E("Himax chip doesn NOT EXIST");
-		goto err_ic_package_failed;
-	}
-	if (himax_ic_package_check(ts->client) == false) {
-		E("Himax chip doesn NOT EXIST");
-		goto err_ic_package_failed;
-	}
-
-	if (pdata->virtual_key)
-		ts->button = pdata->virtual_key;
-#ifdef  HX_TP_PROC_FLASH_DUMP
-		ts->flash_wq = create_singlethread_workqueue("himax_flash_wq");
-		if (!ts->flash_wq)
-		{
-			E("%s: create flash workqueue failed\n", __func__);
-			err = -ENOMEM;
-			goto err_create_wq_failed;
-		}
-	
-		INIT_WORK(&ts->flash_work, himax_ts_flash_work_func);
-	
-		setSysOperation(0);
-		setFlashBuffer();
-#endif
-
-#ifdef  HX_TP_PROC_DIAG
-	  ts->himax_diag_wq = create_singlethread_workqueue("himax_diag");
-		if (!ts->himax_diag_wq)
-		{
-			E("%s: create diag workqueue failed\n", __func__);
-			err = -ENOMEM;
-			goto err_create_wq_failed;
-		}
-		INIT_DELAYED_WORK(&ts->himax_diag_delay_wrok, himax_ts_diag_work_func);
-#endif
-
-himax_read_FW_ver(client);
-
-#ifdef HX_AUTO_UPDATE_FW
-	I(" %s in", __func__);
-	if(i_update_FW() == false)
-			I("NOT Have new FW=NOT UPDATE=\n");
-	else
-			I("Have new FW=UPDATE=\n");
-#endif
-
-	//Himax Power On and Load Config
-	if (himax_loadSensorConfig(client, pdata) < 0) {
-		E("%s: Load Sesnsor configuration failed, unload driver.\n", __func__);
-		goto err_detect_failed;
-	}	
-
-	calculate_point_number();
-#ifdef HX_TP_PROC_DIAG
-	setXChannel(ic_data->HX_RX_NUM); // X channel
-	setYChannel(ic_data->HX_TX_NUM); // Y channel
-
-	setMutualBuffer();
-	setMutualNewBuffer();
-	setMutualOldBuffer();
-	if (getMutualBuffer() == NULL) {
-		E("%s: mutual buffer allocate fail failed\n", __func__);
-		return -1;
-	}
-#ifdef HX_TP_PROC_2T2R
-	if(Is_2T2R){
-		setXChannel_2(ic_data->HX_RX_NUM_2); // X channel
-		setYChannel_2(ic_data->HX_TX_NUM_2); // Y channel
-
-		setMutualBuffer_2();
-
-		if (getMutualBuffer_2() == NULL) {
-			E("%s: mutual buffer 2 allocate fail failed\n", __func__);
-			return -1;
-		}
-	}
-#endif	
-#endif
-#ifdef CONFIG_OF
-	ts->power = pdata->power;
-#endif
 	ts->pdata = pdata;
+	private_ts = ts;
 
-	ts->x_channel = ic_data->HX_RX_NUM;
-	ts->y_channel = ic_data->HX_TX_NUM;
-	ts->nFinger_support = ic_data->HX_MAX_PT;
-	//calculate the i2c data size
-	calcDataSize(ts->nFinger_support);
-	I("%s: calcDataSize complete\n", __func__);
-#ifdef CONFIG_OF
-	ts->pdata->abs_pressure_min        = 0;
-	ts->pdata->abs_pressure_max        = 200;
-	ts->pdata->abs_width_min           = 0;
-	ts->pdata->abs_width_max           = 200;
-	pdata->cable_config[0]             = 0x90;
-	pdata->cable_config[1]             = 0x00;
-#endif
-	ts->suspended                      = false;
-#if defined(HX_USB_DETECT)||defined(HX_USB_DETECT2)
-	ts->usb_connected = 0x00;
-	ts->cable_config = pdata->cable_config;
-#endif
-	ts->protocol_type = pdata->protocol_type;
-	I("%s: Use Protocol Type %c\n", __func__,
-	ts->protocol_type == PROTOCOL_TYPE_A ? 'A' : 'B');
-
-	ret = himax_input_register(ts);
-	if (ret) {
-		E("%s: Unable to register %s input device\n",
-			__func__, ts->input_dev->name);
-		goto err_input_register_device_failed;
+	ts->himax_init_wq = create_singlethread_workqueue("HMX_init_work");
+	if (!ts->himax_init_wq)
+	{
+		E(" allocate HMX_init_work failed\n");
+		err = -ENOMEM;
+		goto err_himax_init_wq_failed;
 	}
-#ifdef CONFIG_FB
-		ts->himax_att_wq = create_singlethread_workqueue("HMX_ATT_reuqest");
-		if (!ts->himax_att_wq) {
-			E(" allocate syn_att_wq failed\n");
-			err = -ENOMEM;
-			goto err_get_intr_bit_failed;
-		}
-		INIT_DELAYED_WORK(&ts->work_att, himax_fb_register);
-		queue_delayed_work(ts->himax_att_wq, &ts->work_att, msecs_to_jiffies(15000));
-#endif
+	INIT_DELAYED_WORK(&ts->work_init_func, himax_ts_init_work_func);
+	queue_delayed_work(ts->himax_init_wq, &ts->work_init_func, msecs_to_jiffies(30000));/*30 sec delay*/
 
-#ifdef HX_SMART_WAKEUP
-	ts->SMWP_enable=0;
-	wake_lock_init(&ts->ts_SMWP_wake_lock, WAKE_LOCK_SUSPEND, HIMAX_common_NAME);
-	
-	ts->himax_smwp_wq = create_singlethread_workqueue("HMX_SMWP_WORK");
-		if (!ts->himax_smwp_wq) {
-			E(" allocate himax_smwp_wq failed\n");
-			err = -ENOMEM;
-			goto err_smwp_wq_failed;
-		}
-		INIT_DELAYED_WORK(&ts->smwp_work, himax_SMWP_work);
-#endif
-#ifdef HX_HIGH_SENSE
-	ts->HSEN_enable=0;
-	ts->himax_hsen_wq = create_singlethread_workqueue("HMX_HSEN_WORK");
-		if (!ts->himax_hsen_wq) {
-			E(" allocate himax_hsen_wq failed\n");
-			err = -ENOMEM;
-			goto err_hsen_wq_failed;
-		}
-		INIT_DELAYED_WORK(&ts->hsen_work, himax_HSEN_func);
-#endif
+    return 0;
 
-#if defined(CONFIG_TOUCHSCREEN_HIMAX_DEBUG)
-	himax_touch_proc_init();
-#endif
-
-#if defined(HX_USB_DETECT)
-	if (ts->cable_config)		
-		cable_detect_register_notifier(&himax_cable_status_handler);
-#endif
-
-	err = himax_ts_register_interrupt(ts->client);
-	if (err)
-		goto err_register_interrupt_failed;
-
-return 0;
-
-err_register_interrupt_failed:
-#ifdef HX_HIGH_SENSE
-err_hsen_wq_failed:
-#endif
-#ifdef HX_SMART_WAKEUP
-err_smwp_wq_failed:
-	wake_lock_destroy(&ts->ts_SMWP_wake_lock);
-#endif
-#ifdef CONFIG_FB
-err_get_intr_bit_failed:
-#endif
-err_input_register_device_failed:
-	input_free_device(ts->input_dev);
-err_detect_failed:
-#ifdef  HX_TP_PROC_FLASH_DUMP
-err_create_wq_failed:
-#endif
-err_ic_package_failed:
+err_himax_init_wq_failed:
 
 #ifdef CONFIG_OF
 err_alloc_dt_pdata_failed:
