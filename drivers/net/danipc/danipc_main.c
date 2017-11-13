@@ -1249,6 +1249,7 @@ int danipc_cdev_mapped_tx(struct danipc_cdev *cdev, struct danipc_bufs *bufs)
 		ipchdr->src_aid = lid;
 		ipchdr->request_num = ipc_req_sn++;
 		ipchdr->next = NULL;
+		smp_wmb(); /* ensure that the message header is written */
 
 		dev_dbg(cdev->dev,
 			"%s: send %u bytes to %u, lid=%u paddr=%08x\n",
