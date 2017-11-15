@@ -649,3 +649,28 @@ void klp_send_signals(void)
 	}
 	read_unlock(&tasklist_lock);
 }
+
+/*
+ * Drop TIF_PATCH_PENDING of all tasks on admin's request. This forces an
+ * existing transition to finish.
+ *
+ * NOTE: klp_update_patch_state(task) requires the task to be inactive or
+ * 'current'. This is not the case here and the consistency model could be
+ * broken. Administrator, who is the only one to execute the
+ * klp_force_transitions(), has to be aware of this.
+ */
+void klp_force_transition(void)
+{
+	struct task_struct *g, *task;
+	unsigned int cpu;
+
+	pr_warn("forcing remaining tasks to the patched state\n");
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task)
+		klp_update_patch_state(task);
+	read_unlock(&tasklist_lock);
+
+	for_each_possible_cpu(cpu)
+		klp_update_patch_state(idle_task(cpu));
+}
