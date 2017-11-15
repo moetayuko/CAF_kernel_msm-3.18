@@ -25,6 +25,7 @@ struct mmc_gpio {
 	struct gpio_desc *cd_gpio;
 	bool override_ro_active_level;
 	bool override_cd_active_level;
+	bool cd_wake;
 	irqreturn_t (*cd_gpio_isr)(int irq, void *dev_id);
 	char *ro_label;
 	char cd_label[0];
@@ -117,6 +118,15 @@ int mmc_gpio_request_ro(struct mmc_host *host, unsigned int gpio)
 	return 0;
 }
 EXPORT_SYMBOL(mmc_gpio_request_ro);
+
+void mmc_gpio_cd_enable_wake(struct mmc_host *host)
+{
+	struct mmc_gpio *ctx = host->slot.handler_priv;
+
+	if (ctx && ctx->cd_gpio)
+		ctx->cd_wake = true;
+}
+EXPORT_SYMBOL(mmc_gpio_cd_enable_wake);
 
 void mmc_gpiod_request_cd_irq(struct mmc_host *host)
 {
