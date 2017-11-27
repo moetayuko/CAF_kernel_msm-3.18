@@ -35,6 +35,7 @@ struct nf_ipv6_ops {
 				    u_int8_t protocol);
 	int (*route)(struct net *net, struct dst_entry **dst, struct flowi *fl,
 		     bool strict);
+	int (*reroute)(struct sk_buff *skb, const struct nf_queue_entry *entry);
 };
 
 #ifdef CONFIG_NETFILTER
