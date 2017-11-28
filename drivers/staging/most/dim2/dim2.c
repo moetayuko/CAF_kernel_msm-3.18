@@ -1,14 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * dim2_hdm.c - MediaLB DIM2 Hardware Dependent Module
+ * dim2.c - MediaLB DIM2 Hardware Dependent Module
  *
  * Copyright (C) 2015-2016, Microchip Technology Germany II GmbH & Co. KG
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * This file is licensed under GPLv2.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -25,11 +19,11 @@
 #include <linux/sched.h>
 #include <linux/kthread.h>
 
-#include <mostcore.h>
-#include "dim2_hal.h"
-#include "dim2_hdm.h"
-#include "dim2_errors.h"
-#include "dim2_sysfs.h"
+#include "most/core.h"
+#include "hal.h"
+#include "dim2.h"
+#include "errors.h"
+#include "sysfs.h"
 
 #define DMA_CHANNELS (32 - 1)  /* channel 0 is a system channel */
 
@@ -93,6 +87,7 @@ struct hdm_channel {
  * @atx_idx: index of async tx channel
  */
 struct dim2_hdm {
+	struct device dev;
 	struct hdm_channel hch[DMA_CHANNELS];
 	struct most_channel_capability capabilities[DMA_CHANNELS];
 	struct most_interface most_iface;
@@ -744,7 +739,6 @@ static int dim2_probe(struct platform_device *pdev)
 	struct dim2_hdm *dev;
 	struct resource *res;
 	int ret, i;
-	struct kobject *kobj;
 	int irq;
 
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev), GFP_KERNEL);
@@ -832,17 +826,20 @@ static int dim2_probe(struct platform_device *pdev)
 	dev->most_iface.enqueue = enqueue;
 	dev->most_iface.poison_channel = poison_channel;
 	dev->most_iface.request_netinfo = request_netinfo;
+	dev->dev.init_name = "dim2_state";
+	dev->dev.parent = &dev->most_iface.dev;
 
-	kobj = most_register_interface(&dev->most_iface);
-	if (IS_ERR(kobj)) {
-		ret = PTR_ERR(kobj);
+	ret = most_register_interface(&dev->most_iface);
+	if (ret) {
 		dev_err(&pdev->dev, "failed to register MOST interface\n");
 		goto err_stop_thread;
 	}
 
-	ret = dim2_sysfs_probe(&dev->bus, kobj);
-	if (ret)
+	ret = dim2_sysfs_probe(&dev->dev);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to create sysfs attribute\n");
 		goto err_unreg_iface;
+	}
 
 	ret = startup_dim(pdev);
 	if (ret) {
@@ -853,7 +850,7 @@ static int dim2_probe(struct platform_device *pdev)
 	return 0;
 
 err_destroy_bus:
-	dim2_sysfs_destroy(&dev->bus);
+	dim2_sysfs_destroy(&dev->dev);
 err_unreg_iface:
 	most_deregister_interface(&dev->most_iface);
 err_stop_thread:
@@ -881,7 +878,7 @@ static int dim2_remove(struct platform_device *pdev)
 	if (pdata && pdata->destroy)
 		pdata->destroy(pdata);
 
-	dim2_sysfs_destroy(&dev->bus);
+	dim2_sysfs_destroy(&dev->dev);
 	most_deregister_interface(&dev->most_iface);
 	kthread_stop(dev->netinfo_task);
 

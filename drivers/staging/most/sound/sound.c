@@ -1,14 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * sound.c - Audio Application Interface Module for Mostcore
+ * sound.c - Sound component for Mostcore
  *
  * Copyright (C) 2015 Microchip Technology Germany II GmbH & Co. KG
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * This file is licensed under GPLv2.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -22,12 +16,12 @@
 #include <sound/pcm_params.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
-#include <mostcore.h>
+#include <most/core.h>
 
 #define DRIVER_NAME "sound"
 
 static struct list_head dev_list;
-static struct most_aim audio_aim;
+static struct core_component comp;
 
 /**
  * struct channel - private structure to keep channel specific data
@@ -240,7 +234,7 @@ static int playback_thread(void *data)
 			kthread_should_stop() ||
 			(channel->is_stream_running &&
 			 (mbo = most_get_mbo(channel->iface, channel->id,
-					     &audio_aim))));
+					     &comp))));
 		if (!mbo)
 			continue;
 
@@ -283,7 +277,7 @@ static int pcm_open(struct snd_pcm_substream *substream)
 		}
 	}
 
-	if (most_start_channel(channel->iface, channel->id, &audio_aim)) {
+	if (most_start_channel(channel->iface, channel->id, &comp)) {
 		pr_err("most_start_channel() failed!\n");
 		if (cfg->direction == MOST_CH_TX)
 			kthread_stop(channel->playback_task);
@@ -310,7 +304,7 @@ static int pcm_close(struct snd_pcm_substream *substream)
 
 	if (channel->cfg->direction == MOST_CH_TX)
 		kthread_stop(channel->playback_task);
-	most_stop_channel(channel->iface, channel->id, &audio_aim);
+	most_stop_channel(channel->iface, channel->id, &comp);
 
 	return 0;
 }
@@ -545,7 +539,6 @@ error:
  * @iface: pointer to interface instance
  * @channel_id: channel index/ID
  * @cfg: pointer to actual channel configuration
- * @parent: pointer to kobject (needed for sysfs hook-up)
  * @arg_list: string that provides the name of the device to be created in /dev
  *	      plus the desired audio resolution
  *
@@ -555,7 +548,7 @@ error:
  */
 static int audio_probe_channel(struct most_interface *iface, int channel_id,
 			       struct most_channel_config *cfg,
-			       struct kobject *parent, char *arg_list)
+			       char *arg_list)
 {
 	struct channel *channel;
 	struct snd_card *card;
@@ -724,9 +717,9 @@ static int audio_tx_completion(struct most_interface *iface, int channel_id)
 }
 
 /**
- * Initialization of the struct most_aim
+ * Initialization of the struct core_component
  */
-static struct most_aim audio_aim = {
+static struct core_component comp = {
 	.name = DRIVER_NAME,
 	.probe_channel = audio_probe_channel,
 	.disconnect_channel = audio_disconnect_channel,
@@ -740,7 +733,7 @@ static int __init audio_init(void)
 
 	INIT_LIST_HEAD(&dev_list);
 
-	return most_register_aim(&audio_aim);
+	return most_register_component(&comp);
 }
 
 static void __exit audio_exit(void)
@@ -754,7 +747,7 @@ static void __exit audio_exit(void)
 		snd_card_free(channel->card);
 	}
 
-	most_deregister_aim(&audio_aim);
+	most_deregister_component(&comp);
 }
 
 module_init(audio_init);
@@ -762,4 +755,4 @@ module_exit(audio_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Christian Gromm <christian.gromm@microchip.com>");
-MODULE_DESCRIPTION("Audio Application Interface Module for MostCore");
+MODULE_DESCRIPTION("Sound Component Module for Mostcore");
