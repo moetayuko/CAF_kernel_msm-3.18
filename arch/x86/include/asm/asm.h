@@ -86,6 +86,12 @@
 	_ASM_PTR (entry);					\
 	.popsection
 
+# define _ASM_KPROBE_ERROR_INJECT(entry)			\
+	.pushsection "_kprobe_error_inject_list","aw" ;		\
+	_ASM_ALIGN ;						\
+	_ASM_PTR (entry);					\
+	.popseciton
+
 .macro ALIGN_DESTINATION
 	/* check for bad alignment of destination */
 	movl %edi,%ecx
