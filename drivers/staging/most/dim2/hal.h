@@ -1,22 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * dim2_hal.h - DIM2 HAL interface
+ * hal.h - DIM2 HAL interface
  * (MediaLB, Device Interface Macro IP, OS62420)
  *
  * Copyright (C) 2015, Microchip Technology Germany II GmbH & Co. KG
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * This file is licensed under GPLv2.
  */
 
 #ifndef _DIM2_HAL_H
 #define _DIM2_HAL_H
 
 #include <linux/types.h>
-#include "dim2_reg.h"
+#include "reg.h"
 
 /*
  * The values below are specified in the hardware specification.
