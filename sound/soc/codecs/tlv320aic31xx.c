@@ -1,22 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * ALSA SoC TLV320AIC31XX codec driver
+ * ALSA SoC TLV320AIC31xx CODEC Driver
  *
- * Copyright (C) 2014 Texas Instruments, Inc.
- *
- * Author: Jyri Sarha <jsarha@ti.com>
+ * Copyright (C) 2014-2017 Texas Instruments Incorporated - http://www.ti.com/
+ *	Jyri Sarha <jsarha@ti.com>
  *
  * Based on ground work by: Ajit Kulkarni <x0175765@ti.com>
  *
- * This package is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * THIS PACKAGE IS PROVIDED AS IS AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
- *
- * The TLV320AIC31xx series of audio codec is a low-power, highly integrated
- * high performance codec which provides a stereo DAC, a mono ADC,
+ * The TLV320AIC31xx series of audio codecs are low-power, highly integrated
+ * high performance codecs which provides a stereo DAC, a mono ADC,
  * and mono/stereo Class-D speaker driver.
  */
 
@@ -1089,16 +1081,13 @@ static int aic31xx_power_on(struct snd_soc_codec *codec)
 	return 0;
 }
 
-static int aic31xx_power_off(struct snd_soc_codec *codec)
+static void aic31xx_power_off(struct snd_soc_codec *codec)
 {
 	struct aic31xx_priv *aic31xx = snd_soc_codec_get_drvdata(codec);
-	int ret = 0;
 
 	regcache_cache_only(aic31xx->regmap, true);
-	ret = regulator_bulk_disable(ARRAY_SIZE(aic31xx->supplies),
-				     aic31xx->supplies);
-
-	return ret;
+	regulator_bulk_disable(ARRAY_SIZE(aic31xx->supplies),
+			       aic31xx->supplies);
 }
 
 static int aic31xx_set_bias_level(struct snd_soc_codec *codec,
@@ -1279,15 +1268,30 @@ static void aic31xx_pdata_from_of(struct aic31xx_priv *aic31xx)
 		aic31xx->pdata.micbias_vg = MICBIAS_2_0V;
 	}
 
-	ret = of_get_named_gpio(np, "gpio-reset", 0);
-	if (ret > 0)
+	ret = of_get_named_gpio(np, "reset-gpios", 0);
+	if (ret > 0) {
 		aic31xx->pdata.gpio_reset = ret;
+	} else {
+		ret = of_get_named_gpio(np, "gpio-reset", 0);
+		if (ret > 0) {
+			dev_warn(aic31xx->dev, "Using deprecated property \"gpio-reset\", please update your DT");
+			aic31xx->pdata.gpio_reset = ret;
+		}
+	}
 }
 #else /* CONFIG_OF */
 static void aic31xx_pdata_from_of(struct aic31xx_priv *aic31xx)
 {
 }
 #endif /* CONFIG_OF */
+
+#ifdef CONFIG_ACPI
+static const struct acpi_device_id aic31xx_acpi_match[] = {
+	{ "10TI3100", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, aic31xx_acpi_match);
+#endif
 
 static int aic31xx_device_init(struct aic31xx_priv *aic31xx)
 {
@@ -1386,14 +1390,6 @@ static const struct i2c_device_id aic31xx_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, aic31xx_i2c_id);
 
-#ifdef CONFIG_ACPI
-static const struct acpi_device_id aic31xx_acpi_match[] = {
-	{ "10TI3100", 0 },
-	{ }
-};
-MODULE_DEVICE_TABLE(acpi, aic31xx_acpi_match);
-#endif
-
 static struct i2c_driver aic31xx_i2c_driver = {
 	.driver = {
 		.name	= "tlv320aic31xx-codec",
@@ -1407,6 +1403,6 @@ static struct i2c_driver aic31xx_i2c_driver = {
 
 module_i2c_driver(aic31xx_i2c_driver);
 
-MODULE_DESCRIPTION("ASoC TLV320AIC3111 codec driver");
-MODULE_AUTHOR("Jyri Sarha");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Jyri Sarha <jsarha@ti.com>");
+MODULE_DESCRIPTION("ASoC TLV320AIC31xx CODEC Driver");
+MODULE_LICENSE("GPL v2");
