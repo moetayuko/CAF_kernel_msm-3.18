@@ -3856,7 +3856,8 @@ const char *__check_heap_object(const void *ptr, unsigned long n,
 		 * whitelists.
 		 */
 		object_size = slab_ksize(s);
-		if ((offset <= object_size && n <= object_size - offset)) {
+		if (usercopy_fallback &&
+		    (offset <= object_size && n <= object_size - offset)) {
 			WARN_ONCE(1, "unexpected usercopy with bad or missing whitelist from %s offset %lu size %lu",
 				  s->name, offset, n);
 			return NULL;
