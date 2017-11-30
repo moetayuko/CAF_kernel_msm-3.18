@@ -4425,7 +4425,8 @@ int __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 		 * to be a temporary method to find any missing usercopy
 		 * whitelists.
 		 */
-		if (offset <= cachep->object_size &&
+		if (usercopy_fallback &&
+		    offset <= cachep->object_size &&
 		    n <= cachep->object_size - offset) {
 			WARN_ONCE(1, "unexpected usercopy %s with bad or missing whitelist with SLAB object '%s' (offset %lu, size %lu)",
 				  to_user ? "exposure" : "overwrite",
