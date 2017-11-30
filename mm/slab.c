@@ -4425,7 +4425,8 @@ const char *__check_heap_object(const void *ptr, unsigned long n,
 		 * to be a temporary method to find any missing usercopy
 		 * whitelists.
 		 */
-		if (offset <= cachep->object_size &&
+		if (usercopy_fallback &&
+		    offset <= cachep->object_size &&
 		    n <= cachep->object_size - offset) {
 			WARN_ONCE(1, "unexpected usercopy with bad or missing whitelist from %s offset %lu size %lu",
 				  cachep->name, offset, n);
