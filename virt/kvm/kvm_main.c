@@ -1376,7 +1376,7 @@ static int hva_to_pfn_slow(unsigned long addr, bool *async, bool write_fault,
 	if (async)
 		flags |= FOLL_NOWAIT;
 
-	npages = get_user_pages_unlocked(start, 1, &page, flags);
+	npages = get_user_pages_unlocked(addr, 1, &page, flags);
 	if (npages != 1)
 		return npages;
 
