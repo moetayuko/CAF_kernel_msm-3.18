@@ -513,14 +513,23 @@ static unsigned int at24_get_offset_adj(u8 flags, unsigned int byte_len)
 	}
 }
 
+static void at24_regmap_lock_unlock_none(void *map)
+{
+
+}
+
 static const struct regmap_config regmap_config_8 = {
 	.reg_bits = 8,
 	.val_bits = 8,
+	.lock = at24_regmap_lock_unlock_none,
+	.unlock = at24_regmap_lock_unlock_none,
 };
 
 static const struct regmap_config regmap_config_16 = {
 	.reg_bits = 16,
 	.val_bits = 8,
+	.lock = at24_regmap_lock_unlock_none,
+	.unlock = at24_regmap_lock_unlock_none,
 };
 
 static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
