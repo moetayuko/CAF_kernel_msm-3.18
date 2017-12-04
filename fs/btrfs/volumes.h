@@ -51,6 +51,7 @@ struct btrfs_pending_bios {
 #define BTRFS_DEV_STATE_IN_FS_METADATA	(1UL << 1)
 #define BTRFS_DEV_STATE_MISSING		(1UL << 2)
 #define BTRFS_DEV_STATE_REPLACE_TGT	(1UL << 3)
+#define BTRFS_DEV_STATE_FLUSH_SENT	(1UL << 4)
 
 struct btrfs_device {
 	struct list_head dev_list;
