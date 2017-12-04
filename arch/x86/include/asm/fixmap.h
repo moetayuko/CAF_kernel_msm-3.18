@@ -20,6 +20,7 @@
 #include <asm/apicdef.h>
 #include <asm/page.h>
 #include <asm/intel_ds.h>
+#include <asm/ldt.h>
 #ifdef CONFIG_X86_32
 #include <linux/threads.h>
 #include <asm/kmap_types.h>
@@ -91,6 +92,8 @@ struct cpu_entry_area {
 	 */
 	struct debug_store_buffers cpu_debug_buffers;
 #endif
+	/* Provide fixmap space for user LDTs */
+	char ldt_entries[LDT_ENTRIES * LDT_ENTRY_SIZE];
 };
 
 #define CPU_ENTRY_AREA_PAGES (sizeof(struct cpu_entry_area) / PAGE_SIZE)

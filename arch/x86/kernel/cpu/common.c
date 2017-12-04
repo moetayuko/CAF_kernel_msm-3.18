@@ -589,6 +589,8 @@ static void __init setup_cpu_entry_area(int cpu)
 	set_percpu_fixmap_ptes(get_cpu_entry_area_index(cpu, cpu_debug_buffers),
 			       sizeof(struct debug_store_buffers) / PAGE_SIZE);
 #endif
+	set_percpu_fixmap_ptes(get_cpu_entry_area_index(cpu, ldt_entries),
+			       (LDT_ENTRIES * LDT_ENTRY_SIZE) / PAGE_SIZE);
 }
 
 void __init setup_cpu_entry_areas(void)
