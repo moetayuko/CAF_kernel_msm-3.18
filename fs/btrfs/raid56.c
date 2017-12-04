@@ -601,6 +601,15 @@ static int rbio_can_merge(struct btrfs_raid_bio *last,
 	if (last->operation == BTRFS_RBIO_REBUILD_MISSING)
 		return 0;
 
+	if (last->operation == BTRFS_RBIO_READ_REBUILD) {
+		int fa = (last->faila < last->failb) ? last->faila : last->failb;
+		int fb = (last->faila < last->failb) ? last->failb : last->faila;
+		int cur_fa = (cur->faila < cur->failb) ? cur->faila : cur->failb;
+		int cur_fb = (cur->faila < cur->failb) ? cur->failb : cur->faila;
+
+		if (fa != cur_fa || fb != cur_fb)
+			return 0;
+	}
 	return 1;
 }
 
