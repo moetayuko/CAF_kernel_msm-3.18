@@ -134,22 +134,28 @@ enum fixed_addresses {
 #ifdef CONFIG_PARAVIRT
 	FIX_PARAVIRT_BOOTMAP,
 #endif
-	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
-	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 #ifdef	CONFIG_X86_INTEL_MID
 	FIX_LNW_VRTC,
 #endif
-	/* Fixmap entries to remap the GDTs, one per processor. */
-	FIX_CPU_ENTRY_AREA_TOP,
-	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
 
 #ifdef CONFIG_ACPI_APEI_GHES
 	/* Used for GHES mapping from assorted contexts */
 	FIX_APEI_GHES_IRQ,
 	FIX_APEI_GHES_NMI,
 #endif
+	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
+	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 
-	__end_of_permanent_fixed_addresses,
+	/*
+	 * Fixmap entries to remap the IDT, and the per CPU entry areas.
+	 * Aligned to a PMD boundary.
+	 */
+	FIX_USR_SHARED_TOP = round_up(FIX_TEXT_POKE0 + 1, PTRS_PER_PMD),
+	FIX_CPU_ENTRY_AREA_TOP,
+	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
+	FIX_USR_SHARED_BOTTOM  = round_up(FIX_CPU_ENTRY_AREA_BOTTOM + 2, PTRS_PER_PMD) - 1,
+
+	__end_of_permanent_fixed_addresses = FIX_USR_SHARED_BOTTOM,
 
 	/*
 	 * 512 temporary boot-time mappings, used by early_ioremap(),
