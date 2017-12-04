@@ -123,7 +123,6 @@ enum fixed_addresses {
 	FIX_IO_APIC_BASE_0,
 	FIX_IO_APIC_BASE_END = FIX_IO_APIC_BASE_0 + MAX_IO_APICS - 1,
 #endif
-	FIX_RO_IDT,	/* Virtual mapping for read-only IDT */
 #ifdef CONFIG_X86_32
 	FIX_KMAP_BEGIN,	/* reserved pte's for temporary kernel mappings */
 	FIX_KMAP_END = FIX_KMAP_BEGIN+(KM_TYPE_NR*NR_CPUS)-1,
@@ -151,6 +150,7 @@ enum fixed_addresses {
 	 * Aligned to a PMD boundary.
 	 */
 	FIX_USR_SHARED_TOP = round_up(FIX_TEXT_POKE0 + 1, PTRS_PER_PMD),
+	FIX_RO_IDT,
 	FIX_CPU_ENTRY_AREA_TOP,
 	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
 	FIX_USR_SHARED_BOTTOM  = round_up(FIX_CPU_ENTRY_AREA_BOTTOM + 2, PTRS_PER_PMD) - 1,
