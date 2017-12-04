@@ -17,6 +17,7 @@
 #include <asm/sigframe.h>
 #include <asm/bootparam.h>
 #include <asm/suspend.h>
+#include <asm/tlbflush.h>
 
 #ifdef CONFIG_XEN
 #include <xen/interface/xen.h>
@@ -97,6 +98,7 @@ void common(void) {
 	/* Layout info for cpu_entry_area */
 	OFFSET(CPU_ENTRY_AREA_tss, cpu_entry_area, tss);
 	OFFSET(CPU_ENTRY_AREA_entry_trampoline, cpu_entry_area, entry_trampoline);
+	OFFSET(TLB_STATE_user_pcid_flush_mask, tlb_state, user_pcid_flush_mask);
 	OFFSET(CPU_ENTRY_AREA_SYSENTER_stack, cpu_entry_area, SYSENTER_stack_page);
 	DEFINE(SIZEOF_SYSENTER_stack, sizeof(struct SYSENTER_stack));
 }
