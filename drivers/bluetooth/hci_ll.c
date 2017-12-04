@@ -628,11 +628,11 @@ static int download_firmware(struct ll_device *lldev)
 				break;
 			}
 			if (cmd->prefix != 1)
-				bt_dev_dbg(lldev->hu.hdev, "command type %d\n", cmd->prefix);
+				bt_dev_dbg(lldev->hu.hdev, "command type %d", cmd->prefix);
 
 			skb = __hci_cmd_sync(lldev->hu.hdev, cmd->opcode, cmd->plen, &cmd->speed, HCI_INIT_TIMEOUT);
 			if (IS_ERR(skb)) {
-				bt_dev_err(lldev->hu.hdev, "send command failed\n");
+				bt_dev_err(lldev->hu.hdev, "send command failed");
 				err = PTR_ERR(skb);
 				goto out_rel_fw;
 			}
@@ -674,11 +674,15 @@ static int ll_setup(struct hci_uart *hu)
 	serdev_device_set_flow_control(serdev, true);
 
 	do {
-		/* Configure BT_EN to HIGH state */
+		/* Reset the Bluetooth device */
 		gpiod_set_value_cansleep(lldev->enable_gpio, 0);
 		msleep(5);
 		gpiod_set_value_cansleep(lldev->enable_gpio, 1);
-		msleep(100);
+		err = serdev_device_wait_for_cts(serdev, true, 200);
+		if (err) {
+			bt_dev_err(hu->hdev, "Failed to get CTS");
+			return err;
+		}
 
 		err = download_firmware(lldev);
 		if (!err)
