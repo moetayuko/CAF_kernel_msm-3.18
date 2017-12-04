@@ -692,10 +692,13 @@ static int btrfs_open_one_device(struct btrfs_fs_devices *fs_devices,
 	device->generation = btrfs_super_generation(disk_super);
 
 	if (btrfs_super_flags(disk_super) & BTRFS_SUPER_FLAG_SEEDING) {
-		device->writeable = 0;
+		clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 		fs_devices->seeding = 1;
 	} else {
-		device->writeable = !bdev_read_only(bdev);
+		if (bdev_read_only(bdev))
+			clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
+		else
+			set_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 	}
 
 	q = bdev_get_queue(bdev);
@@ -707,7 +710,8 @@ static int btrfs_open_one_device(struct btrfs_fs_devices *fs_devices,
 	device->mode = flags;
 
 	fs_devices->open_devices++;
-	if (device->writeable && device->devid != BTRFS_DEV_REPLACE_DEVID) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state) &&
+	    device->devid != BTRFS_DEV_REPLACE_DEVID) {
 		fs_devices->rw_devices++;
 		list_add(&device->dev_alloc_list, &fs_devices->alloc_list);
 	}
@@ -935,9 +939,9 @@ again:
 			device->bdev = NULL;
 			fs_devices->open_devices--;
 		}
-		if (device->writeable) {
+		if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 			list_del_init(&device->dev_alloc_list);
-			device->writeable = 0;
+			clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 			if (!device->is_tgtdev_for_dev_replace)
 				fs_devices->rw_devices--;
 		}
@@ -969,7 +973,7 @@ static void btrfs_close_bdev(struct btrfs_device *device)
 	if (!device->bdev)
 		return;
 
-	if (device->writeable) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		sync_blockdev(device->bdev);
 		invalidate_bdev(device->bdev);
 	}
@@ -986,7 +990,7 @@ static void btrfs_prepare_close_one_device(struct btrfs_device *device)
 	if (device->bdev)
 		fs_devices->open_devices--;
 
-	if (device->writeable &&
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state) &&
 	    device->devid != BTRFS_DEV_REPLACE_DEVID) {
 		list_del_init(&device->dev_alloc_list);
 		fs_devices->rw_devices--;
@@ -1944,12 +1948,13 @@ int btrfs_rm_device(struct btrfs_fs_info *fs_info, const char *device_path,
 		goto out;
 	}
 
-	if (device->writeable && fs_info->fs_devices->rw_devices == 1) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state) &&
+	    fs_info->fs_devices->rw_devices == 1) {
 		ret = BTRFS_ERROR_DEV_ONLY_WRITABLE;
 		goto out;
 	}
 
-	if (device->writeable) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		mutex_lock(&fs_info->chunk_mutex);
 		list_del_init(&device->dev_alloc_list);
 		device->fs_devices->rw_devices--;
@@ -2011,7 +2016,7 @@ int btrfs_rm_device(struct btrfs_fs_info *fs_info, const char *device_path,
 	 * the devices list.  All that's left is to zero out the old
 	 * supers and free the device.
 	 */
-	if (device->writeable)
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state))
 		btrfs_scratch_superblocks(device->bdev, device->name->str);
 
 	btrfs_close_bdev(device);
@@ -2038,7 +2043,7 @@ out:
 	return ret;
 
 error_undo:
-	if (device->writeable) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		mutex_lock(&fs_info->chunk_mutex);
 		list_add(&device->dev_alloc_list,
 			 &fs_info->fs_devices->alloc_list);
@@ -2069,7 +2074,7 @@ void btrfs_rm_dev_replace_remove_srcdev(struct btrfs_fs_info *fs_info,
 	if (srcdev->missing)
 		fs_devices->missing_devices--;
 
-	if (srcdev->writeable)
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &srcdev->dev_state))
 		fs_devices->rw_devices--;
 
 	if (srcdev->bdev)
@@ -2081,7 +2086,7 @@ void btrfs_rm_dev_replace_free_srcdev(struct btrfs_fs_info *fs_info,
 {
 	struct btrfs_fs_devices *fs_devices = srcdev->fs_devices;
 
-	if (srcdev->writeable) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &srcdev->dev_state)) {
 		/* zero out the old super if it is writable */
 		btrfs_scratch_superblocks(srcdev->bdev, srcdev->name->str);
 	}
@@ -2432,7 +2437,7 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path
 	}
 
 	q = bdev_get_queue(bdev);
-	device->writeable = 1;
+	set_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 	device->generation = trans->transid;
 	device->io_width = fs_info->sectorsize;
 	device->io_align = fs_info->sectorsize;
@@ -2639,7 +2644,7 @@ int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 	rcu_assign_pointer(device->name, name);
 
 	mutex_lock(&fs_info->fs_devices->device_list_mutex);
-	device->writeable = 1;
+	set_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 	device->generation = 0;
 	device->io_width = fs_info->sectorsize;
 	device->io_align = fs_info->sectorsize;
@@ -2739,7 +2744,7 @@ int btrfs_grow_device(struct btrfs_trans_handle *trans,
 	u64 old_total;
 	u64 diff;
 
-	if (!device->writeable)
+	if (!test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state))
 		return -EACCES;
 
 	new_size = round_down(new_size, fs_info->sectorsize);
@@ -3559,7 +3564,7 @@ static int __btrfs_balance(struct btrfs_fs_info *fs_info)
 		old_size = btrfs_device_get_total_bytes(device);
 		size_to_free = div_factor(old_size, 1);
 		size_to_free = min_t(u64, size_to_free, SZ_1M);
-		if (!device->writeable ||
+		if (!test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state) ||
 		    btrfs_device_get_total_bytes(device) -
 		    btrfs_device_get_bytes_used(device) > size_to_free ||
 		    device->is_tgtdev_for_dev_replace)
@@ -4442,7 +4447,7 @@ int btrfs_shrink_device(struct btrfs_device *device, u64 new_size)
 	mutex_lock(&fs_info->chunk_mutex);
 
 	btrfs_device_set_total_bytes(device, new_size);
-	if (device->writeable) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		device->fs_devices->total_rw_bytes -= diff;
 		atomic64_sub(diff, &fs_info->free_chunk_space);
 	}
@@ -4567,7 +4572,7 @@ done:
 	if (ret) {
 		mutex_lock(&fs_info->chunk_mutex);
 		btrfs_device_set_total_bytes(device, old_size);
-		if (device->writeable)
+		if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state))
 			device->fs_devices->total_rw_bytes += diff;
 		atomic64_add(diff, &fs_info->free_chunk_space);
 		mutex_unlock(&fs_info->chunk_mutex);
@@ -4727,7 +4732,7 @@ static int __btrfs_alloc_chunk(struct btrfs_trans_handle *trans,
 		u64 max_avail;
 		u64 dev_offset;
 
-		if (!device->writeable) {
+		if (!test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 			WARN(1, KERN_ERR
 			       "BTRFS: read-only device in alloc_list\n");
 			continue;
@@ -5086,8 +5091,8 @@ int btrfs_chunk_readonly(struct btrfs_fs_info *fs_info, u64 chunk_offset)
 			miss_ndevs++;
 			continue;
 		}
-
-		if (!map->stripes[i].dev->writeable) {
+		if (!test_bit(BTRFS_DEV_STATE_WRITEABLE,
+					&map->stripes[i].dev->dev_state)) {
 			readonly = 1;
 			goto end;
 		}
@@ -6256,7 +6261,8 @@ blk_status_t btrfs_map_bio(struct btrfs_fs_info *fs_info, struct bio *bio,
 	for (dev_nr = 0; dev_nr < total_devs; dev_nr++) {
 		dev = bbio->stripes[dev_nr].dev;
 		if (!dev || !dev->bdev ||
-		    (bio_op(first_bio) == REQ_OP_WRITE && !dev->writeable)) {
+		    (bio_op(first_bio) == REQ_OP_WRITE &&
+		    !test_bit(BTRFS_DEV_STATE_WRITEABLE, &dev->dev_state))) {
 			bbio_error(bbio, first_bio, logical);
 			continue;
 		}
@@ -6692,7 +6698,7 @@ static int read_one_dev(struct btrfs_fs_info *fs_info,
 	}
 
 	if (device->fs_devices != fs_info->fs_devices) {
-		BUG_ON(device->writeable);
+		BUG_ON(test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state));
 		if (device->generation !=
 		    btrfs_device_generation(leaf, dev_item))
 			return -EINVAL;
@@ -6700,7 +6706,8 @@ static int read_one_dev(struct btrfs_fs_info *fs_info,
 
 	fill_device_from_item(leaf, dev_item, device);
 	device->in_fs_metadata = 1;
-	if (device->writeable && !device->is_tgtdev_for_dev_replace) {
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state) &&
+	    !device->is_tgtdev_for_dev_replace) {
 		device->fs_devices->total_rw_bytes += device->total_bytes;
 		atomic64_add(device->total_bytes - device->bytes_used,
 				&fs_info->free_chunk_space);
