@@ -45,13 +45,17 @@ static inline void load_mm_cr4(struct mm_struct *mm) {}
  */
 struct ldt_struct {
 	/*
-	 * Xen requires page-aligned LDTs with special permissions.  This is
-	 * needed to prevent us from installing evil descriptors such as
+	 * Xen requires page-aligned LDTs with special permissions.  This
+	 * is needed to prevent us from installing evil descriptors such as
 	 * call gates.  On native, we could merge the ldt_struct and LDT
-	 * allocations, but it's not worth trying to optimize.
+	 * allocations, but it's not worth trying to optimize and it does
+	 * not work with page table isolation enabled, which requires
+	 * page-aligned LDT entries as well.
 	 */
-	struct desc_struct *entries;
-	unsigned int nr_entries;
+	struct desc_struct	*entries;
+	phys_addr_t		entries_pa;
+	unsigned int		nr_entries;
+	unsigned int		order;
 };
 
 /*
@@ -59,6 +63,7 @@ struct ldt_struct {
  */
 int init_new_context_ldt(struct task_struct *tsk, struct mm_struct *mm);
 void destroy_context_ldt(struct mm_struct *mm);
+void load_mm_ldt(struct mm_struct *mm);
 #else	/* CONFIG_MODIFY_LDT_SYSCALL */
 static inline int init_new_context_ldt(struct task_struct *tsk,
 				       struct mm_struct *mm)
@@ -66,38 +71,11 @@ static inline int init_new_context_ldt(struct task_struct *tsk,
 	return 0;
 }
 static inline void destroy_context_ldt(struct mm_struct *mm) {}
-#endif
-
 static inline void load_mm_ldt(struct mm_struct *mm)
 {
-#ifdef CONFIG_MODIFY_LDT_SYSCALL
-	struct ldt_struct *ldt;
-
-	/* READ_ONCE synchronizes with smp_store_release */
-	ldt = READ_ONCE(mm->context.ldt);
-
-	/*
-	 * Any change to mm->context.ldt is followed by an IPI to all
-	 * CPUs with the mm active.  The LDT will not be freed until
-	 * after the IPI is handled by all such CPUs.  This means that,
-	 * if the ldt_struct changes before we return, the values we see
-	 * will be safe, and the new values will be loaded before we run
-	 * any user code.
-	 *
-	 * NB: don't try to convert this to use RCU without extreme care.
-	 * We would still need IRQs off, because we don't want to change
-	 * the local LDT after an IPI loaded a newer value than the one
-	 * that we can see.
-	 */
-
-	if (unlikely(ldt))
-		set_ldt(ldt->entries, ldt->nr_entries);
-	else
-		clear_LDT();
-#else
 	clear_LDT();
-#endif
 }
+#endif
 
 static inline void switch_ldt(struct mm_struct *prev, struct mm_struct *next)
 {
