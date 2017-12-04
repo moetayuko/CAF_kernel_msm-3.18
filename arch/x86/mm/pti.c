@@ -167,6 +167,23 @@ pti_clone_pmds(unsigned long start, unsigned long end, pmdval_t clear)
 }
 
 /*
+ * Clone the populated PMDs of the user shared fixmaps into the user space
+ * visible page table.
+ */
+static void __init pti_clone_user_shared(void)
+{
+	unsigned long bot, top;
+
+	bot = __fix_to_virt(FIX_USR_SHARED_BOTTOM);
+	top = __fix_to_virt(FIX_USR_SHARED_TOP) + PAGE_SIZE;
+
+	/* Top of the user shared block must be PMD-aligned. */
+	WARN_ON(top & ~PMD_MASK);
+
+	pti_clone_pmds(bot, top, 0);
+}
+
+/*
  * Ensure that the top level of the user page tables are entirely
  * populated.  This ensures that all processes that get forked have the
  * same entries.  This way, we do not have to ever go set up new entries in
@@ -216,4 +233,5 @@ void __init pti_init(void)
 	pr_info("enabled\n");
 
 	pti_init_all_pgds();
+	pti_clone_user_shared();
 }
