@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Generate definitions needed by assembly language modules.
  * This code generates raw asm output which is post-processed to extract
@@ -13,6 +14,7 @@
 #include <asm/vdso.h>
 #include <asm/pgtable.h>
 #include <asm/gmap.h>
+#include <asm/nmi.h>
 
 /*
  * Make sure that the compiler is new enough. We want a compiler that
@@ -58,6 +60,9 @@ int main(void)
 	OFFSET(__SF_BACKCHAIN, stack_frame, back_chain);
 	OFFSET(__SF_GPRS, stack_frame, gprs);
 	OFFSET(__SF_EMPTY, stack_frame, empty1);
+	OFFSET(__SF_SIE_CONTROL, stack_frame, empty1[0]);
+	OFFSET(__SF_SIE_SAVEAREA, stack_frame, empty1[1]);
+	OFFSET(__SF_SIE_REASON, stack_frame, empty1[2]);
 	BLANK();
 	/* timeval/timezone offsets for use by vdso */
 	OFFSET(__VDSO_UPD_COUNT, vdso_data, tb_update_count);
@@ -155,6 +160,8 @@ int main(void)
 	OFFSET(__LC_LAST_UPDATE_CLOCK, lowcore, last_update_clock);
 	OFFSET(__LC_INT_CLOCK, lowcore, int_clock);
 	OFFSET(__LC_MCCK_CLOCK, lowcore, mcck_clock);
+	OFFSET(__LC_CLOCK_COMPARATOR, lowcore, clock_comparator);
+	OFFSET(__LC_BOOT_CLOCK, lowcore, boot_clock);
 	OFFSET(__LC_CURRENT, lowcore, current_task);
 	OFFSET(__LC_KERNEL_STACK, lowcore, kernel_stack);
 	OFFSET(__LC_ASYNC_STACK, lowcore, async_stack);
@@ -188,6 +195,9 @@ int main(void)
 	OFFSET(__LC_AREGS_SAVE_AREA, lowcore, access_regs_save_area);
 	OFFSET(__LC_CREGS_SAVE_AREA, lowcore, cregs_save_area);
 	OFFSET(__LC_PGM_TDB, lowcore, pgm_tdb);
+	BLANK();
+	/* extended machine check save area */
+	OFFSET(__MCESA_GS_SAVE_AREA, mcesa, guarded_storage_save_area);
 	BLANK();
 	/* gmap/sie offsets */
 	OFFSET(__GMAP_ASCE, gmap, asce);

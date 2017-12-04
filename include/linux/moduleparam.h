@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_MODULE_PARAMS_H
 #define _LINUX_MODULE_PARAMS_H
 /* (C) Copyright 2001, 2002 Rusty Russell IBM Corporation */
@@ -457,7 +458,7 @@ enum hwparam_type {
 	hwparam_ioport,		/* Module parameter configures an I/O port */
 	hwparam_iomem,		/* Module parameter configures an I/O mem address */
 	hwparam_ioport_or_iomem, /* Module parameter could be either, depending on other option */
-	hwparam_irq,		/* Module parameter configures an I/O port */
+	hwparam_irq,		/* Module parameter configures an IRQ */
 	hwparam_dma,		/* Module parameter configures a DMA channel */
 	hwparam_dma_addr,	/* Module parameter configures a DMA buffer address */
 	hwparam_other,		/* Module parameter configures some other value */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * include/asm/processor.h
  *
@@ -89,9 +90,7 @@ struct thread_struct {
 #include <linux/types.h>
 #include <asm/fpumacro.h>
 
-/* Return saved PC of a blocked thread. */
 struct task_struct;
-unsigned long thread_saved_pc(struct task_struct *);
 
 /* On Uniprocessor, even in RMO processes see TSO semantics */
 #ifdef CONFIG_SMP

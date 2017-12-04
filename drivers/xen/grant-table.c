@@ -42,6 +42,7 @@
 #include <linux/delay.h>
 #include <linux/hardirq.h>
 #include <linux/workqueue.h>
+#include <linux/ratelimit.h>
 
 #include <xen/xen.h>
 #include <xen/interface/xen.h>
@@ -304,7 +305,7 @@ struct deferred_entry {
 };
 static LIST_HEAD(deferred_list);
 static void gnttab_handle_deferred(unsigned long);
-static DEFINE_TIMER(deferred_timer, gnttab_handle_deferred, 0, 0);
+static DEFINE_TIMER(deferred_timer, gnttab_handle_deferred);
 
 static void gnttab_handle_deferred(unsigned long unused)
 {
@@ -1072,8 +1073,14 @@ static int gnttab_expand(unsigned int req_entries)
 	cur = nr_grant_frames;
 	extra = ((req_entries + (grefs_per_grant_frame-1)) /
 		 grefs_per_grant_frame);
-	if (cur + extra > gnttab_max_grant_frames())
+	if (cur + extra > gnttab_max_grant_frames()) {
+		pr_warn_ratelimited("xen/grant-table: max_grant_frames reached"
+				    " cur=%u extra=%u limit=%u"
+				    " gnttab_free_count=%u req_entries=%u\n",
+				    cur, extra, gnttab_max_grant_frames(),
+				    gnttab_free_count, req_entries);
 		return -ENOSPC;
+	}
 
 	rc = gnttab_map(cur, cur + extra - 1);
 	if (rc == 0)

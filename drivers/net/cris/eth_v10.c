@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * e100net.c: A network driver for the ETRAX 100LX network controller.
  *
@@ -165,8 +166,8 @@ static unsigned int network_rec_config_shadow = 0;
 static unsigned int network_tr_ctrl_shadow = 0;
 
 /* Network speed indication. */
-static DEFINE_TIMER(speed_timer, NULL, 0, 0);
-static DEFINE_TIMER(clear_led_timer, NULL, 0, 0);
+static DEFINE_TIMER(speed_timer, NULL);
+static DEFINE_TIMER(clear_led_timer, NULL);
 static int current_speed; /* Speed read from transceiver */
 static int current_speed_selection; /* Speed selected by user */
 static unsigned long led_next_time;
@@ -174,7 +175,7 @@ static int led_active;
 static int rx_queue_len;
 
 /* Duplex */
-static DEFINE_TIMER(duplex_timer, NULL, 0, 0);
+static DEFINE_TIMER(duplex_timer, NULL);
 static int full_duplex;
 static enum duplex current_duplex;
 
@@ -1417,10 +1418,9 @@ static int e100_get_link_ksettings(struct net_device *dev,
 {
 	struct net_local *np = netdev_priv(dev);
 	u32 supported;
-	int err;
 
 	spin_lock_irq(&np->lock);
-	err = mii_ethtool_get_link_ksettings(&np->mii_if, cmd);
+	mii_ethtool_get_link_ksettings(&np->mii_if, cmd);
 	spin_unlock_irq(&np->lock);
 
 	/* The PHY may support 1000baseT, but the Etrax100 does not.  */
@@ -1432,7 +1432,7 @@ static int e100_get_link_ksettings(struct net_device *dev,
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
 						supported);
 
-	return err;
+	return 0;
 }
 
 static int e100_set_link_ksettings(struct net_device *dev,

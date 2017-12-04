@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  *
@@ -2166,7 +2167,7 @@ ksocknal_connd(void *arg)
 {
 	spinlock_t *connd_lock = &ksocknal_data.ksnd_connd_lock;
 	struct ksock_connreq *cr;
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 	int nloops = 0;
 	int cons_retry = 0;
 
@@ -2554,7 +2555,7 @@ ksocknal_check_peer_timeouts(int idx)
 int
 ksocknal_reaper(void *arg)
 {
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 	struct ksock_conn *conn;
 	struct ksock_sched *sched;
 	struct list_head enomem_conns;

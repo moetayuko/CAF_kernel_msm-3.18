@@ -187,7 +187,7 @@ static bool amd_sched_entity_is_ready(struct amd_sched_entity *entity)
 	if (kfifo_is_empty(&entity->job_queue))
 		return false;
 
-	if (ACCESS_ONCE(entity->dependency))
+	if (READ_ONCE(entity->dependency))
 		return false;
 
 	return true;
@@ -409,9 +409,18 @@ void amd_sched_hw_job_reset(struct amd_gpu_scheduler *sched)
 					      &s_job->s_fence->cb)) {
 			dma_fence_put(s_job->s_fence->parent);
 			s_job->s_fence->parent = NULL;
+			atomic_dec(&sched->hw_rq_count);
 		}
 	}
-	atomic_set(&sched->hw_rq_count, 0);
+	spin_unlock(&sched->job_list_lock);
+}
+
+void amd_sched_job_kickout(struct amd_sched_job *s_job)
+{
+	struct amd_gpu_scheduler *sched = s_job->sched;
+
+	spin_lock(&sched->job_list_lock);
+	list_del_init(&s_job->node);
 	spin_unlock(&sched->job_list_lock);
 }
 

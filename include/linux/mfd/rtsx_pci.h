@@ -334,6 +334,7 @@
 #define DCM_DRP_RD_DATA_H		0xFC29
 #define SD_VPCLK0_CTL			0xFC2A
 #define SD_VPCLK1_CTL			0xFC2B
+#define   PHASE_SELECT_MASK		0x1F
 #define SD_DCMPS0_CTL			0xFC2C
 #define SD_DCMPS1_CTL			0xFC2D
 #define SD_VPTX_CTL			SD_VPCLK0_CTL
@@ -850,6 +851,9 @@
 
 #define rtsx_pci_init_cmd(pcr)		((pcr)->ci = 0)
 
+#define RTS5227_DEVICE_ID		0x5227
+#define RTS_MAX_TIMES_FREQ_REDUCTION	8
+
 struct rtsx_pcr;
 
 struct pcr_handle {
@@ -957,6 +961,8 @@ struct rtsx_pcr {
 
 	int				num_slots;
 	struct rtsx_slot		*slots;
+
+	u8				dma_error_count;
 };
 
 #define CHK_PCI_PID(pcr, pid)		((pcr)->pci->device == (pid))

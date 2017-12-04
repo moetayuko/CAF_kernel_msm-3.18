@@ -112,8 +112,8 @@ static void htirq_domain_free(struct irq_domain *domain, unsigned int virq,
 	irq_domain_free_irqs_top(domain, virq, nr_irqs);
 }
 
-static void htirq_domain_activate(struct irq_domain *domain,
-				  struct irq_data *irq_data)
+static int htirq_domain_activate(struct irq_domain *domain,
+				 struct irq_data *irq_data, bool early)
 {
 	struct ht_irq_msg msg;
 	struct irq_cfg *cfg = irqd_cfg(irq_data);
@@ -132,6 +132,7 @@ static void htirq_domain_activate(struct irq_domain *domain,
 			HT_IRQ_LOW_MT_ARBITRATED) |
 		HT_IRQ_LOW_IRQ_MASKED;
 	write_ht_irq_msg(irq_data->irq, &msg);
+	return 0;
 }
 
 static void htirq_domain_deactivate(struct irq_domain *domain,
@@ -150,16 +151,27 @@ static const struct irq_domain_ops htirq_domain_ops = {
 	.deactivate	= htirq_domain_deactivate,
 };
 
-void arch_init_htirq_domain(struct irq_domain *parent)
+void __init arch_init_htirq_domain(struct irq_domain *parent)
 {
+	struct fwnode_handle *fn;
+
 	if (disable_apic)
 		return;
 
-	htirq_domain = irq_domain_add_tree(NULL, &htirq_domain_ops, NULL);
+	fn = irq_domain_alloc_named_fwnode("PCI-HT");
+	if (!fn)
+		goto warn;
+
+	htirq_domain = irq_domain_create_tree(fn, &htirq_domain_ops, NULL);
+	irq_domain_free_fwnode(fn);
 	if (!htirq_domain)
-		pr_warn("failed to initialize irqdomain for HTIRQ.\n");
-	else
-		htirq_domain->parent = parent;
+		goto warn;
+
+	htirq_domain->parent = parent;
+	return;
+
+warn:
+	pr_warn("Failed to initialize irqdomain for HTIRQ.\n");
 }
 
 int arch_setup_ht_irq(int idx, int pos, struct pci_dev *dev,
