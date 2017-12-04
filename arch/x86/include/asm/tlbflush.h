@@ -188,6 +188,17 @@ struct tlb_state {
 	bool is_lazy;
 
 	/*
+	 * If set we changed the page tables in such a way that we
+	 * needed an invalidation of all contexts (aka. PCIDs / ASIDs).
+	 * This tells us to go invalidate all the non-loaded ctxs[]
+	 * on the next context switch.
+	 *
+	 * The current ctx was kept up-to-date as it ran and does not
+	 * need to be invalidated.
+	 */
+	bool invalidate_other;
+
+	/*
 	 * Access to this CR4 shadow and to H/W CR4 is protected by
 	 * disabling interrupts when modifying either one.
 	 */
@@ -264,6 +275,19 @@ static inline unsigned long cr4_read_shadow(void)
 	return this_cpu_read(cpu_tlbstate.cr4);
 }
 
+static inline void invalidate_pcid_other(void)
+{
+	/*
+	 * With global pages, all of the shared kenel page tables
+	 * are set as _PAGE_GLOBAL.  We have no shared nonglobals
+	 * and nothing to do here.
+	 */
+	if (!static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
+		return;
+
+	this_cpu_write(cpu_tlbstate.invalidate_other, true);
+}
+
 /*
  * Save some of cr4 feature set we're using (e.g.  Pentium 4MB
  * enable and PPro Global page enable), so that any CPU's that boot
@@ -338,24 +362,22 @@ static inline void __native_flush_tlb_single(unsigned long addr)
 
 static inline void __flush_tlb_all(void)
 {
-	if (boot_cpu_has(X86_FEATURE_PGE))
+	if (boot_cpu_has(X86_FEATURE_PGE)) {
 		__flush_tlb_global();
-	else
+	} else {
 		__flush_tlb();
-
-	/*
-	 * Note: if we somehow had PCID but not PGE, then this wouldn't work --
-	 * we'd end up flushing kernel translations for the current ASID but
-	 * we might fail to flush kernel translations for other cached ASIDs.
-	 *
-	 * To avoid this issue, we force PCID off if PGE is off.
-	 */
+	}
 }
 
 static inline void __flush_tlb_one(unsigned long addr)
 {
 	count_vm_tlb_event(NR_TLB_LOCAL_FLUSH_ONE);
 	__flush_tlb_single(addr);
+	/*
+	 * Invalidate other address spaces inaccessible to single-page
+	 * invalidation:
+	 */
+	invalidate_pcid_other();
 }
 
 #define TLB_FLUSH_ALL	-1UL
