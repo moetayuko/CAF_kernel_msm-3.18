@@ -19,6 +19,7 @@
 #include <asm/acpi.h>
 #include <asm/apicdef.h>
 #include <asm/page.h>
+#include <asm/intel_ds.h>
 #ifdef CONFIG_X86_32
 #include <linux/threads.h>
 #include <asm/kmap_types.h>
@@ -77,6 +78,18 @@ struct cpu_entry_area {
 	 * with guard pages between them.
 	 */
 	char exception_stacks[(N_EXCEPTION_STACKS - 1) * EXCEPTION_STKSZ + DEBUG_STKSZ];
+#endif
+#ifdef CONFIG_CPU_SUP_INTEL
+	/*
+	 * Per CPU debug store for Intel performance monitoring. Wastes a
+	 * full page at the moment.
+	 */
+	struct debug_store cpu_debug_store;
+	/*
+	 * The actual PEBS/BTS buffers must be mapped to user space
+	 * Reserve enough fixmap PTEs.
+	 */
+	struct debug_store_buffers cpu_debug_buffers;
 #endif
 };
 
