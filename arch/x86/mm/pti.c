@@ -65,6 +65,45 @@ void __init pti_check_boottime_disable(void)
 }
 
 /*
+ * Ensure that the top level of the user page tables are entirely
+ * populated.  This ensures that all processes that get forked have the
+ * same entries.  This way, we do not have to ever go set up new entries in
+ * older processes.
+ *
+ * Note: we never free these, so there are no updates to them after this.
+ */
+static void __init pti_init_all_pgds(void)
+{
+	pgd_t *pgd;
+	int i;
+
+	pgd = kernel_to_user_pgdp(pgd_offset_k(0UL));
+	for (i = PTRS_PER_PGD / 2; i < PTRS_PER_PGD; i++) {
+		/*
+		 * Each PGD entry moves up PGDIR_SIZE bytes through the
+		 * address space, so get the first virtual address mapped
+		 * by PGD #i:
+		 */
+		unsigned long addr = i * PGDIR_SIZE;
+#if CONFIG_PGTABLE_LEVELS > 4
+		p4d_t *p4d = p4d_alloc_one(&init_mm, addr);
+		if (!p4d) {
+			WARN_ON(1);
+			break;
+		}
+		set_pgd(pgd + i, __pgd(_KERNPG_TABLE | __pa(p4d)));
+#else /* CONFIG_PGTABLE_LEVELS <= 4 */
+		pud_t *pud = pud_alloc_one(&init_mm, addr);
+		if (!pud) {
+			WARN_ON(1);
+			break;
+		}
+		set_pgd(pgd + i, __pgd(_KERNPG_TABLE | __pa(pud)));
+#endif /* CONFIG_PGTABLE_LEVELS */
+	}
+}
+
+/*
  * Initialize kernel page table isolation
  */
 void __init pti_init(void)
@@ -73,4 +112,6 @@ void __init pti_init(void)
 		return;
 
 	pr_info("enabled\n");
+
+	pti_init_all_pgds();
 }
