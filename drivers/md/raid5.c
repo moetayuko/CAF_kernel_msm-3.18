@@ -2677,13 +2677,13 @@ static void raid5_error(struct mddev *mddev, struct md_rdev *rdev)
 	pr_debug("raid456: error called\n");
 
 	spin_lock_irqsave(&conf->device_lock, flags);
+	set_bit(Faulty, &rdev->flags);
 	clear_bit(In_sync, &rdev->flags);
 	mddev->degraded = raid5_calc_degraded(conf);
 	spin_unlock_irqrestore(&conf->device_lock, flags);
 	set_bit(MD_RECOVERY_INTR, &mddev->recovery);
 
 	set_bit(Blocked, &rdev->flags);
-	set_bit(Faulty, &rdev->flags);
 	set_mask_bits(&mddev->sb_flags, 0,
 		      BIT(MD_SB_CHANGE_DEVS) | BIT(MD_SB_CHANGE_PENDING));
 	pr_crit("md/raid:%s: Disk failure on %s, disabling device.\n"
@@ -8364,6 +8364,13 @@ static int raid5_change_consistency_policy(struct mddev *mddev, const char *buf)
 	return err;
 }
 
+static int raid5_start(struct mddev *mddev)
+{
+	struct r5conf *conf = mddev->private;
+
+	return r5l_start(conf->log);
+}
+
 static struct md_personality raid6_personality =
 {
 	.name		= "raid6",
@@ -8371,6 +8378,7 @@ static struct md_personality raid6_personality =
 	.owner		= THIS_MODULE,
 	.make_request	= raid5_make_request,
 	.run		= raid5_run,
+	.start		= raid5_start,
 	.free		= raid5_free,
 	.status		= raid5_status,
 	.error_handler	= raid5_error,
@@ -8395,6 +8403,7 @@ static struct md_personality raid5_personality =
 	.owner		= THIS_MODULE,
 	.make_request	= raid5_make_request,
 	.run		= raid5_run,
+	.start		= raid5_start,
 	.free		= raid5_free,
 	.status		= raid5_status,
 	.error_handler	= raid5_error,
@@ -8420,6 +8429,7 @@ static struct md_personality raid4_personality =
 	.owner		= THIS_MODULE,
 	.make_request	= raid5_make_request,
 	.run		= raid5_run,
+	.start		= raid5_start,
 	.free		= raid5_free,
 	.status		= raid5_status,
 	.error_handler	= raid5_error,
