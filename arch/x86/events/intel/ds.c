@@ -280,17 +280,46 @@ void fini_debug_store_on_cpu(int cpu)
 
 static DEFINE_PER_CPU(void *, insn_buffer);
 
+static u64 ds_update_fixmap(int idx, void *addr, size_t size, pgprot_t prot)
+{
+	phys_addr_t pa, va;
+	size_t msz = 0;
+
+	va = __fix_to_virt(idx);
+	pa = virt_to_phys(addr);
+	for (; msz < size; idx--, msz += PAGE_SIZE, pa += PAGE_SIZE)
+		__set_fixmap(idx, pa, prot);
+	return va;
+}
+
+static void *dsalloc_pages(size_t size, gfp_t flags, int cpu)
+{
+	unsigned int order = get_order(size);
+	int node = cpu_to_node(cpu);
+	struct page *page;
+
+	page = __alloc_pages_node(node, flags | __GFP_ZERO, order);
+	return page ? page_address(page) : NULL;
+}
+
+static void dsfree_pages(const void *buffer, size_t size)
+{
+	if (buffer)
+		free_pages((unsigned long)buffer, get_order(size));
+}
+
 static int alloc_pebs_buffer(int cpu)
 {
-	struct debug_store *ds = per_cpu(cpu_hw_events, cpu).ds;
-	int node = cpu_to_node(cpu);
-	int max;
+	struct cpu_hw_events *hwev = per_cpu_ptr(&cpu_hw_events, cpu);
+	struct debug_store *ds = hwev->ds;
+	size_t bsiz = x86_pmu.pebs_buffer_size;
+	int idx, max, node = cpu_to_node(cpu);
 	void *buffer, *ibuffer;
 
 	if (!x86_pmu.pebs)
 		return 0;
 
-	buffer = kzalloc_node(x86_pmu.pebs_buffer_size, GFP_KERNEL, node);
+	buffer = dsalloc_pages(bsiz, GFP_KERNEL, cpu);
 	if (unlikely(!buffer))
 		return -ENOMEM;
 
@@ -301,25 +330,27 @@ static int alloc_pebs_buffer(int cpu)
 	if (x86_pmu.intel_cap.pebs_format < 2) {
 		ibuffer = kzalloc_node(PEBS_FIXUP_SIZE, GFP_KERNEL, node);
 		if (!ibuffer) {
-			kfree(buffer);
+			dsfree_pages(buffer, bsiz);
 			return -ENOMEM;
 		}
 		per_cpu(insn_buffer, cpu) = ibuffer;
 	}
-
-	max = x86_pmu.pebs_buffer_size / x86_pmu.pebs_record_size;
-
-	ds->pebs_buffer_base = (u64)(unsigned long)buffer;
+	hwev->ds_pebs_vaddr = buffer;
+	/* Update the fixmap */
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_buffers.pebs_buffer);
+	ds->pebs_buffer_base = ds_update_fixmap(idx, buffer, bsiz,
+						PAGE_KERNEL);
 	ds->pebs_index = ds->pebs_buffer_base;
-	ds->pebs_absolute_maximum = ds->pebs_buffer_base +
-		max * x86_pmu.pebs_record_size;
-
+	max = x86_pmu.pebs_record_size * (bsiz / x86_pmu.pebs_record_size);
+	ds->pebs_absolute_maximum = ds->pebs_buffer_base + max;
 	return 0;
 }
 
 static void release_pebs_buffer(int cpu)
 {
-	struct debug_store *ds = per_cpu(cpu_hw_events, cpu).ds;
+	struct cpu_hw_events *hwev = per_cpu_ptr(&cpu_hw_events, cpu);
+	struct debug_store *ds = hwev->ds;
+	int idx;
 
 	if (!ds || !x86_pmu.pebs)
 		return;
@@ -327,73 +358,70 @@ static void release_pebs_buffer(int cpu)
 	kfree(per_cpu(insn_buffer, cpu));
 	per_cpu(insn_buffer, cpu) = NULL;
 
-	kfree((void *)(unsigned long)ds->pebs_buffer_base);
+	/* Clear the fixmap */
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_buffers.pebs_buffer);
+	ds_update_fixmap(idx, 0, x86_pmu.pebs_buffer_size, PAGE_NONE);
 	ds->pebs_buffer_base = 0;
+	dsfree_pages(hwev->ds_pebs_vaddr, x86_pmu.pebs_buffer_size);
+	hwev->ds_pebs_vaddr = NULL;
 }
 
 static int alloc_bts_buffer(int cpu)
 {
-	struct debug_store *ds = per_cpu(cpu_hw_events, cpu).ds;
-	int node = cpu_to_node(cpu);
-	int max, thresh;
+	struct cpu_hw_events *hwev = per_cpu_ptr(&cpu_hw_events, cpu);
+	struct debug_store *ds = hwev->ds;
+	int idx, max;
 	void *buffer;
 
 	if (!x86_pmu.bts)
 		return 0;
 
-	buffer = kzalloc_node(BTS_BUFFER_SIZE, GFP_KERNEL | __GFP_NOWARN, node);
+	buffer = dsalloc_pages(BTS_BUFFER_SIZE, GFP_KERNEL | __GFP_NOWARN, cpu);
 	if (unlikely(!buffer)) {
 		WARN_ONCE(1, "%s: BTS buffer allocation failure\n", __func__);
 		return -ENOMEM;
 	}
-
-	max = BTS_BUFFER_SIZE / BTS_RECORD_SIZE;
-	thresh = max / 16;
-
-	ds->bts_buffer_base = (u64)(unsigned long)buffer;
+	hwev->ds_bts_vaddr = buffer;
+	/* Update the fixmap */
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_buffers.bts_buffer);
+	ds->bts_buffer_base = ds_update_fixmap(idx, buffer, BTS_BUFFER_SIZE,
+					       PAGE_KERNEL);
 	ds->bts_index = ds->bts_buffer_base;
-	ds->bts_absolute_maximum = ds->bts_buffer_base +
-		max * BTS_RECORD_SIZE;
-	ds->bts_interrupt_threshold = ds->bts_absolute_maximum -
-		thresh * BTS_RECORD_SIZE;
-
+	max = BTS_RECORD_SIZE * (BTS_BUFFER_SIZE / BTS_RECORD_SIZE);
+	ds->bts_absolute_maximum = ds->bts_buffer_base + max;
+	ds->bts_interrupt_threshold = ds->bts_absolute_maximum - (max / 16);
 	return 0;
 }
 
 static void release_bts_buffer(int cpu)
 {
-	struct debug_store *ds = per_cpu(cpu_hw_events, cpu).ds;
+	struct cpu_hw_events *hwev = per_cpu_ptr(&cpu_hw_events, cpu);
+	struct debug_store *ds = hwev->ds;
+	int idx;
 
 	if (!ds || !x86_pmu.bts)
 		return;
 
-	kfree((void *)(unsigned long)ds->bts_buffer_base);
+	/* Clear the fixmap */
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_buffers.bts_buffer);
+	ds_update_fixmap(idx, 0, BTS_BUFFER_SIZE, PAGE_NONE);
 	ds->bts_buffer_base = 0;
+	dsfree_pages(hwev->ds_bts_vaddr, BTS_BUFFER_SIZE);
+	hwev->ds_bts_vaddr = NULL;
 }
 
 static int alloc_ds_buffer(int cpu)
 {
-	int node = cpu_to_node(cpu);
-	struct debug_store *ds;
+	struct debug_store *ds = &get_cpu_entry_area(cpu)->cpu_debug_store;
 
-	ds = kzalloc_node(sizeof(*ds), GFP_KERNEL, node);
-	if (unlikely(!ds))
-		return -ENOMEM;
-
+	memset(ds, 0, sizeof(*ds));
 	per_cpu(cpu_hw_events, cpu).ds = ds;
-
 	return 0;
 }
 
 static void release_ds_buffer(int cpu)
 {
-	struct debug_store *ds = per_cpu(cpu_hw_events, cpu).ds;
-
-	if (!ds)
-		return;
-
 	per_cpu(cpu_hw_events, cpu).ds = NULL;
-	kfree(ds);
 }
 
 void release_ds_buffers(void)
