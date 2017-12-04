@@ -31,6 +31,7 @@
 #include <linux/cpumask.h>
 #include <asm/pgtable.h>
 #include <linux/atomic.h>
+#include <asm/intel_ds.h>
 #include <asm/proto.h>
 #include <asm/setup.h>
 #include <asm/apic.h>
@@ -490,11 +491,41 @@ static DEFINE_PER_CPU_PAGE_ALIGNED(char, exception_stacks
 static DEFINE_PER_CPU_PAGE_ALIGNED(struct entry_stack_page,
 				   entry_stack_storage);
 
+/*
+ * Force the population of PMDs for not yet allocated per cpu
+ * memory like debug store buffers.
+ */
+static void __init allocate_percpu_fixmap_ptes(int idx, int pages)
+{
+	for (; pages; pages--, idx--)
+		__set_fixmap(idx, 0, PAGE_NONE);
+}
+
 static void __init
 set_percpu_fixmap_pages(int idx, void *ptr, int pages, pgprot_t prot)
 {
 	for ( ; pages; pages--, idx--, ptr += PAGE_SIZE)
 		__set_fixmap(idx, per_cpu_ptr_to_phys(ptr), prot);
+}
+
+static void percpu_setup_debug_store(int cpu)
+{
+#ifdef CONFIG_CPU_SUP_INTEL
+	int npages, idx;
+
+	if (boot_cpu_data.x86_vendor != X86_VENDOR_INTEL)
+		return;
+
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_store);
+	npages = sizeof(struct debug_store) / PAGE_SIZE;
+	BUILD_BUG_ON(sizeof(struct debug_store) % PAGE_SIZE != 0);
+	set_percpu_fixmap_pages(idx, &per_cpu(cpu_debug_store, cpu), npages,
+				PAGE_KERNEL);
+
+	idx = get_cpu_entry_area_index(cpu, cpu_debug_buffers);
+	npages = sizeof(struct debug_store_buffers) / PAGE_SIZE;
+	allocate_percpu_fixmap_ptes(idx, npages);
+#endif
 }
 
 /* Setup the fixmap mappings only once per-processor */
@@ -568,6 +599,7 @@ static void __init setup_cpu_entry_area(int cpu)
 	__set_fixmap(get_cpu_entry_area_index(cpu, entry_trampoline),
 		     __pa_symbol(_entry_trampoline), PAGE_KERNEL_RX);
 #endif
+	percpu_setup_debug_store(cpu);
 }
 
 void __init setup_cpu_entry_areas(void)
