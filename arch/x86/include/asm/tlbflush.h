@@ -320,6 +320,9 @@ static inline void invalidate_user_asid(u16 asid)
 		  (unsigned long *)this_cpu_ptr(&cpu_tlbstate.user_pcid_flush_mask));
 }
 
+/*
+ * flush the entire current user mapping
+ */
 static inline void __native_flush_tlb(void)
 {
 	invalidate_user_asid(this_cpu_read(cpu_tlbstate.loaded_mm_asid));
@@ -333,6 +336,9 @@ static inline void __native_flush_tlb(void)
 	preempt_enable();
 }
 
+/*
+ * flush everything
+ */
 static inline void __native_flush_tlb_global(void)
 {
 	unsigned long cr4, flags;
@@ -364,6 +370,9 @@ static inline void __native_flush_tlb_global(void)
 	raw_local_irq_restore(flags);
 }
 
+/*
+ * flush one page in the user mapping
+ */
 static inline void __native_flush_tlb_single(unsigned long addr)
 {
 	u32 loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
@@ -383,15 +392,24 @@ static inline void __native_flush_tlb_single(unsigned long addr)
 		invpcid_flush_one(user_pcid(loaded_mm_asid), addr);
 }
 
+/*
+ * flush everything
+ */
 static inline void __flush_tlb_all(void)
 {
 	if (boot_cpu_has(X86_FEATURE_PGE)) {
 		__flush_tlb_global();
 	} else {
+		/*
+		 * !PGE -> !PCID (setup_pcid()), thus every flush is total.
+		 */
 		__flush_tlb();
 	}
 }
 
+/*
+ * flush one page in the kernel mapping
+ */
 static inline void __flush_tlb_one(unsigned long addr)
 {
 	count_vm_tlb_event(NR_TLB_LOCAL_FLUSH_ONE);
