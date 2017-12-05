@@ -191,8 +191,8 @@ static inline bool nvme_req_needs_retry(struct request *req)
 void nvme_complete_rq(struct request *req)
 {
 	if (unlikely(nvme_req(req)->status && nvme_req_needs_retry(req))) {
-		if (nvme_req_needs_failover(req)) {
-			nvme_failover_req(req);
+		if (req->failover_rq && nvme_req_needs_failover(req)) {
+			req->failover_rq(req);
 			return;
 		}
 
