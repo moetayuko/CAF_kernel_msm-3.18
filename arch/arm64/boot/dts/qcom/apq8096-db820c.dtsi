@@ -190,6 +190,12 @@
 		};
 	};
 
+	snd {
+                power-domains = <&gcc HLOS1_VOTE_LPASS_ADSP_GDSC>;
+		compatible = "qcom,apq8096-sndcard";
+		qcom,model = "DB820c";
+		iommus = <&lpass_q6_smmu 1>;
+	};
 
 	gpio_keys {
 		compatible = "gpio-keys";
