@@ -237,6 +237,12 @@ struct request {
 	rq_end_io_fn *end_io;
 	void *end_io_data;
 
+	/*
+	 * callback to failover request's bios back to upper layer
+	 * bio-based queue using blk_steal_bios().
+	 */
+	rq_failover_fn *failover_rq;
+
 	/* for bidi */
 	struct request *next_rq;
 };
