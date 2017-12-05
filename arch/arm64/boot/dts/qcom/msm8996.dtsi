@@ -373,12 +373,22 @@
 		intc: interrupt-controller@9bc0000 {
 			compatible = "arm,gic-v3";
 			#interrupt-cells = <3>;
+                       #address-cells = <1>;
+                       #size-cells = <1>;
 			interrupt-controller;
 			#redistributor-regions = <1>;
 			redistributor-stride = <0x0 0x40000>;
 			reg = <0x09bc0000 0x10000>,
 			      <0x09c00000 0x100000>;
 			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH>;
+                       	msi_alias0: interrupt-controller@9bd0000 {
+                               compatible = "qcom,gic-msi-aliases";
+                               reg = <0x9bd0000 0x1000>;
+                               msi-controller;
+                               #msi-cells = <1>;
+                               arm,spi-ranges = <544 96>;
+                       };
+
 		};
 
 		apcs: syscon@9820000 {
