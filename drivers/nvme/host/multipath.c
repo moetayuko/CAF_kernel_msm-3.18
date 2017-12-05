@@ -35,8 +35,7 @@ void nvme_failover_req(struct request *req)
 
 bool nvme_req_needs_failover(struct request *req)
 {
-	if (!(req->cmd_flags & REQ_NVME_MPATH))
-		return false;
+	/* Caller verifies req->q->failover_rq_fn is set */
 
 	switch (nvme_req(req)->status & 0x7ff) {
 	/*
@@ -128,7 +127,6 @@ static blk_qc_t nvme_ns_head_make_request(struct request_queue *q,
 	ns = nvme_find_path(head);
 	if (likely(ns)) {
 		bio->bi_disk = ns->disk;
-		bio->bi_opf |= REQ_NVME_MPATH;
 		ret = direct_make_request(bio);
 	} else if (!list_empty_careful(&head->list)) {
 		dev_warn_ratelimited(dev, "no path available - requeuing I/O\n");

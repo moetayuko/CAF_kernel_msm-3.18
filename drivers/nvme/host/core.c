@@ -191,8 +191,8 @@ static inline bool nvme_req_needs_retry(struct request *req)
 void nvme_complete_rq(struct request *req)
 {
 	if (unlikely(nvme_req(req)->status && nvme_req_needs_retry(req))) {
-		if (nvme_req_needs_failover(req)) {
-			nvme_failover_req(req);
+		if (req->q->failover_rq_fn && nvme_req_needs_failover(req)) {
+			req->q->failover_rq_fn(req);
 			return;
 		}
 
@@ -2893,6 +2893,7 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 		sprintf(disk_name, "nvme%dc%dn%d", ctrl->subsys->instance,
 				ctrl->cntlid, ns->head->instance);
 		flags = GENHD_FL_HIDDEN;
+		ns->queue->failover_rq_fn = nvme_failover_req;
 	} else {
 		sprintf(disk_name, "nvme%dn%d", ctrl->subsys->instance,
 				ns->head->instance);
