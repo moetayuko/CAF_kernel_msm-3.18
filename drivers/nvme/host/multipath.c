@@ -19,7 +19,7 @@ module_param(multipath, bool, 0644);
 MODULE_PARM_DESC(multipath,
 	"turn on native support for multiple controllers per subsystem");
 
-void nvme_failover_req(struct request *req)
+static void nvme_failover_req(struct request *req)
 {
 	struct nvme_ns *ns = req->q->queuedata;
 	unsigned long flags;
@@ -35,7 +35,7 @@ void nvme_failover_req(struct request *req)
 
 bool nvme_req_needs_failover(struct request *req)
 {
-	if (!(req->cmd_flags & REQ_NVME_MPATH))
+	if (!req->failover_rq)
 		return false;
 
 	switch (nvme_req(req)->status & 0x7ff) {
@@ -128,7 +128,8 @@ static blk_qc_t nvme_ns_head_make_request(struct request_queue *q,
 	ns = nvme_find_path(head);
 	if (likely(ns)) {
 		bio->bi_disk = ns->disk;
-		bio->bi_opf |= REQ_NVME_MPATH;
+		/* Mark bio as coming in through the mpath node. */
+		bio->bi_failover_rq = nvme_failover_req;
 		ret = direct_make_request(bio);
 	} else if (!list_empty_careful(&head->list)) {
 		dev_warn_ratelimited(dev, "no path available - requeuing I/O\n");
