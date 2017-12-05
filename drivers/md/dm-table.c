@@ -866,7 +866,8 @@ EXPORT_SYMBOL(dm_consume_args);
 static bool __table_type_bio_based(enum dm_queue_mode table_type)
 {
 	return (table_type == DM_TYPE_BIO_BASED ||
-		table_type == DM_TYPE_DAX_BIO_BASED);
+		table_type == DM_TYPE_DAX_BIO_BASED ||
+		table_type == DM_TYPE_NVME_BIO_BASED);
 }
 
 static bool __table_type_request_based(enum dm_queue_mode table_type)
@@ -909,6 +910,8 @@ static bool dm_table_supports_dax(struct dm_table *t)
 	return true;
 }
 
+static bool dm_table_does_not_support_partial_completion(struct dm_table *t);
+
 static int dm_table_determine_type(struct dm_table *t)
 {
 	unsigned i;
@@ -923,6 +926,14 @@ static int dm_table_determine_type(struct dm_table *t)
 		/* target already set the table's type */
 		if (t->type == DM_TYPE_BIO_BASED)
 			return 0;
+		else if (t->type == DM_TYPE_NVME_BIO_BASED) {
+			if (!dm_table_does_not_support_partial_completion(t)) {
+				DMERR("nvme bio-based is only possible with devices"
+				      " that don't support partial completion");
+				return -EINVAL;
+			}
+			return 0;
+		}
 		BUG_ON(t->type == DM_TYPE_DAX_BIO_BASED);
 		goto verify_rq_based;
 	}
@@ -959,8 +970,13 @@ static int dm_table_determine_type(struct dm_table *t)
 		/* We must use this table as bio-based */
 		t->type = DM_TYPE_BIO_BASED;
 		if (dm_table_supports_dax(t) ||
-		    (list_empty(devices) && live_md_type == DM_TYPE_DAX_BIO_BASED))
+		    (list_empty(devices) && live_md_type == DM_TYPE_DAX_BIO_BASED)) {
 			t->type = DM_TYPE_DAX_BIO_BASED;
+		} else if ((dm_table_get_immutable_target(t) &&
+			    dm_table_does_not_support_partial_completion(t)) ||
+			   (list_empty(devices) && live_md_type == DM_TYPE_NVME_BIO_BASED)) {
+			t->type = DM_TYPE_NVME_BIO_BASED;
+		}
 		return 0;
 	}
 
@@ -1706,6 +1722,20 @@ static bool dm_table_all_devices_attribute(struct dm_table *t,
 	}
 
 	return true;
+}
+
+static int device_no_partial_completion(struct dm_target *ti, struct dm_dev *dev,
+					sector_t start, sector_t len, void *data)
+{
+	char b[BDEVNAME_SIZE];
+
+	/* For now, NVMe devices are the only devices of this class */
+	return (strncmp(bdevname(dev->bdev, b), "nvme", 3) == 0);
+}
+
+static bool dm_table_does_not_support_partial_completion(struct dm_table *t)
+{
+	return dm_table_all_devices_attribute(t, device_no_partial_completion);
 }
 
 static int device_not_write_same_capable(struct dm_target *ti, struct dm_dev *dev,
