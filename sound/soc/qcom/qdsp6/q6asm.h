@@ -11,4 +11,9 @@ struct audio_client *q6asm_audio_client_alloc(struct device *dev,
 					      app_cb cb, void *priv);
 void q6asm_audio_client_free(struct audio_client *ac);
 int q6asm_get_session_id(struct audio_client *ac);
+int q6asm_map_memory_regions(unsigned int dir,
+			     struct audio_client *ac,
+			     dma_addr_t phys,
+			     unsigned int bufsz, unsigned int bufcnt);
+int q6asm_unmap_memory_regions(unsigned int dir, struct audio_client *ac);
 #endif /* __Q6_ASM_H__ */
