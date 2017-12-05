@@ -267,16 +267,11 @@ static inline unsigned long cr4_read_shadow(void)
 	return this_cpu_read(cpu_tlbstate.cr4);
 }
 
-static inline void invalidate_pcid_other(void)
+/*
+ * Mark all other ASIDs as invalid, preserves the current.
+ */
+static inline void invalidate_other_asid(void)
 {
-	/*
-	 * With global pages, all of the shared kenel page tables
-	 * are set as _PAGE_GLOBAL.  We have no shared nonglobals
-	 * and nothing to do here.
-	 */
-	if (!static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
-		return;
-
 	this_cpu_write(cpu_tlbstate.invalidate_other, true);
 }
 
@@ -408,11 +403,16 @@ static inline void __flush_tlb_one(unsigned long addr)
 {
 	count_vm_tlb_event(NR_TLB_LOCAL_FLUSH_ONE);
 	__flush_tlb_single(addr);
+
+	if (!static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
+		return;
+
 	/*
-	 * Invalidate other address spaces inaccessible to single-page
-	 * invalidation:
+	 * __flush_tlb_single() will have cleared the TLB entry for this ASID,
+	 * but since kernel space is replicated across all, we must also
+	 * invalidate all others.
 	 */
-	invalidate_pcid_other();
+	invalidate_other_asid();
 }
 
 #define TLB_FLUSH_ALL	-1UL
