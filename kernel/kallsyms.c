@@ -411,25 +411,6 @@ static int __sprint_symbol(char *buffer, unsigned long address,
 	return len;
 }
 
-void *dereference_symbol_descriptor(void *ptr)
-{
-#ifdef HAVE_DEREFERENCE_FUNCTION_DESCRIPTOR
-	struct module *mod;
-
-	ptr = dereference_kernel_function_descriptor(ptr);
-	if (is_ksym_addr((unsigned long)ptr))
-		return ptr;
-
-	preempt_disable();
-	mod = __module_address((unsigned long)ptr);
-	preempt_enable();
-
-	if (mod)
-		ptr = dereference_module_function_descriptor(mod, ptr);
-#endif
-	return ptr;
-}
-
 /**
  * sprint_symbol - Look up a kernel symbol and return it in a text buffer
  * @buffer: buffer to be stored
