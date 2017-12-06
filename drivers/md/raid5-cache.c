@@ -2448,7 +2448,6 @@ static void r5c_recovery_flush_data_only_stripes(struct r5l_log *log,
 		raid5_release_stripe(sh);
 	}
 
-	md_wakeup_thread(conf->mddev->thread);
 	/* reuse conf->wait_for_quiescent in recovery */
 	wait_event(conf->wait_for_quiescent,
 		   atomic_read(&conf->active_stripes) == 0);
@@ -2577,31 +2576,22 @@ static ssize_t r5c_journal_mode_show(struct mddev *mddev, char *page)
 int r5c_journal_mode_set(struct mddev *mddev, int mode)
 {
 	struct r5conf *conf;
-	int err;
 
 	if (mode < R5C_JOURNAL_MODE_WRITE_THROUGH ||
 	    mode > R5C_JOURNAL_MODE_WRITE_BACK)
 		return -EINVAL;
 
-	err = mddev_lock(mddev);
-	if (err)
-		return err;
 	conf = mddev->private;
-	if (!conf || !conf->log) {
-		mddev_unlock(mddev);
+	if (!conf || !conf->log)
 		return -ENODEV;
-	}
 
 	if (raid5_calc_degraded(conf) > 0 &&
-	    mode == R5C_JOURNAL_MODE_WRITE_BACK) {
-		mddev_unlock(mddev);
+	    mode == R5C_JOURNAL_MODE_WRITE_BACK)
 		return -EINVAL;
-	}
 
 	mddev_suspend(mddev);
 	conf->log->r5c_journal_mode = mode;
 	mddev_resume(mddev);
-	mddev_unlock(mddev);
 
 	pr_debug("md/raid:%s: setting r5c cache mode to %d: %s\n",
 		 mdname(mddev), mode, r5c_journal_mode_str[mode]);
@@ -2614,6 +2604,7 @@ static ssize_t r5c_journal_mode_store(struct mddev *mddev,
 {
 	int mode = ARRAY_SIZE(r5c_journal_mode_str);
 	size_t len = length;
+	int ret;
 
 	if (len < 2)
 		return -EINVAL;
@@ -2625,8 +2616,12 @@ static ssize_t r5c_journal_mode_store(struct mddev *mddev,
 		if (strlen(r5c_journal_mode_str[mode]) == len &&
 		    !strncmp(page, r5c_journal_mode_str[mode], len))
 			break;
-
-	return r5c_journal_mode_set(mddev, mode) ?: length;
+	ret = mddev_lock(mddev);
+	if (ret)
+		return ret;
+	ret = r5c_journal_mode_set(mddev, mode);
+	mddev_unlock(mddev);
+	return ret ?: length;
 }
 
 struct md_sysfs_entry
@@ -3040,6 +3035,23 @@ ioerr:
 	return ret;
 }
 
+int r5l_start(struct r5l_log *log)
+{
+	int ret;
+
+	if (!log)
+		return 0;
+
+	ret = r5l_load_log(log);
+	if (ret) {
+		struct mddev *mddev = log->rdev->mddev;
+		struct r5conf *conf = mddev->private;
+
+		r5l_exit_log(conf);
+	}
+	return ret;
+}
+
 void r5c_update_on_rdev_error(struct mddev *mddev, struct md_rdev *rdev)
 {
 	struct r5conf *conf = mddev->private;
@@ -3142,13 +3154,9 @@ int r5l_init_log(struct r5conf *conf, struct md_rdev *rdev)
 
 	rcu_assign_pointer(conf->log, log);
 
-	if (r5l_load_log(log))
-		goto error;
-
 	set_bit(MD_HAS_JOURNAL, &conf->mddev->flags);
 	return 0;
 
-error:
 	rcu_assign_pointer(conf->log, NULL);
 	md_unregister_thread(&log->reclaim_thread);
 reclaim_thread:
