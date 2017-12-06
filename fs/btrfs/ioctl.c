@@ -307,12 +307,10 @@ static int btrfs_ioctl_setflags(struct file *file, void __user *arg)
 		ip->flags |= BTRFS_INODE_COMPRESS;
 		ip->flags &= ~BTRFS_INODE_NOCOMPRESS;
 
-		if (fs_info->compress_type == BTRFS_COMPRESS_LZO)
-			comp = "lzo";
-		else if (fs_info->compress_type == BTRFS_COMPRESS_ZLIB)
-			comp = "zlib";
-		else
-			comp = "zstd";
+		comp = btrfs_compress_type2str(fs_info->compress_type);
+		if (!comp || comp[0] == 0)
+			comp = btrfs_compress_type2str(BTRFS_COMPRESS_ZLIB);
+
 		ret = btrfs_set_prop(inode, "btrfs.compression",
 				     comp, strlen(comp), 0);
 		if (ret)
@@ -1190,7 +1188,7 @@ again:
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, page_start,
 			  page_end - 1, EXTENT_DIRTY | EXTENT_DELALLOC |
 			  EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG, 0, 0,
-			  &cached_state, GFP_NOFS);
+			  &cached_state);
 
 	if (i_done != page_cnt) {
 		spin_lock(&BTRFS_I(inode)->lock);
@@ -1503,7 +1501,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 		goto out_free;
 	}
 
-	if (!device->writeable) {
+	if (!test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		btrfs_info(fs_info,
 			   "resizer unable to apply on readonly device %llu",
 		       devid);
@@ -1528,7 +1526,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 		}
 	}
 
-	if (device->is_tgtdev_for_dev_replace) {
+	if (test_bit(BTRFS_DEV_STATE_REPLACE_TGT, &device->dev_state)) {
 		ret = -EPERM;
 		goto out_free;
 	}
@@ -1760,6 +1758,7 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 	struct btrfs_trans_handle *trans;
 	u64 root_flags;
 	u64 flags;
+	bool clear_received_uuid = false;
 	int ret = 0;
 
 	if (!inode_owner_or_capable(inode))
@@ -1809,6 +1808,7 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 			btrfs_set_root_flags(&root->root_item,
 				     root_flags & ~BTRFS_ROOT_SUBVOL_RDONLY);
 			spin_unlock(&root->root_item_lock);
+			clear_received_uuid = true;
 		} else {
 			spin_unlock(&root->root_item_lock);
 			btrfs_warn(fs_info,
@@ -1823,6 +1823,24 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 	if (IS_ERR(trans)) {
 		ret = PTR_ERR(trans);
 		goto out_reset;
+	}
+
+	if (clear_received_uuid) {
+	        if (!btrfs_is_empty_uuid(root->root_item.received_uuid)) {
+	                ret = btrfs_uuid_tree_rem(trans, fs_info,
+	                                root->root_item.received_uuid,
+	                                BTRFS_UUID_KEY_RECEIVED_SUBVOL,
+	                                root->root_key.objectid);
+
+	                if (ret && ret != -ENOENT) {
+	                        btrfs_abort_transaction(trans, ret);
+	                        btrfs_end_transaction(trans);
+	                        goto out_reset;
+	                }
+
+	                memset(root->root_item.received_uuid, 0,
+	                                BTRFS_UUID_SIZE);
+	        }
 	}
 
 	ret = btrfs_update_root(trans, fs_info->tree_root,
@@ -2206,7 +2224,7 @@ static noinline int btrfs_search_path_in_tree(struct btrfs_fs_info *info,
 	if (!path)
 		return -ENOMEM;
 
-	ptr = &name[BTRFS_INO_LOOKUP_PATH_MAX];
+	ptr = &name[BTRFS_INO_LOOKUP_PATH_MAX - 1];
 
 	key.objectid = tree_id;
 	key.type = BTRFS_ROOT_ITEM_KEY;
@@ -2675,14 +2693,12 @@ static long btrfs_ioctl_rm_dev_v2(struct file *file, void __user *arg)
 		goto out;
 	}
 
-	mutex_lock(&fs_info->volume_mutex);
 	if (vol_args->flags & BTRFS_DEVICE_SPEC_BY_ID) {
 		ret = btrfs_rm_device(fs_info, NULL, vol_args->devid);
 	} else {
 		vol_args->name[BTRFS_SUBVOL_NAME_MAX] = '\0';
 		ret = btrfs_rm_device(fs_info, vol_args->name, 0);
 	}
-	mutex_unlock(&fs_info->volume_mutex);
 	clear_bit(BTRFS_FS_EXCL_OP, &fs_info->flags);
 
 	if (!ret) {
@@ -2726,9 +2742,7 @@ static long btrfs_ioctl_rm_dev(struct file *file, void __user *arg)
 	}
 
 	vol_args->name[BTRFS_PATH_NAME_MAX] = '\0';
-	mutex_lock(&fs_info->volume_mutex);
 	ret = btrfs_rm_device(fs_info, vol_args->name, 0);
-	mutex_unlock(&fs_info->volume_mutex);
 
 	if (!ret)
 		btrfs_info(fs_info, "disk deleted %s", vol_args->name);
@@ -2753,16 +2767,16 @@ static long btrfs_ioctl_fs_info(struct btrfs_fs_info *fs_info,
 	if (!fi_args)
 		return -ENOMEM;
 
-	mutex_lock(&fs_devices->device_list_mutex);
+	rcu_read_lock();
 	fi_args->num_devices = fs_devices->num_devices;
-	memcpy(&fi_args->fsid, fs_info->fsid, sizeof(fi_args->fsid));
 
-	list_for_each_entry(device, &fs_devices->devices, dev_list) {
+	list_for_each_entry_rcu(device, &fs_devices->devices, dev_list) {
 		if (device->devid > fi_args->max_id)
 			fi_args->max_id = device->devid;
 	}
-	mutex_unlock(&fs_devices->device_list_mutex);
+	rcu_read_unlock();
 
+	memcpy(&fi_args->fsid, fs_info->fsid, sizeof(fi_args->fsid));
 	fi_args->nodesize = fs_info->nodesize;
 	fi_args->sectorsize = fs_info->sectorsize;
 	fi_args->clone_alignment = fs_info->sectorsize;
@@ -2779,7 +2793,6 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 {
 	struct btrfs_ioctl_dev_info_args *di_args;
 	struct btrfs_device *dev;
-	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
 	int ret = 0;
 	char *s_uuid = NULL;
 
@@ -2790,7 +2803,7 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 	if (!btrfs_is_empty_uuid(di_args->uuid))
 		s_uuid = di_args->uuid;
 
-	mutex_lock(&fs_devices->device_list_mutex);
+	rcu_read_lock();
 	dev = btrfs_find_device(fs_info, di_args->devid, s_uuid, NULL);
 
 	if (!dev) {
@@ -2805,17 +2818,15 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 	if (dev->name) {
 		struct rcu_string *name;
 
-		rcu_read_lock();
 		name = rcu_dereference(dev->name);
 		strncpy(di_args->path, name->str, sizeof(di_args->path));
-		rcu_read_unlock();
 		di_args->path[sizeof(di_args->path) - 1] = 0;
 	} else {
 		di_args->path[0] = '\0';
 	}
 
 out:
-	mutex_unlock(&fs_devices->device_list_mutex);
+	rcu_read_unlock();
 	if (ret == 0 && copy_to_user(arg, di_args, sizeof(*di_args)))
 		ret = -EFAULT;
 
