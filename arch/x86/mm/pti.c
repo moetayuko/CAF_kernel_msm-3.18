@@ -73,7 +73,7 @@ void __init pti_check_boottime_disable(void)
 static pmd_t *pti_user_pagetable_walk_pmd(unsigned long address)
 {
 	pgd_t *pgd = kernel_to_user_pgdp(pgd_offset_k(address));
-	gfp_t gfp = (GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO);
+	gfp_t gfp = (GFP_KERNEL | __GFP_ZERO);
 	pud_t *pud;
 	p4d_t *p4d;
 
