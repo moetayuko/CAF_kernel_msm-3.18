@@ -243,7 +243,7 @@ static inline pgd_t pti_set_user_pgd(pgd_t *pgdp, pgd_t pgd)
 		} else {
 			/*
 			 * Attempted to clear a _PAGE_USER PGD which is in
-			 * the kernel porttion of the address space.  PGDs
+			 * the kernel portion of the address space.  PGDs
 			 * are pre-populated and we never clear them.
 			 */
 			WARN_ON_ONCE(1);
