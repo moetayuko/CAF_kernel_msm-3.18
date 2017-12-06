@@ -296,20 +296,26 @@ static inline u32 dsa_user_ports(struct dsa_switch *ds)
 	return mask;
 }
 
-static inline u8 dsa_upstream_port(struct dsa_switch *ds)
+/* Return the local port used to reach an arbitrary switch port */
+static inline unsigned int dsa_towards_port(struct dsa_switch *ds, int device,
+					    int port)
 {
-	struct dsa_switch_tree *dst = ds->dst;
-
-	/*
-	 * If this is the root switch (i.e. the switch that connects
-	 * to the CPU), return the cpu port number on this switch.
-	 * Else return the (DSA) port number that connects to the
-	 * switch that is one hop closer to the cpu.
-	 */
-	if (dst->cpu_dp->ds == ds)
-		return dst->cpu_dp->index;
+	if (device == ds->index)
+		return port;
 	else
-		return ds->rtable[dst->cpu_dp->ds->index];
+		return ds->rtable[device];
+}
+
+/* Return the local port used to reach the dedicated CPU port */
+static inline unsigned int dsa_upstream_port(struct dsa_switch *ds, int port)
+{
+	const struct dsa_port *dp = dsa_to_port(ds, port);
+	const struct dsa_port *cpu_dp = dp->cpu_dp;
+
+	if (!cpu_dp)
+		return port;
+
+	return dsa_towards_port(ds, cpu_dp->ds->index, cpu_dp->index);
 }
 
 typedef int dsa_fdb_dump_cb_t(const unsigned char *addr, u16 vid,
@@ -412,12 +418,10 @@ struct dsa_switch_ops {
 	 */
 	int	(*port_vlan_filtering)(struct dsa_switch *ds, int port,
 				       bool vlan_filtering);
-	int	(*port_vlan_prepare)(struct dsa_switch *ds, int port,
-				     const struct switchdev_obj_port_vlan *vlan,
-				     struct switchdev_trans *trans);
-	void	(*port_vlan_add)(struct dsa_switch *ds, int port,
-				 const struct switchdev_obj_port_vlan *vlan,
-				 struct switchdev_trans *trans);
+	int (*port_vlan_prepare)(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_port_vlan *vlan);
+	void (*port_vlan_add)(struct dsa_switch *ds, int port,
+			      const struct switchdev_obj_port_vlan *vlan);
 	int	(*port_vlan_del)(struct dsa_switch *ds, int port,
 				 const struct switchdev_obj_port_vlan *vlan);
 	/*
@@ -433,12 +437,10 @@ struct dsa_switch_ops {
 	/*
 	 * Multicast database
 	 */
-	int	(*port_mdb_prepare)(struct dsa_switch *ds, int port,
-				    const struct switchdev_obj_port_mdb *mdb,
-				    struct switchdev_trans *trans);
-	void	(*port_mdb_add)(struct dsa_switch *ds, int port,
-				const struct switchdev_obj_port_mdb *mdb,
-				struct switchdev_trans *trans);
+	int (*port_mdb_prepare)(struct dsa_switch *ds, int port,
+				const struct switchdev_obj_port_mdb *mdb);
+	void (*port_mdb_add)(struct dsa_switch *ds, int port,
+			     const struct switchdev_obj_port_mdb *mdb);
 	int	(*port_mdb_del)(struct dsa_switch *ds, int port,
 				const struct switchdev_obj_port_mdb *mdb);
 	/*
