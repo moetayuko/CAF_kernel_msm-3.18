@@ -595,14 +595,21 @@ static int rbio_can_merge(struct btrfs_raid_bio *last,
 	 * bio list here, anyone else that wants to
 	 * change this stripe needs to do their own rmw.
 	 */
-	if (last->operation == BTRFS_RBIO_PARITY_SCRUB ||
-	    cur->operation == BTRFS_RBIO_PARITY_SCRUB)
+	if (last->operation == BTRFS_RBIO_PARITY_SCRUB)
 		return 0;
 
-	if (last->operation == BTRFS_RBIO_REBUILD_MISSING ||
-	    cur->operation == BTRFS_RBIO_REBUILD_MISSING)
+	if (last->operation == BTRFS_RBIO_REBUILD_MISSING)
 		return 0;
 
+	if (last->operation == BTRFS_RBIO_READ_REBUILD) {
+		int fa = (last->faila < last->failb) ? last->faila : last->failb;
+		int fb = (last->faila < last->failb) ? last->failb : last->faila;
+		int cur_fa = (cur->faila < cur->failb) ? cur->faila : cur->failb;
+		int cur_fb = (cur->faila < cur->failb) ? cur->failb : cur->faila;
+
+		if (fa != cur_fa || fb != cur_fb)
+			return 0;
+	}
 	return 1;
 }
 
@@ -2169,11 +2176,21 @@ int raid56_parity_recover(struct btrfs_fs_info *fs_info, struct bio *bio,
 	}
 
 	/*
-	 * reconstruct from the q stripe if they are
-	 * asking for mirror 3
+	 * Loop retry:
+	 * for 'mirror == 2', reconstruct from all other stripes.
+	 * for 'mirror_num > 2', select a stripe to fail on every retry.
 	 */
-	if (mirror_num == 3)
-		rbio->failb = rbio->real_stripes - 2;
+	if (mirror_num > 2) {
+		/*
+		 * 'mirror == 3' is to fail the p stripe and
+		 * reconstruct from the q stripe.  'mirror > 3' is to
+		 * fail a data stripe and reconstruct from p+q stripe.
+		 */
+		rbio->failb = rbio->real_stripes - (mirror_num - 1);
+		ASSERT(rbio->failb > 0);
+		if (rbio->failb <= rbio->faila)
+			rbio->failb--;
+	}
 
 	ret = lock_stripe_add(rbio);
 
