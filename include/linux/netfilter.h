@@ -213,12 +213,16 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
 	case NFPROTO_IPV6:
 		hook_head = rcu_dereference(net->nf.hooks_ipv6[hook]);
 		break;
+#ifdef CONFIG_NETFILTER_FAMILY_ARP
 	case NFPROTO_ARP:
 		hook_head = rcu_dereference(net->nf.hooks_arp[hook]);
 		break;
+#endif
+#ifdef CONFIG_NETFILTER_FAMILY_BRIDGE
 	case NFPROTO_BRIDGE:
 		hook_head = rcu_dereference(net->nf.hooks_bridge[hook]);
 		break;
+#endif
 #if IS_ENABLED(CONFIG_DECNET)
 	case NFPROTO_DECNET:
 		hook_head = rcu_dereference(net->nf.hooks_decnet[hook]);
