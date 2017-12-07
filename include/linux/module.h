@@ -606,6 +606,9 @@ int ref_module(struct module *a, struct module *b);
 	__mod ? __mod->name : "kernel";		\
 })
 
+/* Dereference module function descriptor */
+void *dereference_module_function_descriptor(struct module *mod, void *ptr);
+
 /* For kallsyms to ask for address resolution.  namebuf should be at
  * least KSYM_NAME_LEN long: a pointer to namebuf is returned if
  * found, otherwise NULL. */
