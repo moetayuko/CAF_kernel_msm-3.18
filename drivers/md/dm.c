@@ -997,7 +997,7 @@ static size_t dm_dax_copy_from_iter(struct dax_device *dax_dev, pgoff_t pgoff,
 
 /*
  * A target may call dm_accept_partial_bio only from the map routine.  It is
- * allowed for all bio types except REQ_PREFLUSH.
+ * allowed for all bio types except REQ_PREFLUSH and REQ_OP_ZONE_RESET.
  *
  * dm_accept_partial_bio informs the dm that the target only wants to process
  * additional n_sectors sectors of the bio and the rest of the data should be
@@ -1114,65 +1114,10 @@ void dm_remap_zone_report(struct dm_target *ti, struct bio *bio, sector_t start)
 }
 EXPORT_SYMBOL_GPL(dm_remap_zone_report);
 
-/*
- * Flush current->bio_list when the target map method blocks.
- * This fixes deadlocks in snapshot and possibly in other targets.
- */
-struct dm_offload {
-	struct blk_plug plug;
-	struct blk_plug_cb cb;
-};
-
-static void flush_current_bio_list(struct blk_plug_cb *cb, bool from_schedule)
-{
-	struct dm_offload *o = container_of(cb, struct dm_offload, cb);
-	struct bio_list list;
-	struct bio *bio;
-	int i;
-
-	INIT_LIST_HEAD(&o->cb.list);
-
-	if (unlikely(!current->bio_list))
-		return;
-
-	for (i = 0; i < 2; i++) {
-		list = current->bio_list[i];
-		bio_list_init(&current->bio_list[i]);
-
-		while ((bio = bio_list_pop(&list))) {
-			struct bio_set *bs = bio->bi_pool;
-			if (unlikely(!bs) || bs == fs_bio_set ||
-			    !bs->rescue_workqueue) {
-				bio_list_add(&current->bio_list[i], bio);
-				continue;
-			}
-
-			spin_lock(&bs->rescue_lock);
-			bio_list_add(&bs->rescue_list, bio);
-			queue_work(bs->rescue_workqueue, &bs->rescue_work);
-			spin_unlock(&bs->rescue_lock);
-		}
-	}
-}
-
-static void dm_offload_start(struct dm_offload *o)
-{
-	blk_start_plug(&o->plug);
-	o->cb.callback = flush_current_bio_list;
-	list_add(&o->cb.list, &current->plug->cb_list);
-}
-
-static void dm_offload_end(struct dm_offload *o)
-{
-	list_del(&o->cb.list);
-	blk_finish_plug(&o->plug);
-}
-
 static void __map_bio(struct dm_target_io *tio)
 {
 	int r;
 	sector_t sector;
-	struct dm_offload o;
 	struct bio *clone = &tio->clone;
 	struct dm_target *ti = tio->ti;
 
@@ -1186,10 +1131,7 @@ static void __map_bio(struct dm_target_io *tio)
 	atomic_inc(&tio->io->io_count);
 	sector = clone->bi_iter.bi_sector;
 
-	dm_offload_start(&o);
 	r = ti->type->map(ti, clone);
-	dm_offload_end(&o);
-
 	switch (r) {
 	case DM_MAPIO_SUBMITTED:
 		break;
@@ -1264,16 +1206,17 @@ static int clone_bio(struct dm_target_io *tio, struct bio *bio,
 	return 0;
 }
 
-static struct dm_target_io *alloc_tio(struct clone_info *ci,
-				      struct dm_target *ti,
-				      unsigned target_bio_nr)
+static struct dm_target_io *alloc_tio(struct clone_info *ci, struct dm_target *ti,
+				      unsigned target_bio_nr, gfp_t gfp_mask)
 {
 	struct dm_target_io *tio;
 	struct bio *clone;
 
-	clone = bio_alloc_bioset(GFP_NOIO, 0, ci->md->bs);
-	tio = container_of(clone, struct dm_target_io, clone);
+	clone = bio_alloc_bioset(gfp_mask, 0, ci->md->bs);
+	if (!clone)
+		return NULL;
 
+	tio = container_of(clone, struct dm_target_io, clone);
 	tio->io = ci->io;
 	tio->ti = ti;
 	tio->target_bio_nr = target_bio_nr;
@@ -1281,11 +1224,49 @@ static struct dm_target_io *alloc_tio(struct clone_info *ci,
 	return tio;
 }
 
-static void __clone_and_map_simple_bio(struct clone_info *ci,
-				       struct dm_target *ti,
-				       unsigned target_bio_nr, unsigned *len)
+static void alloc_multiple_bios(struct bio_list *blist, struct clone_info *ci,
+				struct dm_target *ti, unsigned num_bios)
 {
-	struct dm_target_io *tio = alloc_tio(ci, ti, target_bio_nr);
+	struct dm_target_io *tio;
+	int try;
+
+	if (!num_bios)
+		return;
+
+	if (num_bios == 1) {
+		tio = alloc_tio(ci, ti, 0, GFP_NOIO);
+		bio_list_add(blist, &tio->clone);
+		return;
+	}
+
+	for (try = 0; try < 2; try++) {
+		int bio_nr;
+		struct bio *bio;
+
+		if (try)
+			mutex_lock(&ci->md->table_devices_lock);
+		for (bio_nr = 0; bio_nr < num_bios; bio_nr++) {
+			tio = alloc_tio(ci, ti, bio_nr, try ? GFP_NOIO : GFP_NOWAIT);
+			if (!tio)
+				break;
+
+			bio_list_add(blist, &tio->clone);
+		}
+		if (try)
+			mutex_unlock(&ci->md->table_devices_lock);
+		if (bio_nr == num_bios)
+			return;
+
+		while ((bio = bio_list_pop(blist))) {
+			tio = container_of(bio, struct dm_target_io, clone);
+			free_tio(tio);
+		}
+	}
+}
+
+static void __clone_and_map_simple_bio(struct clone_info *ci,
+				       struct dm_target_io *tio, unsigned *len)
+{
 	struct bio *clone = &tio->clone;
 
 	tio->len_ptr = len;
@@ -1300,10 +1281,16 @@ static void __clone_and_map_simple_bio(struct clone_info *ci,
 static void __send_duplicate_bios(struct clone_info *ci, struct dm_target *ti,
 				  unsigned num_bios, unsigned *len)
 {
-	unsigned target_bio_nr;
+	struct bio_list blist = BIO_EMPTY_LIST;
+	struct bio *bio;
+	struct dm_target_io *tio;
 
-	for (target_bio_nr = 0; target_bio_nr < num_bios; target_bio_nr++)
-		__clone_and_map_simple_bio(ci, ti, target_bio_nr, len);
+	alloc_multiple_bios(&blist, ci, ti, num_bios);
+
+	while ((bio = bio_list_pop(&blist))) {
+		tio = container_of(bio, struct dm_target_io, clone);
+		__clone_and_map_simple_bio(ci, tio, len);
+	}
 }
 
 static int __send_empty_flush(struct clone_info *ci)
@@ -1319,32 +1306,22 @@ static int __send_empty_flush(struct clone_info *ci)
 }
 
 static int __clone_and_map_data_bio(struct clone_info *ci, struct dm_target *ti,
-				     sector_t sector, unsigned *len)
+				    sector_t sector, unsigned *len)
 {
 	struct bio *bio = ci->bio;
 	struct dm_target_io *tio;
-	unsigned target_bio_nr;
-	unsigned num_target_bios = 1;
-	int r = 0;
+	int r;
 
-	/*
-	 * Does the target want to receive duplicate copies of the bio?
-	 */
-	if (bio_data_dir(bio) == WRITE && ti->num_write_bios)
-		num_target_bios = ti->num_write_bios(ti, bio);
-
-	for (target_bio_nr = 0; target_bio_nr < num_target_bios; target_bio_nr++) {
-		tio = alloc_tio(ci, ti, target_bio_nr);
-		tio->len_ptr = len;
-		r = clone_bio(tio, bio, sector, *len);
-		if (r < 0) {
-			free_tio(tio);
-			break;
-		}
-		__map_bio(tio);
+	tio = alloc_tio(ci, ti, 0, GFP_NOIO);
+	tio->len_ptr = len;
+	r = clone_bio(tio, bio, sector, *len);
+	if (r < 0) {
+		free_tio(tio);
+		return r;
 	}
+	__map_bio(tio);
 
-	return r;
+	return 0;
 }
 
 typedef unsigned (*get_num_bios_fn)(struct dm_target *ti);
@@ -1498,8 +1475,29 @@ static void __split_and_process_bio(struct mapped_device *md,
 	} else {
 		ci.bio = bio;
 		ci.sector_count = bio_sectors(bio);
-		while (ci.sector_count && !error)
+		while (ci.sector_count && !error) {
 			error = __split_and_process_non_flush(&ci);
+			if (current->bio_list && ci.sector_count && !error) {
+				/*
+				 * Remainder must be passed to generic_make_request()
+				 * so that it gets handled *after* bios already submitted
+				 * have been completely processed.
+				 * We take a clone of the original to store in
+				 * ci.io->bio to be used by end_io_acct() and
+				 * for dec_pending to use for completion handling.
+				 * As this path is not used for REQ_OP_ZONE_REPORT,
+				 * the usage of io->bio in dm_remap_zone_report()
+				 * won't be affected by this reassignment.
+				 */
+				struct bio *b = bio_clone_bioset(bio, GFP_NOIO,
+								 md->queue->bio_split);
+				ci.io->bio = b;
+				bio_advance(bio, (bio_sectors(bio) - ci.sector_count) << 9);
+				bio_chain(b, bio);
+				generic_make_request(bio);
+				break;
+			}
+		}
 	}
 
 	/* drop the extra reference count */
@@ -1510,8 +1508,8 @@ static void __split_and_process_bio(struct mapped_device *md,
  *---------------------------------------------------------------*/
 
 /*
- * The request function that just remaps the bio built up by
- * dm_merge_bvec.
+ * The request function that remaps the bio to one target and
+ * splits off any remainder.
  */
 static blk_qc_t dm_make_request(struct request_queue *q, struct bio *bio)
 {
@@ -2034,12 +2032,6 @@ int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t)
 	case DM_TYPE_DAX_BIO_BASED:
 		dm_init_normal_md_queue(md);
 		blk_queue_make_request(md->queue, dm_make_request);
-		/*
-		 * DM handles splitting bios as needed.  Free the bio_split bioset
-		 * since it won't be used (saves 1 process per bio-based DM device).
-		 */
-		bioset_free(md->queue->bio_split);
-		md->queue->bio_split = NULL;
 
 		if (type == DM_TYPE_DAX_BIO_BASED)
 			queue_flag_set_unlocked(QUEUE_FLAG_DAX, md->queue);
@@ -2764,7 +2756,7 @@ struct dm_md_mempools *dm_alloc_md_mempools(struct mapped_device *md, enum dm_qu
 		BUG();
 	}
 
-	pools->bs = bioset_create(pool_size, front_pad, BIOSET_NEED_RESCUER);
+	pools->bs = bioset_create(pool_size, front_pad, 0);
 	if (!pools->bs)
 		goto out;
 
