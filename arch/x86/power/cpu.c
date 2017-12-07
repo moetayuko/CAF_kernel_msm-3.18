@@ -160,17 +160,19 @@ static void do_fpu_end(void)
 static void fix_processor_context(void)
 {
 	int cpu = smp_processor_id();
-	struct tss_struct *t = &per_cpu(cpu_tss, cpu);
 #ifdef CONFIG_X86_64
 	struct desc_struct *desc = get_cpu_gdt_rw(cpu);
 	tss_desc tss;
 #endif
-	set_tss_desc(cpu, t);	/*
-				 * This just modifies memory; should not be
-				 * necessary. But... This is necessary, because
-				 * 386 hardware has concept of busy TSS or some
-				 * similar stupidity.
-				 */
+
+	/*
+	 * We need to reload TR, which requires that we change the
+	 * GDT entry to indicate "available" first.
+	 *
+	 * XXX: This could probably all be replaced by a call to
+	 * force_reload_TR().
+	 */
+	set_tss_desc(cpu, &get_cpu_entry_area(cpu)->tss.x86_tss);
 
 #ifdef CONFIG_X86_64
 	memcpy(&tss, &desc[GDT_ENTRY_TSS], sizeof(tss_desc));
@@ -226,8 +228,20 @@ static void notrace __restore_processor_state(struct saved_context *ctxt)
 	load_idt((const struct desc_ptr *)&ctxt->idt_limit);
 #endif
 
+#ifdef CONFIG_X86_64
 	/*
-	 * segment registers
+	 * We need GSBASE restored before percpu access can work.
+	 * percpu access can happen in exception handlers or in complicated
+	 * helpers like load_gs_index().
+	 */
+	wrmsrl(MSR_GS_BASE, ctxt->gs_base);
+#endif
+
+	fix_processor_context();
+
+	/*
+	 * Restore segment registers.  This happens after restoring the GDT
+	 * and LDT, which happen in fix_processor_context().
 	 */
 #ifdef CONFIG_X86_32
 	loadsegment(es, ctxt->es);
@@ -248,12 +262,13 @@ static void notrace __restore_processor_state(struct saved_context *ctxt)
 	load_gs_index(ctxt->gs);
 	asm volatile ("movw %0, %%ss" :: "r" (ctxt->ss));
 
+	/*
+	 * Restore FSBASE and user GSBASE after reloading the respective
+	 * segment selectors.
+	 */
 	wrmsrl(MSR_FS_BASE, ctxt->fs_base);
-	wrmsrl(MSR_GS_BASE, ctxt->gs_base);
 	wrmsrl(MSR_KERNEL_GS_BASE, ctxt->gs_kernel_base);
 #endif
-
-	fix_processor_context();
 
 	do_fpu_end();
 	tsc_verify_tsc_adjust(true);

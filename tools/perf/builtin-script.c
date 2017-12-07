@@ -22,6 +22,7 @@
 #include "util/cpumap.h"
 #include "util/thread_map.h"
 #include "util/stat.h"
+#include "util/color.h"
 #include "util/string2.h"
 #include "util/thread-stack.h"
 #include "util/time-utils.h"
@@ -90,6 +91,7 @@ enum perf_output_field {
 	PERF_OUTPUT_SYNTH           = 1U << 25,
 	PERF_OUTPUT_PHYS_ADDR       = 1U << 26,
 	PERF_OUTPUT_UREGS	    = 1U << 27,
+	PERF_OUTPUT_METRIC	    = 1U << 28,
 };
 
 struct output_option {
@@ -124,6 +126,7 @@ struct output_option {
 	{.str = "brstackoff", .field = PERF_OUTPUT_BRSTACKOFF},
 	{.str = "synth", .field = PERF_OUTPUT_SYNTH},
 	{.str = "phys_addr", .field = PERF_OUTPUT_PHYS_ADDR},
+	{.str = "metric", .field = PERF_OUTPUT_METRIC},
 };
 
 enum {
@@ -215,12 +218,20 @@ struct perf_evsel_script {
        char *filename;
        FILE *fp;
        u64  samples;
+       /* For metric output */
+       u64  val;
+       int  gnum;
 };
+
+static inline struct perf_evsel_script *evsel_script(struct perf_evsel *evsel)
+{
+	return (struct perf_evsel_script *)evsel->priv;
+}
 
 static struct perf_evsel_script *perf_evsel_script__new(struct perf_evsel *evsel,
 							struct perf_data *data)
 {
-	struct perf_evsel_script *es = malloc(sizeof(*es));
+	struct perf_evsel_script *es = zalloc(sizeof(*es));
 
 	if (es != NULL) {
 		if (asprintf(&es->filename, "%s.%s.dump", data->file.path, perf_evsel__name(evsel)) < 0)
@@ -228,7 +239,6 @@ static struct perf_evsel_script *perf_evsel_script__new(struct perf_evsel *evsel
 		es->fp = fopen(es->filename, "w");
 		if (es->fp == NULL)
 			goto out_free_filename;
-		es->samples = 0;
 	}
 
 	return es;
@@ -421,11 +431,6 @@ static int perf_evsel__check_attr(struct perf_evsel *evsel,
 	if (PRINT_FIELD(CPU) &&
 		perf_evsel__do_check_stype(evsel, PERF_SAMPLE_CPU, "CPU",
 					   PERF_OUTPUT_CPU, allow_user_set))
-		return -EINVAL;
-
-	if (PRINT_FIELD(PERIOD) &&
-		perf_evsel__check_stype(evsel, PERF_SAMPLE_PERIOD, "PERIOD",
-					PERF_OUTPUT_PERIOD))
 		return -EINVAL;
 
 	if (PRINT_FIELD(IREGS) &&
@@ -1477,6 +1482,86 @@ static int data_src__fprintf(u64 data_src, FILE *fp)
 	return fprintf(fp, "%-*s", maxlen, out);
 }
 
+struct metric_ctx {
+	struct perf_sample	*sample;
+	struct thread		*thread;
+	struct perf_evsel	*evsel;
+	FILE 			*fp;
+};
+
+static void script_print_metric(void *ctx, const char *color,
+			        const char *fmt,
+			        const char *unit, double val)
+{
+	struct metric_ctx *mctx = ctx;
+
+	if (!fmt)
+		return;
+	perf_sample__fprintf_start(mctx->sample, mctx->thread, mctx->evsel,
+				   mctx->fp);
+	fputs("\tmetric: ", mctx->fp);
+	if (color)
+		color_fprintf(mctx->fp, color, fmt, val);
+	else
+		printf(fmt, val);
+	fprintf(mctx->fp, " %s\n", unit);
+}
+
+static void script_new_line(void *ctx)
+{
+	struct metric_ctx *mctx = ctx;
+
+	perf_sample__fprintf_start(mctx->sample, mctx->thread, mctx->evsel,
+				   mctx->fp);
+	fputs("\tmetric: ", mctx->fp);
+}
+
+static void perf_sample__fprint_metric(struct perf_script *script,
+				       struct thread *thread,
+				       struct perf_evsel *evsel,
+				       struct perf_sample *sample,
+				       FILE *fp)
+{
+	struct perf_stat_output_ctx ctx = {
+		.print_metric = script_print_metric,
+		.new_line = script_new_line,
+		.ctx = &(struct metric_ctx) {
+				.sample = sample,
+				.thread = thread,
+				.evsel  = evsel,
+				.fp     = fp,
+			 },
+		.force_header = false,
+	};
+	struct perf_evsel *ev2;
+	static bool init;
+	u64 val;
+
+	if (!init) {
+		perf_stat__init_shadow_stats();
+		init = true;
+	}
+	if (!evsel->stats)
+		perf_evlist__alloc_stats(script->session->evlist, false);
+	if (evsel_script(evsel->leader)->gnum++ == 0)
+		perf_stat__reset_shadow_stats();
+	val = sample->period * evsel->scale;
+	perf_stat__update_shadow_stats(evsel,
+				       val,
+				       sample->cpu);
+	evsel_script(evsel)->val = val;
+	if (evsel_script(evsel->leader)->gnum == evsel->leader->nr_members) {
+		for_each_group_member (ev2, evsel->leader) {
+			perf_stat__print_shadow_stats(ev2,
+						      evsel_script(ev2)->val,
+						      sample->cpu,
+						      &ctx,
+						      NULL);
+		}
+		evsel_script(evsel->leader)->gnum = 0;
+	}
+}
+
 static void process_event(struct perf_script *script,
 			  struct perf_sample *sample, struct perf_evsel *evsel,
 			  struct addr_location *al,
@@ -1564,6 +1649,9 @@ static void process_event(struct perf_script *script,
 	if (PRINT_FIELD(PHYS_ADDR))
 		fprintf(fp, "%16" PRIx64, sample->phys_addr);
 	fprintf(fp, "\n");
+
+	if (PRINT_FIELD(METRIC))
+		perf_sample__fprint_metric(script, thread, evsel, sample, fp);
 }
 
 static struct scripting_ops	*scripting_ops;
@@ -1955,6 +2043,16 @@ static int perf_script__fopen_per_event_dump(struct perf_script *script)
 	struct perf_evsel *evsel;
 
 	evlist__for_each_entry(script->session->evlist, evsel) {
+		/*
+		 * Already setup? I.e. we may be called twice in cases like
+		 * Intel PT, one for the intel_pt// and dummy events, then
+		 * for the evsels syntheized from the auxtrace info.
+		 *
+		 * Ses perf_script__process_auxtrace_info.
+		 */
+		if (evsel->priv != NULL)
+			continue;
+
 		evsel->priv = perf_evsel_script__new(evsel, script->session->data);
 		if (evsel->priv == NULL)
 			goto out_err_fclose;
@@ -2838,6 +2936,25 @@ int process_cpu_map_event(struct perf_tool *tool __maybe_unused,
 	return set_maps(script);
 }
 
+#ifdef HAVE_AUXTRACE_SUPPORT
+static int perf_script__process_auxtrace_info(struct perf_tool *tool,
+					      union perf_event *event,
+					      struct perf_session *session)
+{
+	int ret = perf_event__process_auxtrace_info(tool, event, session);
+
+	if (ret == 0) {
+		struct perf_script *script = container_of(tool, struct perf_script, tool);
+
+		ret = perf_script__setup_per_event_dump(script);
+	}
+
+	return ret;
+}
+#else
+#define perf_script__process_auxtrace_info 0
+#endif
+
 int cmd_script(int argc, const char **argv)
 {
 	bool show_full_info = false;
@@ -2866,7 +2983,7 @@ int cmd_script(int argc, const char **argv)
 			.feature	 = perf_event__process_feature,
 			.build_id	 = perf_event__process_build_id,
 			.id_index	 = perf_event__process_id_index,
-			.auxtrace_info	 = perf_event__process_auxtrace_info,
+			.auxtrace_info	 = perf_script__process_auxtrace_info,
 			.auxtrace	 = perf_event__process_auxtrace,
 			.auxtrace_error	 = perf_event__process_auxtrace_error,
 			.stat		 = perf_event__process_stat_event,
