@@ -608,3 +608,69 @@ void klp_copy_process(struct task_struct *child)
 
 	/* TIF_PATCH_PENDING gets copied in setup_thread_stack() */
 }
+
+/*
+ * Sends a fake signal to all non-kthread tasks with TIF_PATCH_PENDING set.
+ * Kthreads with TIF_PATCH_PENDING set are woken up. Only admin can request this
+ * action currently.
+ */
+void klp_send_signals(void)
+{
+	struct task_struct *g, *task;
+
+	pr_notice("signaling remaining tasks\n");
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task) {
+		if (!klp_patch_pending(task))
+			continue;
+
+		/*
+		 * There is a small race here. We could see TIF_PATCH_PENDING
+		 * set and decide to wake up a kthread or send a fake signal.
+		 * Meanwhile the task could migrate itself and the action
+		 * would be meaningless. It is not serious though.
+		 */
+		if (task->flags & PF_KTHREAD) {
+			/*
+			 * Wake up a kthread which sleeps interruptedly and
+			 * still has not been migrated.
+			 */
+			wake_up_state(task, TASK_INTERRUPTIBLE);
+		} else {
+			/*
+			 * Send fake signal to all non-kthread tasks which are
+			 * still not migrated.
+			 */
+			spin_lock_irq(&task->sighand->siglock);
+			signal_wake_up(task, 0);
+			spin_unlock_irq(&task->sighand->siglock);
+		}
+	}
+	read_unlock(&tasklist_lock);
+}
+
+/*
+ * Drop TIF_PATCH_PENDING of all tasks on admin's request. This forces an
+ * existing transition to finish.
+ *
+ * NOTE: klp_update_patch_state(task) requires the task to be inactive or
+ * 'current'. This is not the case here and the consistency model could be
+ * broken. Administrator, who is the only one to execute the
+ * klp_force_transitions(), has to be aware of this.
+ */
+void klp_force_transition(void)
+{
+	struct task_struct *g, *task;
+	unsigned int cpu;
+
+	pr_warn("forcing remaining tasks to the patched state\n");
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task)
+		klp_update_patch_state(task);
+	read_unlock(&tasklist_lock);
+
+	for_each_possible_cpu(cpu)
+		klp_update_patch_state(idle_task(cpu));
+}
