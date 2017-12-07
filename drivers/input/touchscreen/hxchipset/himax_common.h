@@ -183,6 +183,8 @@ struct himax_config {
 
 struct himax_ts_data {
 	bool suspended;
+	bool probe_done;
+	struct mutex fb_mutex;
 	atomic_t suspend_mode;
 	uint8_t x_channel;
 	uint8_t y_channel;
@@ -230,8 +232,6 @@ struct himax_ts_data {
 	
 #if defined(CONFIG_FB)
 	struct notifier_block fb_notif;
-	struct workqueue_struct *himax_att_wq;
-	struct delayed_work work_att;
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	struct early_suspend early_suspend;
 #endif
@@ -267,8 +267,6 @@ struct himax_ts_data {
 	uint8_t usb_connected;
 	uint8_t *cable_config;
 #endif
-	struct workqueue_struct *himax_init_wq;
-	struct delayed_work work_init_func;
 
 	/* pinctrl data */
 	struct pinctrl *ts_pinctrl;

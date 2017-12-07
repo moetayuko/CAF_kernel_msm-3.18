@@ -1419,17 +1419,18 @@ void himax_cable_detect_func(void)
 #endif
 
 #ifdef CONFIG_FB
-static void himax_fb_register(struct work_struct *work)
+int himax_fb_register(struct himax_ts_data *ts)
 {
 	int ret = 0;
-	struct himax_ts_data *ts = container_of(work, struct himax_ts_data,
-							work_att.work);
+
 	I(" %s in", __func__);
 
 	ts->fb_notif.notifier_call = fb_notifier_callback;
 	ret = fb_register_client(&ts->fb_notif);
 	if (ret)
 		E(" Unable to register fb_notifier: %d\n", ret);
+
+	return ret;
 }
 #endif
 
@@ -1479,16 +1480,14 @@ static void himax_ts_diag_work_func(struct work_struct *work)
 }
 #endif
 
-static void himax_ts_init_work_func(struct work_struct *work)
+void himax_ts_init(struct himax_ts_data *ts)
 {
 	int ret = 0, err = 0;
-	struct himax_ts_data *ts;
 	struct himax_i2c_platform_data *pdata;
 	struct i2c_client *client;
 
-	ts = private_ts;
-	client = private_ts->client;
-	pdata = private_ts->pdata;
+	client = ts->client;
+	pdata = ts->pdata;
 
 	I("%s: Start.\n", __func__);
 
@@ -1617,16 +1616,6 @@ himax_read_FW_ver(client);
 			__func__, ts->input_dev->name);
 		goto err_input_register_device_failed;
 	}
-#ifdef CONFIG_FB
-	ts->himax_att_wq = create_singlethread_workqueue("HMX_ATT_reuqest");
-	if (!ts->himax_att_wq) {
-		E(" allocate syn_att_wq failed\n");
-		err = -ENOMEM;
-		goto err_get_intr_bit_failed;
-	}
-	INIT_DELAYED_WORK(&ts->work_att, himax_fb_register);
-	queue_delayed_work(ts->himax_att_wq, &ts->work_att, msecs_to_jiffies(15000));
-#endif
 
 #ifdef HX_SMART_WAKEUP
 	ts->SMWP_enable=0;
@@ -1672,9 +1661,6 @@ err_hsen_wq_failed:
 #ifdef HX_SMART_WAKEUP
 err_smwp_wq_failed:
 	wake_lock_destroy(&ts->ts_SMWP_wake_lock);
-#endif
-#ifdef CONFIG_FB
-err_get_intr_bit_failed:
 #endif
 err_input_register_device_failed:
 	input_free_device(ts->input_dev);
@@ -1756,20 +1742,24 @@ if (err || ts->ts_pinctrl == NULL) {
 	ts->pdata = pdata;
 	private_ts = ts;
 
-	ts->himax_init_wq = create_singlethread_workqueue("HMX_init_work");
-	if (!ts->himax_init_wq)
-	{
-		E(" allocate HMX_init_work failed\n");
+	mutex_init(&ts->fb_mutex);
+	/* ts initialization is deferred till FB_UNBLACK event;
+	* probe is considered pending till then.*/
+	ts->probe_done = false;
+#ifdef CONFIG_FB
+	err = himax_fb_register(ts);
+	if (err) {
+		E("Falied to register fb notifier\n");
 		err = -ENOMEM;
-		goto err_himax_init_wq_failed;
+		goto err_fb_notif_wq_create;
 	}
-	INIT_DELAYED_WORK(&ts->work_init_func, himax_ts_init_work_func);
-	queue_delayed_work(ts->himax_init_wq, &ts->work_init_func, msecs_to_jiffies(30000));/*30 sec delay*/
+#endif
 
     return 0;
 
-err_himax_init_wq_failed:
-
+#ifdef CONFIG_FB
+err_fb_notif_wq_create:
+#endif
 #ifdef CONFIG_OF
 err_alloc_dt_pdata_failed:
 #else

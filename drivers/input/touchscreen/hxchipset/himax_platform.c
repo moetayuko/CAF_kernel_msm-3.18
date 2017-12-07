@@ -35,6 +35,7 @@ int irq_enable_count = 0;
 extern struct himax_ic_data* ic_data;
 extern void himax_ts_work(struct himax_ts_data *ts);
 extern enum hrtimer_restart himax_ts_timer_func(struct hrtimer *timer);
+extern int himax_ts_init(struct himax_ts_data *ts);
 
 extern int tp_rst_gpio;
 
@@ -713,9 +714,16 @@ int fb_notifier_callback(struct notifier_block *self,
 	if (evdata && evdata->data && event == FB_EVENT_BLANK && ts &&
 			ts->client) {
 		blank = evdata->data;
+
+		mutex_lock(&ts->fb_mutex);
 		switch (*blank) {
 		case FB_BLANK_UNBLANK:
-			himax_common_resume(&ts->client->dev);
+			if (!ts->probe_done) {
+				himax_ts_init(ts);
+				ts->probe_done = true;
+			} else {
+				himax_common_resume(&ts->client->dev);
+			}
 		break;
 
 		case FB_BLANK_POWERDOWN:
@@ -725,6 +733,7 @@ int fb_notifier_callback(struct notifier_block *self,
 			himax_common_suspend(&ts->client->dev);
 		break;
 		}
+		mutex_unlock(&ts->fb_mutex);
 	}
 
 	return 0;
