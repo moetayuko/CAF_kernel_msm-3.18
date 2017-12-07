@@ -761,6 +761,8 @@ static int mtk_nfc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
 	u32 reg;
 	int ret;
 
+	nand_prog_page_begin_op(chip, page, 0, NULL, 0);
+
 	if (!raw) {
 		/* OOB => FDM: from register,  ECC: from HW */
 		reg = nfi_readw(nfc, NFI_CNFG) | CNFG_AUTO_FMT_EN;
@@ -794,7 +796,10 @@ static int mtk_nfc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
 	if (!raw)
 		mtk_ecc_disable(nfc->ecc);
 
-	return ret;
+	if (ret)
+		return ret;
+
+	return nand_prog_page_end_op(chip);
 }
 
 static int mtk_nfc_write_page_hwecc(struct mtd_info *mtd,
@@ -832,18 +837,7 @@ static int mtk_nfc_write_subpage_hwecc(struct mtd_info *mtd,
 static int mtk_nfc_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
 				 int page)
 {
-	int ret;
-
-	chip->cmdfunc(mtd, NAND_CMD_SEQIN, 0x00, page);
-
-	ret = mtk_nfc_write_page_raw(mtd, chip, NULL, 1, page);
-	if (ret < 0)
-		return -EIO;
-
-	chip->cmdfunc(mtd, NAND_CMD_PAGEPROG, -1, -1);
-	ret = chip->waitfunc(mtd, chip);
-
-	return ret & NAND_STATUS_FAIL ? -EIO : 0;
+	return mtk_nfc_write_page_raw(mtd, chip, NULL, 1, page);
 }
 
 static int mtk_nfc_update_ecc_stats(struct mtd_info *mtd, u8 *buf, u32 sectors)
@@ -892,8 +886,7 @@ static int mtk_nfc_read_subpage(struct mtd_info *mtd, struct nand_chip *chip,
 	len = sectors * chip->ecc.size + (raw ? sectors * spare : 0);
 	buf = bufpoi + start * chip->ecc.size;
 
-	if (column != 0)
-		chip->cmdfunc(mtd, NAND_CMD_RNDOUT, column, -1);
+	nand_read_page_op(chip, page, column, NULL, 0);
 
 	addr = dma_map_single(nfc->dev, buf, len, DMA_FROM_DEVICE);
 	rc = dma_mapping_error(nfc->dev, addr);
@@ -1016,8 +1009,6 @@ static int mtk_nfc_read_page_raw(struct mtd_info *mtd, struct nand_chip *chip,
 static int mtk_nfc_read_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
 				int page)
 {
-	chip->cmdfunc(mtd, NAND_CMD_READ0, 0, page);
-
 	return mtk_nfc_read_page_raw(mtd, chip, NULL, 1, page);
 }
 
@@ -1540,7 +1531,6 @@ static int mtk_nfc_resume(struct device *dev)
 	struct mtk_nfc *nfc = dev_get_drvdata(dev);
 	struct mtk_nfc_nand_chip *chip;
 	struct nand_chip *nand;
-	struct mtd_info *mtd;
 	int ret;
 	u32 i;
 
@@ -1553,11 +1543,8 @@ static int mtk_nfc_resume(struct device *dev)
 	/* reset NAND chip if VCC was powered off */
 	list_for_each_entry(chip, &nfc->chips, node) {
 		nand = &chip->nand;
-		mtd = nand_to_mtd(nand);
-		for (i = 0; i < chip->nsels; i++) {
-			nand->select_chip(mtd, i);
-			nand->cmdfunc(mtd, NAND_CMD_RESET, -1, -1);
-		}
+		for (i = 0; i < chip->nsels; i++)
+			nand_reset(nand, i);
 	}
 
 	return 0;
