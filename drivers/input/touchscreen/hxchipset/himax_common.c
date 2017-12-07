@@ -104,6 +104,7 @@ extern bool hitouch_is_connect;
 
 extern int himax_parse_dt(struct himax_ts_data *ts,
 				struct himax_i2c_platform_data *pdata);
+extern int himax_ts_pinctrl_init(struct himax_ts_data *ts);
 
 static uint8_t 	vk_press = 0x00;
 static uint8_t 	AA_press = 0x00;
@@ -1491,6 +1492,14 @@ static void himax_ts_init_work_func(struct work_struct *work)
 
 	I("%s: Start.\n", __func__);
 
+	/* Set pinctrl in active state */
+	if (ts->ts_pinctrl) {
+		ret = pinctrl_select_state(ts->ts_pinctrl,
+					ts->pinctrl_state_active);
+		if (ret < 0) {
+			E("Failed to set pin in active state %d",ret);
+		}
+	}
 
 	himax_burst_enable(client, 0);
 
@@ -1730,6 +1739,11 @@ int himax_chip_common_probe(struct i2c_client *client, const struct i2c_device_i
 
 himax_gpio_power_config(ts->client, pdata);
 
+err = himax_ts_pinctrl_init(ts);
+if (err || ts->ts_pinctrl == NULL) {
+	E(" Pinctrl init failed\n");
+}
+
 #ifndef CONFIG_OF
 	if (pdata->power) {
 		err = pdata->power(1);
@@ -1762,6 +1776,19 @@ err_alloc_dt_pdata_failed:
 err_power_failed:
 err_get_platform_data_fail:
 #endif
+	if (ts->ts_pinctrl) {
+		if (IS_ERR_OR_NULL(ts->pinctrl_state_release)) {
+			devm_pinctrl_put(ts->ts_pinctrl);
+			ts->ts_pinctrl = NULL;
+		} else {
+			err = pinctrl_select_state(ts->ts_pinctrl,
+				ts->pinctrl_state_release);
+			if (err)
+				E("failed to select relase pinctrl state %d\n",
+				err);
+			}
+		}
+
 	kfree(ic_data);
 
 err_dt_ic_data_fail:
@@ -1781,6 +1808,7 @@ err_check_functionality_failed:
 int himax_chip_common_remove(struct i2c_client *client)
 {
 	struct himax_ts_data *ts = i2c_get_clientdata(client);
+	int ret;
 #if defined(CONFIG_TOUCHSCREEN_HIMAX_DEBUG)
 	himax_touch_proc_deinit();
 #endif
@@ -1798,6 +1826,19 @@ int himax_chip_common_remove(struct i2c_client *client)
 		input_mt_destroy_slots(ts->input_dev);
 
 	input_unregister_device(ts->input_dev);
+
+	if (ts->ts_pinctrl) {
+		if (IS_ERR_OR_NULL(ts->pinctrl_state_release)) {
+			devm_pinctrl_put(ts->ts_pinctrl);
+			ts->ts_pinctrl = NULL;
+		} else {
+		ret = pinctrl_select_state(ts->ts_pinctrl,
+			ts->pinctrl_state_release);
+		if (ret)
+			E("failed to select relase pinctrl state %d\n",
+			ret);
+		}
+	}
 
 #ifdef HX_SMART_WAKEUP
 		wake_lock_destroy(&ts->ts_SMWP_wake_lock);
@@ -1860,6 +1901,13 @@ int himax_chip_common_suspend(struct himax_ts_data *ts)
 	//ts->first_pressed = 0;
 	atomic_set(&ts->suspend_mode, 1);
 	ts->pre_finger_mask = 0;
+	if (ts->ts_pinctrl) {
+		ret = pinctrl_select_state(ts->ts_pinctrl,
+			ts->pinctrl_state_suspend);
+		if (ret < 0) {
+			E("Failed to get idle pinctrl state %d\n", ret);
+			}
+		}
 	if (ts->pdata->powerOff3V3 && ts->pdata->power)
 		ts->pdata->power(0);
 
@@ -1868,20 +1916,30 @@ int himax_chip_common_suspend(struct himax_ts_data *ts)
 
 int himax_chip_common_resume(struct himax_ts_data *ts)
 {
+	int retval;
+
 	I("%s: enter \n", __func__);
 
 	if (ts->pdata->powerOff3V3 && ts->pdata->power)
 		ts->pdata->power(1);
 		
 		
-		/*************************************/
-		if (ts->protocol_type == PROTOCOL_TYPE_A)
-		input_mt_sync(ts->input_dev);
-		input_report_key(ts->input_dev, BTN_TOUCH, 0);
-		input_sync(ts->input_dev);
-		/*************************************/
-		
-		
+	/*************************************/
+	if (ts->protocol_type == PROTOCOL_TYPE_A)
+	input_mt_sync(ts->input_dev);
+	input_report_key(ts->input_dev, BTN_TOUCH, 0);
+	input_sync(ts->input_dev);
+	/*************************************/
+
+	if (ts->ts_pinctrl) {
+		retval = pinctrl_select_state(ts->ts_pinctrl,
+			ts->pinctrl_state_active);
+		if (retval < 0) {
+			E("Cannot get default pinctrl state %d\n", retval);
+			goto err_pinctrl_select_resume;
+			}
+		}
+
 	atomic_set(&ts->suspend_mode, 0);
 
 	himax_int_enable(ts->client->irq,1);
@@ -1898,5 +1956,9 @@ int himax_chip_common_resume(struct himax_ts_data *ts)
 	queue_delayed_work(ts->himax_hsen_wq, &ts->hsen_work, msecs_to_jiffies(1000));
 #endif
 	return 0;
+err_pinctrl_select_resume:
+	if (ts->pdata->powerOff3V3 && ts->pdata->power)
+		ts->pdata->power(0);
+	return retval;
 }
 

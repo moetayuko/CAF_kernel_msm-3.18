@@ -269,6 +269,12 @@ struct himax_ts_data {
 #endif
 	struct workqueue_struct *himax_init_wq;
 	struct delayed_work work_init_func;
+
+	/* pinctrl data */
+	struct pinctrl *ts_pinctrl;
+	struct pinctrl_state *pinctrl_state_active;
+	struct pinctrl_state *pinctrl_state_suspend;
+	struct pinctrl_state *pinctrl_state_release;
 };
 
 #define HX_CMD_NOP					 0x00	
