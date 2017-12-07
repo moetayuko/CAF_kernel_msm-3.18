@@ -74,7 +74,8 @@ static struct nf_hook_entries *allocate_hook_entries_size(u16 num)
 	struct nf_hook_entries *e;
 	size_t alloc = sizeof(*e) +
 		       sizeof(struct nf_hook_entry) * num +
-		       sizeof(struct nf_hook_ops *) * num;
+		       sizeof(struct nf_hook_ops *) * num +
+		       sizeof(struct nf_hook_entries_rcu_head);
 
 	if (num == 0)
 		return NULL;
@@ -83,6 +84,30 @@ static struct nf_hook_entries *allocate_hook_entries_size(u16 num)
 	if (e)
 		e->num_hook_entries = num;
 	return e;
+}
+
+static void __nf_hook_entries_free(struct rcu_head *h)
+{
+	struct nf_hook_entries_rcu_head *head;
+
+	head = container_of(h, struct nf_hook_entries_rcu_head, head);
+	kvfree(head->allocation);
+}
+
+static void nf_hook_entries_free(struct nf_hook_entries *e)
+{
+	struct nf_hook_entries_rcu_head *head;
+	struct nf_hook_ops **ops;
+	unsigned int num;
+
+	if (!e)
+		return;
+
+	num = e->num_hook_entries;
+	ops = nf_hook_entries_get_hook_ops(e);
+	head = (void *)&ops[num];
+	head->allocation = e;
+	call_rcu(&head->head, __nf_hook_entries_free);
 }
 
 static unsigned int accept_all(void *priv,
@@ -239,8 +264,23 @@ out_assign:
 
 static struct nf_hook_entries __rcu **nf_hook_entry_head(struct net *net, const struct nf_hook_ops *reg)
 {
-	if (reg->pf != NFPROTO_NETDEV)
-		return net->nf.hooks[reg->pf]+reg->hooknum;
+	switch (reg->pf) {
+	case NFPROTO_NETDEV:
+		break;
+	case NFPROTO_ARP:
+		return net->nf.hooks_arp + reg->hooknum;
+	case NFPROTO_BRIDGE:
+		return net->nf.hooks_bridge + reg->hooknum;
+	case NFPROTO_IPV4:
+		return net->nf.hooks_ipv4 + reg->hooknum;
+	case NFPROTO_IPV6:
+		return net->nf.hooks_ipv6 + reg->hooknum;
+	case NFPROTO_DECNET:
+		return net->nf.hooks_decnet + reg->hooknum;
+	default:
+		WARN_ON_ONCE(1);
+		return NULL;
+	}
 
 #ifdef CONFIG_NETFILTER_INGRESS
 	if (reg->hooknum == NF_NETDEV_INGRESS) {
@@ -291,9 +331,8 @@ int nf_register_net_hook(struct net *net, const struct nf_hook_ops *reg)
 #ifdef HAVE_JUMP_LABEL
 	static_key_slow_inc(&nf_hooks_needed[reg->pf][reg->hooknum]);
 #endif
-	synchronize_net();
 	BUG_ON(p == new_hooks);
-	kvfree(p);
+	nf_hook_entries_free(p);
 	return 0;
 }
 EXPORT_SYMBOL(nf_register_net_hook);
@@ -341,7 +380,6 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
 {
 	struct nf_hook_entries __rcu **pp;
 	struct nf_hook_entries *p;
-	unsigned int nfq;
 
 	pp = nf_hook_entry_head(net, reg);
 	if (!pp)
@@ -362,13 +400,8 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
 	if (!p)
 		return;
 
-	synchronize_net();
-
-	/* other cpu might still process nfqueue verdict that used reg */
-	nfq = nf_queue_nf_hook_drop(net);
-	if (nfq)
-		synchronize_net();
-	kvfree(p);
+	nf_queue_nf_hook_drop(net);
+	nf_hook_entries_free(p);
 }
 EXPORT_SYMBOL(nf_unregister_net_hook);
 
@@ -395,63 +428,10 @@ EXPORT_SYMBOL(nf_register_net_hooks);
 void nf_unregister_net_hooks(struct net *net, const struct nf_hook_ops *reg,
 			     unsigned int hookcount)
 {
-	struct nf_hook_entries *to_free[16], *p;
-	struct nf_hook_entries __rcu **pp;
-	unsigned int i, j, n;
+	unsigned int i;
 
-	mutex_lock(&nf_hook_mutex);
-	for (i = 0; i < hookcount; i++) {
-		pp = nf_hook_entry_head(net, &reg[i]);
-		if (!pp)
-			continue;
-
-		p = nf_entry_dereference(*pp);
-		if (WARN_ON_ONCE(!p))
-			continue;
-		__nf_unregister_net_hook(p, &reg[i]);
-	}
-	mutex_unlock(&nf_hook_mutex);
-
-	do {
-		n = min_t(unsigned int, hookcount, ARRAY_SIZE(to_free));
-
-		mutex_lock(&nf_hook_mutex);
-
-		for (i = 0, j = 0; i < hookcount && j < n; i++) {
-			pp = nf_hook_entry_head(net, &reg[i]);
-			if (!pp)
-				continue;
-
-			p = nf_entry_dereference(*pp);
-			if (!p)
-				continue;
-
-			to_free[j] = __nf_hook_entries_try_shrink(pp);
-			if (to_free[j])
-				++j;
-		}
-
-		mutex_unlock(&nf_hook_mutex);
-
-		if (j) {
-			unsigned int nfq;
-
-			synchronize_net();
-
-			/* need 2nd synchronize_net() if nfqueue is used, skb
-			 * can get reinjected right before nf_queue_hook_drop()
-			 */
-			nfq = nf_queue_nf_hook_drop(net);
-			if (nfq)
-				synchronize_net();
-
-			for (i = 0; i < j; i++)
-				kvfree(to_free[i]);
-		}
-
-		reg += n;
-		hookcount -= n;
-	} while (hookcount > 0);
+	for (i = 0; i < hookcount; i++)
+		nf_unregister_net_hook(net, &reg[i]);
 }
 EXPORT_SYMBOL(nf_unregister_net_hooks);
 
@@ -569,14 +549,21 @@ void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);
 EXPORT_SYMBOL(nf_nat_decode_session_hook);
 #endif
 
+static void __net_init __netfilter_net_init(struct nf_hook_entries *e[NF_MAX_HOOKS])
+{
+	int h;
+
+	for (h = 0; h < NF_MAX_HOOKS; h++)
+		RCU_INIT_POINTER(e[h], NULL);
+}
+
 static int __net_init netfilter_net_init(struct net *net)
 {
-	int i, h;
-
-	for (i = 0; i < ARRAY_SIZE(net->nf.hooks); i++) {
-		for (h = 0; h < NF_MAX_HOOKS; h++)
-			RCU_INIT_POINTER(net->nf.hooks[i][h], NULL);
-	}
+	__netfilter_net_init(net->nf.hooks_ipv4);
+	__netfilter_net_init(net->nf.hooks_ipv6);
+	__netfilter_net_init(net->nf.hooks_arp);
+	__netfilter_net_init(net->nf.hooks_bridge);
+	__netfilter_net_init(net->nf.hooks_decnet);
 
 #ifdef CONFIG_PROC_FS
 	net->nf.proc_netfilter = proc_net_mkdir(net, "netfilter",
