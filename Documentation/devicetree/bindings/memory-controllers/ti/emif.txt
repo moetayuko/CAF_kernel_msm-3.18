@@ -53,7 +53,7 @@ Optional properties:
 
 -Examples:
 
-emif1: emif@0x4c000000 {
+emif1: emif@4c000000 {
 	compatible	= "ti,emif-4d";
 	ti,hwmods	= "emif2";
 	phy-type	= <1>;
