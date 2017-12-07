@@ -58,13 +58,12 @@
  * NOTE: struct layout is the same in 64bit and 32bit userspace.
  */
 #define PI433_TX_CFG_IOCTL_NR 	0
-struct pi433_tx_cfg
-{
+struct pi433_tx_cfg {
 	__u32			frequency;
 	__u16			bit_rate;
 	__u32			dev_frequency;
 	enum modulation		modulation;
-	enum modShaping		modShaping;
+	enum mod_shaping	mod_shaping;
 
 	enum paRamp		pa_ramp;
 
@@ -74,11 +73,11 @@ struct pi433_tx_cfg
 
 
 	/* packet format */
-	enum optionOnOff	enable_preamble;
-	enum optionOnOff	enable_sync;
-	enum optionOnOff	enable_length_byte;
-	enum optionOnOff	enable_address_byte;
-	enum optionOnOff	enable_crc;
+	enum option_on_off	enable_preamble;
+	enum option_on_off	enable_sync;
+	enum option_on_off	enable_length_byte;
+	enum option_on_off	enable_address_byte;
+	enum option_on_off	enable_crc;
 
 	__u16			preamble_length;
 	__u8			sync_length;
@@ -116,7 +115,7 @@ struct pi433_rx_cfg {
 	enum modulation		modulation;
 
 	__u8			rssi_threshold;
-	enum thresholdDecrement	thresholdDecrement;
+	enum thresholdDecrement	threshold_decrement;
 	enum antennaImpedance	antenna_impedance;
 	enum lnaGain		lna_gain;
 	enum mantisse		bw_mantisse;	/* normal: 0x50 */
@@ -126,10 +125,10 @@ struct pi433_rx_cfg {
 
 
 	/* packet format */
-	enum optionOnOff	enable_sync;
-	enum optionOnOff	enable_length_byte;	  /* should be used in combination with sync, only */
+	enum option_on_off	enable_sync;
+	enum option_on_off	enable_length_byte;	  /* should be used in combination with sync, only */
 	enum addressFiltering	enable_address_filtering; /* operational with sync, only */
-	enum optionOnOff	enable_crc;		  /* only operational, if sync on and fixed length or length byte is used */
+	enum option_on_off	enable_crc;		  /* only operational, if sync on and fixed length or length byte is used */
 
 	__u8			sync_length;
 	__u8			fixed_message_length;
