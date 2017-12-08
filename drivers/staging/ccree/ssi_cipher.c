@@ -67,7 +67,7 @@ struct ssi_ablkcipher_ctx {
 	struct crypto_shash *shash_tfm;
 };
 
-static void ssi_ablkcipher_complete(struct device *dev, void *ssi_req, void __iomem *cc_base);
+static void ssi_ablkcipher_complete(struct device *dev, void *ssi_req);
 
 static int validate_keys_sizes(struct ssi_ablkcipher_ctx *ctx_p, u32 size)
 {
@@ -76,30 +76,30 @@ static int validate_keys_sizes(struct ssi_ablkcipher_ctx *ctx_p, u32 size)
 		switch (size) {
 		case CC_AES_128_BIT_KEY_SIZE:
 		case CC_AES_192_BIT_KEY_SIZE:
-			if (likely((ctx_p->cipher_mode != DRV_CIPHER_XTS) &&
-				   (ctx_p->cipher_mode != DRV_CIPHER_ESSIV) &&
-				   (ctx_p->cipher_mode != DRV_CIPHER_BITLOCKER)))
+			if (ctx_p->cipher_mode != DRV_CIPHER_XTS &&
+			    ctx_p->cipher_mode != DRV_CIPHER_ESSIV &&
+			    ctx_p->cipher_mode != DRV_CIPHER_BITLOCKER)
 				return 0;
 			break;
 		case CC_AES_256_BIT_KEY_SIZE:
 			return 0;
 		case (CC_AES_192_BIT_KEY_SIZE * 2):
 		case (CC_AES_256_BIT_KEY_SIZE * 2):
-			if (likely((ctx_p->cipher_mode == DRV_CIPHER_XTS) ||
-				   (ctx_p->cipher_mode == DRV_CIPHER_ESSIV) ||
-				   (ctx_p->cipher_mode == DRV_CIPHER_BITLOCKER)))
+			if (ctx_p->cipher_mode == DRV_CIPHER_XTS ||
+			    ctx_p->cipher_mode == DRV_CIPHER_ESSIV ||
+			    ctx_p->cipher_mode == DRV_CIPHER_BITLOCKER)
 				return 0;
 			break;
 		default:
 			break;
 		}
 	case S_DIN_to_DES:
-		if (likely(size == DES3_EDE_KEY_SIZE || size == DES_KEY_SIZE))
+		if (size == DES3_EDE_KEY_SIZE || size == DES_KEY_SIZE)
 			return 0;
 		break;
 #if SSI_CC_HAS_MULTI2
 	case S_DIN_to_MULTI2:
-		if (likely(size == CC_MULTI2_SYSTEM_N_DATA_KEY_SIZE))
+		if (size == CC_MULTI2_SYSTEM_N_DATA_KEY_SIZE)
 			return 0;
 		break;
 #endif
@@ -109,19 +109,20 @@ static int validate_keys_sizes(struct ssi_ablkcipher_ctx *ctx_p, u32 size)
 	return -EINVAL;
 }
 
-static int validate_data_size(struct ssi_ablkcipher_ctx *ctx_p, unsigned int size)
+static int validate_data_size(struct ssi_ablkcipher_ctx *ctx_p,
+			      unsigned int size)
 {
 	switch (ctx_p->flow_mode) {
 	case S_DIN_to_AES:
 		switch (ctx_p->cipher_mode) {
 		case DRV_CIPHER_XTS:
-			if ((size >= SSI_MIN_AES_XTS_SIZE) &&
-			    (size <= SSI_MAX_AES_XTS_SIZE) &&
+			if (size >= SSI_MIN_AES_XTS_SIZE &&
+			    size <= SSI_MAX_AES_XTS_SIZE &&
 			    IS_ALIGNED(size, AES_BLOCK_SIZE))
 				return 0;
 			break;
 		case DRV_CIPHER_CBC_CTS:
-			if (likely(size >= AES_BLOCK_SIZE))
+			if (size >= AES_BLOCK_SIZE)
 				return 0;
 			break;
 		case DRV_CIPHER_OFB:
@@ -131,7 +132,7 @@ static int validate_data_size(struct ssi_ablkcipher_ctx *ctx_p, unsigned int siz
 		case DRV_CIPHER_CBC:
 		case DRV_CIPHER_ESSIV:
 		case DRV_CIPHER_BITLOCKER:
-			if (likely(IS_ALIGNED(size, AES_BLOCK_SIZE)))
+			if (IS_ALIGNED(size, AES_BLOCK_SIZE))
 				return 0;
 			break;
 		default:
@@ -139,14 +140,14 @@ static int validate_data_size(struct ssi_ablkcipher_ctx *ctx_p, unsigned int siz
 		}
 		break;
 	case S_DIN_to_DES:
-		if (likely(IS_ALIGNED(size, DES_BLOCK_SIZE)))
-				return 0;
+		if (IS_ALIGNED(size, DES_BLOCK_SIZE))
+			return 0;
 		break;
 #if SSI_CC_HAS_MULTI2
 	case S_DIN_to_MULTI2:
 		switch (ctx_p->cipher_mode) {
 		case DRV_MULTI2_CBC:
-			if (likely(IS_ALIGNED(size, CC_MULTI2_BLOCK_SIZE)))
+			if (IS_ALIGNED(size, CC_MULTI2_BLOCK_SIZE))
 				return 0;
 			break;
 		case DRV_MULTI2_OFB:
@@ -164,12 +165,16 @@ static int validate_data_size(struct ssi_ablkcipher_ctx *ctx_p, unsigned int siz
 
 static unsigned int get_max_keysize(struct crypto_tfm *tfm)
 {
-	struct ssi_crypto_alg *ssi_alg = container_of(tfm->__crt_alg, struct ssi_crypto_alg, crypto_alg);
+	struct ssi_crypto_alg *ssi_alg =
+		container_of(tfm->__crt_alg, struct ssi_crypto_alg,
+			     crypto_alg);
 
-	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_TYPE_MASK) == CRYPTO_ALG_TYPE_ABLKCIPHER)
+	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_TYPE_MASK) ==
+	    CRYPTO_ALG_TYPE_ABLKCIPHER)
 		return ssi_alg->crypto_alg.cra_ablkcipher.max_keysize;
 
-	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_TYPE_MASK) == CRYPTO_ALG_TYPE_BLKCIPHER)
+	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_TYPE_MASK) ==
+	    CRYPTO_ALG_TYPE_BLKCIPHER)
 		return ssi_alg->crypto_alg.cra_blkcipher.max_keysize;
 
 	return 0;
@@ -267,8 +272,10 @@ static int ssi_verify_3des_keys(const u8 *key, unsigned int keylen)
 	struct tdes_keys *tdes_key = (struct tdes_keys *)key;
 
 	/* verify key1 != key2 and key3 != key2*/
-	if (unlikely((memcmp((u8 *)tdes_key->key1, (u8 *)tdes_key->key2, sizeof(tdes_key->key1)) == 0) ||
-		     (memcmp((u8 *)tdes_key->key3, (u8 *)tdes_key->key2, sizeof(tdes_key->key3)) == 0))) {
+	if ((memcmp((u8 *)tdes_key->key1, (u8 *)tdes_key->key2,
+		    sizeof(tdes_key->key1)) == 0) ||
+	    (memcmp((u8 *)tdes_key->key3, (u8 *)tdes_key->key2,
+		    sizeof(tdes_key->key3)) == 0)) {
 		return -ENOEXEC;
 	}
 
@@ -306,12 +313,14 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 	/* STAT_PHASE_0: Init and sanity checks */
 
 #if SSI_CC_HAS_MULTI2
-	/*last byte of key buffer is round number and should not be a part of key size*/
+	/* last byte of key buffer is round number and should not be a part
+	 * of key size
+	 */
 	if (ctx_p->flow_mode == S_DIN_to_MULTI2)
 		keylen -= 1;
 #endif /*SSI_CC_HAS_MULTI2*/
 
-	if (unlikely(validate_keys_sizes(ctx_p, keylen) != 0)) {
+	if (validate_keys_sizes(ctx_p, keylen)) {
 		dev_err(dev, "Unsupported key size %d.\n", keylen);
 		crypto_tfm_set_flags(tfm, CRYPTO_TFM_RES_BAD_KEY_LEN);
 		return -EINVAL;
@@ -321,28 +330,29 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 		/* setting HW key slots */
 		struct arm_hw_key_info *hki = (struct arm_hw_key_info *)key;
 
-		if (unlikely(ctx_p->flow_mode != S_DIN_to_AES)) {
+		if (ctx_p->flow_mode != S_DIN_to_AES) {
 			dev_err(dev, "HW key not supported for non-AES flows\n");
 			return -EINVAL;
 		}
 
 		ctx_p->hw.key1_slot = hw_key_to_cc_hw_key(hki->hw_key1);
-		if (unlikely(ctx_p->hw.key1_slot == END_OF_KEYS)) {
+		if (ctx_p->hw.key1_slot == END_OF_KEYS) {
 			dev_err(dev, "Unsupported hw key1 number (%d)\n",
 				hki->hw_key1);
 			return -EINVAL;
 		}
 
-		if ((ctx_p->cipher_mode == DRV_CIPHER_XTS) ||
-		    (ctx_p->cipher_mode == DRV_CIPHER_ESSIV) ||
-		    (ctx_p->cipher_mode == DRV_CIPHER_BITLOCKER)) {
-			if (unlikely(hki->hw_key1 == hki->hw_key2)) {
+		if (ctx_p->cipher_mode == DRV_CIPHER_XTS ||
+		    ctx_p->cipher_mode == DRV_CIPHER_ESSIV ||
+		    ctx_p->cipher_mode == DRV_CIPHER_BITLOCKER) {
+			if (hki->hw_key1 == hki->hw_key2) {
 				dev_err(dev, "Illegal hw key numbers (%d,%d)\n",
 					hki->hw_key1, hki->hw_key2);
 				return -EINVAL;
 			}
-			ctx_p->hw.key2_slot = hw_key_to_cc_hw_key(hki->hw_key2);
-			if (unlikely(ctx_p->hw.key2_slot == END_OF_KEYS)) {
+			ctx_p->hw.key2_slot =
+				hw_key_to_cc_hw_key(hki->hw_key2);
+			if (ctx_p->hw.key2_slot == END_OF_KEYS) {
 				dev_err(dev, "Unsupported hw key2 number (%d)\n",
 					hki->hw_key2);
 				return -EINVAL;
@@ -357,21 +367,21 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 
 	// verify weak keys
 	if (ctx_p->flow_mode == S_DIN_to_DES) {
-		if (unlikely(!des_ekey(tmp, key)) &&
+		if (!des_ekey(tmp, key) &&
 		    (crypto_tfm_get_flags(tfm) & CRYPTO_TFM_REQ_WEAK_KEY)) {
 			tfm->crt_flags |= CRYPTO_TFM_RES_WEAK_KEY;
 			dev_dbg(dev, "weak DES key");
 			return -EINVAL;
 		}
 	}
-	if ((ctx_p->cipher_mode == DRV_CIPHER_XTS) &&
-	    xts_check_key(tfm, key, keylen) != 0) {
+	if (ctx_p->cipher_mode == DRV_CIPHER_XTS &&
+	    xts_check_key(tfm, key, keylen)) {
 		dev_dbg(dev, "weak XTS key");
 		return -EINVAL;
 	}
-	if ((ctx_p->flow_mode == S_DIN_to_DES) &&
-	    (keylen == DES3_EDE_KEY_SIZE) &&
-	    ssi_verify_3des_keys(key, keylen) != 0) {
+	if (ctx_p->flow_mode == S_DIN_to_DES &&
+	    keylen == DES3_EDE_KEY_SIZE &&
+	    ssi_verify_3des_keys(key, keylen)) {
 		dev_dbg(dev, "weak 3DES key");
 		return -EINVAL;
 	}
@@ -383,7 +393,8 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 	if (ctx_p->flow_mode == S_DIN_to_MULTI2) {
 #if SSI_CC_HAS_MULTI2
 		memcpy(ctx_p->user.key, key, CC_MULTI2_SYSTEM_N_DATA_KEY_SIZE);
-		ctx_p->key_round_number = key[CC_MULTI2_SYSTEM_N_DATA_KEY_SIZE];
+		ctx_p->key_round_number =
+			key[CC_MULTI2_SYSTEM_N_DATA_KEY_SIZE];
 		if (ctx_p->key_round_number < CC_MULTI2_MIN_NUM_ROUNDS ||
 		    ctx_p->key_round_number > CC_MULTI2_MAX_NUM_ROUNDS) {
 			crypto_tfm_set_flags(tfm, CRYPTO_TFM_RES_BAD_KEY_LEN);
@@ -393,7 +404,8 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 	} else {
 		memcpy(ctx_p->user.key, key, keylen);
 		if (keylen == 24)
-			memset(ctx_p->user.key + 24, 0, CC_AES_KEY_SIZE_MAX - 24);
+			memset(ctx_p->user.key + 24, 0,
+			       CC_AES_KEY_SIZE_MAX - 24);
 
 		if (ctx_p->cipher_mode == DRV_CIPHER_ESSIV) {
 			/* sha256 for key2 - use sw implementation */
@@ -403,7 +415,9 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 
 			desc->tfm = ctx_p->shash_tfm;
 
-			err = crypto_shash_digest(desc, ctx_p->user.key, key_len, ctx_p->user.key + key_len);
+			err = crypto_shash_digest(desc, ctx_p->user.key,
+						  key_len,
+						  ctx_p->user.key + key_len);
 			if (err) {
 				dev_err(dev, "Failed to hash ESSIV key.\n");
 				return err;
@@ -418,7 +432,7 @@ static int ssi_blkcipher_setkey(struct crypto_tfm *tfm,
 	return 0;
 }
 
-static inline void
+static void
 ssi_blkcipher_create_setup_desc(
 	struct crypto_tfm *tfm,
 	struct blkcipher_req_ctx *req_ctx,
@@ -437,11 +451,15 @@ ssi_blkcipher_create_setup_desc(
 	dma_addr_t iv_dma_addr = req_ctx->gen_ctx.iv_dma_addr;
 	unsigned int du_size = nbytes;
 
-	struct ssi_crypto_alg *ssi_alg = container_of(tfm->__crt_alg, struct ssi_crypto_alg, crypto_alg);
+	struct ssi_crypto_alg *ssi_alg =
+		container_of(tfm->__crt_alg, struct ssi_crypto_alg,
+			     crypto_alg);
 
-	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_BULK_MASK) == CRYPTO_ALG_BULK_DU_512)
+	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_BULK_MASK) ==
+	    CRYPTO_ALG_BULK_DU_512)
 		du_size = 512;
-	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_BULK_MASK) == CRYPTO_ALG_BULK_DU_4096)
+	if ((ssi_alg->crypto_alg.cra_flags & CRYPTO_ALG_BULK_MASK) ==
+	    CRYPTO_ALG_BULK_DU_4096)
 		du_size = 4096;
 
 	switch (cipher_mode) {
@@ -456,8 +474,8 @@ ssi_blkcipher_create_setup_desc(
 		set_cipher_config0(&desc[*seq_size], direction);
 		set_flow_mode(&desc[*seq_size], flow_mode);
 		set_cipher_mode(&desc[*seq_size], cipher_mode);
-		if ((cipher_mode == DRV_CIPHER_CTR) ||
-		    (cipher_mode == DRV_CIPHER_OFB)) {
+		if (cipher_mode == DRV_CIPHER_CTR ||
+		    cipher_mode == DRV_CIPHER_OFB) {
 			set_setup_mode(&desc[*seq_size], SETUP_LOAD_STATE1);
 		} else {
 			set_setup_mode(&desc[*seq_size], SETUP_LOAD_STATE0);
@@ -544,7 +562,7 @@ ssi_blkcipher_create_setup_desc(
 }
 
 #if SSI_CC_HAS_MULTI2
-static inline void ssi_blkcipher_create_multi2_setup_desc(
+static void ssi_blkcipher_create_multi2_setup_desc(
 	struct crypto_tfm *tfm,
 	struct blkcipher_req_ctx *req_ctx,
 	unsigned int ivsize,
@@ -588,7 +606,7 @@ static inline void ssi_blkcipher_create_multi2_setup_desc(
 }
 #endif /*SSI_CC_HAS_MULTI2*/
 
-static inline void
+static void
 ssi_blkcipher_create_data_desc(
 	struct crypto_tfm *tfm,
 	struct blkcipher_req_ctx *req_ctx,
@@ -619,7 +637,7 @@ ssi_blkcipher_create_data_desc(
 		return;
 	}
 	/* Process */
-	if (likely(req_ctx->dma_buf_type == SSI_DMA_BUF_DLLI)) {
+	if (req_ctx->dma_buf_type == SSI_DMA_BUF_DLLI) {
 		dev_dbg(dev, " data params addr %pad length 0x%X\n",
 			&sg_dma_address(src), nbytes);
 		dev_dbg(dev, " data params addr %pad length 0x%X\n",
@@ -688,13 +706,12 @@ static int ssi_blkcipher_complete(struct device *dev,
 				  struct scatterlist *dst,
 				  struct scatterlist *src,
 				  unsigned int ivsize,
-				  void *areq,
-				  void __iomem *cc_base)
+				  void *areq)
 {
 	int completion_error = 0;
 	struct ablkcipher_request *req = (struct ablkcipher_request *)areq;
 
-	ssi_buffer_mgr_unmap_blkcipher_request(dev, req_ctx, ivsize, src, dst);
+	cc_unmap_blkcipher_request(dev, req_ctx, ivsize, src, dst);
 	kfree(req_ctx->iv);
 
 	if (areq) {
@@ -743,7 +760,7 @@ static int ssi_blkcipher_process(
 	/* STAT_PHASE_0: Init and sanity checks */
 
 	/* TODO: check data length according to mode */
-	if (unlikely(validate_data_size(ctx_p, nbytes))) {
+	if (validate_data_size(ctx_p, nbytes)) {
 		dev_err(dev, "Unsupported data size %d.\n", nbytes);
 		crypto_tfm_set_flags(tfm, CRYPTO_TFM_RES_BAD_BLOCK_LEN);
 		rc = -EINVAL;
@@ -766,7 +783,8 @@ static int ssi_blkcipher_process(
 	memcpy(req_ctx->iv, info, ivsize);
 
 	/*For CTS in case of data size aligned to 16 use CBC mode*/
-	if (((nbytes % AES_BLOCK_SIZE) == 0) && (ctx_p->cipher_mode == DRV_CIPHER_CBC_CTS)) {
+	if (((nbytes % AES_BLOCK_SIZE) == 0) &&
+	    ctx_p->cipher_mode == DRV_CIPHER_CBC_CTS) {
 		ctx_p->cipher_mode = DRV_CIPHER_CBC;
 		cts_restore_flag = 1;
 	}
@@ -786,10 +804,9 @@ static int ssi_blkcipher_process(
 
 	/* STAT_PHASE_1: Map buffers */
 
-	rc = ssi_buffer_mgr_map_blkcipher_request(ctx_p->drvdata, req_ctx,
-						  ivsize, nbytes, req_ctx->iv,
-						  src, dst);
-	if (unlikely(rc != 0)) {
+	rc = cc_map_blkcipher_request(ctx_p->drvdata, req_ctx, ivsize, nbytes,
+				      req_ctx->iv, src, dst);
+	if (rc) {
 		dev_err(dev, "map_request() failed\n");
 		goto exit_process;
 	}
@@ -819,25 +836,29 @@ static int ssi_blkcipher_process(
 
 	/* STAT_PHASE_3: Lock HW and push sequence */
 
-	rc = send_request(ctx_p->drvdata, &ssi_req, desc, seq_len, (!areq) ? 0 : 1);
+	rc = send_request(ctx_p->drvdata, &ssi_req, desc, seq_len,
+			  (!areq) ? 0 : 1);
 	if (areq) {
-		if (unlikely(rc != -EINPROGRESS)) {
-			/* Failed to send the request or request completed synchronously */
-			ssi_buffer_mgr_unmap_blkcipher_request(dev, req_ctx, ivsize, src, dst);
+		if (rc != -EINPROGRESS) {
+			/* Failed to send the request or request completed
+			 * synchronously
+			 */
+			cc_unmap_blkcipher_request(dev, req_ctx, ivsize, src,
+						   dst);
 		}
 
 	} else {
-		if (rc != 0) {
-			ssi_buffer_mgr_unmap_blkcipher_request(dev, req_ctx, ivsize, src, dst);
+		if (rc) {
+			cc_unmap_blkcipher_request(dev, req_ctx, ivsize, src,
+						   dst);
 		} else {
 			rc = ssi_blkcipher_complete(dev, ctx_p, req_ctx, dst,
-						    src, ivsize, NULL,
-						    ctx_p->drvdata->cc_base);
+						    src, ivsize, NULL);
 		}
 	}
 
 exit_process:
-	if (cts_restore_flag != 0)
+	if (cts_restore_flag)
 		ctx_p->cipher_mode = DRV_CIPHER_CBC_CTS;
 
 	if (rc != -EINPROGRESS) {
@@ -848,7 +869,7 @@ exit_process:
 	return rc;
 }
 
-static void ssi_ablkcipher_complete(struct device *dev, void *ssi_req, void __iomem *cc_base)
+static void ssi_ablkcipher_complete(struct device *dev, void *ssi_req)
 {
 	struct ablkcipher_request *areq = (struct ablkcipher_request *)ssi_req;
 	struct blkcipher_req_ctx *req_ctx = ablkcipher_request_ctx(areq);
@@ -857,7 +878,7 @@ static void ssi_ablkcipher_complete(struct device *dev, void *ssi_req, void __io
 	unsigned int ivsize = crypto_ablkcipher_ivsize(tfm);
 
 	ssi_blkcipher_complete(dev, ctx_p, req_ctx, areq->dst, areq->src,
-			       ivsize, areq, cc_base);
+			       ivsize, areq);
 }
 
 /* Async wrap functions */
@@ -886,8 +907,12 @@ static int ssi_ablkcipher_encrypt(struct ablkcipher_request *req)
 	unsigned int ivsize = crypto_ablkcipher_ivsize(ablk_tfm);
 
 	req_ctx->is_giv = false;
+	req_ctx->backup_info = NULL;
 
-	return ssi_blkcipher_process(tfm, req_ctx, req->dst, req->src, req->nbytes, req->info, ivsize, (void *)req, DRV_CRYPTO_DIRECTION_ENCRYPT);
+	return ssi_blkcipher_process(tfm, req_ctx, req->dst, req->src,
+				     req->nbytes, req->info, ivsize,
+				     (void *)req,
+				     DRV_CRYPTO_DIRECTION_ENCRYPT);
 }
 
 static int ssi_ablkcipher_decrypt(struct ablkcipher_request *req)
@@ -909,7 +934,10 @@ static int ssi_ablkcipher_decrypt(struct ablkcipher_request *req)
 				 (req->nbytes - ivsize), ivsize, 0);
 	req_ctx->is_giv = false;
 
-	return ssi_blkcipher_process(tfm, req_ctx, req->dst, req->src, req->nbytes, req->info, ivsize, (void *)req, DRV_CRYPTO_DIRECTION_DECRYPT);
+	return ssi_blkcipher_process(tfm, req_ctx, req->dst, req->src,
+				     req->nbytes, req->info, ivsize,
+				     (void *)req,
+				     DRV_CRYPTO_DIRECTION_DECRYPT);
 }
 
 /* DX Block cipher alg */
@@ -1337,7 +1365,7 @@ int ssi_ablkcipher_alloc(struct ssi_drvdata *drvdata)
 		rc = crypto_register_alg(&t_alg->crypto_alg);
 		dev_dbg(dev, "%s alg registration rc = %x\n",
 			t_alg->crypto_alg.cra_driver_name, rc);
-		if (unlikely(rc != 0)) {
+		if (rc) {
 			dev_err(dev, "%s alg registration failed\n",
 				t_alg->crypto_alg.cra_driver_name);
 			kfree(t_alg);

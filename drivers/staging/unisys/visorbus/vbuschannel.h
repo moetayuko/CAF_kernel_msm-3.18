@@ -1,16 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2010 - 2015 UNISYS CORPORATION
  * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
- * NON INFRINGEMENT.  See the GNU General Public License for more
- * details.
  */
 
 #ifndef __VBUSCHANNEL_H__
@@ -26,7 +17,7 @@
  */
 
 #include <linux/uuid.h>
-#include "visorchannel.h"
+#include "visorbus.h"
 
 /* {193b331b-c58f-11da-95a9-00e08161165f} */
 #define VISOR_VBUS_CHANNEL_GUID						\

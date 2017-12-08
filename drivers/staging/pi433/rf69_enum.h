@@ -18,184 +18,153 @@
 #ifndef RF69_ENUM_H
 #define RF69_ENUM_H
 
-enum optionOnOff
-{
-    optionOff,
-    optionOn
+enum mode {
+	mode_sleep,
+	standby,
+	synthesizer,
+	transmit,
+	receive
 };
 
-enum mode
-{
-    mode_sleep,
-    standby,
-    synthesizer,
-    transmit,
-    receive
+enum modulation {
+	OOK,
+	FSK
 };
 
-enum dataMode
-{
-    packet,
-    continuous,
-    continuousNoSync
+enum mod_shaping {
+	SHAPING_OFF,
+	SHAPING_1_0,
+	SHAPING_0_5,
+	SHAPING_0_3,
+	SHAPING_BR,
+	SHAPING_2BR
 };
 
-enum modulation
-{
-    OOK,
-    FSK
+enum paRamp {
+	ramp3400,
+	ramp2000,
+	ramp1000,
+	ramp500,
+	ramp250,
+	ramp125,
+	ramp100,
+	ramp62,
+	ramp50,
+	ramp40,
+	ramp31,
+	ramp25,
+	ramp20,
+	ramp15,
+	ramp12,
+	ramp10
 };
 
-enum modShaping
-{
-    shapingOff,
-    shaping1_0,
-    shaping0_5,
-    shaping0_3,
-    shapingBR,
-    shaping2BR
+enum antennaImpedance {
+	fiftyOhm,
+	twohundretOhm
 };
 
-enum paRamp
-{
-    ramp3400,
-    ramp2000,
-    ramp1000,
-    ramp500,
-    ramp250,
-    ramp125,
-    ramp100,
-    ramp62,
-    ramp50,
-    ramp40,
-    ramp31,
-    ramp25,
-    ramp20,
-    ramp15,
-    ramp12,
-    ramp10
+enum lnaGain {
+	automatic,
+	max,
+	maxMinus6,
+	maxMinus12,
+	maxMinus24,
+	maxMinus36,
+	maxMinus48,
+	undefined
 };
 
-enum antennaImpedance
-{
-    fiftyOhm,
-    twohundretOhm
+enum dccPercent {
+	dcc16Percent,
+	dcc8Percent,
+	dcc4Percent,
+	dcc2Percent,
+	dcc1Percent,
+	dcc0_5Percent,
+	dcc0_25Percent,
+	dcc0_125Percent
 };
 
-enum lnaGain
-{
-    automatic,
-    max,
-    maxMinus6,
-    maxMinus12,
-    maxMinus24,
-    maxMinus36,
-    maxMinus48,
-    undefined
+enum mantisse {
+	mantisse16,
+	mantisse20,
+	mantisse24
 };
 
-enum dccPercent
-{
-    dcc16Percent,
-    dcc8Percent,
-    dcc4Percent,
-    dcc2Percent,
-    dcc1Percent,
-    dcc0_5Percent,
-    dcc0_25Percent,
-    dcc0_125Percent
+enum thresholdType {
+	fixed,
+	peak,
+	average
 };
 
-enum mantisse
-{
-    mantisse16,
-    mantisse20,
-    mantisse24
+enum thresholdStep {
+	step_0_5db,
+	step_1_0db,
+	step_1_5db,
+	step_2_0db,
+	step_3_0db,
+	step_4_0db,
+	step_5_0db,
+	step_6_0db
 };
 
-enum thresholdType
-{
-    fixed,
-    peak,
-    average
+enum thresholdDecrement {
+	dec_every8th,
+	dec_every4th,
+	dec_every2nd,
+	dec_once,
+	dec_twice,
+	dec_4times,
+	dec_8times,
+	dec_16times
 };
 
-enum thresholdStep
-{
-    step_0_5db,
-    step_1_0db,
-    step_1_5db,
-    step_2_0db,
-    step_3_0db,
-    step_4_0db,
-    step_5_0db,
-    step_6_0db
+enum flag {
+	modeSwitchCompleted,
+	readyToReceive,
+	readyToSend,
+	pllLocked,
+	rssiExceededThreshold,
+	timeout,
+	automode,
+	syncAddressMatch,
+	fifoFull,
+//	fifoNotEmpty, collision with next enum; replaced by following enum...
+	fifoEmpty,
+	fifoLevelBelowThreshold,
+	fifoOverrun,
+	packetSent,
+	payloadReady,
+	crcOk,
+	batteryLow
 };
 
-enum thresholdDecrement
-{
-    dec_every8th,
-    dec_every4th,
-    dec_every2nd,
-    dec_once,
-    dec_twice,
-    dec_4times,
-    dec_8times,
-    dec_16times
+enum fifoFillCondition {
+	afterSyncInterrupt,
+	always
 };
 
-enum flag
-{
-    modeSwitchCompleted,
-    readyToReceive,
-    readyToSend,
-    pllLocked,
-    rssiExceededThreshold,
-    timeout,
-    automode,
-    syncAddressMatch,
-    fifoFull,
-//    fifoNotEmpty, collision with next enum; replaced by following enum...
-    fifoEmpty,
-    fifoLevelBelowThreshold,
-    fifoOverrun,
-    packetSent,
-    payloadReady,
-    crcOk,
-    batteryLow
+enum packetFormat {
+	packetLengthFix,
+	packetLengthVar
 };
 
-enum fifoFillCondition
-{
-    afterSyncInterrupt,
-    always
+enum txStartCondition {
+	fifoLevel,
+	fifoNotEmpty
 };
 
-enum packetFormat
-{
-    packetLengthFix,
-    packetLengthVar
+enum addressFiltering {
+	filteringOff,
+	nodeAddress,
+	nodeOrBroadcastAddress
 };
 
-enum txStartCondition
-{
-    fifoLevel,
-    fifoNotEmpty
+enum dagc {
+	normalMode,
+	improve,
+	improve4LowModulationIndex
 };
-
-enum addressFiltering
-{
-    filteringOff,
-    nodeAddress,
-    nodeOrBroadcastAddress
-};
-
-enum dagc
-{
-    normalMode,
-    improve,
-    improve4LowModulationIndex
-};
-
 
 #endif
