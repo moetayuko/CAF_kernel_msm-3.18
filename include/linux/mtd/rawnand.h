@@ -133,12 +133,6 @@ enum nand_ecc_algo {
  */
 #define NAND_ECC_GENERIC_ERASED_CHECK	BIT(0)
 #define NAND_ECC_MAXIMIZE		BIT(1)
-/*
- * If your controller already sends the required NAND commands when
- * reading or writing a page, then the framework is not supposed to
- * send READ0 and SEQIN/PAGEPROG respectively.
- */
-#define NAND_ECC_CUSTOM_PAGE_ACCESS	BIT(2)
 
 /* Bit mask for flags passed to do_nand_read_ecc */
 #define NAND_GET_DEVICE		0x80
@@ -191,11 +185,6 @@ enum nand_ecc_algo {
 /* Non chip related options */
 /* This option skips the bbt scan during initialization. */
 #define NAND_SKIP_BBTSCAN	0x00010000
-/*
- * This option is defined if the board driver allocates its own buffers
- * (e.g. because it needs them DMA-coherent).
- */
-#define NAND_OWN_BUFFERS	0x00020000
 /* Chip may not exist, so silence any errors in scan */
 #define NAND_SCAN_SILENT_NODEV	0x00040000
 /*
@@ -525,6 +514,8 @@ static const struct nand_ecc_caps __name = {			\
  * @postpad:	padding information for syndrome based ECC generators
  * @options:	ECC specific options (see NAND_ECC_XXX flags defined above)
  * @priv:	pointer to private ECC control data
+ * @calc_buf:	buffer for calculated ECC, size is oobsize.
+ * @code_buf:	buffer for ECC read from flash, size is oobsize.
  * @hwctl:	function to control hardware ECC generator. Must only
  *		be provided if an hardware ECC is available
  * @calculate:	function for ECC calculation or readback from ECC hardware
@@ -575,6 +566,8 @@ struct nand_ecc_ctrl {
 	int postpad;
 	unsigned int options;
 	void *priv;
+	u8 *calc_buf;
+	u8 *code_buf;
 	void (*hwctl)(struct mtd_info *mtd, int mode);
 	int (*calculate)(struct mtd_info *mtd, const uint8_t *dat,
 			uint8_t *ecc_code);
@@ -600,26 +593,6 @@ struct nand_ecc_ctrl {
 	int (*read_oob)(struct mtd_info *mtd, struct nand_chip *chip, int page);
 	int (*write_oob)(struct mtd_info *mtd, struct nand_chip *chip,
 			int page);
-};
-
-static inline int nand_standard_page_accessors(struct nand_ecc_ctrl *ecc)
-{
-	return !(ecc->options & NAND_ECC_CUSTOM_PAGE_ACCESS);
-}
-
-/**
- * struct nand_buffers - buffer structure for read/write
- * @ecccalc:	buffer pointer for calculated ECC, size is oobsize.
- * @ecccode:	buffer pointer for ECC read from flash, size is oobsize.
- * @databuf:	buffer pointer for data, size is (page size + oobsize).
- *
- * Do not change the order of buffers. databuf and oobrbuf must be in
- * consecutive order.
- */
-struct nand_buffers {
-	uint8_t	*ecccalc;
-	uint8_t	*ecccode;
-	uint8_t *databuf;
 };
 
 /**
@@ -790,7 +763,6 @@ struct nand_manufacturer_ops {
  * @setup_read_retry:	[FLASHSPECIFIC] flash (vendor) specific function for
  *			setting the read-retry mode. Mostly needed for MLC NAND.
  * @ecc:		[BOARDSPECIFIC] ECC control structure
- * @buffers:		buffer structure for read/write
  * @buf_align:		minimum buffer alignment required by a platform
  * @hwcontrol:		platform-specific hardware control structure
  * @erase:		[REPLACEABLE] erase function
@@ -830,6 +802,7 @@ struct nand_manufacturer_ops {
  * @numchips:		[INTERN] number of physical chips
  * @chipsize:		[INTERN] the size of one chip for multichip arrays
  * @pagemask:		[INTERN] page number mask = number of (pages / chip) - 1
+ * @data_buf:		[INTERN] buffer for data, size is (page size + oobsize).
  * @pagebuf:		[INTERN] holds the pagenumber which is currently in
  *			data_buf.
  * @pagebuf_bitflips:	[INTERN] holds the bitflip count for the page which is
@@ -908,6 +881,7 @@ struct nand_chip {
 	int numchips;
 	uint64_t chipsize;
 	int pagemask;
+	u8 *data_buf;
 	int pagebuf;
 	unsigned int pagebuf_bitflips;
 	int subpagesize;
@@ -928,7 +902,7 @@ struct nand_chip {
 	u16 max_bb_per_die;
 	u32 blocks_per_die;
 
-	struct nand_data_interface *data_interface;
+	struct nand_data_interface data_interface;
 
 	int read_retries;
 
@@ -938,7 +912,6 @@ struct nand_chip {
 	struct nand_hw_control *controller;
 
 	struct nand_ecc_ctrl ecc;
-	struct nand_buffers *buffers;
 	unsigned long buf_align;
 	struct nand_hw_control hwcontrol;
 
@@ -1225,8 +1198,7 @@ static inline int onfi_get_sync_timing_mode(struct nand_chip *chip)
 	return le16_to_cpu(chip->onfi_params.src_sync_timing_mode);
 }
 
-int onfi_init_data_interface(struct nand_chip *chip,
-			     struct nand_data_interface *iface,
+int onfi_fill_data_interface(struct nand_chip *chip,
 			     enum nand_data_interface_type type,
 			     int timing_mode);
 
@@ -1269,8 +1241,6 @@ static inline int jedec_feature(struct nand_chip *chip)
 
 /* get timing characteristics from ONFI timing mode. */
 const struct nand_sdr_timings *onfi_async_timing_mode_to_sdr_timings(int mode);
-/* get data interface from ONFI timing mode 0, used after reset. */
-const struct nand_data_interface *nand_get_default_data_interface(void);
 
 int nand_check_erased_ecc_chunk(void *data, int datalen,
 				void *ecc, int ecclen,
@@ -1315,6 +1285,33 @@ int nand_write_page_raw(struct mtd_info *mtd, struct nand_chip *chip,
 
 /* Reset and initialize a NAND device */
 int nand_reset(struct nand_chip *chip, int chipnr);
+
+/* NAND operation helpers */
+int nand_reset_op(struct nand_chip *chip);
+int nand_readid_op(struct nand_chip *chip, u8 addr, void *buf,
+		   unsigned int len);
+int nand_status_op(struct nand_chip *chip, u8 *status);
+int nand_exit_status_op(struct nand_chip *chip);
+int nand_erase_op(struct nand_chip *chip, unsigned int eraseblock);
+int nand_read_page_op(struct nand_chip *chip, unsigned int page,
+		      unsigned int column, void *buf, unsigned int len);
+int nand_change_read_column_op(struct nand_chip *chip, unsigned int column,
+			       void *buf, unsigned int len, bool force_8bit);
+int nand_read_oob_op(struct nand_chip *chip, unsigned int page,
+		     unsigned int column, void *buf, unsigned int len);
+int nand_prog_page_begin_op(struct nand_chip *chip, unsigned int page,
+			    unsigned int column, const void *buf,
+			    unsigned int len);
+int nand_prog_page_end_op(struct nand_chip *chip);
+int nand_prog_page_op(struct nand_chip *chip, unsigned int page,
+		      unsigned int column, const void *buf, unsigned int len);
+int nand_change_write_column_op(struct nand_chip *chip, unsigned int column,
+				const void *buf, unsigned int len,
+				bool force_8bit);
+int nand_read_data_op(struct nand_chip *chip, void *buf, unsigned int len,
+		      bool force_8bits);
+int nand_write_data_op(struct nand_chip *chip, const void *buf,
+		       unsigned int len, bool force_8bits);
 
 /* Free resources held by the NAND device */
 void nand_cleanup(struct nand_chip *chip);
