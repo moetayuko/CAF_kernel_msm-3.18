@@ -869,11 +869,22 @@ static void free_raid_bio(struct btrfs_raid_bio *rbio)
  */
 static void rbio_orig_end_io(struct btrfs_raid_bio *rbio, blk_status_t err)
 {
-	struct bio *cur = bio_list_get(&rbio->bio_list);
+	struct bio *cur;
 	struct bio *next;
+
+	/*
+	 * We're not allowed to take any new bios to rbio->bio_list from now
+	 * on, otherwise we may get merged with more bios and rbio->bio_list is
+	 * not empty.
+	 */
+	spin_lock(&rbio->bio_list_lock);
+	set_bit(RBIO_RMW_LOCKED_BIT, &rbio->flags);
+	spin_unlock(&rbio->bio_list_lock);
 
 	if (rbio->generic_bio_cnt)
 		btrfs_bio_counter_sub(rbio->fs_info, rbio->generic_bio_cnt);
+
+	cur = bio_list_get(&rbio->bio_list);
 
 	free_raid_bio(rbio);
 
