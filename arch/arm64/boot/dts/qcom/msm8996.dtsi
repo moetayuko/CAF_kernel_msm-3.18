@@ -970,6 +970,7 @@
 
 
 				vdda-supply = <&pm8994_l28>;
+				vdda-1p8-supply = <&pm8994_l12>;
 
 				linux,pci-domain = <0>;
 
@@ -1025,6 +1026,7 @@
 
 
 				vdda-supply = <&pm8994_l28>;
+				vdda-1p8-supply = <&pm8994_l12>;
 				linux,pci-domain = <1>;
 
 				clocks = <&gcc GCC_PCIE_1_PIPE_CLK>,
@@ -1077,6 +1079,7 @@
 				pinctrl-1 = <&pcie2_clkreq_sleep &pcie2_perst_default &pcie2_wake_sleep >;
 
 				vdda-supply = <&pm8994_l28>;
+				vdda-1p8-supply = <&pm8994_l12>;
 
 				linux,pci-domain = <2>;
 				clocks = <&gcc GCC_PCIE_2_PIPE_CLK>,
