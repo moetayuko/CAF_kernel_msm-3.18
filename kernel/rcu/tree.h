@@ -38,9 +38,8 @@
  * Dynticks per-CPU state.
  */
 struct rcu_dynticks {
-	long long dynticks_nesting; /* Track irq/process nesting level. */
-				    /* Process level is worth LLONG_MAX/2. */
-	int dynticks_nmi_nesting;   /* Track NMI nesting level. */
+	long dynticks_nesting;      /* Track process nesting level. */
+	long dynticks_nmi_nesting;  /* Track irq/NMI nesting level. */
 	atomic_t dynticks;	    /* Even value for idle, else odd. */
 	bool rcu_need_heavy_qs;     /* GP old, need heavy quiescent state. */
 	unsigned long rcu_qs_ctr;   /* Light universal quiescent state ctr. */
@@ -464,6 +463,7 @@ static void rcu_preempt_check_blocked_tasks(struct rcu_node *rnp);
 static void rcu_preempt_check_callbacks(void);
 void call_rcu(struct rcu_head *head, rcu_callback_t func);
 static void __init __rcu_init_preempt(void);
+static void dump_blkd_tasks(struct rcu_node *rnp, int ncheck);
 static void rcu_initiate_boost(struct rcu_node *rnp, unsigned long flags);
 static void rcu_preempt_boost_start_gp(struct rcu_node *rnp);
 static void invoke_rcu_callbacks_kthread(void);
