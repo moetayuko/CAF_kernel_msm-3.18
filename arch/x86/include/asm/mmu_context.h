@@ -45,13 +45,17 @@ static inline void load_mm_cr4(struct mm_struct *mm) {}
  */
 struct ldt_struct {
 	/*
-	 * Xen requires page-aligned LDTs with special permissions.  This is
-	 * needed to prevent us from installing evil descriptors such as
+	 * Xen requires page-aligned LDTs with special permissions.  This
+	 * is needed to prevent us from installing evil descriptors such as
 	 * call gates.  On native, we could merge the ldt_struct and LDT
-	 * allocations, but it's not worth trying to optimize.
+	 * allocations, but it's not worth trying to optimize and it does
+	 * not work with page table isolation enabled, which requires
+	 * page-aligned LDT entries as well.
 	 */
-	struct desc_struct *entries;
-	unsigned int nr_entries;
+	struct desc_struct	*entries;
+	phys_addr_t		entries_pa;
+	unsigned int		nr_entries;
+	unsigned int		order;
 };
 
 /*
@@ -59,6 +63,7 @@ struct ldt_struct {
  */
 int init_new_context_ldt(struct task_struct *tsk, struct mm_struct *mm);
 void destroy_context_ldt(struct mm_struct *mm);
+void load_mm_ldt(struct mm_struct *mm);
 #else	/* CONFIG_MODIFY_LDT_SYSCALL */
 static inline int init_new_context_ldt(struct task_struct *tsk,
 				       struct mm_struct *mm)
@@ -66,38 +71,11 @@ static inline int init_new_context_ldt(struct task_struct *tsk,
 	return 0;
 }
 static inline void destroy_context_ldt(struct mm_struct *mm) {}
-#endif
-
 static inline void load_mm_ldt(struct mm_struct *mm)
 {
-#ifdef CONFIG_MODIFY_LDT_SYSCALL
-	struct ldt_struct *ldt;
-
-	/* READ_ONCE synchronizes with smp_store_release */
-	ldt = READ_ONCE(mm->context.ldt);
-
-	/*
-	 * Any change to mm->context.ldt is followed by an IPI to all
-	 * CPUs with the mm active.  The LDT will not be freed until
-	 * after the IPI is handled by all such CPUs.  This means that,
-	 * if the ldt_struct changes before we return, the values we see
-	 * will be safe, and the new values will be loaded before we run
-	 * any user code.
-	 *
-	 * NB: don't try to convert this to use RCU without extreme care.
-	 * We would still need IRQs off, because we don't want to change
-	 * the local LDT after an IPI loaded a newer value than the one
-	 * that we can see.
-	 */
-
-	if (unlikely(ldt))
-		set_ldt(ldt->entries, ldt->nr_entries);
-	else
-		clear_LDT();
-#else
 	clear_LDT();
-#endif
 }
+#endif
 
 static inline void switch_ldt(struct mm_struct *prev, struct mm_struct *next)
 {
@@ -282,33 +260,6 @@ static inline bool arch_vma_access_permitted(struct vm_area_struct *vma,
 }
 
 /*
- * If PCID is on, ASID-aware code paths put the ASID+1 into the PCID
- * bits.  This serves two purposes.  It prevents a nasty situation in
- * which PCID-unaware code saves CR3, loads some other value (with PCID
- * == 0), and then restores CR3, thus corrupting the TLB for ASID 0 if
- * the saved ASID was nonzero.  It also means that any bugs involving
- * loading a PCID-enabled CR3 with CR4.PCIDE off will trigger
- * deterministically.
- */
-
-static inline unsigned long build_cr3(struct mm_struct *mm, u16 asid)
-{
-	if (static_cpu_has(X86_FEATURE_PCID)) {
-		VM_WARN_ON_ONCE(asid > 4094);
-		return __sme_pa(mm->pgd) | (asid + 1);
-	} else {
-		VM_WARN_ON_ONCE(asid != 0);
-		return __sme_pa(mm->pgd);
-	}
-}
-
-static inline unsigned long build_cr3_noflush(struct mm_struct *mm, u16 asid)
-{
-	VM_WARN_ON_ONCE(asid > 4094);
-	return __sme_pa(mm->pgd) | (asid + 1) | CR3_NOFLUSH;
-}
-
-/*
  * This can be used from process context to figure out what the value of
  * CR3 is without needing to do a (slow) __read_cr3().
  *
@@ -317,7 +268,7 @@ static inline unsigned long build_cr3_noflush(struct mm_struct *mm, u16 asid)
  */
 static inline unsigned long __get_current_cr3_fast(void)
 {
-	unsigned long cr3 = build_cr3(this_cpu_read(cpu_tlbstate.loaded_mm),
+	unsigned long cr3 = build_cr3(this_cpu_read(cpu_tlbstate.loaded_mm)->pgd,
 		this_cpu_read(cpu_tlbstate.loaded_mm_asid));
 
 	/* For now, be very restrictive about when this can be called. */
