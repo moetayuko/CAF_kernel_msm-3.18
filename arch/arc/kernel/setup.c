@@ -19,6 +19,7 @@
 #include <linux/of_fdt.h>
 #include <linux/of.h>
 #include <linux/cache.h>
+#include <linux/reboot.h>
 #include <asm/sections.h>
 #include <asm/arcregs.h>
 #include <asm/tlb.h>
@@ -637,3 +638,8 @@ static int __init topology_init(void)
 }
 
 subsys_initcall(topology_init);
+
+void __weak abort(void)
+{
+	machine_halt();
+}
