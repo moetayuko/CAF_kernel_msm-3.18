@@ -493,7 +493,16 @@ static const struct virtio_config_ops virtio_mmio_config_ops = {
 };
 
 
-static void virtio_mmio_release_dev_empty(struct device *_d) {}
+static void virtio_mmio_release_dev(struct device *_d)
+{
+	struct virtio_device *vdev =
+			container_of(_d, struct virtio_device, dev);
+	struct virtio_mmio_device *vm_dev =
+			container_of(vdev, struct virtio_mmio_device, vdev);
+	struct platform_device *pdev = vm_dev->pdev;
+
+	devm_kfree(&pdev->dev, vm_dev);
+}
 
 /* Platform device */
 
@@ -513,25 +522,30 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 		return -EBUSY;
 
 	vm_dev = devm_kzalloc(&pdev->dev, sizeof(*vm_dev), GFP_KERNEL);
-	if (!vm_dev)
-		return  -ENOMEM;
+	if (!vm_dev) {
+		rc = -ENOMEM;
+		goto free_mem;
+	}
 
 	vm_dev->vdev.dev.parent = &pdev->dev;
-	vm_dev->vdev.dev.release = virtio_mmio_release_dev_empty;
+	vm_dev->vdev.dev.release = virtio_mmio_release_dev;
 	vm_dev->vdev.config = &virtio_mmio_config_ops;
 	vm_dev->pdev = pdev;
 	INIT_LIST_HEAD(&vm_dev->virtqueues);
 	spin_lock_init(&vm_dev->lock);
 
 	vm_dev->base = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (vm_dev->base == NULL)
-		return -EFAULT;
+	if (vm_dev->base == NULL) {
+		rc = -EFAULT;
+		goto free_vmdev;
+	}
 
 	/* Check magic value */
 	magic = readl(vm_dev->base + VIRTIO_MMIO_MAGIC_VALUE);
 	if (magic != ('v' | 'i' << 8 | 'r' << 16 | 't' << 24)) {
 		dev_warn(&pdev->dev, "Wrong magic value 0x%08lx!\n", magic);
-		return -ENODEV;
+		rc = -ENODEV;
+		goto unmap;
 	}
 
 	/* Check device version */
@@ -539,7 +553,8 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 	if (vm_dev->version < 1 || vm_dev->version > 2) {
 		dev_err(&pdev->dev, "Version %ld not supported!\n",
 				vm_dev->version);
-		return -ENXIO;
+		rc = -ENXIO;
+		goto unmap;
 	}
 
 	vm_dev->vdev.id.device = readl(vm_dev->base + VIRTIO_MMIO_DEVICE_ID);
@@ -548,7 +563,8 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 		 * virtio-mmio device with an ID 0 is a (dummy) placeholder
 		 * with no function. End probing now with no error reported.
 		 */
-		return -ENODEV;
+		rc = -ENODEV;
+		goto unmap;
 	}
 	vm_dev->vdev.id.vendor = readl(vm_dev->base + VIRTIO_MMIO_VENDOR_ID);
 
@@ -573,13 +589,34 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, vm_dev);
 
-	return register_virtio_device(&vm_dev->vdev);
+	rc = register_virtio_device(&vm_dev->vdev);
+	if (rc) {
+		iounmap(vm_dev->base);
+		devm_release_mem_region(&pdev->dev, mem->start,
+					resource_size(mem));
+		put_device(&vm_dev->vdev.dev);
+	}
+	return rc;
+unmap:
+	iounmap(vm_dev->base);
+free_mem:
+	devm_release_mem_region(&pdev->dev, mem->start,
+			resource_size(mem));
+free_vmdev:
+	devm_kfree(&pdev->dev, vm_dev);
+	return rc;
 }
 
 static int virtio_mmio_remove(struct platform_device *pdev)
 {
 	struct virtio_mmio_device *vm_dev = platform_get_drvdata(pdev);
+	struct resource *mem;
 
+	iounmap(vm_dev->base);
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (mem)
+		devm_release_mem_region(&pdev->dev, mem->start,
+			resource_size(mem));
 	unregister_virtio_device(&vm_dev->vdev);
 
 	return 0;
@@ -650,10 +687,8 @@ static int vm_cmdline_set(const char *device,
 	pdev = platform_device_register_resndata(&vm_cmdline_parent,
 			"virtio-mmio", vm_cmdline_id++,
 			resources, ARRAY_SIZE(resources), NULL, 0);
-	if (IS_ERR(pdev))
-		return PTR_ERR(pdev);
 
-	return 0;
+	return PTR_ERR_OR_ZERO(pdev);
 }
 
 static int vm_cmdline_get_device(struct device *dev, void *data)
@@ -713,7 +748,7 @@ static void vm_unregister_cmdline_devices(void)
 
 /* Platform driver */
 
-static struct of_device_id virtio_mmio_match[] = {
+static const struct of_device_id virtio_mmio_match[] = {
 	{ .compatible = "virtio,mmio", },
 	{},
 };
