@@ -932,7 +932,7 @@ static int dm_table_determine_type(struct dm_table *t)
 				      " that don't support partial completion");
 				return -EINVAL;
 			}
-			return 0;
+			/* Fallthru, also verify all devices are blk-mq */
 		}
 		BUG_ON(t->type == DM_TYPE_DAX_BIO_BASED);
 		goto verify_rq_based;
@@ -948,8 +948,8 @@ static int dm_table_determine_type(struct dm_table *t)
 			bio_based = 1;
 
 		if (bio_based && request_based) {
-			DMWARN("Inconsistent table: different target types"
-			       " can't be mixed up");
+			DMERR("Inconsistent table: different target types"
+			      " can't be mixed up");
 			return -EINVAL;
 		}
 	}
@@ -976,6 +976,7 @@ static int dm_table_determine_type(struct dm_table *t)
 			    dm_table_does_not_support_partial_completion(t)) ||
 			   (list_empty(devices) && live_md_type == DM_TYPE_NVME_BIO_BASED)) {
 			t->type = DM_TYPE_NVME_BIO_BASED;
+			goto verify_rq_based;
 		}
 		return 0;
 	}
@@ -996,7 +997,8 @@ verify_rq_based:
 	 * (e.g. request completion process for partial completion.)
 	 */
 	if (t->num_targets > 1) {
-		DMWARN("Request-based dm doesn't support multiple targets yet");
+		DMERR("%s DM doesn't support multiple targets",
+		      t->type == DM_TYPE_NVME_BIO_BASED ? "nvme bio-based" : "request-based");
 		return -EINVAL;
 	}
 
@@ -1034,7 +1036,8 @@ verify_rq_based:
 	}
 	t->all_blk_mq = mq_count > 0;
 
-	if (t->type == DM_TYPE_MQ_REQUEST_BASED && !t->all_blk_mq) {
+	if (!t->all_blk_mq &&
+	    (t->type == DM_TYPE_MQ_REQUEST_BASED || t->type == DM_TYPE_NVME_BIO_BASED)) {
 		DMERR("table load rejected: all devices are not blk-mq request-stackable");
 		return -EINVAL;
 	}
