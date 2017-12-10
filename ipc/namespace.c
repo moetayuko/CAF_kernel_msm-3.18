@@ -65,7 +65,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 	if (err)
 		goto fail_destroy_msg;
 
-	err = mq_init_ns(ns);
+	err = mq_init_ns(ns, false);
 	if (err)
 		goto fail_destroy_shm;
 
