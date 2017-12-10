@@ -9163,6 +9163,11 @@ static bool vmx_umip_emulated(void)
 		SECONDARY_EXEC_DESC;
 }
 
+static bool vmx_pt_supported(void)
+{
+	return (pt_mode == PT_MODE_HOST_GUEST);
+}
+
 static void vmx_recover_nmi_blocking(struct vcpu_vmx *vmx)
 {
 	u32 exit_intr_info;
@@ -12183,6 +12188,7 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
 	.mpx_supported = vmx_mpx_supported,
 	.xsaves_supported = vmx_xsaves_supported,
 	.umip_emulated = vmx_umip_emulated,
+	.pt_supported = vmx_pt_supported,
 
 	.check_nested_events = vmx_check_nested_events,
 
