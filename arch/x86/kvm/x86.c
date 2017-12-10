@@ -994,6 +994,19 @@ bool kvm_rdpmc(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(kvm_rdpmc);
 
+unsigned int kvm_get_pt_addr_cnt(void)
+{
+	unsigned int eax, ebx, ecx, edx;
+	/*
+	 * - CPUID function 14H, sub-function 1:
+	 *   EAX[2:0] enumerates the number of Intel Processor
+	 *   Trace configurable Address Ranges for filtering.
+	 */
+	cpuid_count(0x14, 1, &eax, &ebx, &ecx, &edx);
+	return (eax & 0x7);
+}
+EXPORT_SYMBOL_GPL(kvm_get_pt_addr_cnt);
+
 /*
  * List of msr numbers which we expose to userspace through KVM_GET_MSRS
  * and KVM_SET_MSRS, and KVM_GET_MSR_INDEX_LIST.
