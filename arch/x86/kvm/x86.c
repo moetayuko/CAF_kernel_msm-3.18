@@ -1025,6 +1025,12 @@ static u32 msrs_to_save[] = {
 #endif
 	MSR_IA32_TSC, MSR_IA32_CR_PAT, MSR_VM_HSAVE_PA,
 	MSR_IA32_FEATURE_CONTROL, MSR_IA32_BNDCFGS, MSR_TSC_AUX,
+	MSR_IA32_RTIT_CTL, MSR_IA32_RTIT_STATUS, MSR_IA32_RTIT_CR3_MATCH,
+	MSR_IA32_RTIT_OUTPUT_BASE, MSR_IA32_RTIT_OUTPUT_MASK,
+	MSR_IA32_RTIT_ADDR0_A, MSR_IA32_RTIT_ADDR0_B,
+	MSR_IA32_RTIT_ADDR1_A, MSR_IA32_RTIT_ADDR1_B,
+	MSR_IA32_RTIT_ADDR2_A, MSR_IA32_RTIT_ADDR2_B,
+	MSR_IA32_RTIT_ADDR3_A, MSR_IA32_RTIT_ADDR3_B,
 };
 
 static unsigned num_msrs_to_save;
@@ -4359,6 +4365,20 @@ static void kvm_init_msr_list(void)
 			if (!kvm_x86_ops->rdtscp_supported())
 				continue;
 			break;
+		case MSR_IA32_RTIT_CTL:
+		case MSR_IA32_RTIT_STATUS:
+		case MSR_IA32_RTIT_CR3_MATCH:
+		case MSR_IA32_RTIT_OUTPUT_BASE:
+		case MSR_IA32_RTIT_OUTPUT_MASK:
+			if (!kvm_x86_ops->pt_supported())
+				continue;
+			break;
+		case MSR_IA32_RTIT_ADDR0_A ... MSR_IA32_RTIT_ADDR3_B: {
+			if (!kvm_x86_ops->pt_supported() || msrs_to_save[i] -
+				MSR_IA32_RTIT_ADDR0_A >= kvm_get_pt_addr_cnt())
+				continue;
+			break;
+		}
 		default:
 			break;
 		}

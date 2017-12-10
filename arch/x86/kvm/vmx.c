@@ -949,6 +949,7 @@ static void vmx_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked);
 static bool nested_vmx_is_page_fault_vmexit(struct vmcs12 *vmcs12,
 					    u16 error_code);
 static void pt_disable_intercept_for_msr(bool flag);
+static bool vmx_pt_supported(void);
 
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct vmcs *, current_vmcs);
@@ -3346,6 +3347,38 @@ static int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			return 1;
 		msr_info->data = vcpu->arch.ia32_xss;
 		break;
+	case MSR_IA32_RTIT_CTL:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data = to_vmx(vcpu)->pt_desc.guest.ctl;
+		break;
+	case MSR_IA32_RTIT_STATUS:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data = to_vmx(vcpu)->pt_desc.guest.status;
+		break;
+	case MSR_IA32_RTIT_CR3_MATCH:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data = to_vmx(vcpu)->pt_desc.guest.cr3_match;
+		break;
+	case MSR_IA32_RTIT_OUTPUT_BASE:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data = to_vmx(vcpu)->pt_desc.guest.output_base;
+		break;
+	case MSR_IA32_RTIT_OUTPUT_MASK:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data = to_vmx(vcpu)->pt_desc.guest.output_mask;
+		break;
+	case MSR_IA32_RTIT_ADDR0_A ... MSR_IA32_RTIT_ADDR3_B:
+		if (!vmx_pt_supported())
+			return 1;
+		msr_info->data =
+			to_vmx(vcpu)->pt_desc.guest.addrs[msr_info->index -
+						MSR_IA32_RTIT_ADDR0_A];
+		break;
 	case MSR_TSC_AUX:
 		if (!msr_info->host_initiated &&
 		    !guest_cpuid_has(vcpu, X86_FEATURE_RDTSCP))
@@ -3469,6 +3502,37 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 				vcpu->arch.ia32_xss, host_xss);
 		else
 			clear_atomic_switch_msr(vmx, MSR_IA32_XSS);
+		break;
+	case MSR_IA32_RTIT_CTL:
+		if (!vmx_pt_supported() || to_vmx(vcpu)->nested.vmxon)
+			return 1;
+		vmx_set_rtit_ctl(vcpu, data);
+		break;
+	case MSR_IA32_RTIT_STATUS:
+		if (!vmx_pt_supported())
+			return 1;
+		vmx->pt_desc.guest.status = data;
+		break;
+	case MSR_IA32_RTIT_CR3_MATCH:
+		if (!vmx_pt_supported())
+			return 1;
+		vmx->pt_desc.guest.cr3_match = data;
+		break;
+	case MSR_IA32_RTIT_OUTPUT_BASE:
+		if (!vmx_pt_supported())
+			return 1;
+		vmx->pt_desc.guest.output_base = data;
+		break;
+	case MSR_IA32_RTIT_OUTPUT_MASK:
+		if (!vmx_pt_supported())
+			return 1;
+		vmx->pt_desc.guest.output_mask = data;
+		break;
+	case MSR_IA32_RTIT_ADDR0_A ... MSR_IA32_RTIT_ADDR3_B:
+		if (!vmx_pt_supported())
+			return 1;
+		vmx->pt_desc.guest.addrs[msr_info->index -
+				MSR_IA32_RTIT_ADDR0_A] = data;
 		break;
 	case MSR_TSC_AUX:
 		if (!msr_info->host_initiated &&
