@@ -948,6 +948,7 @@ static bool vmx_get_nmi_mask(struct kvm_vcpu *vcpu);
 static void vmx_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked);
 static bool nested_vmx_is_page_fault_vmexit(struct vmcs12 *vmcs12,
 					    u16 error_code);
+static void pt_disable_intercept_for_msr(bool flag);
 
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct vmcs *, current_vmcs);
@@ -2464,6 +2465,15 @@ static void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 
 	if ((interruptibility != interruptibility_old))
 		vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, interruptibility);
+}
+
+static void vmx_set_rtit_ctl(struct kvm_vcpu *vcpu, u64 data)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	pt_disable_intercept_for_msr(data & RTIT_CTL_TRACEEN);
+	vmcs_write64(GUEST_IA32_RTIT_CTL, data);
+	vmx->pt_desc.guest.ctl = data;
 }
 
 static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
@@ -5014,6 +5024,41 @@ static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap,
 	}
 }
 
+static void __vmx_enable_intercept_for_msr(unsigned long *msr_bitmap,
+						u32 msr, int type)
+{
+	int f = sizeof(unsigned long);
+
+	if (!cpu_has_vmx_msr_bitmap())
+		return;
+
+	/*
+	 * See Intel PRM Vol. 3, 20.6.9 (MSR-Bitmap Address). Early manuals
+	 * have the write-low and read-high bitmap offsets the wrong way round.
+	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
+	 */
+	if (msr <= 0x1fff) {
+		if (type & MSR_TYPE_R)
+			/* read-low */
+			__set_bit(msr, msr_bitmap + 0x000 / f);
+
+		if (type & MSR_TYPE_W)
+			/* write-low */
+			__set_bit(msr, msr_bitmap + 0x800 / f);
+
+	} else if ((msr >= 0xc0000000) && (msr <= 0xc0001fff)) {
+		msr &= 0x1fff;
+		if (type & MSR_TYPE_R)
+			/* read-high */
+			__set_bit(msr, msr_bitmap + 0x400 / f);
+
+		if (type & MSR_TYPE_W)
+			/* write-high */
+			__set_bit(msr, msr_bitmap + 0xc00 / f);
+
+	}
+}
+
 /*
  * If a msr is allowed by L0, we should check whether it is allowed by L1.
  * The corresponding bit will be cleared unless both of L0 and L1 allow it.
@@ -5067,6 +5112,39 @@ static void vmx_disable_intercept_for_msr(u32 msr, bool longmode_only)
 						msr, MSR_TYPE_R | MSR_TYPE_W);
 	__vmx_disable_intercept_for_msr(vmx_msr_bitmap_longmode,
 						msr, MSR_TYPE_R | MSR_TYPE_W);
+}
+
+static void vmx_enable_intercept_for_msr(u32 msr, bool longmode_only)
+{
+	if (!longmode_only)
+		__vmx_enable_intercept_for_msr(vmx_msr_bitmap_legacy,
+						msr, MSR_TYPE_R | MSR_TYPE_W);
+	__vmx_enable_intercept_for_msr(vmx_msr_bitmap_longmode,
+						msr, MSR_TYPE_R | MSR_TYPE_W);
+}
+
+static void pt_disable_intercept_for_msr(bool flag)
+{
+	unsigned int i;
+	unsigned int addr_num = kvm_get_pt_addr_cnt();
+
+	if (flag) {
+		vmx_disable_intercept_for_msr(MSR_IA32_RTIT_STATUS, false);
+		vmx_disable_intercept_for_msr(MSR_IA32_RTIT_OUTPUT_BASE, false);
+		vmx_disable_intercept_for_msr(MSR_IA32_RTIT_OUTPUT_MASK, false);
+		vmx_disable_intercept_for_msr(MSR_IA32_RTIT_CR3_MATCH, false);
+		for (i = 0; i < addr_num; i++)
+			vmx_disable_intercept_for_msr(MSR_IA32_RTIT_ADDR0_A + i,
+									false);
+	} else {
+		vmx_enable_intercept_for_msr(MSR_IA32_RTIT_STATUS, false);
+		vmx_enable_intercept_for_msr(MSR_IA32_RTIT_OUTPUT_BASE, false);
+		vmx_enable_intercept_for_msr(MSR_IA32_RTIT_OUTPUT_MASK, false);
+		vmx_enable_intercept_for_msr(MSR_IA32_RTIT_CR3_MATCH, false);
+		for (i = 0; i < addr_num; i++)
+			vmx_enable_intercept_for_msr(MSR_IA32_RTIT_ADDR0_A + i,
+									false);
+	}
 }
 
 static void vmx_disable_intercept_msr_x2apic(u32 msr, int type, bool apicv_active)
@@ -7372,6 +7450,9 @@ static int handle_vmon(struct kvm_vcpu *vcpu)
 	ret = enter_vmx_operation(vcpu);
 	if (ret)
 		return ret;
+
+	if (pt_mode == PT_MODE_HOST_GUEST)
+		vmx_set_rtit_ctl(vcpu, 0);
 
 	nested_vmx_succeed(vcpu);
 	return kvm_skip_emulated_instruction(vcpu);
