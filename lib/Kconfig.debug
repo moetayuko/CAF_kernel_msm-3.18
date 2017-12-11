@@ -1860,7 +1860,7 @@ config TEST_BPF
 
 	  If unsure, say N.
 
-config TEST_FIND_BIT
+config FIND_BIT_BENCHMARK
 	tristate "Test find_bit functions"
 	default n
 	help
@@ -1985,7 +1985,7 @@ config STRICT_DEVMEM
 	bool "Filter access to /dev/mem"
 	depends on MMU && DEVMEM
 	depends on ARCH_HAS_DEVMEM_IS_ALLOWED
-	default y if TILE || PPC
+	default y if TILE || PPC || X86 || ARM64
 	---help---
 	  If this option is disabled, you allow userspace (root) access to all
 	  of memory, including kernel and userspace memory. Accidental

@@ -36,8 +36,6 @@
 #include <linux/userfaultfd_k.h>
 #include "internal.h"
 
-int hugepages_treat_as_movable;
-
 int hugetlb_max_hstate __read_mostly;
 unsigned int default_hstate_idx;
 struct hstate hstates[HUGE_MAX_HSTATE];
@@ -632,36 +630,6 @@ pgoff_t linear_hugepage_index(struct vm_area_struct *vma,
 EXPORT_SYMBOL_GPL(linear_hugepage_index);
 
 /*
- * Return the size of the pages allocated when backing a VMA. In the majority
- * cases this will be same size as used by the page table entries.
- */
-unsigned long vma_kernel_pagesize(struct vm_area_struct *vma)
-{
-	struct hstate *hstate;
-
-	if (!is_vm_hugetlb_page(vma))
-		return PAGE_SIZE;
-
-	hstate = hstate_vma(vma);
-
-	return 1UL << huge_page_shift(hstate);
-}
-EXPORT_SYMBOL_GPL(vma_kernel_pagesize);
-
-/*
- * Return the page size being used by the MMU to back a VMA. In the majority
- * of cases, the page size used by the kernel matches the MMU size. On
- * architectures where it differs, an architecture-specific version of this
- * function is required.
- */
-#ifndef vma_mmu_pagesize
-unsigned long vma_mmu_pagesize(struct vm_area_struct *vma)
-{
-	return vma_kernel_pagesize(vma);
-}
-#endif
-
-/*
  * Flags for MAP_PRIVATE reservations.  These are stored in the bottom
  * bits of the reservation map pointer, which are always clear due to
  * alignment.
@@ -926,7 +894,7 @@ retry_cpuset:
 /* Movability of hugepages depends on migration support. */
 static inline gfp_t htlb_alloc_mask(struct hstate *h)
 {
-	if (hugepages_treat_as_movable || hugepage_migration_supported(h))
+	if (hugepage_migration_supported(h))
 		return GFP_HIGHUSER_MOVABLE;
 	else
 		return GFP_HIGHUSER;
@@ -2975,20 +2943,32 @@ out:
 
 void hugetlb_report_meminfo(struct seq_file *m)
 {
-	struct hstate *h = &default_hstate;
+	struct hstate *h;
+	unsigned long total = 0;
+
 	if (!hugepages_supported())
 		return;
-	seq_printf(m,
-			"HugePages_Total:   %5lu\n"
-			"HugePages_Free:    %5lu\n"
-			"HugePages_Rsvd:    %5lu\n"
-			"HugePages_Surp:    %5lu\n"
-			"Hugepagesize:   %8lu kB\n",
-			h->nr_huge_pages,
-			h->free_huge_pages,
-			h->resv_huge_pages,
-			h->surplus_huge_pages,
-			1UL << (huge_page_order(h) + PAGE_SHIFT - 10));
+
+	for_each_hstate(h) {
+		unsigned long count = h->nr_huge_pages;
+
+		total += (PAGE_SIZE << huge_page_order(h)) * count;
+
+		if (h == &default_hstate)
+			seq_printf(m,
+				   "HugePages_Total:   %5lu\n"
+				   "HugePages_Free:    %5lu\n"
+				   "HugePages_Rsvd:    %5lu\n"
+				   "HugePages_Surp:    %5lu\n"
+				   "Hugepagesize:   %8lu kB\n",
+				   count,
+				   h->free_huge_pages,
+				   h->resv_huge_pages,
+				   h->surplus_huge_pages,
+				   (PAGE_SIZE << huge_page_order(h)) / 1024);
+	}
+
+	seq_printf(m, "Hugetlb:        %8lu kB\n", total / 1024);
 }
 
 int hugetlb_report_node_meminfo(int nid, char *buf)
@@ -3132,6 +3112,13 @@ static int hugetlb_vm_op_split(struct vm_area_struct *vma, unsigned long addr)
 	return 0;
 }
 
+static unsigned long hugetlb_vm_op_pagesize(struct vm_area_struct *vma)
+{
+	struct hstate *hstate = hstate_vma(vma);
+
+	return 1UL << huge_page_shift(hstate);
+}
+
 /*
  * We cannot handle pagefaults against hugetlb pages at all.  They cause
  * handle_mm_fault() to try to instantiate regular-sized pages in the
@@ -3149,6 +3136,7 @@ const struct vm_operations_struct hugetlb_vm_ops = {
 	.open = hugetlb_vm_op_open,
 	.close = hugetlb_vm_op_close,
 	.split = hugetlb_vm_op_split,
+	.pagesize = hugetlb_vm_op_pagesize,
 };
 
 static pte_t make_huge_pte(struct vm_area_struct *vma, struct page *page,
