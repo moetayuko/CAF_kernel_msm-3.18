@@ -123,6 +123,7 @@ void hugetlb_free_pgd_range(struct mmu_gather *tlb, unsigned long addr,
  * to override the version in mm/hugetlb.c
  */
 #define vma_mmu_pagesize vma_mmu_pagesize
+unsigned long vma_mmu_pagesize(struct vm_area_struct *vma);
 
 /*
  * If the arch doesn't supply something else, assume that hugepage
