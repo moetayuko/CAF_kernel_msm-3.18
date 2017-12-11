@@ -195,14 +195,6 @@ static inline bool pgdp_maps_userspace(void *__ptr)
 }
 
 /*
- * Does this PGD allow access from userspace?
- */
-static inline bool pgd_userspace_access(pgd_t pgd)
-{
-	return pgd.pgd & _PAGE_USER;
-}
-
-/*
  * Take a PGD location (pgdp) and a pgd value that needs to be set there.
  * Populates the user and returns the resulting PGD that must be set in
  * the kernel copy of the page tables.
@@ -213,50 +205,42 @@ static inline pgd_t pti_set_user_pgd(pgd_t *pgdp, pgd_t pgd)
 	if (!static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
 		return pgd;
 
-	if (pgd_userspace_access(pgd)) {
-		if (pgdp_maps_userspace(pgdp)) {
-			/*
-			 * The user page tables get the full PGD,
-			 * accessible from userspace:
-			 */
-			kernel_to_user_pgdp(pgdp)->pgd = pgd.pgd;
-			/*
-			 * For the copy of the pgd that the kernel uses,
-			 * make it unusable to userspace.  This ensures on
-			 * in case that a return to userspace with the
-			 * kernel CR3 value, userspace will crash instead
-			 * of running.
-			 *
-			 * Note: NX might be not available or disabled.
-			 */
-			if (__supported_pte_mask & _PAGE_NX)
-				pgd.pgd |= _PAGE_NX;
-		}
-	} else if (pgd_userspace_access(*pgdp)) {
+	if (pgdp_maps_userspace(pgdp)) {
 		/*
-		 * We are clearing a _PAGE_USER PGD for which we presumably
-		 * populated the user PGD.  We must now clear the user PGD
-		 * entry.
+		 * The user page tables get the full PGD,
+		 * accessible from userspace:
 		 */
-		if (pgdp_maps_userspace(pgdp)) {
-			kernel_to_user_pgdp(pgdp)->pgd = pgd.pgd;
-		} else {
-			/*
-			 * Attempted to clear a _PAGE_USER PGD which is in
-			 * the kernel portion of the address space.  PGDs
-			 * are pre-populated and we never clear them.
-			 */
-			WARN_ON_ONCE(1);
-		}
+		kernel_to_user_pgdp(pgdp)->pgd = pgd.pgd;
+
+		/*
+		 * If this is normal user memory, make it NX in the kernel
+		 * pagetables so that, if we somehow screw up and return to
+		 * usermode with the kernel CR3 loaded, we'll get a page
+		 * fault instead of allowing user code to execute with
+		 * the wrong CR3.
+		 *
+		 * As exceptions, we don't set NX if:
+		 *  - this is EFI or similar, the kernel may execute from it
+		 *  - we don't have NX support
+		 *  - we're clearing the PGD (i.e. pgd.pgd == 0).
+		 */
+		if ((pgd.pgd & _PAGE_USER) && (__supported_pte_mask & _PAGE_NX))
+			pgd.pgd |= _PAGE_NX;
 	} else {
 		/*
-		 * _PAGE_USER was not set in either the PGD being set or
-		 * cleared.  All kernel PGDs should be pre-populated so
-		 * this should never happen after boot.
+		 * Changes to the high (kernel) portion of the kernelmode
+		 * page tables are not automatically propagated to the
+		 * usermode tables.
+		 *
+		 * Users should keep in mind that, unlike the kernelmode
+		 * tables, there is no vmalloc_fault equivalent for the
+		 * usermode tables.  Top-level entries added to init_mm's
+		 * usermode pgd after boot will not be automatically
+		 * propagated to other mms.
 		 */
-		WARN_ON_ONCE(system_state == SYSTEM_RUNNING);
 	}
 #endif
+
 	/* return the copy of the PGD we want the kernel to use: */
 	return pgd;
 }
