@@ -77,17 +77,28 @@ struct nf_hook_entry {
 	void				*priv;
 };
 
+struct nf_hook_entries_rcu_head {
+	struct rcu_head head;
+	void	*allocation;
+};
+
 struct nf_hook_entries {
 	u16				num_hook_entries;
 	/* padding */
 	struct nf_hook_entry		hooks[];
 
-	/* trailer: pointers to original orig_ops of each hook.
+	/* trailer: pointers to original orig_ops of each hook,
+	 * followed by rcu_head and scratch space used for freeing
+	 * the structure via call_rcu.
 	 *
-	 * This is not part of struct nf_hook_entry since its only
-	 * needed in slow path (hook register/unregister).
-	 *
+	 *   This is not part of struct nf_hook_entry since its only
+	 *   needed in slow path (hook register/unregister):
 	 * const struct nf_hook_ops     *orig_ops[]
+	 *
+	 *   For the same reason, we store this at end -- its
+	 *   only needed when a hook is deleted, not during
+	 *   packet path processing:
+	 * struct nf_hook_entries_rcu_head     head
 	 */
 };
 
@@ -184,7 +195,7 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
 			  struct net_device *indev, struct net_device *outdev,
 			  int (*okfn)(struct net *, struct sock *, struct sk_buff *))
 {
-	struct nf_hook_entries *hook_head;
+	struct nf_hook_entries *hook_head = NULL;
 	int ret = 1;
 
 #ifdef HAVE_JUMP_LABEL
@@ -195,7 +206,27 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
 #endif
 
 	rcu_read_lock();
-	hook_head = rcu_dereference(net->nf.hooks[pf][hook]);
+	switch (pf) {
+	case NFPROTO_IPV4:
+		hook_head = rcu_dereference(net->nf.hooks_ipv4[hook]);
+		break;
+	case NFPROTO_IPV6:
+		hook_head = rcu_dereference(net->nf.hooks_ipv6[hook]);
+		break;
+	case NFPROTO_ARP:
+		hook_head = rcu_dereference(net->nf.hooks_arp[hook]);
+		break;
+	case NFPROTO_BRIDGE:
+		hook_head = rcu_dereference(net->nf.hooks_bridge[hook]);
+		break;
+	case NFPROTO_DECNET:
+		hook_head = rcu_dereference(net->nf.hooks_decnet[hook]);
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		break;
+	}
+
 	if (hook_head) {
 		struct nf_hook_state state;
 
