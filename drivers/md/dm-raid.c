@@ -209,6 +209,8 @@ struct raid_dev {
 #define RT_FLAG_UPDATE_SBS		3
 #define RT_FLAG_RESHAPE_RS		4
 #define RT_FLAG_RS_SUSPENDED		5
+#define RT_FLAG_RS_IN_SYNC		6
+#define RT_FLAG_RS_RESYNCING		7
 
 /* Array elements of 64 bit needed for rebuild/failed disk bits */
 #define DISKS_ARRAY_ELEMS ((MAX_RAID_DEVICES + (sizeof(uint64_t) * 8 - 1)) / sizeof(uint64_t) / 8)
@@ -225,7 +227,6 @@ struct rs_layout {
 struct raid_set {
 	struct dm_target *ti;
 
-	uint32_t bitmap_loaded;
 	uint32_t stripe_cache_entries;
 	unsigned long ctr_flags;
 	unsigned long runtime_flags;
@@ -675,15 +676,11 @@ static struct raid_type *get_raid_type_by_ll(const int level, const int layout)
 	return NULL;
 }
 
-/*
- * Conditionally change bdev capacity of @rs
- * in case of a disk add/remove reshape
- */
-static void rs_set_capacity(struct raid_set *rs)
+/* Adjust rdev sectors */
+static void rs_set_rdev_sectors(struct raid_set *rs)
 {
 	struct mddev *mddev = &rs->md;
 	struct md_rdev *rdev;
-	struct gendisk *gendisk = dm_disk(dm_table_get_md(rs->ti->table));
 
 	/*
 	 * raid10 sets rdev->sector to the device size, which
@@ -692,8 +689,16 @@ static void rs_set_capacity(struct raid_set *rs)
 	rdev_for_each(rdev, mddev)
 		if (!test_bit(Journal, &rdev->flags))
 			rdev->sectors = mddev->dev_sectors;
+}
 
-	set_capacity(gendisk, mddev->array_sectors);
+/*
+ * Change bdev capacity of @rs in case of a disk add/remove reshape
+ */
+static void rs_set_capacity(struct raid_set *rs)
+{
+	struct gendisk *gendisk = dm_disk(dm_table_get_md(rs->ti->table));
+
+	set_capacity(gendisk, rs->md.array_sectors);
 	revalidate_disk(gendisk);
 }
 
@@ -1576,6 +1581,24 @@ static sector_t __rdev_sectors(struct raid_set *rs)
 	return 0;
 }
 
+/* Check that calculated dev_sectors fits all component devices. */
+static int _check_data_dev_sectors(struct raid_set *rs)
+{
+	sector_t ds = ~0;
+	struct md_rdev *rdev;
+
+	rdev_for_each(rdev, &rs->md)
+		if (!test_bit(Journal, &rdev->flags) && rdev->bdev) {
+			ds = min(ds, to_sector(i_size_read(rdev->bdev->bd_inode)));
+			if (ds < rs->md.dev_sectors) {
+				rs->ti->error = "Component device(s) too small";
+				return -EINVAL;
+			}
+		}
+
+	return 0;
+}
+
 /* Calculate the sectors per device and per array used for @rs */
 static int rs_set_dev_and_array_sectors(struct raid_set *rs, bool use_mddev)
 {
@@ -1625,7 +1648,7 @@ static int rs_set_dev_and_array_sectors(struct raid_set *rs, bool use_mddev)
 	mddev->array_sectors = array_sectors;
 	mddev->dev_sectors = dev_sectors;
 
-	return 0;
+	return _check_data_dev_sectors(rs);
 bad:
 	rs->ti->error = "Target length not divisible by number of data devices";
 	return -EINVAL;
@@ -1674,8 +1697,11 @@ static void do_table_event(struct work_struct *ws)
 	struct raid_set *rs = container_of(ws, struct raid_set, md.event_work);
 
 	smp_rmb(); /* Make sure we access most actual mddev properties */
-	if (!rs_is_reshaping(rs))
+	if (!rs_is_reshaping(rs)) {
+		if (rs_is_raid10(rs))
+			rs_set_rdev_sectors(rs);
 		rs_set_capacity(rs);
+	}
 	dm_table_event(rs->ti->table);
 }
 
@@ -2640,12 +2666,19 @@ static int rs_adjust_data_offsets(struct raid_set *rs)
 	 * Make sure we got a minimum amount of free sectors per device
 	 */
 	if (rs->data_offset &&
-	    to_sector(i_size_read(rdev->bdev->bd_inode)) - rdev->sectors < MIN_FREE_RESHAPE_SPACE) {
+	    to_sector(i_size_read(rdev->bdev->bd_inode)) - rs->md.dev_sectors < MIN_FREE_RESHAPE_SPACE) {
 		rs->ti->error = data_offset ? "No space for forward reshape" :
 					      "No space for backward reshape";
 		return -ENOSPC;
 	}
 out:
+	/*
+	 * Raise recovery_cp in case data_offset != 0 to
+	 * avoid false recovery positives in the constructor.
+	 */
+	if (rs->md.recovery_cp < rs->md.dev_sectors)
+		rs->md.recovery_cp += rs->dev[0].rdev.data_offset;
+
 	/* Adjust data offsets on all rdevs but on any raid4/5/6 journal device */
 	rdev_for_each(rdev, &rs->md) {
 		if (!test_bit(Journal, &rdev->flags)) {
@@ -2777,6 +2810,23 @@ static int rs_prepare_reshape(struct raid_set *rs)
 	return 0;
 }
 
+/* Get reshape sectors from data_offsets or raid set */
+static sector_t _get_reshape_sectors(struct raid_set *rs)
+{
+	struct md_rdev *rdev;
+	sector_t reshape_sectors = 0;
+
+	rdev_for_each(rdev, &rs->md)
+		if (!test_bit(Journal, &rdev->flags)) {
+			reshape_sectors = (rdev->data_offset > rdev->new_data_offset) ?
+					rdev->data_offset - rdev->new_data_offset :
+					rdev->new_data_offset - rdev->data_offset;
+			break;
+		}
+
+	return max(reshape_sectors, (sector_t) rs->data_offset);
+}
+
 /*
  *
  * - change raid layout
@@ -2788,6 +2838,7 @@ static int rs_setup_reshape(struct raid_set *rs)
 {
 	int r = 0;
 	unsigned int cur_raid_devs, d;
+	sector_t reshape_sectors = _get_reshape_sectors(rs);
 	struct mddev *mddev = &rs->md;
 	struct md_rdev *rdev;
 
@@ -2804,13 +2855,13 @@ static int rs_setup_reshape(struct raid_set *rs)
 	/*
 	 * Adjust array size:
 	 *
-	 * - in case of adding disks, array size has
+	 * - in case of adding disk(s), array size has
 	 *   to grow after the disk adding reshape,
 	 *   which'll hapen in the event handler;
 	 *   reshape will happen forward, so space has to
 	 *   be available at the beginning of each disk
 	 *
-	 * - in case of removing disks, array size
+	 * - in case of removing disk(s), array size
 	 *   has to shrink before starting the reshape,
 	 *   which'll happen here;
 	 *   reshape will happen backward, so space has to
@@ -2841,7 +2892,7 @@ static int rs_setup_reshape(struct raid_set *rs)
 			rdev->recovery_offset = rs_is_raid1(rs) ? 0 : MaxSector;
 		}
 
-		mddev->reshape_backwards = 0; /* adding disks -> forward reshape */
+		mddev->reshape_backwards = 0; /* adding disk(s) -> forward reshape */
 
 	/* Remove disk(s) */
 	} else if (rs->delta_disks < 0) {
@@ -2873,6 +2924,15 @@ static int rs_setup_reshape(struct raid_set *rs)
 		 */
 		mddev->reshape_backwards = rs->dev[0].rdev.data_offset ? 0 : 1;
 	}
+
+	/*
+	 * Adjust device size for forward reshape
+	 * because md_finish_reshape() reduces it.
+	 */
+	if (!mddev->reshape_backwards)
+		rdev_for_each(rdev, &rs->md)
+			if (!test_bit(Journal, &rdev->flags))
+				rdev->sectors += reshape_sectors;
 
 	return r;
 }
@@ -2935,10 +2995,10 @@ static void configure_discard_support(struct raid_set *rs)
 static int raid_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	int r;
-	bool resize;
+	bool resize = false;
 	struct raid_type *rt;
 	unsigned int num_raid_params, num_raid_devs;
-	sector_t calculated_dev_sectors, rdev_sectors;
+	sector_t calculated_dev_sectors, rdev_sectors, reshape_sectors;
 	struct raid_set *rs = NULL;
 	const char *arg;
 	struct rs_layout rs_layout;
@@ -3021,7 +3081,10 @@ static int raid_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad;
 	}
 
-	resize = calculated_dev_sectors != rdev_sectors;
+
+	reshape_sectors = _get_reshape_sectors(rs);
+	if (calculated_dev_sectors != rdev_sectors)
+		resize = calculated_dev_sectors != (reshape_sectors ? rdev_sectors - reshape_sectors : rdev_sectors);
 
 	INIT_WORK(&rs->md.event_work, do_table_event);
 	ti->private = rs;
@@ -3144,7 +3207,6 @@ static int raid_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	mddev_lock_nointr(&rs->md);
 	r = md_run(&rs->md);
 	rs->md.in_sync = 0; /* Assume already marked dirty */
-
 	if (r) {
 		ti->error = "Failed to run raid array";
 		mddev_unlock(&rs->md);
@@ -3239,25 +3301,27 @@ static int raid_map(struct dm_target *ti, struct bio *bio)
 }
 
 /* Return string describing the current sync action of @mddev */
-static const char *decipher_sync_action(struct mddev *mddev)
+static const char *decipher_sync_action(struct mddev *mddev, unsigned long recovery)
 {
-	if (test_bit(MD_RECOVERY_FROZEN, &mddev->recovery))
+	if (test_bit(MD_RECOVERY_FROZEN, &recovery))
 		return "frozen";
 
-	if (test_bit(MD_RECOVERY_RUNNING, &mddev->recovery) ||
-	    (!mddev->ro && test_bit(MD_RECOVERY_NEEDED, &mddev->recovery))) {
-		if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery))
+	/* The MD sync thread can be done with io but still be running */
+	if (!test_bit(MD_RECOVERY_DONE, &recovery) &&
+	    (test_bit(MD_RECOVERY_RUNNING, &recovery) ||
+	     (!mddev->ro && test_bit(MD_RECOVERY_NEEDED, &recovery)))) {
+		if (test_bit(MD_RECOVERY_RESHAPE, &recovery))
 			return "reshape";
 
-		if (test_bit(MD_RECOVERY_SYNC, &mddev->recovery)) {
-			if (!test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery))
+		if (test_bit(MD_RECOVERY_SYNC, &recovery)) {
+			if (!test_bit(MD_RECOVERY_REQUESTED, &recovery))
 				return "resync";
-			else if (test_bit(MD_RECOVERY_CHECK, &mddev->recovery))
+			else if (test_bit(MD_RECOVERY_CHECK, &recovery))
 				return "check";
 			return "repair";
 		}
 
-		if (test_bit(MD_RECOVERY_RECOVER, &mddev->recovery))
+		if (test_bit(MD_RECOVERY_RECOVER, &recovery))
 			return "recover";
 	}
 
@@ -3274,7 +3338,7 @@ static const char *decipher_sync_action(struct mddev *mddev)
  *  'A' = Alive and in-sync raid set component _or_ alive raid4/5/6 'write_through' journal device
  *  '-' = Non-existing device (i.e. uspace passed '- -' into the ctr)
  */
-static const char *__raid_dev_status(struct raid_set *rs, struct md_rdev *rdev, bool array_in_sync)
+static const char *__raid_dev_status(struct raid_set *rs, struct md_rdev *rdev)
 {
 	if (!rdev->bdev)
 		return "-";
@@ -3282,67 +3346,99 @@ static const char *__raid_dev_status(struct raid_set *rs, struct md_rdev *rdev, 
 		return "D";
 	else if (test_bit(Journal, &rdev->flags))
 		return (rs->journal_dev.mode == R5C_JOURNAL_MODE_WRITE_THROUGH) ? "A" : "a";
-	else if (!array_in_sync || !test_bit(In_sync, &rdev->flags))
+	else if (test_bit(RT_FLAG_RS_RESYNCING, &rs->runtime_flags) ||
+		 (!test_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags) &&
+		  !test_bit(In_sync, &rdev->flags)))
 		return "a";
 	else
 		return "A";
 }
 
-/* Helper to return resync/reshape progress for @rs and @array_in_sync */
-static sector_t rs_get_progress(struct raid_set *rs,
-				sector_t resync_max_sectors, bool *array_in_sync)
+/* Helper to return resync/reshape progress for @rs and runtime flags for raid set in sync / resynching */
+static sector_t rs_get_progress(struct raid_set *rs, unsigned long recovery,
+				sector_t resync_max_sectors)
 {
-	sector_t r, curr_resync_completed;
+	sector_t r;
 	struct mddev *mddev = &rs->md;
 
-	curr_resync_completed = mddev->curr_resync_completed ?: mddev->recovery_cp;
-	*array_in_sync = false;
+	clear_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
+	clear_bit(RT_FLAG_RS_RESYNCING, &rs->runtime_flags);
 
 	if (rs_is_raid0(rs)) {
 		r = resync_max_sectors;
-		*array_in_sync = true;
+		set_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
 
 	} else {
-		r = mddev->reshape_position;
-
 		/* Reshape is relative to the array size */
-		if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery) ||
-		    r != MaxSector) {
-			if (r == MaxSector) {
-				*array_in_sync = true;
-				r = resync_max_sectors;
-			} else {
+		if (test_bit(MD_RECOVERY_RESHAPE, &recovery)) {
+			r = mddev->reshape_position;
+			if (r != MaxSector) {
 				/* Got to reverse on backward reshape */
 				if (mddev->reshape_backwards)
 					r = mddev->array_sectors - r;
 
-				/* Devide by # of data stripes */
-				sector_div(r, mddev_data_stripes(rs));
+				/* Divide by # of data stripes unless raid1 */
+				if (!rs_is_raid1(rs))
+					sector_div(r, mddev_data_stripes(rs));
 			}
 
-		/* Sync is relative to the component device size */
-		} else if (test_bit(MD_RECOVERY_RUNNING, &mddev->recovery))
-			r = curr_resync_completed;
+		/*
+		 * Sync/recover is relative to the component device size.
+		 *
+		 * MD_RECOVERY_NEEDED for https://bugzilla.redhat.com/show_bug.cgi?id=1508070
+		 */
+		} else if (test_bit(MD_RECOVERY_NEEDED, &recovery) ||
+			   test_bit(MD_RECOVERY_RUNNING, &recovery))
+			r = mddev->curr_resync_completed;
+
 		else
 			r = mddev->recovery_cp;
 
-		if ((r == MaxSector) ||
-		    (test_bit(MD_RECOVERY_DONE, &mddev->recovery) &&
-		     (mddev->curr_resync_completed == resync_max_sectors))) {
+		if (r >= resync_max_sectors &&
+		    (!test_bit(MD_RECOVERY_REQUESTED, &recovery) ||
+		     (!test_bit(MD_RECOVERY_FROZEN, &recovery) &&
+		      !test_bit(MD_RECOVERY_NEEDED, &recovery) &&
+		      !test_bit(MD_RECOVERY_RUNNING, &recovery)))) {
 			/*
 			 * Sync complete.
 			 */
-			*array_in_sync = true;
-			r = resync_max_sectors;
-		} else if (test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
+			/* In case we have finished recovering, the array is in sync. */
+			if (test_bit(MD_RECOVERY_RECOVER, &recovery))
+				set_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
+
+		} else if (test_bit(MD_RECOVERY_RECOVER, &recovery)) {
+			/*
+			 * In case we are recovering, the array is not in sync
+			 * and health chars should show the recovering legs.
+			 */
+			;
+
+		} else if (test_bit(MD_RECOVERY_SYNC, &recovery) &&
+			   !test_bit(MD_RECOVERY_REQUESTED, &recovery)) {
+			/*
+			 * If "resync" is occurring, the raid set
+			 * is or may be out of sync hence the health
+			 * characters shall be 'a'.
+			 */
+			set_bit(RT_FLAG_RS_RESYNCING, &rs->runtime_flags);
+
+		} else if (test_bit(MD_RECOVERY_REQUESTED, &recovery)) {
 			/*
 			 * If "check" or "repair" is occurring, the raid set has
 			 * undergone an initial sync and the health characters
 			 * should not be 'a' anymore.
 			 */
-			*array_in_sync = true;
+			set_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
+
 		} else {
 			struct md_rdev *rdev;
+
+			/*
+			 * We are idle and recovery is needed, prevent 'A' chars race
+			 * caused by components still set to in-sync by constrcuctor.
+			 */
+			if (test_bit(MD_RECOVERY_NEEDED, &recovery))
+				set_bit(RT_FLAG_RS_RESYNCING, &rs->runtime_flags);
 
 			/*
 			 * The raid set may be doing an initial sync, or it may
@@ -3350,17 +3446,17 @@ static sector_t rs_get_progress(struct raid_set *rs,
 			 * devices are In_sync, then it is the raid set that is
 			 * being initialized.
 			 */
+			set_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
 			rdev_for_each(rdev, mddev)
 				if (!test_bit(Journal, &rdev->flags) &&
-				    !test_bit(In_sync, &rdev->flags))
-					*array_in_sync = true;
-#if 0
-			r = 0; /* HM FIXME: TESTME: https://bugzilla.redhat.com/show_bug.cgi?id=1210637 ? */
-#endif
+				    !test_bit(In_sync, &rdev->flags)) {
+					clear_bit(RT_FLAG_RS_IN_SYNC, &rs->runtime_flags);
+					break;
+				}
 		}
 	}
 
-	return r;
+	return min(r, resync_max_sectors);
 }
 
 /* Helper to return @dev name or "-" if !@dev */
@@ -3376,7 +3472,7 @@ static void raid_status(struct dm_target *ti, status_type_t type,
 	struct mddev *mddev = &rs->md;
 	struct r5conf *conf = mddev->private;
 	int i, max_nr_stripes = conf ? conf->max_nr_stripes : 0;
-	bool array_in_sync;
+	unsigned long recovery;
 	unsigned int raid_param_cnt = 1; /* at least 1 for chunksize */
 	unsigned int sz = 0;
 	unsigned int rebuild_disks;
@@ -3396,17 +3492,18 @@ static void raid_status(struct dm_target *ti, status_type_t type,
 
 		/* Access most recent mddev properties for status output */
 		smp_rmb();
+		recovery = rs->md.recovery;
 		/* Get sensible max sectors even if raid set not yet started */
 		resync_max_sectors = test_bit(RT_FLAG_RS_PRERESUMED, &rs->runtime_flags) ?
 				      mddev->resync_max_sectors : mddev->dev_sectors;
-		progress = rs_get_progress(rs, resync_max_sectors, &array_in_sync);
+		progress = rs_get_progress(rs, recovery, resync_max_sectors);
 		resync_mismatches = (mddev->last_sync_action && !strcasecmp(mddev->last_sync_action, "check")) ?
 				    atomic64_read(&mddev->resync_mismatches) : 0;
-		sync_action = decipher_sync_action(&rs->md);
+		sync_action = decipher_sync_action(&rs->md, recovery);
 
 		/* HM FIXME: do we want another state char for raid0? It shows 'D'/'A'/'-' now */
 		for (i = 0; i < rs->raid_disks; i++)
-			DMEMIT(__raid_dev_status(rs, &rs->dev[i].rdev, array_in_sync));
+			DMEMIT(__raid_dev_status(rs, &rs->dev[i].rdev));
 
 		/*
 		 * In-sync/Reshape ratio:
@@ -3457,7 +3554,7 @@ static void raid_status(struct dm_target *ti, status_type_t type,
 		 * v1.10.0+:
 		 */
 		DMEMIT(" %s", test_bit(__CTR_FLAG_JOURNAL_DEV, &rs->ctr_flags) ?
-			      __raid_dev_status(rs, &rs->journal_dev.rdev, 0) : "-");
+			      __raid_dev_status(rs, &rs->journal_dev.rdev) : "-");
 		break;
 
 	case STATUSTYPE_TABLE:
@@ -3613,24 +3710,19 @@ static void raid_io_hints(struct dm_target *ti, struct queue_limits *limits)
 	blk_limits_io_opt(limits, chunk_size * mddev_data_stripes(rs));
 }
 
-static void raid_presuspend(struct dm_target *ti)
-{
-	struct raid_set *rs = ti->private;
-
-	md_stop_writes(&rs->md);
-}
-
 static void raid_postsuspend(struct dm_target *ti)
 {
 	struct raid_set *rs = ti->private;
 
 	if (!test_and_set_bit(RT_FLAG_RS_SUSPENDED, &rs->runtime_flags)) {
+		/* Writes have to be stopped before suspending to avoid deadlocks. */
+		if (!test_bit(MD_RECOVERY_FROZEN, &rs->md.recovery))
+			md_stop_writes(&rs->md);
+
 		mddev_lock_nointr(&rs->md);
 		mddev_suspend(&rs->md);
 		mddev_unlock(&rs->md);
 	}
-
-	rs->md.ro = 1;
 }
 
 static void attempt_restore_of_faulty_devices(struct raid_set *rs)
@@ -3842,11 +3934,10 @@ static int raid_preresume(struct dm_target *ti)
 		mddev->resync_min = mddev->recovery_cp;
 	}
 
-	rs_set_capacity(rs);
-
 	/* Check for any reshape request unless new raid set */
-	if (test_and_clear_bit(RT_FLAG_RESHAPE_RS, &rs->runtime_flags)) {
+	if (test_bit(RT_FLAG_RESHAPE_RS, &rs->runtime_flags)) {
 		/* Initiate a reshape. */
+		rs_set_rdev_sectors(rs);
 		mddev_lock_nointr(mddev);
 		r = rs_start_reshape(rs);
 		mddev_unlock(mddev);
@@ -3872,8 +3963,9 @@ static void raid_resume(struct dm_target *ti)
 		attempt_restore_of_faulty_devices(rs);
 	}
 
-	mddev->ro = 0;
-	mddev->in_sync = 0;
+	/* Only reduce raid set size before running a disk removing reshape. */
+	if (mddev->delta_disks < 0)
+		rs_set_capacity(rs);
 
 	/*
 	 * Keep the RAID set frozen if reshape/rebuild flags are set.
@@ -3882,11 +3974,19 @@ static void raid_resume(struct dm_target *ti)
 	 * This ensures that the constructor for the inactive table
 	 * retrieves an up-to-date reshape_position.
 	 */
-	if (!(rs->ctr_flags & RESUME_STAY_FROZEN_FLAGS))
-		clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
+	if (!test_and_clear_bit(RT_FLAG_RESHAPE_RS, &rs->runtime_flags) &&
+	    !(rs->ctr_flags & RESUME_STAY_FROZEN_FLAGS)) {
+		if (rs_is_reshapable(rs)) {
+			if (!rs_is_reshaping(rs) || _get_reshape_sectors(rs))
+				clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
+		} else
+			clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
+	}
 
 	if (test_and_clear_bit(RT_FLAG_RS_SUSPENDED, &rs->runtime_flags)) {
 		mddev_lock_nointr(mddev);
+		mddev->ro = 0;
+		mddev->in_sync = 0;
 		mddev_resume(mddev);
 		mddev_unlock(mddev);
 	}
@@ -3894,7 +3994,7 @@ static void raid_resume(struct dm_target *ti)
 
 static struct target_type raid_target = {
 	.name = "raid",
-	.version = {1, 13, 0},
+	.version = {1, 13, 1},
 	.module = THIS_MODULE,
 	.ctr = raid_ctr,
 	.dtr = raid_dtr,
@@ -3903,7 +4003,6 @@ static struct target_type raid_target = {
 	.message = raid_message,
 	.iterate_devices = raid_iterate_devices,
 	.io_hints = raid_io_hints,
-	.presuspend = raid_presuspend,
 	.postsuspend = raid_postsuspend,
 	.preresume = raid_preresume,
 	.resume = raid_resume,
