@@ -540,7 +540,7 @@ void cec_transmit_done_ts(struct cec_adapter *adap, u8 status,
 	unsigned int attempts_made = arb_lost_cnt + nack_cnt +
 				     low_drive_cnt + error_cnt;
 
-	dprintk(2, "%s: status %02x\n", __func__, status);
+	dprintk(2, "%s: status 0x%02x\n", __func__, status);
 	if (attempts_made < 1)
 		attempts_made = 1;
 
@@ -2051,6 +2051,29 @@ void cec_monitor_all_cnt_dec(struct cec_adapter *adap)
 	adap->monitor_all_cnt--;
 	if (adap->monitor_all_cnt == 0)
 		WARN_ON(call_op(adap, adap_monitor_all_enable, 0));
+}
+
+/*
+ * Helper functions to keep track of the 'monitor pin' use count.
+ *
+ * These functions are called with adap->lock held.
+ */
+int cec_monitor_pin_cnt_inc(struct cec_adapter *adap)
+{
+	int ret = 0;
+
+	if (adap->monitor_pin_cnt == 0)
+		ret = call_op(adap, adap_monitor_pin_enable, 1);
+	if (ret == 0)
+		adap->monitor_pin_cnt++;
+	return ret;
+}
+
+void cec_monitor_pin_cnt_dec(struct cec_adapter *adap)
+{
+	adap->monitor_pin_cnt--;
+	if (adap->monitor_pin_cnt == 0)
+		WARN_ON(call_op(adap, adap_monitor_pin_enable, 0));
 }
 
 #ifdef CONFIG_DEBUG_FS
