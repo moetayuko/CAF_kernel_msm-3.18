@@ -122,6 +122,8 @@ static int ttyport_open(struct serdev_controller *ctrl)
 	if (ret)
 		goto err_close;
 
+	tty_unlock(serport->tty);
+
 	/* Bring the UART into a known 8 bits no parity hw fc state */
 	ktermios = tty->termios;
 	ktermios.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP |
@@ -131,11 +133,12 @@ static int ttyport_open(struct serdev_controller *ctrl)
 	ktermios.c_cflag &= ~(CSIZE | PARENB);
 	ktermios.c_cflag |= CS8;
 	ktermios.c_cflag |= CRTSCTS;
+	/* Hangups are not supported so make sure to ignore carrier detect. */
+	ktermios.c_cflag |= CLOCAL;
 	tty_set_termios(tty, &ktermios);
 
 	set_bit(SERPORT_ACTIVE, &serport->flags);
 
-	tty_unlock(serport->tty);
 	return 0;
 
 err_close:
