@@ -109,6 +109,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_PCM1681 if I2C
 	select SND_SOC_PCM179X_I2C if I2C
 	select SND_SOC_PCM179X_SPI if SPI_MASTER
+	select SND_SOC_PCM186X_I2C if I2C
+	select SND_SOC_PCM186X_SPI if SPI_MASTER
 	select SND_SOC_PCM3008
 	select SND_SOC_PCM3168A_I2C if I2C
 	select SND_SOC_PCM3168A_SPI if SPI_MASTER
@@ -148,6 +150,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_TAS5086 if I2C
 	select SND_SOC_TAS571X if I2C
 	select SND_SOC_TAS5720 if I2C
+	select SND_SOC_TAS6424 if I2C
 	select SND_SOC_TFA9879 if I2C
 	select SND_SOC_TLV320AIC23_I2C if I2C
 	select SND_SOC_TLV320AIC23_SPI if SPI_MASTER
@@ -661,6 +664,21 @@ config SND_SOC_PCM179X_SPI
 	  Enable support for Texas Instruments PCM179x CODEC.
 	  Select this if your PCM179x is connected via an SPI bus.
 
+config SND_SOC_PCM186X
+	tristate
+
+config SND_SOC_PCM186X_I2C
+	tristate "Texas Instruments PCM186x CODECs - I2C"
+	depends on I2C
+	select SND_SOC_PCM186X
+	select REGMAP_I2C
+
+config SND_SOC_PCM186X_SPI
+	tristate "Texas Instruments PCM186x CODECs - SPI"
+	depends on SPI_MASTER
+	select SND_SOC_PCM186X
+	select REGMAP_SPI
+
 config SND_SOC_PCM3008
        tristate
 
@@ -882,6 +900,13 @@ config SND_SOC_TAS5720
 	help
 	  Enable support for Texas Instruments TAS5720L/M high-efficiency mono
 	  Class-D audio power amplifiers.
+
+config SND_SOC_TAS6424
+	tristate "Texas Instruments TAS6424 Quad-Channel Audio amplifier"
+	depends on I2C
+	help
+	  Enable support for Texas Instruments TAS6424 high-efficiency
+	  digital input quad-channel Class-D audio power amplifiers.
 
 config SND_SOC_TFA9879
 	tristate "NXP Semiconductors TFA9879 amplifier"
