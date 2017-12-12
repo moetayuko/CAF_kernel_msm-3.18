@@ -1666,17 +1666,9 @@ leave_nomem:
 	return 0;
 }
 
-struct scrub_bio_ret {
-	struct completion event;
-	blk_status_t status;
-};
-
 static void scrub_bio_wait_endio(struct bio *bio)
 {
-	struct scrub_bio_ret *ret = bio->bi_private;
-
-	ret->status = bio->bi_status;
-	complete(&ret->event);
+	complete(bio->bi_private);
 }
 
 static inline int scrub_is_page_on_raid56(struct scrub_page *page)
@@ -1689,11 +1681,9 @@ static int scrub_submit_raid56_bio_wait(struct btrfs_fs_info *fs_info,
 					struct bio *bio,
 					struct scrub_page *page)
 {
-	struct scrub_bio_ret done;
+	DECLARE_COMPLETION_ONSTACK(done);
 	int ret;
 
-	init_completion(&done.event);
-	done.status = 0;
 	bio->bi_iter.bi_sector = page->logical >> 9;
 	bio->bi_private = &done;
 	bio->bi_end_io = scrub_bio_wait_endio;
@@ -1704,11 +1694,8 @@ static int scrub_submit_raid56_bio_wait(struct btrfs_fs_info *fs_info,
 	if (ret)
 		return ret;
 
-	wait_for_completion_io(&done.event);
-	if (done.status)
-		return -EIO;
-
-	return 0;
+	wait_for_completion_io(&done);
+	return blk_status_to_errno(bio->bi_status);
 }
 
 /*
@@ -2535,7 +2522,7 @@ leave_nomem:
 	}
 
 	WARN_ON(sblock->page_count == 0);
-	if (dev->missing) {
+	if (test_bit(BTRFS_DEV_STATE_MISSING, &dev->dev_state)) {
 		/*
 		 * This case should only be hit for RAID 5/6 device replace. See
 		 * the comment in scrub_missing_raid56_pages() for details.
@@ -2870,7 +2857,7 @@ static int scrub_extent_for_parity(struct scrub_parity *sparity,
 	u8 csum[BTRFS_CSUM_SIZE];
 	u32 blocksize;
 
-	if (dev->missing) {
+	if (test_bit(BTRFS_DEV_STATE_MISSING, &dev->dev_state)) {
 		scrub_parity_mark_sectors_error(sparity, logical, len);
 		return 0;
 	}
@@ -4112,12 +4099,14 @@ int btrfs_scrub_dev(struct btrfs_fs_info *fs_info, u64 devid, u64 start,
 
 	mutex_lock(&fs_info->fs_devices->device_list_mutex);
 	dev = btrfs_find_device(fs_info, devid, NULL, NULL);
-	if (!dev || (dev->missing && !is_dev_replace)) {
+	if (!dev || (test_bit(BTRFS_DEV_STATE_MISSING, &dev->dev_state) &&
+		     !is_dev_replace)) {
 		mutex_unlock(&fs_info->fs_devices->device_list_mutex);
 		return -ENODEV;
 	}
 
-	if (!is_dev_replace && !readonly && !dev->writeable) {
+	if (!is_dev_replace && !readonly &&
+	    !test_bit(BTRFS_DEV_STATE_WRITEABLE, &dev->dev_state)) {
 		mutex_unlock(&fs_info->fs_devices->device_list_mutex);
 		rcu_read_lock();
 		name = rcu_dereference(dev->name);
@@ -4128,7 +4117,8 @@ int btrfs_scrub_dev(struct btrfs_fs_info *fs_info, u64 devid, u64 start,
 	}
 
 	mutex_lock(&fs_info->scrub_lock);
-	if (!dev->in_fs_metadata || dev->is_tgtdev_for_dev_replace) {
+	if (!test_bit(BTRFS_DEV_STATE_IN_FS_METADATA, &dev->dev_state) ||
+	    test_bit(BTRFS_DEV_STATE_REPLACE_TGT, &dev->dev_state)) {
 		mutex_unlock(&fs_info->scrub_lock);
 		mutex_unlock(&fs_info->fs_devices->device_list_mutex);
 		return -EIO;
