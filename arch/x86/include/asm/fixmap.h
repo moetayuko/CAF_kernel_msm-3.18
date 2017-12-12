@@ -19,6 +19,8 @@
 #include <asm/acpi.h>
 #include <asm/apicdef.h>
 #include <asm/page.h>
+#include <asm/intel_ds.h>
+#include <asm/ldt.h>
 #ifdef CONFIG_X86_32
 #include <linux/threads.h>
 #include <asm/kmap_types.h>
@@ -44,6 +46,59 @@ extern unsigned long __FIXADDR_TOP;
 			 PAGE_SIZE)
 #endif
 
+/*
+ * cpu_entry_area is a percpu region in the fixmap that contains things
+ * needed by the CPU and early entry/exit code.  Real types aren't used
+ * for all fields here to avoid circular header dependencies.
+ *
+ * Every field is a virtual alias of some other allocated backing store.
+ * There is no direct allocation of a struct cpu_entry_area.
+ */
+struct cpu_entry_area {
+	char gdt[PAGE_SIZE];
+
+	/*
+	 * The GDT is just below entry_stack and thus serves (on x86_64) as
+	 * a a read-only guard page.
+	 */
+	struct entry_stack_page entry_stack_page;
+
+	/*
+	 * On x86_64, the TSS is mapped RO.  On x86_32, it's mapped RW because
+	 * we need task switches to work, and task switches write to the TSS.
+	 */
+	struct tss_struct tss;
+
+	char entry_trampoline[PAGE_SIZE];
+
+#ifdef CONFIG_X86_64
+	/*
+	 * Exception stacks used for IST entries.
+	 *
+	 * In the future, this should have a separate slot for each stack
+	 * with guard pages between them.
+	 */
+	char exception_stacks[(N_EXCEPTION_STACKS - 1) * EXCEPTION_STKSZ + DEBUG_STKSZ];
+#endif
+#ifdef CONFIG_CPU_SUP_INTEL
+	/*
+	 * Per CPU debug store for Intel performance monitoring. Wastes a
+	 * full page at the moment.
+	 */
+	struct debug_store cpu_debug_store;
+	/*
+	 * The actual PEBS/BTS buffers must be mapped to user space
+	 * Reserve enough fixmap PTEs.
+	 */
+	struct debug_store_buffers cpu_debug_buffers;
+#endif
+	/* Provide fixmap space for user LDTs */
+	char ldt_entries[LDT_ENTRIES * LDT_ENTRY_SIZE];
+};
+
+#define CPU_ENTRY_AREA_PAGES (sizeof(struct cpu_entry_area) / PAGE_SIZE)
+
+extern void setup_cpu_entry_areas(void);
 
 /*
  * Here we define all the compile-time 'special' virtual
@@ -84,7 +139,6 @@ enum fixed_addresses {
 	FIX_IO_APIC_BASE_0,
 	FIX_IO_APIC_BASE_END = FIX_IO_APIC_BASE_0 + MAX_IO_APICS - 1,
 #endif
-	FIX_RO_IDT,	/* Virtual mapping for read-only IDT */
 #ifdef CONFIG_X86_32
 	FIX_KMAP_BEGIN,	/* reserved pte's for temporary kernel mappings */
 	FIX_KMAP_END = FIX_KMAP_BEGIN+(KM_TYPE_NR*NR_CPUS)-1,
@@ -95,14 +149,11 @@ enum fixed_addresses {
 #ifdef CONFIG_PARAVIRT
 	FIX_PARAVIRT_BOOTMAP,
 #endif
-	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
-	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 #ifdef	CONFIG_X86_INTEL_MID
 	FIX_LNW_VRTC,
 #endif
-	/* Fixmap entries to remap the GDTs, one per processor. */
-	FIX_GDT_REMAP_BEGIN,
-	FIX_GDT_REMAP_END = FIX_GDT_REMAP_BEGIN + NR_CPUS - 1,
+	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
+	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 
 #ifdef CONFIG_ACPI_APEI_GHES
 	/* Used for GHES mapping from assorted contexts */
@@ -110,7 +161,17 @@ enum fixed_addresses {
 	FIX_APEI_GHES_NMI,
 #endif
 
-	__end_of_permanent_fixed_addresses,
+	/*
+	 * Fixmap entries to remap the IDT, and the per CPU entry areas.
+	 * Aligned to a PMD boundary.
+	 */
+	FIX_USR_SHARED_TOP = round_up(FIX_TEXT_POKE0 + 1, PTRS_PER_PMD),
+	FIX_RO_IDT,
+	FIX_CPU_ENTRY_AREA_TOP,
+	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
+	FIX_USR_SHARED_BOTTOM  = round_up(FIX_CPU_ENTRY_AREA_BOTTOM + 2, PTRS_PER_PMD) - 1,
+
+	__end_of_permanent_fixed_addresses = FIX_USR_SHARED_BOTTOM,
 
 	/*
 	 * 512 temporary boot-time mappings, used by early_ioremap(),
@@ -190,6 +251,31 @@ void __init *early_memremap_decrypted_wp(resource_size_t phys_addr,
 
 void __early_set_fixmap(enum fixed_addresses idx,
 			phys_addr_t phys, pgprot_t flags);
+
+static inline unsigned int __get_cpu_entry_area_page_index(int cpu, int page)
+{
+	BUILD_BUG_ON(sizeof(struct cpu_entry_area) % PAGE_SIZE != 0);
+
+	return FIX_CPU_ENTRY_AREA_BOTTOM - cpu*CPU_ENTRY_AREA_PAGES - page;
+}
+
+#define __get_cpu_entry_area_offset_index(cpu, offset) ({		\
+	BUILD_BUG_ON(offset % PAGE_SIZE != 0);				\
+	__get_cpu_entry_area_page_index(cpu, offset / PAGE_SIZE);	\
+	})
+
+#define get_cpu_entry_area_index(cpu, field)				\
+	__get_cpu_entry_area_offset_index((cpu), offsetof(struct cpu_entry_area, field))
+
+static inline struct cpu_entry_area *get_cpu_entry_area(int cpu)
+{
+	return (struct cpu_entry_area *)__fix_to_virt(__get_cpu_entry_area_page_index(cpu, 0));
+}
+
+static inline struct entry_stack *cpu_entry_stack(int cpu)
+{
+	return &get_cpu_entry_area(cpu)->entry_stack_page.stack;
+}
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _ASM_X86_FIXMAP_H */
