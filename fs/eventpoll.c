@@ -182,11 +182,10 @@ struct epitem {
  * This structure is stored inside the "private_data" member of the file
  * structure and represents the main data structure for the eventpoll
  * interface.
+ *
+ * Access to it is protected by the lock inside wq.
  */
 struct eventpoll {
-	/* Protect the access to this structure */
-	spinlock_t lock;
-
 	/*
 	 * This mutex is used to ensure that files are not removed
 	 * while epoll is using them. This is held during the event
@@ -210,7 +209,7 @@ struct eventpoll {
 	/*
 	 * This is a single linked list that chains all the "struct epitem" that
 	 * happened while transferring ready events to userspace w/out
-	 * holding ->lock.
+	 * holding ->wq.lock.
 	 */
 	struct epitem *ovflist;
 
@@ -686,17 +685,17 @@ static int ep_scan_ready_list(struct eventpoll *ep,
 	 * because we want the "sproc" callback to be able to do it
 	 * in a lockless way.
 	 */
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 	list_splice_init(&ep->rdllist, &txlist);
 	ep->ovflist = NULL;
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	/*
 	 * Now call the callback function.
 	 */
 	error = (*sproc)(ep, &txlist, priv);
 
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 	/*
 	 * During the time we spent inside the "sproc" callback, some
 	 * other events might have been queued by the poll callback.
@@ -738,7 +737,7 @@ static int ep_scan_ready_list(struct eventpoll *ep,
 		if (waitqueue_active(&ep->poll_wait))
 			pwake++;
 	}
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	if (!ep_locked)
 		mutex_unlock(&ep->mtx);
@@ -782,10 +781,10 @@ static int ep_remove(struct eventpoll *ep, struct epitem *epi)
 
 	rb_erase_cached(&epi->rbn, &ep->rbr);
 
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 	if (ep_is_linked(&epi->rdllink))
 		list_del_init(&epi->rdllink);
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	wakeup_source_unregister(ep_wakeup_source(epi));
 	/*
@@ -1016,7 +1015,6 @@ static int ep_alloc(struct eventpoll **pep)
 	if (unlikely(!ep))
 		goto free_uid;
 
-	spin_lock_init(&ep->lock);
 	mutex_init(&ep->mtx);
 	init_waitqueue_head(&ep->wq);
 	init_waitqueue_head(&ep->poll_wait);
@@ -1121,7 +1119,7 @@ static int ep_poll_callback(wait_queue_entry_t *wait, unsigned mode, int sync, v
 	__poll_t pollflags = key_to_poll(key);
 	int ewake = 0;
 
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 
 	ep_set_busy_poll_napi_id(epi);
 
@@ -1198,7 +1196,7 @@ static int ep_poll_callback(wait_queue_entry_t *wait, unsigned mode, int sync, v
 		pwake++;
 
 out_unlock:
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	/* We have to call this outside the lock */
 	if (pwake)
@@ -1482,7 +1480,7 @@ static int ep_insert(struct eventpoll *ep, const struct epoll_event *event,
 		goto error_remove_epi;
 
 	/* We have to drop the new item inside our item list to keep track of it */
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 
 	/* record NAPI ID of new item if present */
 	ep_set_busy_poll_napi_id(epi);
@@ -1499,7 +1497,7 @@ static int ep_insert(struct eventpoll *ep, const struct epoll_event *event,
 			pwake++;
 	}
 
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	atomic_long_inc(&ep->user->epoll_watches);
 
@@ -1525,10 +1523,10 @@ error_unregister:
 	 * list, since that is used/cleaned only inside a section bound by "mtx".
 	 * And ep_insert() is called with "mtx" held.
 	 */
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 	if (ep_is_linked(&epi->rdllink))
 		list_del_init(&epi->rdllink);
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	wakeup_source_unregister(ep_wakeup_source(epi));
 
@@ -1591,7 +1589,7 @@ static int ep_modify(struct eventpoll *ep, struct epitem *epi,
 	 * list, push it inside.
 	 */
 	if (ep_item_poll(epi, &pt, 1)) {
-		spin_lock_irq(&ep->lock);
+		spin_lock_irq(&ep->wq.lock);
 		if (!ep_is_linked(&epi->rdllink)) {
 			list_add_tail(&epi->rdllink, &ep->rdllist);
 			ep_pm_stay_awake(epi);
@@ -1602,7 +1600,7 @@ static int ep_modify(struct eventpoll *ep, struct epitem *epi,
 			if (waitqueue_active(&ep->poll_wait))
 				pwake++;
 		}
-		spin_unlock_irq(&ep->lock);
+		spin_unlock_irq(&ep->wq.lock);
 	}
 
 	/* We have to call this outside the lock */
@@ -1752,7 +1750,7 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 		 * caller specified a non blocking operation.
 		 */
 		timed_out = 1;
-		spin_lock_irqsave(&ep->lock, flags);
+		spin_lock_irqsave(&ep->wq.lock, flags);
 		goto check_events;
 	}
 
@@ -1761,7 +1759,7 @@ fetch_events:
 	if (!ep_events_available(ep))
 		ep_busy_loop(ep, timed_out);
 
-	spin_lock_irqsave(&ep->lock, flags);
+	spin_lock_irqsave(&ep->wq.lock, flags);
 
 	if (!ep_events_available(ep)) {
 		/*
@@ -1803,11 +1801,11 @@ fetch_events:
 				break;
 			}
 
-			spin_unlock_irqrestore(&ep->lock, flags);
+			spin_unlock_irqrestore(&ep->wq.lock, flags);
 			if (!schedule_hrtimeout_range(to, slack, HRTIMER_MODE_ABS))
 				timed_out = 1;
 
-			spin_lock_irqsave(&ep->lock, flags);
+			spin_lock_irqsave(&ep->wq.lock, flags);
 		}
 
 		__remove_wait_queue(&ep->wq, &wait);
@@ -1817,7 +1815,7 @@ check_events:
 	/* Is it worth to try to dig for events ? */
 	eavail = ep_events_available(ep);
 
-	spin_unlock_irqrestore(&ep->lock, flags);
+	spin_unlock_irqrestore(&ep->wq.lock, flags);
 
 	/*
 	 * Try to transfer events to user space. In case we get 0 events and
