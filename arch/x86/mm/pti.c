@@ -54,11 +54,32 @@ static void __init pti_print_if_insecure(const char *reason)
 		pr_info("%s\n", reason);
 }
 
+static void __init pti_print_if_secure(const char *reason)
+{
+	if (!boot_cpu_has_bug(X86_BUG_CPU_INSECURE))
+		pr_info("%s\n", reason);
+}
+
 void __init pti_check_boottime_disable(void)
 {
+	char arg[5];
+
 	if (hypervisor_is_type(X86_HYPER_XEN_PV)) {
 		pti_print_if_insecure("disabled on XEN PV.");
 		return;
+	}
+
+	if (cmdline_find_option(boot_command_line, "pti", arg, sizeof(arg))) {
+		if (!strncmp(arg, "off", 3)) {
+			pti_print_if_insecure("disabled on command line.");
+			return;
+		}
+		if (!strncmp(arg, "on", 2)) {
+			pti_print_if_secure("force enabled on command line.");
+			goto enable;
+		}
+		if (!strncmp(arg, "auto", 4))
+			goto autosel;
 	}
 
 	if (cmdline_find_option_bool(boot_command_line, "nopti")) {
@@ -66,9 +87,10 @@ void __init pti_check_boottime_disable(void)
 		return;
 	}
 
+autosel:
 	if (!boot_cpu_has_bug(X86_BUG_CPU_INSECURE))
 		return;
-
+enable:
 	setup_force_cpu_cap(X86_FEATURE_PTI);
 }
 
