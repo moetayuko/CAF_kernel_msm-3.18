@@ -50,11 +50,17 @@ enum address_markers_idx {
 #ifdef CONFIG_X86_64
 	KERNEL_SPACE_NR,
 	LOW_KERNEL_NR,
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && defined(CONFIG_X86_5LEVEL)
+	LDT_NR,
+#endif
 	VMALLOC_START_NR,
 	VMEMMAP_START_NR,
 #ifdef CONFIG_KASAN
 	KASAN_SHADOW_START_NR,
 	KASAN_SHADOW_END_NR,
+#endif
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && !defined(CONFIG_X86_5LEVEL)
+	LDT_NR,
 #endif
 # ifdef CONFIG_X86_ESPFIX64
 	ESPFIX_START_NR,
@@ -79,11 +85,17 @@ static struct addr_marker address_markers[] = {
 #ifdef CONFIG_X86_64
 	{ 0x8000000000000000UL, "Kernel Space" },
 	{ 0/* PAGE_OFFSET */,   "Low Kernel Mapping" },
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && defined(CONFIG_X86_5LEVEL)
+	{ LDT_BASE_ADDR,	"LDT remap" },
+#endif
 	{ 0/* VMALLOC_START */, "vmalloc() Area" },
 	{ 0/* VMEMMAP_START */, "Vmemmap" },
 #ifdef CONFIG_KASAN
 	{ KASAN_SHADOW_START,	"KASAN shadow" },
 	{ KASAN_SHADOW_END,	"KASAN shadow end" },
+#endif
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && !defined(CONFIG_X86_5LEVEL)
+	{ LDT_BASE_ADDR,	"LDT remap" },
 #endif
 # ifdef CONFIG_X86_ESPFIX64
 	{ ESPFIX_BASE_ADDR,	"ESPfix Area", 16 },
