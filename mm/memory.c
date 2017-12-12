@@ -400,10 +400,17 @@ void tlb_remove_table(struct mmu_gather *tlb, void *table)
 
 #endif /* CONFIG_HAVE_RCU_TABLE_FREE */
 
-/* tlb_gather_mmu
- *	Called to initialize an (on-stack) mmu_gather structure for page-table
- *	tear-down from @mm. The @fullmm argument is used when @mm is without
- *	users and we're going to destroy the full address space (exit/execve).
+/**
+ * tlb_gather_mmu - initialize an mmu_gather structure for page-table tear-down
+ * @tlb: the mmu_gather structure to initialize
+ * @mm: the mm_struct of the target address space
+ * @start: start of the region that will be removed from the page-table
+ * @end: end of the region that will be removed from the page-table
+ *
+ * Called to initialize an (on-stack) mmu_gather structure for page-table
+ * tear-down from @mm. The @start and @end are set to 0 and -1
+ * respectively when @mm is without users and we're going to destroy
+ * the full address space (exit/execve).
  */
 void tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm,
 			unsigned long start, unsigned long end)
@@ -2849,21 +2856,14 @@ int do_swap_page(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct page *page = NULL, *swapcache = NULL;
 	struct mem_cgroup *memcg;
-	struct vma_swap_readahead swap_ra;
 	swp_entry_t entry;
 	pte_t pte;
 	int locked;
 	int exclusive = 0;
 	int ret = 0;
-	bool vma_readahead = swap_use_vma_readahead();
 
-	if (vma_readahead)
-		page = swap_readahead_detect(vmf, &swap_ra);
-	if (!pte_unmap_same(vma->vm_mm, vmf->pmd, vmf->pte, vmf->orig_pte)) {
-		if (page)
-			put_page(page);
+	if (!pte_unmap_same(vma->vm_mm, vmf->pmd, vmf->pte, vmf->orig_pte))
 		goto out;
-	}
 
 	entry = pte_to_swp_entry(vmf->orig_pte);
 	if (unlikely(non_swap_entry(entry))) {
@@ -2889,16 +2889,15 @@ int do_swap_page(struct vm_fault *vmf)
 
 
 	delayacct_set_flag(DELAYACCT_PF_SWAPIN);
-	if (!page)
-		page = lookup_swap_cache(entry, vma_readahead ? vma : NULL,
-					 vmf->address);
+	page = lookup_swap_cache(entry, vma, vmf->address);
 	if (!page) {
 		struct swap_info_struct *si = swp_swap_info(entry);
 
 		if (si->flags & SWP_SYNCHRONOUS_IO &&
 				__swap_count(si, entry) == 1) {
 			/* skip swapcache */
-			page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+			page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma,
+							vmf->address);
 			if (page) {
 				__SetPageLocked(page);
 				__SetPageSwapBacked(page);
@@ -2907,12 +2906,8 @@ int do_swap_page(struct vm_fault *vmf)
 				swap_readpage(page, true);
 			}
 		} else {
-			if (vma_readahead)
-				page = do_swap_page_readahead(entry,
-					GFP_HIGHUSER_MOVABLE, vmf, &swap_ra);
-			else
-				page = swapin_readahead(entry,
-				       GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+			page = swapin_readahead(entry, GFP_HIGHUSER_MOVABLE,
+						vmf);
 			swapcache = page;
 		}
 
@@ -3831,7 +3826,8 @@ static inline int create_huge_pmd(struct vm_fault *vmf)
 	return VM_FAULT_FALLBACK;
 }
 
-static int wp_huge_pmd(struct vm_fault *vmf, pmd_t orig_pmd)
+/* `inline' is required to avoid gcc 4.1.2 build error */
+static inline int wp_huge_pmd(struct vm_fault *vmf, pmd_t orig_pmd)
 {
 	if (vma_is_anonymous(vmf->vma))
 		return do_huge_pmd_wp_page(vmf, orig_pmd);
