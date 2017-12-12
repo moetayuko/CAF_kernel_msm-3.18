@@ -138,7 +138,8 @@ static void add_extent_changeset(struct extent_state *state, unsigned bits,
 	BUG_ON(ret < 0);
 }
 
-static noinline void flush_write_bio(void *data);
+static void flush_write_bio(struct extent_page_data *epd);
+
 static inline struct btrfs_fs_info *
 tree_fs_info(struct extent_io_tree *tree)
 {
@@ -3455,10 +3456,9 @@ done:
  * and the end_io handler clears the writeback ranges
  */
 static int __extent_writepage(struct page *page, struct writeback_control *wbc,
-			      void *data)
+			      struct extent_page_data *epd)
 {
 	struct inode *inode = page->mapping->host;
-	struct extent_page_data *epd = data;
 	u64 start = page_offset(page);
 	u64 page_end = start + PAGE_SIZE - 1;
 	int ret;
@@ -3892,8 +3892,7 @@ retry:
  * write_cache_pages - walk the list of dirty pages of the given address space and write all of them.
  * @mapping: address space structure to write
  * @wbc: subtract the number of written pages from *@wbc->nr_to_write
- * @writepage: function called for each page
- * @data: data passed to writepage function
+ * @data: data passed to __extent_writepage function
  *
  * If a page is already under I/O, write_cache_pages() skips it, even
  * if it's dirty.  This is desirable behaviour for memory-cleaning writeback,
@@ -3905,8 +3904,7 @@ retry:
  */
 static int extent_write_cache_pages(struct address_space *mapping,
 			     struct writeback_control *wbc,
-			     writepage_t writepage, void *data,
-			     void (*flush_fn)(void *))
+			     struct extent_page_data *epd)
 {
 	struct inode *inode = mapping->host;
 	int ret = 0;
@@ -3970,7 +3968,7 @@ retry:
 			 * mapping
 			 */
 			if (!trylock_page(page)) {
-				flush_fn(data);
+				flush_write_bio(epd);
 				lock_page(page);
 			}
 
@@ -3981,7 +3979,7 @@ retry:
 
 			if (wbc->sync_mode != WB_SYNC_NONE) {
 				if (PageWriteback(page))
-					flush_fn(data);
+					flush_write_bio(epd);
 				wait_on_page_writeback(page);
 			}
 
@@ -3991,7 +3989,7 @@ retry:
 				continue;
 			}
 
-			ret = (*writepage)(page, wbc, data);
+			ret = __extent_writepage(page, wbc, epd);
 
 			if (unlikely(ret == AOP_WRITEPAGE_ACTIVATE)) {
 				unlock_page(page);
@@ -4039,7 +4037,7 @@ retry:
 	return ret;
 }
 
-static void flush_epd_write_bio(struct extent_page_data *epd)
+static void flush_write_bio(struct extent_page_data *epd)
 {
 	if (epd->bio) {
 		int ret;
@@ -4048,12 +4046,6 @@ static void flush_epd_write_bio(struct extent_page_data *epd)
 		BUG_ON(ret < 0); /* -ENOMEM */
 		epd->bio = NULL;
 	}
-}
-
-static noinline void flush_write_bio(void *data)
-{
-	struct extent_page_data *epd = data;
-	flush_epd_write_bio(epd);
 }
 
 int extent_write_full_page(struct page *page, struct writeback_control *wbc)
@@ -4068,7 +4060,7 @@ int extent_write_full_page(struct page *page, struct writeback_control *wbc)
 
 	ret = __extent_writepage(page, wbc, &epd);
 
-	flush_epd_write_bio(&epd);
+	flush_write_bio(&epd);
 	return ret;
 }
 
@@ -4110,7 +4102,7 @@ int extent_write_locked_range(struct inode *inode, u64 start, u64 end,
 		start += PAGE_SIZE;
 	}
 
-	flush_epd_write_bio(&epd);
+	flush_write_bio(&epd);
 	return ret;
 }
 
@@ -4126,9 +4118,8 @@ int extent_writepages(struct extent_io_tree *tree,
 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
 	};
 
-	ret = extent_write_cache_pages(mapping, wbc, __extent_writepage, &epd,
-				       flush_write_bio);
-	flush_epd_write_bio(&epd);
+	ret = extent_write_cache_pages(mapping, wbc, &epd);
+	flush_write_bio(&epd);
 	return ret;
 }
 
