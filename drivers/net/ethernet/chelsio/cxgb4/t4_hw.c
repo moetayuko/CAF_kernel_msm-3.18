@@ -524,11 +524,14 @@ int t4_memory_rw(struct adapter *adap, int win, int mtype, u32 addr,
 	 * MEM_EDC1 = 1
 	 * MEM_MC   = 2 -- MEM_MC for chips with only 1 memory controller
 	 * MEM_MC1  = 3 -- for chips with 2 memory controllers (e.g. T5)
+	 * MEM_HMA  = 4
 	 */
 	edc_size  = EDRAM0_SIZE_G(t4_read_reg(adap, MA_EDRAM0_BAR_A));
-	if (mtype != MEM_MC1)
+	if (mtype == MEM_HMA) {
+		memoffset = 2 * (edc_size * 1024 * 1024);
+	} else if (mtype != MEM_MC1) {
 		memoffset = (mtype * (edc_size * 1024 * 1024));
-	else {
+	} else {
 		mc_size = EXT_MEM0_SIZE_G(t4_read_reg(adap,
 						      MA_EXT_MEMORY0_BAR_A));
 		memoffset = (MEM_MC0 * edc_size + mc_size) * 1024 * 1024;
@@ -6527,18 +6530,21 @@ void t4_sge_decode_idma_state(struct adapter *adapter, int state)
  *      t4_sge_ctxt_flush - flush the SGE context cache
  *      @adap: the adapter
  *      @mbox: mailbox to use for the FW command
+ *      @ctx_type: Egress or Ingress
  *
  *      Issues a FW command through the given mailbox to flush the
  *      SGE context cache.
  */
-int t4_sge_ctxt_flush(struct adapter *adap, unsigned int mbox)
+int t4_sge_ctxt_flush(struct adapter *adap, unsigned int mbox, int ctxt_type)
 {
 	int ret;
 	u32 ldst_addrspace;
 	struct fw_ldst_cmd c;
 
 	memset(&c, 0, sizeof(c));
-	ldst_addrspace = FW_LDST_CMD_ADDRSPACE_V(FW_LDST_ADDRSPC_SGE_EGRC);
+	ldst_addrspace = FW_LDST_CMD_ADDRSPACE_V(ctxt_type == CTXT_EGRESS ?
+						 FW_LDST_ADDRSPC_SGE_EGRC :
+						 FW_LDST_ADDRSPC_SGE_INGC);
 	c.op_to_addrspace = cpu_to_be32(FW_CMD_OP_V(FW_LDST_CMD) |
 					FW_CMD_REQUEST_F | FW_CMD_READ_F |
 					ldst_addrspace);
@@ -9736,4 +9742,60 @@ int t4_sched_params(struct adapter *adapter, int type, int level, int mode,
 
 	return t4_wr_mbox_meat(adapter, adapter->mbox, &cmd, sizeof(cmd),
 			       NULL, 1);
+}
+
+/**
+ *	t4_i2c_rd - read I2C data from adapter
+ *	@adap: the adapter
+ *	@port: Port number if per-port device; <0 if not
+ *	@devid: per-port device ID or absolute device ID
+ *	@offset: byte offset into device I2C space
+ *	@len: byte length of I2C space data
+ *	@buf: buffer in which to return I2C data
+ *
+ *	Reads the I2C data from the indicated device and location.
+ */
+int t4_i2c_rd(struct adapter *adap, unsigned int mbox, int port,
+	      unsigned int devid, unsigned int offset,
+	      unsigned int len, u8 *buf)
+{
+	struct fw_ldst_cmd ldst_cmd, ldst_rpl;
+	unsigned int i2c_max = sizeof(ldst_cmd.u.i2c.data);
+	int ret = 0;
+
+	if (len > I2C_PAGE_SIZE)
+		return -EINVAL;
+
+	/* Dont allow reads that spans multiple pages */
+	if (offset < I2C_PAGE_SIZE && offset + len > I2C_PAGE_SIZE)
+		return -EINVAL;
+
+	memset(&ldst_cmd, 0, sizeof(ldst_cmd));
+	ldst_cmd.op_to_addrspace =
+		cpu_to_be32(FW_CMD_OP_V(FW_LDST_CMD) |
+			    FW_CMD_REQUEST_F |
+			    FW_CMD_READ_F |
+			    FW_LDST_CMD_ADDRSPACE_V(FW_LDST_ADDRSPC_I2C));
+	ldst_cmd.cycles_to_len16 = cpu_to_be32(FW_LEN16(ldst_cmd));
+	ldst_cmd.u.i2c.pid = (port < 0 ? 0xff : port);
+	ldst_cmd.u.i2c.did = devid;
+
+	while (len > 0) {
+		unsigned int i2c_len = (len < i2c_max) ? len : i2c_max;
+
+		ldst_cmd.u.i2c.boffset = offset;
+		ldst_cmd.u.i2c.blen = i2c_len;
+
+		ret = t4_wr_mbox(adap, mbox, &ldst_cmd, sizeof(ldst_cmd),
+				 &ldst_rpl);
+		if (ret)
+			break;
+
+		memcpy(buf, ldst_rpl.u.i2c.data, i2c_len);
+		offset += i2c_len;
+		buf += i2c_len;
+		len -= i2c_len;
+	}
+
+	return ret;
 }
