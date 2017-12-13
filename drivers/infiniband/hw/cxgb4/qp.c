@@ -868,7 +868,12 @@ int c4iw_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 	qhp = to_c4iw_qp(ibqp);
 	spin_lock_irqsave(&qhp->lock, flag);
-	if (t4_wq_in_error(&qhp->wq)) {
+
+	/*
+	 * If the qp has been flushed, then just insert a special
+	 * drain cqe.
+	 */
+	if (qhp->wq.flushed) {
 		spin_unlock_irqrestore(&qhp->lock, flag);
 		complete_sq_drain_wr(qhp, wr);
 		return err;
@@ -975,7 +980,7 @@ int c4iw_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		if (c4iw_wr_log) {
 			swsqe->sge_ts = cxgb4_read_sge_timestamp(
 					qhp->rhp->rdev.lldi.ports[0]);
-			getnstimeofday(&swsqe->host_ts);
+			swsqe->host_time = ktime_get();
 		}
 
 		init_wr_hdr(wqe, qhp->wq.sq.pidx, fw_opcode, fw_flags, len16);
@@ -1011,7 +1016,12 @@ int c4iw_post_receive(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 
 	qhp = to_c4iw_qp(ibqp);
 	spin_lock_irqsave(&qhp->lock, flag);
-	if (t4_wq_in_error(&qhp->wq)) {
+
+	/*
+	 * If the qp has been flushed, then just insert a special
+	 * drain cqe.
+	 */
+	if (qhp->wq.flushed) {
 		spin_unlock_irqrestore(&qhp->lock, flag);
 		complete_rq_drain_wr(qhp, wr);
 		return err;
@@ -1045,8 +1055,8 @@ int c4iw_post_receive(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 			qhp->wq.rq.sw_rq[qhp->wq.rq.pidx].sge_ts =
 				cxgb4_read_sge_timestamp(
 						qhp->rhp->rdev.lldi.ports[0]);
-			getnstimeofday(
-				&qhp->wq.rq.sw_rq[qhp->wq.rq.pidx].host_ts);
+			qhp->wq.rq.sw_rq[qhp->wq.rq.pidx].host_time =
+				ktime_get();
 		}
 
 		wqe->recv.opcode = FW_RI_RECV_WR;
@@ -1285,21 +1295,21 @@ static void __flush_qp(struct c4iw_qp *qhp, struct c4iw_cq *rchp,
 	spin_unlock_irqrestore(&rchp->lock, flag);
 
 	if (schp == rchp) {
-		if (t4_clear_cq_armed(&rchp->cq) &&
-		    (rq_flushed || sq_flushed)) {
+		if ((rq_flushed || sq_flushed) &&
+		    t4_clear_cq_armed(&rchp->cq)) {
 			spin_lock_irqsave(&rchp->comp_handler_lock, flag);
 			(*rchp->ibcq.comp_handler)(&rchp->ibcq,
 						   rchp->ibcq.cq_context);
 			spin_unlock_irqrestore(&rchp->comp_handler_lock, flag);
 		}
 	} else {
-		if (t4_clear_cq_armed(&rchp->cq) && rq_flushed) {
+		if (rq_flushed && t4_clear_cq_armed(&rchp->cq)) {
 			spin_lock_irqsave(&rchp->comp_handler_lock, flag);
 			(*rchp->ibcq.comp_handler)(&rchp->ibcq,
 						   rchp->ibcq.cq_context);
 			spin_unlock_irqrestore(&rchp->comp_handler_lock, flag);
 		}
-		if (t4_clear_cq_armed(&schp->cq) && sq_flushed) {
+		if (sq_flushed && t4_clear_cq_armed(&schp->cq)) {
 			spin_lock_irqsave(&schp->comp_handler_lock, flag);
 			(*schp->ibcq.comp_handler)(&schp->ibcq,
 						   schp->ibcq.cq_context);
