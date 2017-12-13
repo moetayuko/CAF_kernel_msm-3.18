@@ -463,12 +463,16 @@ void mt76_stop_tx_queues(struct mt76_dev *dev, struct ieee80211_sta *sta,
 }
 EXPORT_SYMBOL_GPL(mt76_stop_tx_queues);
 
-void mt76_wake_tx_queue(struct ieee80211_hw *hw, struct ieee80211_txq *txq)
+void mt76_wake_tx_queue(struct ieee80211_hw *hw)
 {
+	struct ieee80211_txq *txq;
 	struct mt76_dev *dev = hw->priv;
-	struct mt76_txq *mtxq = (struct mt76_txq *) txq->drv_priv;
-	struct mt76_queue *hwq = mtxq->hwq;
+	struct mt76_txq *mtxq;
+	struct mt76_queue *hwq;
 
+	txq = ieee80211_next_txq(hw);
+	mtxq = (struct mt76_txq *) txq->drv_priv;
+	hwq = mtxq->hwq;
 	spin_lock_bh(&hwq->lock);
 	if (list_empty(&mtxq->list))
 		list_add_tail(&mtxq->list, &hwq->swq);
