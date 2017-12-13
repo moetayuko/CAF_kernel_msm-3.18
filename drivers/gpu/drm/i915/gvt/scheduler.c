@@ -248,7 +248,7 @@ static int copy_workload_to_ring_buffer(struct intel_vgpu_workload *workload)
 	return 0;
 }
 
-void release_shadow_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
+static void release_shadow_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
 {
 	if (!wa_ctx->indirect_ctx.obj)
 		return;
@@ -1333,4 +1333,16 @@ intel_vgpu_create_workload(struct intel_vgpu *vgpu, int ring_id,
 	}
 
 	return workload;
+}
+
+/**
+ * intel_vgpu_queue_workload - Qeue a vGPU workload
+ * @workload: the workload to queue in
+ */
+void intel_vgpu_queue_workload(struct intel_vgpu_workload *workload)
+{
+	list_add_tail(&workload->list,
+		workload_q_head(workload->vgpu, workload->ring_id));
+	intel_gvt_kick_schedule(workload->vgpu->gvt);
+	wake_up(&workload->vgpu->gvt->scheduler.waitq[workload->ring_id]);
 }
