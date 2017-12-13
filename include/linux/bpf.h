@@ -285,6 +285,9 @@ int bpf_prog_array_copy_to_user(struct bpf_prog_array __rcu *progs,
 
 void bpf_prog_array_delete_safe(struct bpf_prog_array __rcu *progs,
 				struct bpf_prog *old_prog);
+int bpf_prog_array_copy_info(struct bpf_prog_array __rcu *array,
+			     __u32 __user *prog_ids, u32 request_cnt,
+			     __u32 __user *prog_cnt);
 int bpf_prog_array_copy(struct bpf_prog_array __rcu *old_array,
 			struct bpf_prog *exclude_prog,
 			struct bpf_prog *include_prog,
@@ -585,5 +588,16 @@ extern const struct bpf_func_proto bpf_sock_map_update_proto;
 /* Shared helpers among cBPF and eBPF. */
 void bpf_user_rnd_init_once(void);
 u64 bpf_user_rnd_u32(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
+
+#if defined(__KERNEL__) && !defined(__ASSEMBLY__)
+#ifdef CONFIG_BPF_KPROBE_OVERRIDE
+#define BPF_ALLOW_ERROR_INJECTION(fname)				\
+static unsigned long __used						\
+	__attribute__((__section__("_kprobe_error_inject_list")))	\
+	_eil_addr_##fname = (unsigned long)fname;
+#else
+#define BPF_ALLOW_ERROR_INJECTION(fname)
+#endif
+#endif
 
 #endif /* _LINUX_BPF_H */
