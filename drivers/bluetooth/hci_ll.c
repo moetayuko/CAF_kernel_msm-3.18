@@ -56,6 +56,10 @@
 
 #include "hci_uart.h"
 
+/* Vendor-specific HCI commands */
+#define HCI_VS_WRITE_BD_ADDR			0xfc06
+#define HCI_VS_UPDATE_UART_HCI_BAUDRATE		0xff36
+
 /* HCILL commands */
 #define HCILL_GO_TO_SLEEP_IND	0x30
 #define HCILL_GO_TO_SLEEP_ACK	0x31
@@ -620,7 +624,7 @@ static int download_firmware(struct ll_device *lldev)
 		case ACTION_SEND_COMMAND:	/* action send */
 			bt_dev_dbg(lldev->hu.hdev, "S");
 			cmd = (struct hci_command *)action_ptr;
-			if (cmd->opcode == 0xff36) {
+			if (cmd->opcode == HCI_VS_UPDATE_UART_HCI_BAUDRATE) {
 				/* ignore remote change
 				 * baud rate HCI VS command
 				 */
@@ -628,11 +632,11 @@ static int download_firmware(struct ll_device *lldev)
 				break;
 			}
 			if (cmd->prefix != 1)
-				bt_dev_dbg(lldev->hu.hdev, "command type %d\n", cmd->prefix);
+				bt_dev_dbg(lldev->hu.hdev, "command type %d", cmd->prefix);
 
 			skb = __hci_cmd_sync(lldev->hu.hdev, cmd->opcode, cmd->plen, &cmd->speed, HCI_INIT_TIMEOUT);
 			if (IS_ERR(skb)) {
-				bt_dev_err(lldev->hu.hdev, "send command failed\n");
+				bt_dev_err(lldev->hu.hdev, "send command failed");
 				err = PTR_ERR(skb);
 				goto out_rel_fw;
 			}
@@ -659,6 +663,24 @@ out_rel_fw:
 	return err;
 }
 
+static int ll_set_bdaddr(struct hci_dev *hdev, const bdaddr_t *bdaddr)
+{
+	bdaddr_t bdaddr_swapped;
+	struct sk_buff *skb;
+
+	/* HCI_VS_WRITE_BD_ADDR (at least on a CC2560A chip) expects the BD
+	 * address to be MSB first, but bdaddr_t has the convention of being
+	 * LSB first.
+	 */
+	baswap(&bdaddr_swapped, bdaddr);
+	skb = __hci_cmd_sync(hdev, HCI_VS_WRITE_BD_ADDR, sizeof(bdaddr_t),
+			     &bdaddr_swapped, HCI_INIT_TIMEOUT);
+	if (!IS_ERR(skb))
+		kfree_skb(skb);
+
+	return PTR_ERR_OR_ZERO(skb);
+}
+
 static int ll_setup(struct hci_uart *hu)
 {
 	int err, retry = 3;
@@ -671,14 +693,20 @@ static int ll_setup(struct hci_uart *hu)
 
 	lldev = serdev_device_get_drvdata(serdev);
 
+	hu->hdev->set_bdaddr = ll_set_bdaddr;
+
 	serdev_device_set_flow_control(serdev, true);
 
 	do {
-		/* Configure BT_EN to HIGH state */
+		/* Reset the Bluetooth device */
 		gpiod_set_value_cansleep(lldev->enable_gpio, 0);
 		msleep(5);
 		gpiod_set_value_cansleep(lldev->enable_gpio, 1);
-		msleep(100);
+		err = serdev_device_wait_for_cts(serdev, true, 200);
+		if (err) {
+			bt_dev_err(hu->hdev, "Failed to get CTS");
+			return err;
+		}
 
 		err = download_firmware(lldev);
 		if (!err)
@@ -700,7 +728,12 @@ static int ll_setup(struct hci_uart *hu)
 		speed = 0;
 
 	if (speed) {
-		struct sk_buff *skb = __hci_cmd_sync(hu->hdev, 0xff36, sizeof(speed), &speed, HCI_INIT_TIMEOUT);
+		__le32 speed_le = cpu_to_le32(speed);
+		struct sk_buff *skb;
+
+		skb = __hci_cmd_sync(hu->hdev, HCI_VS_UPDATE_UART_HCI_BAUDRATE,
+				     sizeof(speed_le), &speed_le,
+				     HCI_INIT_TIMEOUT);
 		if (!IS_ERR(skb)) {
 			kfree_skb(skb);
 			serdev_device_set_baudrate(serdev, speed);
