@@ -1,9 +1,9 @@
 /*
- * ddbridge-maxs8.h: Digital Devices bridge MaxS4/8 support
+ * ddbridge-ci.h: Digital Devices bridge CI (DuoFlex, CI Bridge) support
  *
  * Copyright (C) 2010-2017 Digital Devices GmbH
- *                         Ralph Metzler <rjkm@metzlerbros.de>
  *                         Marcus Metzler <mocm@metzlerbros.de>
+ *                         Ralph Metzler <rjkm@metzlerbros.de>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -14,16 +14,17 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
+ * To obtain the license, point your browser to
+ * http://www.gnu.org/copyleft/gpl.html
  */
 
-#ifndef _DDBRIDGE_MAXS8_H_
-#define _DDBRIDGE_MAXS8_H_
+#ifndef __DDBRIDGE_CI_H__
+#define __DDBRIDGE_CI_H__
 
 #include "ddbridge.h"
 
 /******************************************************************************/
 
-int lnb_init_fmode(struct ddb *dev, struct ddb_link *link, u32 fm);
-int fe_attach_mxl5xx(struct ddb_input *input);
+int ddb_ci_attach(struct ddb_port *port, u32 bitrate);
 
-#endif /* _DDBRIDGE_MAXS8_H */
+#endif /* __DDBRIDGE_CI_H__ */

@@ -207,13 +207,9 @@ static irqreturn_t csi_idmac_eof_interrupt(int irq, void *dev_id)
 		goto unlock;
 	}
 
-	if (priv->fim) {
-		struct timespec cur_ts;
-
-		ktime_get_ts(&cur_ts);
+	if (priv->fim)
 		/* call frame interval monitor */
-		imx_media_fim_eof_monitor(priv->fim, &cur_ts);
-	}
+		imx_media_fim_eof_monitor(priv->fim, ktime_get());
 
 	csi_vb2_buf_done(priv);
 
@@ -341,7 +337,7 @@ static int csi_idmac_setup_channel(struct csi_priv *priv)
 	case V4L2_PIX_FMT_SGBRG8:
 	case V4L2_PIX_FMT_SGRBG8:
 	case V4L2_PIX_FMT_SRGGB8:
-		burst_size = 8;
+		burst_size = 16;
 		passthrough = true;
 		passthrough_bits = 8;
 		break;
@@ -989,7 +985,7 @@ static int csi_link_validate(struct v4l2_subdev *sd,
 	sensor = __imx_media_find_sensor(priv->md, &priv->sd.entity);
 	if (IS_ERR(sensor)) {
 		v4l2_err(&priv->sd, "no sensor attached\n");
-		return PTR_ERR(priv->sensor);
+		return PTR_ERR(sensor);
 	}
 
 	mutex_lock(&priv->lock);
