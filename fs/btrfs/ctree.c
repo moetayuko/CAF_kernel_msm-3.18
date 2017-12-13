@@ -1807,8 +1807,8 @@ static noinline int generic_bin_search(struct extent_buffer *eb,
  * simple bin_search frontend that does the right thing for
  * leaves vs nodes
  */
-static int bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
-		      int level, int *slot)
+int btrfs_bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
+		     int level, int *slot)
 {
 	if (level == 0)
 		return generic_bin_search(eb,
@@ -1822,12 +1822,6 @@ static int bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
 					  sizeof(struct btrfs_key_ptr),
 					  key, btrfs_header_nritems(eb),
 					  slot);
-}
-
-int btrfs_bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
-		     int level, int *slot)
-{
-	return bin_search(eb, key, level, slot);
 }
 
 static void root_add_used(struct btrfs_root *root, u32 size)
@@ -2614,7 +2608,7 @@ static int key_search(struct extent_buffer *b, const struct btrfs_key *key,
 		      int level, int *prev_cmp, int *slot)
 {
 	if (*prev_cmp != 0) {
-		*prev_cmp = bin_search(b, key, level, slot);
+		*prev_cmp = btrfs_bin_search(b, key, level, slot);
 		return *prev_cmp;
 	}
 
@@ -2774,6 +2768,8 @@ again:
 		 * contention with the cow code
 		 */
 		if (cow) {
+			bool last_level = (level == (BTRFS_MAX_LEVEL - 1));
+
 			/*
 			 * if we don't really need to cow this block
 			 * then we don't want to set the path blocking,
@@ -2798,9 +2794,13 @@ again:
 			}
 
 			btrfs_set_path_blocking(p);
-			err = btrfs_cow_block(trans, root, b,
-					      p->nodes[level + 1],
-					      p->slots[level + 1], &b);
+			if (last_level)
+				err = btrfs_cow_block(trans, root, b, NULL, 0,
+						      &b);
+			else
+				err = btrfs_cow_block(trans, root, b,
+						      p->nodes[level + 1],
+						      p->slots[level + 1], &b);
 			if (err) {
 				ret = err;
 				goto done;
@@ -5175,7 +5175,7 @@ again:
 	while (1) {
 		nritems = btrfs_header_nritems(cur);
 		level = btrfs_header_level(cur);
-		sret = bin_search(cur, min_key, level, &slot);
+		sret = btrfs_bin_search(cur, min_key, level, &slot);
 
 		/* at the lowest level, we're done, setup the path and exit */
 		if (level == path->lowest_level) {
