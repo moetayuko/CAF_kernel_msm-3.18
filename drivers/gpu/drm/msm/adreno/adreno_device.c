@@ -129,10 +129,17 @@ const struct adreno_info *adreno_info(struct adreno_rev rev)
 struct msm_gpu *adreno_load_gpu(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = dev->dev_private;
-	struct platform_device *pdev = priv->gpu_pdev;
-	struct msm_gpu *gpu = platform_get_drvdata(priv->gpu_pdev);
+	struct platform_device *pdev;
+	struct msm_gpu *gpu;
 	int ret;
 
+	pdev = priv->gpu_pdev;
+	if (!pdev) {
+		dev_dbg(dev->dev, "no adreno platform device found\n");
+		return NULL;
+	}
+
+	gpu = platform_get_drvdata(pdev);
 	if (!gpu) {
 		dev_err(dev->dev, "no adreno device\n");
 		return NULL;
