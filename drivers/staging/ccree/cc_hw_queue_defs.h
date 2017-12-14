@@ -30,14 +30,12 @@
 /* Define max. available slots in HW queue */
 #define HW_QUEUE_SLOTS_MAX              15
 
-#define CC_REG_NAME(word, name) DX_DSCRPTR_QUEUE_WORD ## word ## _ ## name
-
 #define CC_REG_LOW(word, name)  \
-	(DX_DSCRPTR_QUEUE_WORD ## word ## _ ## name ## _BIT_SHIFT)
+	(CC_DSCRPTR_QUEUE_WORD ## word ## _ ## name ## _BIT_SHIFT)
 
 #define CC_REG_HIGH(word, name) \
 	(CC_REG_LOW(word, name) + \
-	 DX_DSCRPTR_QUEUE_WORD ## word ## _ ## name ## _BIT_SIZE - 1)
+	 CC_DSCRPTR_QUEUE_WORD ## word ## _ ## name ## _BIT_SIZE - 1)
 
 #define CC_GENMASK(word, name) \
 	GENMASK(CC_REG_HIGH(word, name), CC_REG_LOW(word, name))
@@ -122,7 +120,6 @@ enum cc_flow_mode {
 	AES_to_AES_to_HASH_and_DOUT	= 13,
 	AES_to_AES_to_HASH	= 14,
 	AES_to_HASH_and_AES	= 15,
-	DIN_MULTI2_DOUT		= 16,
 	DIN_AES_AESMAC		= 17,
 	HASH_to_DOUT		= 18,
 	/* setup flows */
@@ -130,7 +127,6 @@ enum cc_flow_mode {
 	S_DIN_to_AES2		= 33,
 	S_DIN_to_DES		= 34,
 	S_DIN_to_RC4		= 35,
-	S_DIN_to_MULTI2		= 36,
 	S_DIN_to_HASH		= 37,
 	S_AES_to_DOUT		= 38,
 	S_AES2_to_DOUT		= 39,
