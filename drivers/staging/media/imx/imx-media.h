@@ -280,7 +280,7 @@ int imx_media_pipeline_set_stream(struct imx_media_dev *imxmd,
 
 /* imx-media-fim.c */
 struct imx_media_fim;
-void imx_media_fim_eof_monitor(struct imx_media_fim *fim, struct timespec *ts);
+void imx_media_fim_eof_monitor(struct imx_media_fim *fim, ktime_t timestamp);
 int imx_media_fim_set_stream(struct imx_media_fim *fim,
 			     const struct v4l2_fract *frame_interval,
 			     bool on);
@@ -310,16 +310,16 @@ void imx_media_capture_device_set_format(struct imx_media_video_dev *vdev,
 void imx_media_capture_device_error(struct imx_media_video_dev *vdev);
 
 /* subdev group ids */
-#define IMX_MEDIA_GRP_ID_SENSOR    (1 << 8)
-#define IMX_MEDIA_GRP_ID_VIDMUX    (1 << 9)
-#define IMX_MEDIA_GRP_ID_CSI2      (1 << 10)
+#define IMX_MEDIA_GRP_ID_SENSOR    BIT(8)
+#define IMX_MEDIA_GRP_ID_VIDMUX    BIT(9)
+#define IMX_MEDIA_GRP_ID_CSI2      BIT(10)
 #define IMX_MEDIA_GRP_ID_CSI_BIT   11
 #define IMX_MEDIA_GRP_ID_CSI       (0x3 << IMX_MEDIA_GRP_ID_CSI_BIT)
-#define IMX_MEDIA_GRP_ID_CSI0      (1 << IMX_MEDIA_GRP_ID_CSI_BIT)
+#define IMX_MEDIA_GRP_ID_CSI0      BIT(IMX_MEDIA_GRP_ID_CSI_BIT)
 #define IMX_MEDIA_GRP_ID_CSI1      (2 << IMX_MEDIA_GRP_ID_CSI_BIT)
-#define IMX_MEDIA_GRP_ID_VDIC      (1 << 13)
-#define IMX_MEDIA_GRP_ID_IC_PRP    (1 << 14)
-#define IMX_MEDIA_GRP_ID_IC_PRPENC (1 << 15)
-#define IMX_MEDIA_GRP_ID_IC_PRPVF  (1 << 16)
+#define IMX_MEDIA_GRP_ID_VDIC      BIT(13)
+#define IMX_MEDIA_GRP_ID_IC_PRP    BIT(14)
+#define IMX_MEDIA_GRP_ID_IC_PRPENC BIT(15)
+#define IMX_MEDIA_GRP_ID_IC_PRPVF  BIT(16)
 
 #endif
