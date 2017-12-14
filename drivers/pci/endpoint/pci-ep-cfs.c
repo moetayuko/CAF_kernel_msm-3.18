@@ -106,10 +106,14 @@ static int pci_epc_epf_link(struct config_item *epc_item,
 	epf = epf_group->epf;
 	ret = pci_epc_add_epf(epc, epf);
 	if (ret)
-		goto err_add_epf;
+		return ret;
 
 	func_no = find_first_zero_bit(&epc_group->function_num_map,
-				      sizeof(epc_group->function_num_map));
+				      BITS_PER_LONG);
+	if (func_no >= BITS_PER_LONG) {
+		ret = -EINVAL;
+		goto err_func_no;
+	}
 	set_bit(func_no, &epc_group->function_num_map);
 	epf->func_no = func_no;
 
@@ -120,10 +124,9 @@ static int pci_epc_epf_link(struct config_item *epc_item,
 	return 0;
 
 err_epf_bind:
-	pci_epc_remove_epf(epc, epf);
-
-err_add_epf:
 	clear_bit(func_no, &epc_group->function_num_map);
+err_func_no:
+	pci_epc_remove_epf(epc, epf);
 
 	return ret;
 }
