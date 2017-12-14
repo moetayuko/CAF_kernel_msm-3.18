@@ -1320,6 +1320,9 @@ EVAL4(PROG_NAME_LIST, 416, 448, 480, 512)
 bool bpf_prog_array_compatible(struct bpf_array *array,
 			       const struct bpf_prog *fp)
 {
+	if (fp->kprobe_override)
+		return false;
+
 	if (!array->owner_prog_type) {
 		/* There's no owner yet where we could check for
 		 * compatibility.
@@ -1462,6 +1465,8 @@ int bpf_prog_array_copy_to_user(struct bpf_prog_array __rcu *progs,
 	rcu_read_lock();
 	prog = rcu_dereference(progs)->progs;
 	for (; *prog; prog++) {
+		if (*prog == &dummy_bpf_prog.prog)
+			continue;
 		id = (*prog)->aux->id;
 		if (copy_to_user(prog_ids + i, &id, sizeof(id))) {
 			rcu_read_unlock();
@@ -1543,6 +1548,25 @@ int bpf_prog_array_copy(struct bpf_prog_array __rcu *old_array,
 	array->progs[new_prog_idx] = NULL;
 	*new_array = array;
 	return 0;
+}
+
+int bpf_prog_array_copy_info(struct bpf_prog_array __rcu *array,
+			     __u32 __user *prog_ids, u32 request_cnt,
+			     __u32 __user *prog_cnt)
+{
+	u32 cnt = 0;
+
+	if (array)
+		cnt = bpf_prog_array_length(array);
+
+	if (copy_to_user(prog_cnt, &cnt, sizeof(cnt)))
+		return -EFAULT;
+
+	/* return early if user requested only program count or nothing to copy */
+	if (!request_cnt || !cnt)
+		return 0;
+
+	return bpf_prog_array_copy_to_user(array, prog_ids, request_cnt);
 }
 
 static void bpf_prog_free_deferred(struct work_struct *work)
