@@ -87,6 +87,7 @@ struct mqueue_inode_info {
 	unsigned long qsize; /* size of queue in memory (sum of all msgs) */
 };
 
+static struct file_system_type mqueue_fs_type;
 static const struct inode_operations mqueue_dir_inode_operations;
 static const struct file_operations mqueue_file_operations;
 static const struct super_operations mqueue_super_ops;
@@ -743,12 +744,28 @@ static int prepare_open(struct dentry *dentry, int oflag, int ro,
 static int do_mq_open(const char __user *u_name, int oflag, umode_t mode,
 		      struct mq_attr *attr)
 {
-	struct vfsmount *mnt = current->nsproxy->ipc_ns->mq_mnt;
-	struct dentry *root = mnt->mnt_root;
+	struct ipc_namespace *ipc_ns = current->nsproxy->ipc_ns;
+	struct vfsmount *mnt;
+	struct dentry *root;
 	struct filename *name;
 	struct path path;
 	int fd, error;
 	int ro;
+	static DEFINE_MUTEX(mnt_lock);
+
+	mutex_lock(&mnt_lock);
+	mnt = ipc_ns->mq_mnt;
+	if (unlikely(!mnt)) {
+		mnt = kern_mount_data(&mqueue_fs_type, ipc_ns);
+		if (IS_ERR(mnt)) {
+			mutex_unlock(&mnt_lock);
+			return PTR_ERR(mnt);
+		}
+		ipc_ns->mq_mnt = mnt;
+	}
+	mutex_unlock(&mnt_lock);
+
+	root = mnt->mnt_root;
 
 	audit_mq_open(oflag, mode, attr);
 
@@ -807,6 +824,9 @@ SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
 	struct inode *inode = NULL;
 	struct ipc_namespace *ipc_ns = current->nsproxy->ipc_ns;
 	struct vfsmount *mnt = ipc_ns->mq_mnt;
+
+	if (!mnt)
+		return -ENOENT;
 
 	name = getname(u_name);
 	if (IS_ERR(name))
@@ -1526,7 +1546,8 @@ static struct file_system_type mqueue_fs_type = {
 	.fs_flags = FS_USERNS_MOUNT,
 };
 
-int mq_init_ns(struct ipc_namespace *ns)
+
+int mq_init_ns(struct ipc_namespace *ns, bool mount)
 {
 	ns->mq_queues_count  = 0;
 	ns->mq_queues_max    = DFLT_QUEUESMAX;
@@ -1535,23 +1556,31 @@ int mq_init_ns(struct ipc_namespace *ns)
 	ns->mq_msg_default   = DFLT_MSG;
 	ns->mq_msgsize_default  = DFLT_MSGSIZE;
 
-	ns->mq_mnt = kern_mount_data(&mqueue_fs_type, ns);
-	if (IS_ERR(ns->mq_mnt)) {
-		int err = PTR_ERR(ns->mq_mnt);
+	if (!mount)
 		ns->mq_mnt = NULL;
-		return err;
+	else {
+		int err;
+
+		ns->mq_mnt = kern_mount_data(&mqueue_fs_type, ns);
+		if (IS_ERR(ns->mq_mnt)) {
+			err = PTR_ERR(ns->mq_mnt);
+			ns->mq_mnt = NULL;
+			return err;
+		}
 	}
 	return 0;
 }
 
 void mq_clear_sbinfo(struct ipc_namespace *ns)
 {
-	ns->mq_mnt->mnt_sb->s_fs_info = NULL;
+	if (ns->mq_mnt)
+		ns->mq_mnt->mnt_sb->s_fs_info = NULL;
 }
 
 void mq_put_mnt(struct ipc_namespace *ns)
 {
-	kern_unmount(ns->mq_mnt);
+	if (ns->mq_mnt)
+		kern_unmount(ns->mq_mnt);
 }
 
 static int __init init_mqueue_fs(void)
@@ -1573,7 +1602,7 @@ static int __init init_mqueue_fs(void)
 
 	spin_lock_init(&mq_lock);
 
-	error = mq_init_ns(&init_ipc_ns);
+	error = mq_init_ns(&init_ipc_ns, true);
 	if (error)
 		goto out_filesystem;
 
