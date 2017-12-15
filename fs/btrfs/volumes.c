@@ -1200,13 +1200,10 @@ int btrfs_scan_one_device(const char *path, fmode_t flags, void *holder,
 	 */
 	bytenr = btrfs_sb_offset(0);
 	flags |= FMODE_EXCL;
-	mutex_lock(&uuid_mutex);
 
 	bdev = blkdev_get_by_path(path, flags, holder);
-	if (IS_ERR(bdev)) {
-		ret = PTR_ERR(bdev);
-		goto error;
-	}
+	if (IS_ERR(bdev))
+		return PTR_ERR(bdev);
 
 	if (btrfs_read_disk_super(bdev, bytenr, &page, &disk_super))
 		goto error_bdev_put;
@@ -1215,7 +1212,12 @@ int btrfs_scan_one_device(const char *path, fmode_t flags, void *holder,
 	transid = btrfs_super_generation(disk_super);
 	total_devices = btrfs_super_num_devices(disk_super);
 
+	mutex_lock(&uuid_mutex);
 	ret = device_list_add(path, disk_super, devid, fs_devices_ret);
+	if (ret >= 0 && fs_devices_ret)
+		(*fs_devices_ret)->total_devices = total_devices;
+	mutex_unlock(&uuid_mutex);
+
 	if (ret > 0) {
 		if (disk_super->label[0]) {
 			pr_info("BTRFS: device label %s ", disk_super->label);
@@ -1226,15 +1228,12 @@ int btrfs_scan_one_device(const char *path, fmode_t flags, void *holder,
 		pr_cont("devid %llu transid %llu %s\n", devid, transid, path);
 		ret = 0;
 	}
-	if (!ret && fs_devices_ret)
-		(*fs_devices_ret)->total_devices = total_devices;
 
 	btrfs_release_disk_super(page);
 
 error_bdev_put:
 	blkdev_put(bdev, flags);
-error:
-	mutex_unlock(&uuid_mutex);
+
 	return ret;
 }
 
