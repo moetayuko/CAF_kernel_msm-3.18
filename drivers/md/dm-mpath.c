@@ -1465,7 +1465,7 @@ static void activate_path_work(struct work_struct *work)
 	activate_or_offline_path(pgpath);
 }
 
-static int noretry_error(blk_status_t error)
+static bool retry_error(blk_status_t error)
 {
 	switch (error) {
 	case BLK_STS_NOTSUPP:
@@ -1473,11 +1473,11 @@ static int noretry_error(blk_status_t error)
 	case BLK_STS_TARGET:
 	case BLK_STS_NEXUS:
 	case BLK_STS_MEDIUM:
-		return 1;
+		return false;
 	}
 
 	/* Anything else could be a path failure, so should be retried */
-	return 0;
+	return true;
 }
 
 static int multipath_end_io(struct dm_target *ti, struct request *clone,
@@ -1498,7 +1498,7 @@ static int multipath_end_io(struct dm_target *ti, struct request *clone,
 	 * request into dm core, which will remake a clone request and
 	 * clone bios for it and resubmit it later.
 	 */
-	if (error && !noretry_error(error)) {
+	if (error && retry_error(error)) {
 		struct multipath *m = ti->private;
 
 		r = DM_ENDIO_REQUEUE;
@@ -1534,7 +1534,7 @@ static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
 	unsigned long flags;
 	int r = DM_ENDIO_DONE;
 
-	if (!*error || noretry_error(*error))
+	if (!*error || !retry_error(*error))
 		goto done;
 
 	if (pgpath)
