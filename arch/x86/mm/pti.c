@@ -232,6 +232,24 @@ pti_clone_pmds(unsigned long start, unsigned long end, pmdval_t clear)
 	}
 }
 
+static void __init pti_setup_espfix64(void)
+{
+#ifdef CONFIG_X86_ESPFIX64
+	/*
+	 * ESPFIX64 uses a single p4d (i.e. a top-level entry on 4-level
+	 * systems and a next-level entry on 5-level systems.  Share that
+	 * entry between the user and kernel pagetables.
+	 */
+	pgd_t *kernel_pgd;
+	p4d_t *kernel_p4d, *user_p4d;
+
+	user_p4d = pti_user_pagetable_walk_p4d(ESPFIX_BASE_ADDR);
+	kernel_pgd = pgd_offset_k(ESPFIX_BASE_ADDR);
+	kernel_p4d = p4d_offset(kernel_pgd, ESPFIX_BASE_ADDR);
+	*user_p4d = *kernel_p4d;
+#endif
+}
+
 /*
  * Clone the populated PMDs of the user shared fixmaps into the user space
  * visible page table.
@@ -270,4 +288,5 @@ void __init pti_init(void)
 
 	pti_clone_user_shared();
 	pti_clone_entry_text();
+	pti_setup_espfix64();
 }
