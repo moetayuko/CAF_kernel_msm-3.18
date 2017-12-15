@@ -18,38 +18,15 @@
  * ARM CryptoCell sysfs APIs
  */
 
-#ifndef __SSI_SYSFS_H__
-#define __SSI_SYSFS_H__
+#ifndef __CC_SYSFS_H__
+#define __CC_SYSFS_H__
 
 #include <asm/timex.h>
 
 /* forward declaration */
-struct ssi_drvdata;
+struct cc_drvdata;
 
-enum stat_phase {
-	STAT_PHASE_0 = 0,
-	STAT_PHASE_1,
-	STAT_PHASE_2,
-	STAT_PHASE_3,
-	STAT_PHASE_4,
-	STAT_PHASE_5,
-	STAT_PHASE_6,
-	MAX_STAT_PHASES,
-};
-
-enum stat_op {
-	STAT_OP_TYPE_NULL = 0,
-	STAT_OP_TYPE_ENCODE,
-	STAT_OP_TYPE_DECODE,
-	STAT_OP_TYPE_SETKEY,
-	STAT_OP_TYPE_GENERIC,
-	MAX_STAT_OP_TYPES,
-};
-
-int ssi_sysfs_init(struct kobject *sys_dev_obj, struct ssi_drvdata *drvdata);
+int ssi_sysfs_init(struct kobject *sys_dev_obj, struct cc_drvdata *drvdata);
 void ssi_sysfs_fini(void);
-void update_host_stat(unsigned int op_type, unsigned int phase, cycles_t result);
-void update_cc_stat(unsigned int op_type, unsigned int phase, unsigned int elapsed_cycles);
-void display_all_stat_db(void);
 
-#endif /*__SSI_SYSFS_H__*/
+#endif /*__CC_SYSFS_H__*/

@@ -18,19 +18,21 @@
  * Definitions for ARM CryptoCell Linux Crypto Driver
  */
 
-#ifndef __SSI_CONFIG_H__
-#define __SSI_CONFIG_H__
+#ifndef __CC_CONFIG_H__
+#define __CC_CONFIG_H__
 
 #include <linux/version.h>
 
 //#define FLUSH_CACHE_ALL
 //#define COMPLETION_DELAY
-//#define DX_DUMP_DESCS
-// #define DX_DUMP_BYTES
+//#define CC_DUMP_DESCS
+// #define CC_DUMP_BYTES
 // #define CC_DEBUG
-#define ENABLE_CC_SYSFS		/* Enable sysfs interface for debugging REE driver */
-//#define DX_IRQ_DELAY 100000
-#define DMA_BIT_MASK_LEN	48	/* was 32 bit, but for juno's sake it was enlarged to 48 bit */
+/* Enable sysfs interface for debugging REE driver */
+#define ENABLE_CC_SYSFS
+//#define CC_IRQ_DELAY 100000
+/* was 32 bit, but for juno's sake it was enlarged to 48 bit */
+#define DMA_BIT_MASK_LEN	48
 
-#endif /*__DX_CONFIG_H__*/
+#endif /*__CC_CONFIG_H__*/
 
