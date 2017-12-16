@@ -18,7 +18,6 @@
  */
 
 #include <linux/device.h>
-#include <linux/kallsyms.h>
 #include <linux/export.h>
 #include <linux/mutex.h>
 #include <linux/pm.h>
@@ -609,8 +608,7 @@ static int device_resume_noirq(struct device *dev, pm_message_t state, bool asyn
 		 * device again.
 		 */
 		pm_runtime_set_suspended(dev);
-		dev->power.is_late_suspended = false;
-		dev->power.is_suspended = false;
+		dev_pm_skip_next_resume_phases(dev);
 	}
 
  Out:
