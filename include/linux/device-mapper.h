@@ -317,6 +317,7 @@ struct dm_target_callbacks {
 
 void *dm_per_bio_data(struct bio *bio, size_t data_size);
 struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size);
+struct dm_target *dm_bio_get_target(const struct bio *bio);
 unsigned dm_bio_get_target_bio_nr(const struct bio *bio);
 
 int dm_register_target(struct target_type *t);
