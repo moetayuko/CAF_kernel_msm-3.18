@@ -33,7 +33,6 @@
 #include <linux/bit_spinlock.h>
 #include <linux/slab.h>
 #include <linux/sched/mm.h>
-#include <linux/sort.h>
 #include <linux/log2.h>
 #include "ctree.h"
 #include "disk-io.h"
@@ -44,6 +43,21 @@
 #include "compression.h"
 #include "extent_io.h"
 #include "extent_map.h"
+
+static const char* const btrfs_compress_types[] = { "", "zlib", "lzo", "zstd" };
+
+const char* btrfs_compress_type2str(enum btrfs_compression_type type)
+{
+	switch (type) {
+	case BTRFS_COMPRESS_ZLIB:
+	case BTRFS_COMPRESS_LZO:
+	case BTRFS_COMPRESS_ZSTD:
+	case BTRFS_COMPRESS_NONE:
+		return btrfs_compress_types[type];
+	}
+
+	return NULL;
+}
 
 static int btrfs_decompress_bio(struct compressed_bio *cb);
 
@@ -752,6 +766,8 @@ struct heuristic_ws {
 	u32 sample_size;
 	/* Buckets store counters for each byte value */
 	struct bucket_item *bucket;
+	/* Sorting buffer */
+	struct bucket_item *bucket_b;
 	struct list_head list;
 };
 
@@ -763,6 +779,7 @@ static void free_heuristic_ws(struct list_head *ws)
 
 	kvfree(workspace->sample);
 	kfree(workspace->bucket);
+	kfree(workspace->bucket_b);
 	kfree(workspace);
 }
 
@@ -780,6 +797,10 @@ static struct list_head *alloc_heuristic_ws(void)
 
 	ws->bucket = kcalloc(BUCKET_SIZE, sizeof(*ws->bucket), GFP_KERNEL);
 	if (!ws->bucket)
+		goto fail;
+
+	ws->bucket_b = kcalloc(BUCKET_SIZE, sizeof(*ws->bucket_b), GFP_KERNEL);
+	if (!ws->bucket_b)
 		goto fail;
 
 	INIT_LIST_HEAD(&ws->list);
@@ -1278,13 +1299,122 @@ static u32 shannon_entropy(struct heuristic_ws *ws)
 	return entropy_sum * 100 / entropy_max;
 }
 
-/* Compare buckets by size, ascending */
-static int bucket_comp_rev(const void *lv, const void *rv)
-{
-	const struct bucket_item *l = (const struct bucket_item *)lv;
-	const struct bucket_item *r = (const struct bucket_item *)rv;
+#define RADIX_BASE		4U
+#define COUNTERS_SIZE		(1U << RADIX_BASE)
 
-	return r->count - l->count;
+static u8 get4bits(u64 num, int shift) {
+	u8 low4bits;
+
+	num >>= shift;
+	/* Reverse order */
+	low4bits = (COUNTERS_SIZE - 1) - (num % COUNTERS_SIZE);
+	return low4bits;
+}
+
+static void copy_cell(void *dst, int dest_i, void *src, int src_i)
+{
+	struct bucket_item *dstv = (struct bucket_item *)dst;
+	struct bucket_item *srcv = (struct bucket_item *)src;
+	dstv[dest_i] = srcv[src_i];
+}
+
+static u64 get_num(const void *a, int i)
+{
+	struct bucket_item *av = (struct bucket_item *)a;
+	return av[i].count;
+}
+
+/*
+ * Use 4 bits as radix base
+ * Use 16 u32 counters for calculating new possition in buf array
+ *
+ * @array     - array that will be sorted
+ * @array_buf - buffer array to store sorting results
+ *              must be equal in size to @array
+ * @num       - array size
+ * @get_num   - function to extract number from array
+ * @copy_cell - function to copy data from array to array_buf and vice versa
+ * @get4bits  - function to get 4 bits from number at specified offset
+ */
+static void radix_sort(void *array, void *array_buf, int num,
+		       u64 (*get_num)(const void *, int i),
+		       void (*copy_cell)(void *dest, int dest_i,
+					 void* src, int src_i),
+		       u8 (*get4bits)(u64 num, int shift))
+{
+	u64 max_num;
+	u64 buf_num;
+	u32 counters[COUNTERS_SIZE];
+	u32 new_addr;
+	u32 addr;
+	int bitlen;
+	int shift;
+	int i;
+
+	/*
+	 * Try avoid useless loop iterations for small numbers stored in big
+	 * counters.  Example: 48 33 4 ... in 64bit array
+	 */
+	max_num = get_num(array, 0);
+	for (i = 1; i < num; i++) {
+		buf_num = get_num(array, i);
+		if (buf_num > max_num)
+			max_num = buf_num;
+	}
+
+	buf_num = ilog2(max_num);
+	bitlen = ALIGN(buf_num, RADIX_BASE * 2);
+
+	shift = 0;
+	while (shift < bitlen) {
+		memset(counters, 0, sizeof(counters));
+
+		for (i = 0; i < num; i++) {
+			buf_num = get_num(array, i);
+			addr = get4bits(buf_num, shift);
+			counters[addr]++;
+		}
+
+		for (i = 1; i < COUNTERS_SIZE; i++)
+			counters[i] += counters[i - 1];
+
+		for (i = num - 1; i >= 0; i--) {
+			buf_num = get_num(array, i);
+			addr = get4bits(buf_num, shift);
+			counters[addr]--;
+			new_addr = counters[addr];
+			copy_cell(array_buf, new_addr, array, i);
+		}
+
+		shift += RADIX_BASE;
+
+		/*
+		 * Normal radix expects to move data from a temporary array, to
+		 * the main one.  But that requires some CPU time. Avoid that
+		 * by doing another sort iteration to original array instead of
+		 * memcpy()
+		 */
+		memset(counters, 0, sizeof(counters));
+
+		for (i = 0; i < num; i ++) {
+			buf_num = get_num(array_buf, i);
+			addr = get4bits(buf_num, shift);
+			counters[addr]++;
+		}
+
+		for (i = 1; i < COUNTERS_SIZE; i++)
+			counters[i] += counters[i - 1];
+
+		for (i = num - 1; i >= 0; i--) {
+			buf_num = get_num(array_buf, i);
+			addr = get4bits(buf_num, shift);
+			counters[addr]--;
+			new_addr = counters[addr];
+			copy_cell(array, new_addr, array_buf, i);
+		}
+
+		shift += RADIX_BASE;
+	}
 }
 
 /*
@@ -1314,7 +1444,8 @@ static int byte_core_set_size(struct heuristic_ws *ws)
 	struct bucket_item *bucket = ws->bucket;
 
 	/* Sort in reverse order */
-	sort(bucket, BUCKET_SIZE, sizeof(*bucket), &bucket_comp_rev, NULL);
+	radix_sort(ws->bucket, ws->bucket_b, BUCKET_SIZE, get_num, copy_cell,
+			get4bits);
 
 	for (i = 0; i < BYTE_CORE_SET_LOW; i++)
 		coreset_sum += bucket[i].count;
@@ -1522,12 +1653,23 @@ out:
 
 unsigned int btrfs_compress_str2level(const char *str)
 {
-	if (strncmp(str, "zlib", 4) != 0)
+	long level;
+	int max;
+
+	if (strncmp(str, "zlib", 4) == 0)
+		max = 9;
+	else if (strncmp(str, "zstd", 4) == 0)
+		max = 15; // encoded on 4 bits, real max is 22
+	else
 		return 0;
 
-	/* Accepted form: zlib:1 up to zlib:9 and nothing left after the number */
-	if (str[4] == ':' && '1' <= str[5] && str[5] <= '9' && str[6] == 0)
-		return str[5] - '0';
+	/* Accepted form: zxxx:1 up to zxxx:9 and nothing left after the number */
+	str += 4;
+	if (*str == ':')
+		str++;
 
-	return BTRFS_ZLIB_DEFAULT_LEVEL;
+	if (kstrtoul(str, 10, &level))
+		return BTRFS_ZLIB_DEFAULT_LEVEL;
+
+	return (level > max) ? BTRFS_ZLIB_DEFAULT_LEVEL : level;
 }
