@@ -121,6 +121,12 @@ struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size)
 }
 EXPORT_SYMBOL_GPL(dm_bio_from_per_bio_data);
 
+struct dm_target *dm_bio_get_target(const struct bio *bio)
+{
+	return container_of(bio, struct dm_target_io, clone)->ti;
+}
+EXPORT_SYMBOL_GPL(dm_bio_get_target);
+
 unsigned dm_bio_get_target_bio_nr(const struct bio *bio)
 {
 	return container_of(bio, struct dm_target_io, clone)->target_bio_nr;
