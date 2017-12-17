@@ -1031,4 +1031,8 @@ int phys_mem_access_prot_allowed(struct file *file, unsigned long pfn,
 #endif
 #endif
 
+#ifndef CONFIG_X86_ESPFIX64
+static inline void init_espfix_bsp(void) { }
+#endif
+
 #endif /* _ASM_GENERIC_PGTABLE_H */
