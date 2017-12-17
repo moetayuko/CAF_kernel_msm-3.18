@@ -1187,6 +1187,21 @@ static int multipath_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		goto bad;
 	}
 
+	/*
+	 * If NVMe bio-based and all path selectors don't provide .end_io hook:
+	 * inform DM core that there is no need to call this target's end_io hook.
+	 */
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED) {
+		struct priority_group *pg;
+		if (!m->nr_priority_groups)
+			goto finish;
+		list_for_each_entry(pg, &m->priority_groups, list) {
+			if (pg->ps.type->end_io)
+				goto finish;
+		}
+		ti->skip_end_io_hook = true;
+	}
+finish:
 	ti->num_flush_bios = 1;
 	ti->num_discard_bios = 1;
 	ti->num_write_same_bios = 1;
@@ -1672,11 +1687,12 @@ static void multipath_failover_rq(struct request *rq)
 	unsigned long flags;
 
 	if (pgpath) {
-		struct path_selector *ps = &pgpath->pg->ps;
+		if (!ti->skip_end_io_hook) {
+			struct path_selector *ps = &pgpath->pg->ps;
 
-		if (ps->type->end_io)
-			ps->type->end_io(ps, &pgpath->path, blk_rq_bytes(rq));
-
+			if (ps->type->end_io)
+				ps->type->end_io(ps, &pgpath->path, blk_rq_bytes(rq));
+		}
 		fail_path(pgpath);
 	}
 

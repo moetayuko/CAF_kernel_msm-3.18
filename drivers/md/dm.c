@@ -937,7 +937,8 @@ static void clone_endio(struct bio *bio)
 	struct dm_target_io *tio = container_of(bio, struct dm_target_io, clone);
 	struct dm_io *io = tio->io;
 	struct mapped_device *md = tio->io->md;
-	dm_endio_fn endio = tio->ti->type->end_io;
+	struct dm_target *ti = tio->ti;
+	dm_endio_fn endio = ti->type->end_io;
 
 	if (unlikely(error == BLK_STS_TARGET) && md->type != DM_TYPE_NVME_BIO_BASED) {
 		if (bio_op(bio) == REQ_OP_WRITE_SAME &&
@@ -948,8 +949,8 @@ static void clone_endio(struct bio *bio)
 			disable_write_zeroes(md);
 	}
 
-	if (endio) {
-		int r = endio(tio->ti, bio, &error);
+	if (endio && !ti->skip_end_io_hook) {
+		int r = endio(ti, bio, &error);
 		switch (r) {
 		case DM_ENDIO_REQUEUE:
 			error = BLK_STS_DM_REQUEUE;

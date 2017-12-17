@@ -310,6 +310,12 @@ struct dm_target {
 	 * on max_io_len boundary.
 	 */
 	bool split_discard_bios:1;
+
+	/*
+	 * Set if there is no need to call this target's end_io hook
+	 * (be it .end_io or .end_io_rq).
+	 */
+	bool skip_end_io_hook:1;
 };
 
 /* Each target can link one of these into the table */
