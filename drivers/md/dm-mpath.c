@@ -584,8 +584,12 @@ static struct pgpath *__map_bio(struct multipath *m, struct bio *bio)
 		return ERR_PTR(-EAGAIN);
 	}
 
+	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
+
 	return pgpath;
 }
+
+static void multipath_failover_rq(struct request *rq);
 
 static struct pgpath *__map_bio_nvme(struct multipath *m, struct bio *bio)
 {
@@ -614,6 +618,8 @@ static struct pgpath *__map_bio_nvme(struct multipath *m, struct bio *bio)
 		return NULL;
 	}
 
+	bio->bi_failover_rq = multipath_failover_rq;
+
 	return pgpath;
 }
 
@@ -641,7 +647,6 @@ static int __multipath_map_bio(struct multipath *m, struct bio *bio,
 
 	bio->bi_status = 0;
 	bio_set_dev(bio, pgpath->path.dev->bdev);
-	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
 
 	if (pgpath->pg->ps.type->start_io)
 		pgpath->pg->ps.type->start_io(&pgpath->pg->ps,
@@ -1610,6 +1615,14 @@ static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
 	unsigned long flags;
 	int r = DM_ENDIO_DONE;
 
+	/*
+	 * NVMe bio-based only needs to update path selector (on
+	 * success or errors that NVMe deemed non-retryable)
+	 * - retryable errors are handled by multipath_failover_rq
+	 */
+	if (clone->bi_failover_rq)
+		goto done;
+
 	if (!*error || !retry_error(*error))
 		goto done;
 
@@ -1643,6 +1656,43 @@ done:
 	}
 
 	return r;
+}
+
+/*
+ * multipath_failover_rq serves as a replacement for multipath_end_io_bio
+ * for all bios in a request with a retryable error.
+ */
+static void multipath_failover_rq(struct request *rq)
+{
+	struct dm_target *ti = dm_bio_get_target(rq->bio);
+	struct multipath *m = ti->private;
+	struct dm_mpath_io *mpio = get_mpio_from_bio(rq->bio);
+	struct pgpath *pgpath = mpio->pgpath;
+	unsigned long flags;
+
+	if (pgpath) {
+		struct path_selector *ps = &pgpath->pg->ps;
+
+		if (ps->type->end_io)
+			ps->type->end_io(ps, &pgpath->path, blk_rq_bytes(rq));
+
+		fail_path(pgpath);
+	}
+
+	if (atomic_read(&m->nr_valid_paths) == 0 &&
+	    !test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags) &&
+	    !must_push_back_bio(m)) {
+		dm_report_EIO(m);
+		blk_mq_end_request(rq, BLK_STS_IOERR);
+		return;
+	}
+
+	spin_lock_irqsave(&m->lock, flags);
+	blk_steal_bios(&m->queued_bios, rq);
+	spin_unlock_irqrestore(&m->lock, flags);
+	queue_work(kmultipathd, &m->process_queued_bios);
+
+	blk_mq_end_request(rq, 0);
 }
 
 /*
