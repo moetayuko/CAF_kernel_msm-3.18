@@ -517,6 +517,8 @@ void dm_put_device(struct dm_target *ti, struct dm_dev *d)
 		return;
 	}
 	if (refcount_dec_and_test(&dd->count)) {
+		if (ti->type->cleanup_device)
+			ti->type->cleanup_device(ti, d);
 		dm_put_table_device(ti->table->md, d);
 		list_del(&dd->list);
 		kfree(dd);

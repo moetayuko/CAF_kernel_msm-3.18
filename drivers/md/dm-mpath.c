@@ -584,6 +584,8 @@ static struct pgpath *__map_bio(struct multipath *m, struct bio *bio)
 		return ERR_PTR(-EAGAIN);
 	}
 
+	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
+
 	return pgpath;
 }
 
@@ -641,7 +643,6 @@ static int __multipath_map_bio(struct multipath *m, struct bio *bio,
 
 	bio->bi_status = 0;
 	bio_set_dev(bio, pgpath->path.dev->bdev);
-	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
 
 	if (pgpath->pg->ps.type->start_io)
 		pgpath->pg->ps.type->start_io(&pgpath->pg->ps,
@@ -855,6 +856,8 @@ retain:
 	return 0;
 }
 
+static void multipath_failover_rq(struct request *rq);
+
 static struct pgpath *parse_path(struct dm_arg_set *as, struct path_selector *ps,
 				 struct dm_target *ti)
 {
@@ -879,7 +882,10 @@ static struct pgpath *parse_path(struct dm_arg_set *as, struct path_selector *ps
 		goto bad;
 	}
 
-	if (m->queue_mode != DM_TYPE_NVME_BIO_BASED) {
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED) {
+		struct request_queue *q = bdev_get_queue(p->path.dev->bdev);
+		q->failover_rq_fn = multipath_failover_rq;
+	} else {
 		INIT_DELAYED_WORK(&p->activate_path, activate_path_work);
 		if (setup_scsi_dh(p->path.dev->bdev, m, &ti->error)) {
 			dm_put_device(ti, p->path.dev);
@@ -1610,6 +1616,14 @@ static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
 	unsigned long flags;
 	int r = DM_ENDIO_DONE;
 
+	/*
+	 * NVMe bio-based only needs to update path selector (on
+	 * success or errors that NVMe deemed non-retryable)
+	 * - retryable errors are handled by multipath_failover_rq
+	 */
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED)
+		goto done;
+
 	if (!*error || !retry_error(*error))
 		goto done;
 
@@ -1643,6 +1657,43 @@ done:
 	}
 
 	return r;
+}
+
+/*
+ * multipath_failover_rq serves as a replacement for multipath_end_io_bio
+ * for all bios in a request with a retryable error.
+ */
+static void multipath_failover_rq(struct request *rq)
+{
+	struct dm_target *ti = dm_bio_get_target(rq->bio);
+	struct multipath *m = ti->private;
+	struct dm_mpath_io *mpio = get_mpio_from_bio(rq->bio);
+	struct pgpath *pgpath = mpio->pgpath;
+	unsigned long flags;
+
+	if (pgpath) {
+		struct path_selector *ps = &pgpath->pg->ps;
+
+		if (ps->type->end_io)
+			ps->type->end_io(ps, &pgpath->path, blk_rq_bytes(rq));
+
+		fail_path(pgpath);
+	}
+
+	if (atomic_read(&m->nr_valid_paths) == 0 &&
+	    !test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags) &&
+	    !must_push_back_bio(m)) {
+		dm_report_EIO(m);
+		blk_mq_end_request(rq, BLK_STS_IOERR);
+		return;
+	}
+
+	spin_lock_irqsave(&m->lock, flags);
+	blk_steal_bios(&m->queued_bios, rq);
+	spin_unlock_irqrestore(&m->lock, flags);
+	queue_work(kmultipathd, &m->process_queued_bios);
+
+	blk_mq_end_request(rq, 0);
 }
 
 /*
@@ -2029,12 +2080,25 @@ static int multipath_busy(struct dm_target *ti)
 	return busy;
 }
 
+static void multipath_cleanup_device(struct dm_target *ti, struct dm_dev *dev)
+{
+	struct multipath *m = ti->private;
+	struct request_queue *q;
+
+	if (m->queue_mode != DM_TYPE_NVME_BIO_BASED)
+		return;
+
+	q = bdev_get_queue(dev->bdev);
+	if (q)
+		q->failover_rq_fn = NULL;
+}
+
 /*-----------------------------------------------------------------
  * Module setup
  *---------------------------------------------------------------*/
 static struct target_type multipath_target = {
 	.name = "multipath",
-	.version = {1, 12, 0},
+	.version = {1, 13, 0},
 	.features = DM_TARGET_SINGLETON | DM_TARGET_IMMUTABLE,
 	.module = THIS_MODULE,
 	.ctr = multipath_ctr,
@@ -2052,6 +2116,7 @@ static struct target_type multipath_target = {
 	.prepare_ioctl = multipath_prepare_ioctl,
 	.iterate_devices = multipath_iterate_devices,
 	.busy = multipath_busy,
+	.cleanup_device = multipath_cleanup_device,
 };
 
 static int __init dm_multipath_init(void)

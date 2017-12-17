@@ -92,6 +92,8 @@ typedef int (*dm_message_fn) (struct dm_target *ti, unsigned argc, char **argv);
 typedef int (*dm_prepare_ioctl_fn) (struct dm_target *ti,
 			    struct block_device **bdev, fmode_t *mode);
 
+typedef void (*dm_cleanup_device_fn) (struct dm_target *ti, struct dm_dev *dev);
+
 /*
  * These iteration functions are typically used to check (and combine)
  * properties of underlying devices.
@@ -181,6 +183,7 @@ struct target_type {
 	dm_message_fn message;
 	dm_prepare_ioctl_fn prepare_ioctl;
 	dm_busy_fn busy;
+	dm_cleanup_device_fn cleanup_device;
 	dm_iterate_devices_fn iterate_devices;
 	dm_io_hints_fn io_hints;
 	dm_dax_direct_access_fn direct_access;
