@@ -122,9 +122,6 @@ static void arcmsr_stop_adapter_bgrb(struct AdapterControlBlock *acb);
 static void arcmsr_hbaA_flush_cache(struct AdapterControlBlock *acb);
 static void arcmsr_hbaB_flush_cache(struct AdapterControlBlock *acb);
 static void arcmsr_request_device_map(struct timer_list *t);
-static void arcmsr_hbaA_request_device_map(struct AdapterControlBlock *acb);
-static void arcmsr_hbaB_request_device_map(struct AdapterControlBlock *acb);
-static void arcmsr_hbaC_request_device_map(struct AdapterControlBlock *acb);
 static void arcmsr_message_isr_bh_fn(struct work_struct *work);
 static bool arcmsr_get_firmware_spec(struct AdapterControlBlock *acb);
 static void arcmsr_start_adapter_bgrb(struct AdapterControlBlock *acb);
@@ -2956,74 +2953,66 @@ static int arcmsr_queue_command_lck(struct scsi_cmnd *cmd,
 
 static DEF_SCSI_QCMD(arcmsr_queue_command)
 
+static void arcmsr_get_adapter_config(struct AdapterControlBlock *pACB, uint32_t *rwbuffer)
+{
+	int count;
+	uint32_t *acb_firm_model = (uint32_t *)pACB->firm_model;
+	uint32_t *acb_firm_version = (uint32_t *)pACB->firm_version;
+	uint32_t *acb_device_map = (uint32_t *)pACB->device_map;
+	uint32_t *firm_model = &rwbuffer[15];
+	uint32_t *firm_version = &rwbuffer[17];
+	uint32_t *device_map = &rwbuffer[21];
+
+	count = 2;
+	while (count) {
+		*acb_firm_model = readl(firm_model);
+		acb_firm_model++;
+		firm_model++;
+		count--;
+	}
+	count = 4;
+	while (count) {
+		*acb_firm_version = readl(firm_version);
+		acb_firm_version++;
+		firm_version++;
+		count--;
+	}
+	count = 4;
+	while (count) {
+		*acb_device_map = readl(device_map);
+		acb_device_map++;
+		device_map++;
+		count--;
+	}
+	pACB->signature = readl(&rwbuffer[0]);
+	pACB->firm_request_len = readl(&rwbuffer[1]);
+	pACB->firm_numbers_queue = readl(&rwbuffer[2]);
+	pACB->firm_sdram_size = readl(&rwbuffer[3]);
+	pACB->firm_hd_channels = readl(&rwbuffer[4]);
+	pACB->firm_cfg_version = readl(&rwbuffer[25]);
+	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
+		pACB->host->host_no,
+		pACB->firm_model,
+		pACB->firm_version);
+}
+
 static bool arcmsr_hbaA_get_config(struct AdapterControlBlock *acb)
 {
 	struct MessageUnit_A __iomem *reg = acb->pmuA;
-	char *acb_firm_model = acb->firm_model;
-	char *acb_firm_version = acb->firm_version;
-	char *acb_device_map = acb->device_map;
-	char __iomem *iop_firm_model = (char __iomem *)(&reg->message_rwbuffer[15]);
-	char __iomem *iop_firm_version = (char __iomem *)(&reg->message_rwbuffer[17]);
-	char __iomem *iop_device_map = (char __iomem *)(&reg->message_rwbuffer[21]);
-	int count;
+
+	arcmsr_wait_firmware_ready(acb);
 	writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
 	if (!arcmsr_hbaA_wait_msgint_ready(acb)) {
 		printk(KERN_NOTICE "arcmsr%d: wait 'get adapter firmware \
 			miscellaneous data' timeout \n", acb->host->host_no);
 		return false;
 	}
-	count = 8;
-	while (count){
-		*acb_firm_model = readb(iop_firm_model);
-		acb_firm_model++;
-		iop_firm_model++;
-		count--;
-	}
-
-	count = 16;
-	while (count){
-		*acb_firm_version = readb(iop_firm_version);
-		acb_firm_version++;
-		iop_firm_version++;
-		count--;
-	}
-
-	count=16;
-	while(count){
-		*acb_device_map = readb(iop_device_map);
-		acb_device_map++;
-		iop_device_map++;
-		count--;
-	}
-	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
-		acb->host->host_no,
-		acb->firm_model,
-		acb->firm_version);
-	acb->signature = readl(&reg->message_rwbuffer[0]);
-	acb->firm_request_len = readl(&reg->message_rwbuffer[1]);
-	acb->firm_numbers_queue = readl(&reg->message_rwbuffer[2]);
-	acb->firm_sdram_size = readl(&reg->message_rwbuffer[3]);
-	acb->firm_hd_channels = readl(&reg->message_rwbuffer[4]);
-	acb->firm_cfg_version = readl(&reg->message_rwbuffer[25]);  /*firm_cfg_version,25,100-103*/
+	arcmsr_get_adapter_config(acb, reg->message_rwbuffer);
 	return true;
 }
 static bool arcmsr_hbaB_get_config(struct AdapterControlBlock *acb)
 {
 	struct MessageUnit_B *reg = acb->pmuB;
-	char *acb_firm_model = acb->firm_model;
-	char *acb_firm_version = acb->firm_version;
-	char *acb_device_map = acb->device_map;
-	char __iomem *iop_firm_model;
-	/*firm_model,15,60-67*/
-	char __iomem *iop_firm_version;
-	/*firm_version,17,68-83*/
-	char __iomem *iop_device_map;
-	/*firm_version,21,84-99*/
-	int count;
-
-	iop_firm_model = (char __iomem *)(&reg->message_rwbuffer[15]);	/*firm_model,15,60-67*/
-	iop_firm_version = (char __iomem *)(&reg->message_rwbuffer[17]);	/*firm_version,17,68-83*/
-	iop_device_map = (char __iomem *)(&reg->message_rwbuffer[21]);	/*firm_version,21,84-99*/
 
 	arcmsr_wait_firmware_ready(acb);
 	writel(ARCMSR_MESSAGE_START_DRIVER_MODE, reg->drv2iop_doorbell);
@@ -3037,127 +3026,43 @@ static bool arcmsr_hbaB_get_config(struct AdapterControlBlock *acb)
 			miscellaneous data' timeout \n", acb->host->host_no);
 		return false;
 	}
-	count = 8;
-	while (count){
-		*acb_firm_model = readb(iop_firm_model);
-		acb_firm_model++;
-		iop_firm_model++;
-		count--;
-	}
-	count = 16;
-	while (count){
-		*acb_firm_version = readb(iop_firm_version);
-		acb_firm_version++;
-		iop_firm_version++;
-		count--;
-	}
-
-	count = 16;
-	while(count){
-		*acb_device_map = readb(iop_device_map);
-		acb_device_map++;
-		iop_device_map++;
-		count--;
-	}
-	
-	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
-		acb->host->host_no,
-		acb->firm_model,
-		acb->firm_version);
-
-	acb->signature = readl(&reg->message_rwbuffer[0]);
-	/*firm_signature,1,00-03*/
-	acb->firm_request_len = readl(&reg->message_rwbuffer[1]);
-	/*firm_request_len,1,04-07*/
-	acb->firm_numbers_queue = readl(&reg->message_rwbuffer[2]);
-	/*firm_numbers_queue,2,08-11*/
-	acb->firm_sdram_size = readl(&reg->message_rwbuffer[3]);
-	/*firm_sdram_size,3,12-15*/
-	acb->firm_hd_channels = readl(&reg->message_rwbuffer[4]);
-	/*firm_ide_channels,4,16-19*/
-	acb->firm_cfg_version = readl(&reg->message_rwbuffer[25]);  /*firm_cfg_version,25,100-103*/
-	/*firm_ide_channels,4,16-19*/
+	arcmsr_get_adapter_config(acb, reg->message_rwbuffer);
 	return true;
 }
 
 static bool arcmsr_hbaC_get_config(struct AdapterControlBlock *pACB)
 {
-	uint32_t intmask_org, Index, firmware_state = 0;
+	uint32_t intmask_org;
 	struct MessageUnit_C __iomem *reg = pACB->pmuC;
-	char *acb_firm_model = pACB->firm_model;
-	char *acb_firm_version = pACB->firm_version;
-	char __iomem *iop_firm_model = (char __iomem *)(&reg->msgcode_rwbuffer[15]);    /*firm_model,15,60-67*/
-	char __iomem *iop_firm_version = (char __iomem *)(&reg->msgcode_rwbuffer[17]);  /*firm_version,17,68-83*/
-	int count;
+
 	/* disable all outbound interrupt */
 	intmask_org = readl(&reg->host_int_mask); /* disable outbound message0 int */
 	writel(intmask_org|ARCMSR_HBCMU_ALL_INTMASKENABLE, &reg->host_int_mask);
 	/* wait firmware ready */
-	do {
-		firmware_state = readl(&reg->outbound_msgaddr1);
-	} while ((firmware_state & ARCMSR_HBCMU_MESSAGE_FIRMWARE_OK) == 0);
+	arcmsr_wait_firmware_ready(pACB);
 	/* post "get config" instruction */
 	writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
 	writel(ARCMSR_HBCMU_DRV2IOP_MESSAGE_CMD_DONE, &reg->inbound_doorbell);
 	/* wait message ready */
-	for (Index = 0; Index < 2000; Index++) {
-		if (readl(&reg->outbound_doorbell) & ARCMSR_HBCMU_IOP2DRV_MESSAGE_CMD_DONE) {
-			writel(ARCMSR_HBCMU_IOP2DRV_MESSAGE_CMD_DONE_DOORBELL_CLEAR, &reg->outbound_doorbell_clear);/*clear interrupt*/
-			break;
-		}
-		udelay(10);
-	} /*max 1 seconds*/
-	if (Index >= 2000) {
+	if (!arcmsr_hbaC_wait_msgint_ready(pACB)) {
 		printk(KERN_NOTICE "arcmsr%d: wait 'get adapter firmware \
 			miscellaneous data' timeout \n", pACB->host->host_no);
 		return false;
 	}
-	count = 8;
-	while (count) {
-		*acb_firm_model = readb(iop_firm_model);
-		acb_firm_model++;
-		iop_firm_model++;
-		count--;
-	}
-	count = 16;
-	while (count) {
-		*acb_firm_version = readb(iop_firm_version);
-		acb_firm_version++;
-		iop_firm_version++;
-		count--;
-	}
-	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
-		pACB->host->host_no,
-		pACB->firm_model,
-		pACB->firm_version);
-	pACB->firm_request_len = readl(&reg->msgcode_rwbuffer[1]);   /*firm_request_len,1,04-07*/
-	pACB->firm_numbers_queue = readl(&reg->msgcode_rwbuffer[2]); /*firm_numbers_queue,2,08-11*/
-	pACB->firm_sdram_size = readl(&reg->msgcode_rwbuffer[3]);    /*firm_sdram_size,3,12-15*/
-	pACB->firm_hd_channels = readl(&reg->msgcode_rwbuffer[4]);  /*firm_ide_channels,4,16-19*/
-	pACB->firm_cfg_version = readl(&reg->msgcode_rwbuffer[25]);  /*firm_cfg_version,25,100-103*/
-	/*all interrupt service will be enable at arcmsr_iop_init*/
+	arcmsr_get_adapter_config(pACB, reg->msgcode_rwbuffer);
 	return true;
 }
 
 static bool arcmsr_hbaD_get_config(struct AdapterControlBlock *acb)
 {
-	char *acb_firm_model = acb->firm_model;
-	char *acb_firm_version = acb->firm_version;
-	char *acb_device_map = acb->device_map;
-	char __iomem *iop_firm_model;
-	char __iomem *iop_firm_version;
-	char __iomem *iop_device_map;
-	u32 count;
 	struct MessageUnit_D *reg = acb->pmuD;
 
-	iop_firm_model = (char __iomem *)(&reg->msgcode_rwbuffer[15]);
-	iop_firm_version = (char __iomem *)(&reg->msgcode_rwbuffer[17]);
-	iop_device_map = (char __iomem *)(&reg->msgcode_rwbuffer[21]);
 	if (readl(acb->pmuD->outbound_doorbell) &
 		ARCMSR_ARC1214_IOP2DRV_MESSAGE_CMD_DONE) {
 		writel(ARCMSR_ARC1214_IOP2DRV_MESSAGE_CMD_DONE,
 			acb->pmuD->outbound_doorbell);/*clear interrupt*/
 	}
+	arcmsr_wait_firmware_ready(acb);
 	/* post "get config" instruction */
 	writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, reg->inbound_msgaddr0);
 	/* wait message ready */
@@ -3166,62 +3071,20 @@ static bool arcmsr_hbaD_get_config(struct AdapterControlBlock *acb)
 			"miscellaneous data timeout\n", acb->host->host_no);
 		return false;
 	}
-	count = 8;
-	while (count) {
-		*acb_firm_model = readb(iop_firm_model);
-		acb_firm_model++;
-		iop_firm_model++;
-		count--;
-	}
-	count = 16;
-	while (count) {
-		*acb_firm_version = readb(iop_firm_version);
-		acb_firm_version++;
-		iop_firm_version++;
-		count--;
-	}
-	count = 16;
-	while (count) {
-		*acb_device_map = readb(iop_device_map);
-		acb_device_map++;
-		iop_device_map++;
-		count--;
-	}
-	acb->signature = readl(&reg->msgcode_rwbuffer[0]);
-	/*firm_signature,1,00-03*/
-	acb->firm_request_len = readl(&reg->msgcode_rwbuffer[1]);
-	/*firm_request_len,1,04-07*/
-	acb->firm_numbers_queue = readl(&reg->msgcode_rwbuffer[2]);
-	/*firm_numbers_queue,2,08-11*/
-	acb->firm_sdram_size = readl(&reg->msgcode_rwbuffer[3]);
-	/*firm_sdram_size,3,12-15*/
-	acb->firm_hd_channels = readl(&reg->msgcode_rwbuffer[4]);
-	/*firm_hd_channels,4,16-19*/
-	acb->firm_cfg_version = readl(&reg->msgcode_rwbuffer[25]);
-	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
-		acb->host->host_no,
-		acb->firm_model,
-		acb->firm_version);
+	arcmsr_get_adapter_config(acb, reg->msgcode_rwbuffer);
 	return true;
 }
 
 static bool arcmsr_hbaE_get_config(struct AdapterControlBlock *pACB)
 {
-	char *acb_firm_model = pACB->firm_model;
-	char *acb_firm_version = pACB->firm_version;
 	struct MessageUnit_E __iomem *reg = pACB->pmuE;
-	char __iomem *iop_firm_model = (char __iomem *)(&reg->msgcode_rwbuffer[15]);
-	char __iomem *iop_firm_version = (char __iomem *)(&reg->msgcode_rwbuffer[17]);
-	uint32_t intmask_org, Index, firmware_state = 0, read_doorbell;
-	int count;
+	uint32_t intmask_org;
 
 	/* disable all outbound interrupt */
 	intmask_org = readl(&reg->host_int_mask); /* disable outbound message0 int */
 	writel(intmask_org | ARCMSR_HBEMU_ALL_INTMASKENABLE, &reg->host_int_mask);
 	/* wait firmware ready */
-	do {
-		firmware_state = readl(&reg->outbound_msgaddr1);
-	} while ((firmware_state & ARCMSR_HBEMU_MESSAGE_FIRMWARE_OK) == 0);
+	arcmsr_wait_firmware_ready(pACB);
 	mdelay(20);
 	/* post "get config" instruction */
 	writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
@@ -3229,44 +3092,12 @@ static bool arcmsr_hbaE_get_config(struct AdapterControlBlock *pACB)
 	pACB->out_doorbell ^= ARCMSR_HBEMU_DRV2IOP_MESSAGE_CMD_DONE;
 	writel(pACB->out_doorbell, &reg->iobound_doorbell);
 	/* wait message ready */
-	for (Index = 0; Index < 2000; Index++) {
-		read_doorbell = readl(&reg->iobound_doorbell);
-		if ((read_doorbell ^ pACB->in_doorbell) & ARCMSR_HBEMU_IOP2DRV_MESSAGE_CMD_DONE) {
-			writel(0, &reg->host_int_status);
-			pACB->in_doorbell = read_doorbell;
-			break;
-		}
-		mdelay(1);
-	} /*max 1 seconds*/
-
-	if (Index >= 2000) {
+	if (!arcmsr_hbaE_wait_msgint_ready(pACB)) {
 		pr_notice("arcmsr%d: wait get adapter firmware "
 			"miscellaneous data timeout\n", pACB->host->host_no);
 		return false;
 	}
-	count = 8;
-	while (count) {
-		*acb_firm_model = readb(iop_firm_model);
-		acb_firm_model++;
-		iop_firm_model++;
-		count--;
-	}
-	count = 16;
-	while (count) {
-		*acb_firm_version = readb(iop_firm_version);
-		acb_firm_version++;
-		iop_firm_version++;
-		count--;
-	}
-	pACB->firm_request_len = readl(&reg->msgcode_rwbuffer[1]);
-	pACB->firm_numbers_queue = readl(&reg->msgcode_rwbuffer[2]);
-	pACB->firm_sdram_size = readl(&reg->msgcode_rwbuffer[3]);
-	pACB->firm_hd_channels = readl(&reg->msgcode_rwbuffer[4]);
-	pACB->firm_cfg_version = readl(&reg->msgcode_rwbuffer[25]);
-	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
-		pACB->host->host_no,
-		pACB->firm_model,
-		pACB->firm_version);
+	arcmsr_get_adapter_config(pACB, reg->msgcode_rwbuffer);
 	return true;
 }
 
@@ -3955,159 +3786,61 @@ static void arcmsr_wait_firmware_ready(struct AdapterControlBlock *acb)
 	}
 }
 
-static void arcmsr_hbaA_request_device_map(struct AdapterControlBlock *acb)
-{
-	struct MessageUnit_A __iomem *reg = acb->pmuA;
-	if (unlikely(atomic_read(&acb->rq_map_token) == 0) || ((acb->acb_flags & ACB_F_BUS_RESET) != 0 ) || ((acb->acb_flags & ACB_F_ABORT) != 0 )){
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-		return;
-	} else {
-		acb->fw_flag = FW_NORMAL;
-		if (atomic_read(&acb->ante_token_value) == atomic_read(&acb->rq_map_token)){
-			atomic_set(&acb->rq_map_token, 16);
-		}
-		atomic_set(&acb->ante_token_value, atomic_read(&acb->rq_map_token));
-		if (atomic_dec_and_test(&acb->rq_map_token)) {
-			mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-			return;
-		}
-		writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
-		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-	}
-	return;
-}
-
-static void arcmsr_hbaB_request_device_map(struct AdapterControlBlock *acb)
-{
-	struct MessageUnit_B *reg = acb->pmuB;
-	if (unlikely(atomic_read(&acb->rq_map_token) == 0) || ((acb->acb_flags & ACB_F_BUS_RESET) != 0 ) || ((acb->acb_flags & ACB_F_ABORT) != 0 )){
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-		return;
-	} else {
-		acb->fw_flag = FW_NORMAL;
-		if (atomic_read(&acb->ante_token_value) == atomic_read(&acb->rq_map_token)) {
-			atomic_set(&acb->rq_map_token, 16);
-		}
-		atomic_set(&acb->ante_token_value, atomic_read(&acb->rq_map_token));
-		if (atomic_dec_and_test(&acb->rq_map_token)) {
-			mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-			return;
-		}
-		writel(ARCMSR_MESSAGE_GET_CONFIG, reg->drv2iop_doorbell);
-		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-	}
-	return;
-}
-
-static void arcmsr_hbaC_request_device_map(struct AdapterControlBlock *acb)
-{
-	struct MessageUnit_C __iomem *reg = acb->pmuC;
-	if (unlikely(atomic_read(&acb->rq_map_token) == 0) || ((acb->acb_flags & ACB_F_BUS_RESET) != 0) || ((acb->acb_flags & ACB_F_ABORT) != 0)) {
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-		return;
-	} else {
-		acb->fw_flag = FW_NORMAL;
-		if (atomic_read(&acb->ante_token_value) == atomic_read(&acb->rq_map_token)) {
-			atomic_set(&acb->rq_map_token, 16);
-		}
-		atomic_set(&acb->ante_token_value, atomic_read(&acb->rq_map_token));
-		if (atomic_dec_and_test(&acb->rq_map_token)) {
-			mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-			return;
-		}
-		writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
-		writel(ARCMSR_HBCMU_DRV2IOP_MESSAGE_CMD_DONE, &reg->inbound_doorbell);
-		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
-		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
-	}
-	return;
-}
-
-static void arcmsr_hbaD_request_device_map(struct AdapterControlBlock *acb)
-{
-	struct MessageUnit_D *reg = acb->pmuD;
-
-	if (unlikely(atomic_read(&acb->rq_map_token) == 0) ||
-		((acb->acb_flags & ACB_F_BUS_RESET) != 0) ||
-		((acb->acb_flags & ACB_F_ABORT) != 0)) {
-		mod_timer(&acb->eternal_timer,
-			jiffies + msecs_to_jiffies(6 * HZ));
-	} else {
-		acb->fw_flag = FW_NORMAL;
-		if (atomic_read(&acb->ante_token_value) ==
-			atomic_read(&acb->rq_map_token)) {
-			atomic_set(&acb->rq_map_token, 16);
-		}
-		atomic_set(&acb->ante_token_value,
-			atomic_read(&acb->rq_map_token));
-		if (atomic_dec_and_test(&acb->rq_map_token)) {
-			mod_timer(&acb->eternal_timer, jiffies +
-				msecs_to_jiffies(6 * HZ));
-			return;
-		}
-		writel(ARCMSR_INBOUND_MESG0_GET_CONFIG,
-			reg->inbound_msgaddr0);
-		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
-		mod_timer(&acb->eternal_timer, jiffies +
-			msecs_to_jiffies(6 * HZ));
-	}
-}
-
-static void arcmsr_hbaE_request_device_map(struct AdapterControlBlock *acb)
-{
-	struct MessageUnit_E __iomem *reg = acb->pmuE;
-
-	if (unlikely(atomic_read(&acb->rq_map_token) == 0) ||
-		((acb->acb_flags & ACB_F_BUS_RESET) != 0) ||
-		((acb->acb_flags & ACB_F_ABORT) != 0)) {
-		mod_timer(&acb->eternal_timer,
-			jiffies + msecs_to_jiffies(6 * HZ));
-	} else {
-		acb->fw_flag = FW_NORMAL;
-		if (atomic_read(&acb->ante_token_value) ==
-			atomic_read(&acb->rq_map_token)) {
-			atomic_set(&acb->rq_map_token, 16);
-		}
-		atomic_set(&acb->ante_token_value,
-			atomic_read(&acb->rq_map_token));
-		if (atomic_dec_and_test(&acb->rq_map_token)) {
-			mod_timer(&acb->eternal_timer, jiffies +
-				msecs_to_jiffies(6 * HZ));
-			return;
-		}
-		writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
-		acb->out_doorbell ^= ARCMSR_HBEMU_DRV2IOP_MESSAGE_CMD_DONE;
-		writel(acb->out_doorbell, &reg->iobound_doorbell);
-		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
-		mod_timer(&acb->eternal_timer, jiffies +
-			msecs_to_jiffies(6 * HZ));
-	}
-}
-
 static void arcmsr_request_device_map(struct timer_list *t)
 {
 	struct AdapterControlBlock *acb = from_timer(acb, t, eternal_timer);
-	switch (acb->adapter_type) {
+	if (unlikely(atomic_read(&acb->rq_map_token) == 0) ||
+		(acb->acb_flags & ACB_F_BUS_RESET) ||
+		(acb->acb_flags & ACB_F_ABORT)) {
+		mod_timer(&acb->eternal_timer,
+			jiffies + msecs_to_jiffies(6 * HZ));
+	} else {
+		acb->fw_flag = FW_NORMAL;
+		if (atomic_read(&acb->ante_token_value) ==
+			atomic_read(&acb->rq_map_token)) {
+			atomic_set(&acb->rq_map_token, 16);
+		}
+		atomic_set(&acb->ante_token_value,
+			atomic_read(&acb->rq_map_token));
+		if (atomic_dec_and_test(&acb->rq_map_token)) {
+			mod_timer(&acb->eternal_timer, jiffies +
+				msecs_to_jiffies(6 * HZ));
+			return;
+		}
+		switch (acb->adapter_type) {
 		case ACB_ADAPTER_TYPE_A: {
-			arcmsr_hbaA_request_device_map(acb);
-		}
-		break;
+			struct MessageUnit_A __iomem *reg = acb->pmuA;
+			writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
+			break;
+			}
 		case ACB_ADAPTER_TYPE_B: {
-			arcmsr_hbaB_request_device_map(acb);
-		}
-		break;
+			struct MessageUnit_B *reg = acb->pmuB;
+			writel(ARCMSR_MESSAGE_GET_CONFIG, reg->drv2iop_doorbell);
+			break;
+			}
 		case ACB_ADAPTER_TYPE_C: {
-			arcmsr_hbaC_request_device_map(acb);
+			struct MessageUnit_C __iomem *reg = acb->pmuC;
+			writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
+			writel(ARCMSR_HBCMU_DRV2IOP_MESSAGE_CMD_DONE, &reg->inbound_doorbell);
+			break;
+			}
+		case ACB_ADAPTER_TYPE_D: {
+			struct MessageUnit_D *reg = acb->pmuD;
+			writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, reg->inbound_msgaddr0);
+			break;
+			}
+		case ACB_ADAPTER_TYPE_E: {
+			struct MessageUnit_E __iomem *reg = acb->pmuE;
+			writel(ARCMSR_INBOUND_MESG0_GET_CONFIG, &reg->inbound_msgaddr0);
+			acb->out_doorbell ^= ARCMSR_HBEMU_DRV2IOP_MESSAGE_CMD_DONE;
+			writel(acb->out_doorbell, &reg->iobound_doorbell);
+			break;
+			}
+		default:
+			return;
 		}
-		break;
-		case ACB_ADAPTER_TYPE_D:
-			arcmsr_hbaD_request_device_map(acb);
-		break;
-		case ACB_ADAPTER_TYPE_E:
-			arcmsr_hbaE_request_device_map(acb);
-		break;
+		acb->acb_flags |= ACB_F_MSG_GET_CONFIG;
+		mod_timer(&acb->eternal_timer, jiffies + msecs_to_jiffies(6 * HZ));
 	}
 }
 
