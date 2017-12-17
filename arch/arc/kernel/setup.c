@@ -19,6 +19,7 @@
 #include <linux/of_fdt.h>
 #include <linux/of.h>
 #include <linux/cache.h>
+#include <linux/reboot.h>
 #include <asm/sections.h>
 #include <asm/arcregs.h>
 #include <asm/tlb.h>
@@ -199,7 +200,7 @@ static void read_arc_build_cfg_regs(void)
 			unsigned int exec_ctrl;
 
 			READ_BCR(AUX_EXEC_CTRL, exec_ctrl);
-			cpu->extn.dual_enb = exec_ctrl & 1;
+			cpu->extn.dual_enb = !(exec_ctrl & 1);
 
 			/* dual issue always present for this core */
 			cpu->extn.dual = 1;
@@ -637,3 +638,8 @@ static int __init topology_init(void)
 }
 
 subsys_initcall(topology_init);
+
+void __weak abort(void)
+{
+	machine_halt();
+}
