@@ -50,11 +50,17 @@ enum address_markers_idx {
 #ifdef CONFIG_X86_64
 	KERNEL_SPACE_NR,
 	LOW_KERNEL_NR,
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && defined(CONFIG_X86_5LEVEL)
+	LDT_NR,
+#endif
 	VMALLOC_START_NR,
 	VMEMMAP_START_NR,
 #ifdef CONFIG_KASAN
 	KASAN_SHADOW_START_NR,
 	KASAN_SHADOW_END_NR,
+#endif
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && !defined(CONFIG_X86_5LEVEL)
+	LDT_NR,
 #endif
 # ifdef CONFIG_X86_ESPFIX64
 	ESPFIX_START_NR,
@@ -79,11 +85,17 @@ static struct addr_marker address_markers[] = {
 #ifdef CONFIG_X86_64
 	{ 0x8000000000000000UL, "Kernel Space" },
 	{ 0/* PAGE_OFFSET */,   "Low Kernel Mapping" },
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && defined(CONFIG_X86_5LEVEL)
+	{ LDT_BASE_ADDR,	"LDT remap" },
+#endif
 	{ 0/* VMALLOC_START */, "vmalloc() Area" },
 	{ 0/* VMEMMAP_START */, "Vmemmap" },
 #ifdef CONFIG_KASAN
 	{ KASAN_SHADOW_START,	"KASAN shadow" },
 	{ KASAN_SHADOW_END,	"KASAN shadow end" },
+#endif
+#if defined(CONFIG_MODIFY_LDT_SYSCALL) && !defined(CONFIG_X86_5LEVEL)
+	{ LDT_BASE_ADDR,	"LDT remap" },
 #endif
 # ifdef CONFIG_X86_ESPFIX64
 	{ ESPFIX_BASE_ADDR,	"ESPfix Area", 16 },
@@ -140,7 +152,7 @@ static void printk_prot(struct seq_file *m, pgprot_t prot, int level, bool dmsg)
 	static const char * const level_name[] =
 		{ "cr3", "pgd", "p4d", "pud", "pmd", "pte" };
 
-	if (!pgprot_val(prot)) {
+	if (!(pgprot_val(prot) & _PAGE_PRESENT)) {
 		/* Not present */
 		pt_dump_cont_printf(m, dmsg, "                              ");
 	} else {
@@ -447,7 +459,7 @@ static inline bool is_hypervisor_range(int idx)
 }
 
 static void ptdump_walk_pgd_level_core(struct seq_file *m, pgd_t *pgd,
-				       bool checkwx)
+				       bool checkwx, bool dmesg)
 {
 #ifdef CONFIG_X86_64
 	pgd_t *start = (pgd_t *) &init_top_pgt;
@@ -460,7 +472,7 @@ static void ptdump_walk_pgd_level_core(struct seq_file *m, pgd_t *pgd,
 
 	if (pgd) {
 		start = pgd;
-		st.to_dmesg = true;
+		st.to_dmesg = dmesg;
 	}
 
 	st.check_wx = checkwx;
@@ -498,13 +510,37 @@ static void ptdump_walk_pgd_level_core(struct seq_file *m, pgd_t *pgd,
 
 void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd)
 {
-	ptdump_walk_pgd_level_core(m, pgd, false);
+	ptdump_walk_pgd_level_core(m, pgd, false, true);
 }
-EXPORT_SYMBOL_GPL(ptdump_walk_pgd_level);
+
+void ptdump_walk_pgd_level_debugfs(struct seq_file *m, pgd_t *pgd, bool user)
+{
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
+	if (user && static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
+		pgd = kernel_to_user_pgdp(pgd);
+#endif
+	ptdump_walk_pgd_level_core(m, pgd, false, false);
+}
+EXPORT_SYMBOL_GPL(ptdump_walk_pgd_level_debugfs);
+
+static void ptdump_walk_user_pgd_level_checkwx(void)
+{
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
+	pgd_t *pgd = (pgd_t *) &init_top_pgt;
+
+	if (!static_cpu_has_bug(X86_BUG_CPU_SECURE_MODE_PTI))
+		return;
+
+	pr_info("x86/mm: Checking user space page tables\n");
+	pgd = kernel_to_user_pgdp(pgd);
+	ptdump_walk_pgd_level_core(NULL, pgd, true, false);
+#endif
+}
 
 void ptdump_walk_pgd_level_checkwx(void)
 {
-	ptdump_walk_pgd_level_core(NULL, NULL, true);
+	ptdump_walk_pgd_level_core(NULL, NULL, true, false);
+	ptdump_walk_user_pgd_level_checkwx();
 }
 
 static int __init pt_dump_init(void)

@@ -19,6 +19,7 @@
 #include <asm/acpi.h>
 #include <asm/apicdef.h>
 #include <asm/page.h>
+#include <asm/intel_ds.h>
 #ifdef CONFIG_X86_32
 #include <linux/threads.h>
 #include <asm/kmap_types.h>
@@ -56,10 +57,10 @@ struct cpu_entry_area {
 	char gdt[PAGE_SIZE];
 
 	/*
-	 * The GDT is just below SYSENTER_stack and thus serves (on x86_64) as
+	 * The GDT is just below entry_stack and thus serves (on x86_64) as
 	 * a a read-only guard page.
 	 */
-	struct SYSENTER_stack_page SYSENTER_stack_page;
+	struct entry_stack_page entry_stack_page;
 
 	/*
 	 * On x86_64, the TSS is mapped RO.  On x86_32, it's mapped RW because
@@ -77,6 +78,18 @@ struct cpu_entry_area {
 	 * with guard pages between them.
 	 */
 	char exception_stacks[(N_EXCEPTION_STACKS - 1) * EXCEPTION_STKSZ + DEBUG_STKSZ];
+#endif
+#ifdef CONFIG_CPU_SUP_INTEL
+	/*
+	 * Per CPU debug store for Intel performance monitoring. Wastes a
+	 * full page at the moment.
+	 */
+	struct debug_store cpu_debug_store;
+	/*
+	 * The actual PEBS/BTS buffers must be mapped to user space
+	 * Reserve enough fixmap PTEs.
+	 */
+	struct debug_store_buffers cpu_debug_buffers;
 #endif
 };
 
@@ -123,7 +136,6 @@ enum fixed_addresses {
 	FIX_IO_APIC_BASE_0,
 	FIX_IO_APIC_BASE_END = FIX_IO_APIC_BASE_0 + MAX_IO_APICS - 1,
 #endif
-	FIX_RO_IDT,	/* Virtual mapping for read-only IDT */
 #ifdef CONFIG_X86_32
 	FIX_KMAP_BEGIN,	/* reserved pte's for temporary kernel mappings */
 	FIX_KMAP_END = FIX_KMAP_BEGIN+(KM_TYPE_NR*NR_CPUS)-1,
@@ -134,22 +146,29 @@ enum fixed_addresses {
 #ifdef CONFIG_PARAVIRT
 	FIX_PARAVIRT_BOOTMAP,
 #endif
-	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
-	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 #ifdef	CONFIG_X86_INTEL_MID
 	FIX_LNW_VRTC,
 #endif
-	/* Fixmap entries to remap the GDTs, one per processor. */
-	FIX_CPU_ENTRY_AREA_TOP,
-	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
 
 #ifdef CONFIG_ACPI_APEI_GHES
 	/* Used for GHES mapping from assorted contexts */
 	FIX_APEI_GHES_IRQ,
 	FIX_APEI_GHES_NMI,
 #endif
+	FIX_TEXT_POKE1,	/* reserve 2 pages for text_poke() */
+	FIX_TEXT_POKE0, /* first page is last, because allocation is backward */
 
-	__end_of_permanent_fixed_addresses,
+	/*
+	 * Fixmap entries to remap the IDT, and the per CPU entry areas.
+	 * Aligned to a PMD boundary.
+	 */
+	FIX_USR_SHARED_TOP = round_up(FIX_TEXT_POKE0 + 1, PTRS_PER_PMD),
+	FIX_RO_IDT,
+	FIX_CPU_ENTRY_AREA_TOP,
+	FIX_CPU_ENTRY_AREA_BOTTOM = FIX_CPU_ENTRY_AREA_TOP + (CPU_ENTRY_AREA_PAGES * NR_CPUS) - 1,
+	FIX_USR_SHARED_BOTTOM  = round_up(FIX_CPU_ENTRY_AREA_BOTTOM + 2, PTRS_PER_PMD) - 1,
+
+	__end_of_permanent_fixed_addresses = FIX_USR_SHARED_BOTTOM,
 
 	/*
 	 * 512 temporary boot-time mappings, used by early_ioremap(),
@@ -250,9 +269,9 @@ static inline struct cpu_entry_area *get_cpu_entry_area(int cpu)
 	return (struct cpu_entry_area *)__fix_to_virt(__get_cpu_entry_area_page_index(cpu, 0));
 }
 
-static inline struct SYSENTER_stack *cpu_SYSENTER_stack(int cpu)
+static inline struct entry_stack *cpu_entry_stack(int cpu)
 {
-	return &get_cpu_entry_area(cpu)->SYSENTER_stack_page.stack;
+	return &get_cpu_entry_area(cpu)->entry_stack_page.stack;
 }
 
 #endif /* !__ASSEMBLY__ */
