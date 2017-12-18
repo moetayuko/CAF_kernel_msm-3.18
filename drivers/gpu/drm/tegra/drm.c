@@ -65,7 +65,7 @@ static void tegra_atomic_state_free(struct drm_atomic_state *state)
 static const struct drm_mode_config_funcs tegra_drm_mode_config_funcs = {
 	.fb_create = tegra_fb_create,
 #ifdef CONFIG_DRM_FBDEV_EMULATION
-	.output_poll_changed = tegra_fb_output_poll_changed,
+	.output_poll_changed = drm_fb_helper_output_poll_changed,
 #endif
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
@@ -262,15 +262,6 @@ static void tegra_drm_context_free(struct tegra_drm_context *context)
 {
 	context->client->ops->close_channel(context);
 	kfree(context);
-}
-
-static void tegra_drm_lastclose(struct drm_device *drm)
-{
-#ifdef CONFIG_DRM_FBDEV_EMULATION
-	struct tegra_drm *tegra = drm->dev_private;
-
-	tegra_fbdev_restore_mode(tegra->fbdev);
-#endif
 }
 
 static struct host1x_bo *
@@ -1078,7 +1069,7 @@ static struct drm_driver tegra_drm_driver = {
 	.unload = tegra_drm_unload,
 	.open = tegra_drm_open,
 	.postclose = tegra_drm_postclose,
-	.lastclose = tegra_drm_lastclose,
+	.lastclose = drm_fb_helper_lastclose,
 
 #if defined(CONFIG_DEBUG_FS)
 	.debugfs_init = tegra_debugfs_init,
