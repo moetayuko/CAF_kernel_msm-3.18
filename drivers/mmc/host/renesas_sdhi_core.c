@@ -24,6 +24,7 @@
 #include <linux/kernel.h>
 #include <linux/clk.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/mmc/host.h>
@@ -497,7 +498,7 @@ int renesas_sdhi_probe(struct platform_device *pdev,
 	if (IS_ERR(priv->clk)) {
 		ret = PTR_ERR(priv->clk);
 		dev_err(&pdev->dev, "cannot get clock: %d\n", ret);
-		goto eprobe;
+		return ret;
 	}
 
 	/*
@@ -524,10 +525,8 @@ int renesas_sdhi_probe(struct platform_device *pdev,
 	}
 
 	host = tmio_mmc_host_alloc(pdev);
-	if (!host) {
-		ret = -ENOMEM;
-		goto eprobe;
-	}
+	if (!host)
+		return -ENOMEM;
 
 	if (of_data) {
 		mmc_data->flags |= of_data->tmio_flags;
@@ -551,8 +550,8 @@ int renesas_sdhi_probe(struct platform_device *pdev,
 	/* SDR speeds are only available on Gen2+ */
 	if (mmc_data->flags & TMIO_MMC_MIN_RCAR2) {
 		/* card_busy caused issues on r8a73a4 (pre-Gen2) CD-less SDHI */
-		host->card_busy	= renesas_sdhi_card_busy;
-		host->start_signal_voltage_switch =
+		host->ops.card_busy = renesas_sdhi_card_busy;
+		host->ops.start_signal_voltage_switch =
 			renesas_sdhi_start_signal_voltage_switch;
 	}
 
@@ -652,18 +651,19 @@ eirq:
 	tmio_mmc_host_remove(host);
 efree:
 	tmio_mmc_host_free(host);
-eprobe:
+
 	return ret;
 }
 EXPORT_SYMBOL_GPL(renesas_sdhi_probe);
 
 int renesas_sdhi_remove(struct platform_device *pdev)
 {
-	struct mmc_host *mmc = platform_get_drvdata(pdev);
-	struct tmio_mmc_host *host = mmc_priv(mmc);
+	struct tmio_mmc_host *host = platform_get_drvdata(pdev);
 
 	tmio_mmc_host_remove(host);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(renesas_sdhi_remove);
+
+MODULE_LICENSE("GPL v2");
