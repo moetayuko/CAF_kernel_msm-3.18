@@ -61,7 +61,6 @@ DEFINE_PER_CPU(char, rcu_cpu_has_work);
 
 #ifdef CONFIG_RCU_NOCB_CPU
 static cpumask_var_t rcu_nocb_mask; /* CPUs to have callbacks offloaded. */
-static bool have_rcu_nocb_mask;	    /* Was rcu_nocb_mask allocated? */
 static bool __read_mostly rcu_nocb_poll;    /* Offload kthread are to poll. */
 #endif /* #ifdef CONFIG_RCU_NOCB_CPU */
 
@@ -801,6 +800,27 @@ void exit_rcu(void)
 	__rcu_read_unlock();
 }
 
+/*
+ * Dump the blocked-tasks state, but limit the list dump to the
+ * specified number of elements.
+ */
+static void dump_blkd_tasks(struct rcu_node *rnp, int ncheck)
+{
+	int i;
+	struct list_head *lhp;
+
+	lockdep_assert_held(&rnp->lock);
+	pr_info("%s: grp: %d-%d level: %d ->gp_tasks %p ->boost_tasks %p ->exp_tasks %p &->blkd_tasks: %p offset: %u\n", __func__, rnp->grplo, rnp->grphi, rnp->level, rnp->gp_tasks, rnp->boost_tasks, rnp->exp_tasks, &rnp->blkd_tasks, (unsigned int)offsetof(typeof(*rnp), blkd_tasks));
+	pr_cont("\t->blkd_tasks");
+	i = 0;
+	list_for_each(lhp, &rnp->blkd_tasks) {
+		pr_cont(" %p", lhp);
+		if (++i >= 10)
+			break;
+	}
+	pr_cont("\n");
+}
+
 #else /* #ifdef CONFIG_PREEMPT_RCU */
 
 static struct rcu_state *const rcu_state_p = &rcu_sched_state;
@@ -907,6 +927,14 @@ static void __init __rcu_init_preempt(void)
  */
 void exit_rcu(void)
 {
+}
+
+/*
+ * Dump the guaranteed-empty blocked-tasks state.  Trust but verify.
+ */
+static void dump_blkd_tasks(struct rcu_node *rnp, int ncheck)
+{
+	WARN_ON_ONCE(!list_empty(&rnp->blkd_tasks));
 }
 
 #endif /* #else #ifdef CONFIG_PREEMPT_RCU */
@@ -1687,7 +1715,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 	}
 	print_cpu_stall_fast_no_hz(fast_no_hz, cpu);
 	delta = rdp->mynode->gpnum - rdp->rcu_iw_gpnum;
-	pr_err("\t%d-%c%c%c%c: (%lu %s) idle=%03x/%llx/%d softirq=%u/%u fqs=%ld %s\n",
+	pr_err("\t%d-%c%c%c%c: (%lu %s) idle=%03x/%ld/%ld softirq=%u/%u fqs=%ld %s\n",
 	       cpu,
 	       "O."[!!cpu_online(cpu)],
 	       "o."[!!(rdp->grpmask & rdp->mynode->qsmaskinit)],
@@ -1752,7 +1780,6 @@ static void increment_cpu_stall_ticks(void)
 static int __init rcu_nocb_setup(char *str)
 {
 	alloc_bootmem_cpumask_var(&rcu_nocb_mask);
-	have_rcu_nocb_mask = true;
 	cpulist_parse(str, rcu_nocb_mask);
 	return 1;
 }
@@ -1801,7 +1828,7 @@ static void rcu_init_one_nocb(struct rcu_node *rnp)
 /* Is the specified CPU a no-CBs CPU? */
 bool rcu_is_nocb_cpu(int cpu)
 {
-	if (have_rcu_nocb_mask)
+	if (cpumask_available(rcu_nocb_mask))
 		return cpumask_test_cpu(cpu, rcu_nocb_mask);
 	return false;
 }
@@ -1899,7 +1926,7 @@ static bool rcu_nocb_cpu_needs_barrier(struct rcu_state *rsp, int cpu)
 	if (!READ_ONCE(rdp->nocb_kthread) && rhp &&
 	    rcu_scheduler_fully_active) {
 		/* RCU callback enqueued before CPU first came online??? */
-		pr_err("RCU: Never-onlined no-CBs CPU %d has CB %p\n",
+		pr_err("RCU: Never-onlined no-CBs CPU %d has CB %pK\n",
 		       cpu, rhp->func);
 		WARN_ON_ONCE(1);
 	}
@@ -2295,14 +2322,13 @@ void __init rcu_init_nohz(void)
 		need_rcu_nocb_mask = true;
 #endif /* #if defined(CONFIG_NO_HZ_FULL) */
 
-	if (!have_rcu_nocb_mask && need_rcu_nocb_mask) {
+	if (!cpumask_available(rcu_nocb_mask) && need_rcu_nocb_mask) {
 		if (!zalloc_cpumask_var(&rcu_nocb_mask, GFP_KERNEL)) {
 			pr_info("rcu_nocb_mask allocation failed, callback offloading disabled.\n");
 			return;
 		}
-		have_rcu_nocb_mask = true;
 	}
-	if (!have_rcu_nocb_mask)
+	if (!cpumask_available(rcu_nocb_mask))
 		return;
 
 #if defined(CONFIG_NO_HZ_FULL)
@@ -2315,8 +2341,11 @@ void __init rcu_init_nohz(void)
 		cpumask_and(rcu_nocb_mask, cpu_possible_mask,
 			    rcu_nocb_mask);
 	}
-	pr_info("\tOffload RCU callbacks from CPUs: %*pbl.\n",
-		cpumask_pr_args(rcu_nocb_mask));
+	if (cpumask_empty(rcu_nocb_mask))
+		pr_info("\tOffload RCU callbacks from CPUs: (none).\n");
+	else
+		pr_info("\tOffload RCU callbacks from CPUs: %*pbl.\n",
+			cpumask_pr_args(rcu_nocb_mask));
 	if (rcu_nocb_poll)
 		pr_info("\tPoll for callbacks from no-CBs CPUs.\n");
 
@@ -2428,7 +2457,7 @@ static void __init rcu_organize_nocb_kthreads(struct rcu_state *rsp)
 	struct rcu_data *rdp_leader = NULL;  /* Suppress misguided gcc warn. */
 	struct rcu_data *rdp_prev = NULL;
 
-	if (!have_rcu_nocb_mask)
+	if (!cpumask_available(rcu_nocb_mask))
 		return;
 	if (ls == -1) {
 		ls = int_sqrt(nr_cpu_ids);

@@ -47,6 +47,7 @@
 #include <linux/ktime.h>
 #include <asm/byteorder.h>
 #include <linux/torture.h>
+#include "rcu/rcu.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Paul E. McKenney <paulmck@us.ibm.com>");
@@ -60,7 +61,6 @@ static bool verbose;
 #define FULLSTOP_RMMOD    2	/* Normal rmmod of torture. */
 static int fullstop = FULLSTOP_RMMOD;
 static DEFINE_MUTEX(fullstop_mutex);
-static int *torture_runnable;
 
 #ifdef CONFIG_HOTPLUG_CPU
 
@@ -238,6 +238,7 @@ int torture_onoff_init(long ooholdoff, long oointerval)
 	if (onoff_interval <= 0)
 		return 0;
 	ret = torture_create_kthread(torture_onoff, NULL, onoff_task);
+	schedule_timeout_set_task2dump(onoff_task);
 #endif /* #ifdef CONFIG_HOTPLUG_CPU */
 	return ret;
 }
@@ -251,6 +252,7 @@ static void torture_onoff_cleanup(void)
 #ifdef CONFIG_HOTPLUG_CPU
 	if (onoff_task == NULL)
 		return;
+	schedule_timeout_set_task2dump(NULL);
 	VERBOSE_TOROUT_STRING("Stopping torture_onoff task");
 	kthread_stop(onoff_task);
 	onoff_task = NULL;
@@ -500,7 +502,7 @@ static int torture_shutdown(void *arg)
 		torture_shutdown_hook();
 	else
 		VERBOSE_TOROUT_STRING("No torture_shutdown_hook(), skipping.");
-	ftrace_dump(DUMP_ALL);
+	rcu_ftrace_dump(DUMP_ALL);
 	kernel_power_off();	/* Shut down the system. */
 	return 0;
 }
@@ -572,17 +574,19 @@ static int stutter;
  */
 void stutter_wait(const char *title)
 {
+	int spt;
+
 	cond_resched_rcu_qs();
-	while (READ_ONCE(stutter_pause_test) ||
-	       (torture_runnable && !READ_ONCE(*torture_runnable))) {
-		if (stutter_pause_test)
-			if (READ_ONCE(stutter_pause_test) == 1)
-				schedule_timeout_interruptible(1);
-			else
-				while (READ_ONCE(stutter_pause_test))
-					cond_resched();
-		else
+	spt = READ_ONCE(stutter_pause_test);
+	for (; spt; spt = READ_ONCE(stutter_pause_test)) {
+		if (spt == 1) {
+			schedule_timeout_interruptible(1);
+		} else if (spt == 2) {
+			while (READ_ONCE(stutter_pause_test))
+				cond_resched();
+		} else {
 			schedule_timeout_interruptible(round_jiffies_relative(HZ));
+		}
 		torture_shutdown_absorb(title);
 	}
 }
@@ -596,17 +600,15 @@ static int torture_stutter(void *arg)
 {
 	VERBOSE_TOROUT_STRING("torture_stutter task started");
 	do {
-		if (!torture_must_stop()) {
-			if (stutter > 1) {
-				schedule_timeout_interruptible(stutter - 1);
-				WRITE_ONCE(stutter_pause_test, 2);
-			}
-			schedule_timeout_interruptible(1);
+		if (!torture_must_stop() && stutter > 1) {
 			WRITE_ONCE(stutter_pause_test, 1);
+			schedule_timeout_interruptible(stutter - 1);
+			WRITE_ONCE(stutter_pause_test, 2);
+			schedule_timeout_interruptible(1);
 		}
+		WRITE_ONCE(stutter_pause_test, 0);
 		if (!torture_must_stop())
 			schedule_timeout_interruptible(stutter);
-		WRITE_ONCE(stutter_pause_test, 0);
 		torture_shutdown_absorb("torture_stutter");
 	} while (!torture_must_stop());
 	torture_kthread_stopping("torture_stutter");
@@ -647,7 +649,7 @@ static void torture_stutter_cleanup(void)
  * The runnable parameter points to a flag that controls whether or not
  * the test is currently runnable.  If there is no such flag, pass in NULL.
  */
-bool torture_init_begin(char *ttype, bool v, int *runnable)
+bool torture_init_begin(char *ttype, bool v)
 {
 	mutex_lock(&fullstop_mutex);
 	if (torture_type != NULL) {
@@ -659,7 +661,6 @@ bool torture_init_begin(char *ttype, bool v, int *runnable)
 	}
 	torture_type = ttype;
 	verbose = v;
-	torture_runnable = runnable;
 	fullstop = FULLSTOP_DONTSTOP;
 	return true;
 }
