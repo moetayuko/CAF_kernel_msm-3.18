@@ -75,7 +75,6 @@
 #include <asm/uv/uv.h>
 #include <linux/mc146818rtc.h>
 #include <asm/i8259.h>
-#include <asm/realmode.h>
 #include <asm/misc.h>
 #include <asm/qspinlock.h>
 
@@ -932,12 +931,8 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle,
 	initial_code = (unsigned long)start_secondary;
 	initial_stack  = idle->thread.sp;
 
-	/*
-	 * Enable the espfix hack for this CPU
-	*/
-#ifdef CONFIG_X86_ESPFIX64
+	/* Enable the espfix hack for this CPU */
 	init_espfix_ap(cpu);
-#endif
 
 	/* So we see what's up */
 	announce_cpu(cpu, apicid);
