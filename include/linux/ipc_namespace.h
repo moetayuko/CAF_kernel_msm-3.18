@@ -81,7 +81,7 @@ static inline void shm_destroy_orphaned(struct ipc_namespace *ns) {}
 #endif /* CONFIG_SYSVIPC */
 
 #ifdef CONFIG_POSIX_MQUEUE
-extern int mq_init_ns(struct ipc_namespace *ns);
+extern int mq_init_ns(struct ipc_namespace *ns, bool mount);
 /*
  * POSIX Message Queue default values:
  *
@@ -116,7 +116,7 @@ extern int mq_init_ns(struct ipc_namespace *ns);
 #define DFLT_MSGSIZEMAX		     8192
 #define HARD_MSGSIZEMAX	    (16*1024*1024)
 #else
-static inline int mq_init_ns(struct ipc_namespace *ns) { return 0; }
+static inline int mq_init_ns(struct ipc_namespace *ns, bool mount) { return 0; }
 #endif
 
 #if defined(CONFIG_IPC_NS)
