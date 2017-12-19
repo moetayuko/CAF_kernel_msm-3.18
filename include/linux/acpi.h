@@ -1267,4 +1267,6 @@ static inline int lpit_read_residency_count_address(u64 *address)
 }
 #endif
 
+acpi_physical_address acpi_arch_get_root_pointer(void);
+
 #endif	/*_LINUX_ACPI_H*/
