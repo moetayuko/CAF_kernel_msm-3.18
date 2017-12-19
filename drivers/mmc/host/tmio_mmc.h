@@ -134,6 +134,7 @@ struct tmio_mmc_host {
 	struct mmc_request      *mrq;
 	struct mmc_data         *data;
 	struct mmc_host         *mmc;
+	struct mmc_host_ops     ops;
 
 	/* Callbacks for clock / power control */
 	void (*set_pwr)(struct platform_device *host, int state);
@@ -185,9 +186,6 @@ struct tmio_mmc_host {
 	void (*clk_disable)(struct tmio_mmc_host *host);
 	int (*multi_io_quirk)(struct mmc_card *card,
 			      unsigned int direction, int blk_size);
-	int (*card_busy)(struct mmc_host *mmc);
-	int (*start_signal_voltage_switch)(struct mmc_host *mmc,
-					   struct mmc_ios *ios);
 	int (*write16_hook)(struct tmio_mmc_host *host, int addr);
 	void (*hw_reset)(struct tmio_mmc_host *host);
 	void (*prepare_tuning)(struct tmio_mmc_host *host, unsigned long tap);
@@ -246,7 +244,7 @@ static inline u16 sd_ctrl_read16(struct tmio_mmc_host *host, int addr)
 static inline void sd_ctrl_read16_rep(struct tmio_mmc_host *host, int addr,
 				      u16 *buf, int count)
 {
-	readsw(host->ctl + (addr << host->bus_shift), buf, count);
+	ioread16_rep(host->ctl + (addr << host->bus_shift), buf, count);
 }
 
 static inline u32 sd_ctrl_read16_and_16_as_32(struct tmio_mmc_host *host,
@@ -259,7 +257,7 @@ static inline u32 sd_ctrl_read16_and_16_as_32(struct tmio_mmc_host *host,
 static inline void sd_ctrl_read32_rep(struct tmio_mmc_host *host, int addr,
 				      u32 *buf, int count)
 {
-	readsl(host->ctl + (addr << host->bus_shift), buf, count);
+	ioread32_rep(host->ctl + (addr << host->bus_shift), buf, count);
 }
 
 static inline void sd_ctrl_write16(struct tmio_mmc_host *host, int addr,
@@ -276,7 +274,7 @@ static inline void sd_ctrl_write16(struct tmio_mmc_host *host, int addr,
 static inline void sd_ctrl_write16_rep(struct tmio_mmc_host *host, int addr,
 				       u16 *buf, int count)
 {
-	writesw(host->ctl + (addr << host->bus_shift), buf, count);
+	iowrite16_rep(host->ctl + (addr << host->bus_shift), buf, count);
 }
 
 static inline void sd_ctrl_write32_as_16_and_16(struct tmio_mmc_host *host,
@@ -289,7 +287,7 @@ static inline void sd_ctrl_write32_as_16_and_16(struct tmio_mmc_host *host,
 static inline void sd_ctrl_write32_rep(struct tmio_mmc_host *host, int addr,
 				       const u32 *buf, int count)
 {
-	writesl(host->ctl + (addr << host->bus_shift), buf, count);
+	iowrite32_rep(host->ctl + (addr << host->bus_shift), buf, count);
 }
 
 #endif
