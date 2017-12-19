@@ -90,14 +90,19 @@ static const struct adreno_info gpulist[] = {
 	},
 };
 
-MODULE_FIRMWARE("a300_pm4.fw");
-MODULE_FIRMWARE("a300_pfp.fw");
-MODULE_FIRMWARE("a330_pm4.fw");
-MODULE_FIRMWARE("a330_pfp.fw");
-MODULE_FIRMWARE("a420_pm4.fw");
-MODULE_FIRMWARE("a420_pfp.fw");
-MODULE_FIRMWARE("a530_fm4.fw");
-MODULE_FIRMWARE("a530_pfp.fw");
+MODULE_FIRMWARE("qcom/a300_pm4.fw");
+MODULE_FIRMWARE("qcom/a300_pfp.fw");
+MODULE_FIRMWARE("qcom/a330_pm4.fw");
+MODULE_FIRMWARE("qcom/a330_pfp.fw");
+MODULE_FIRMWARE("qcom/a420_pm4.fw");
+MODULE_FIRMWARE("qcom/a420_pfp.fw");
+MODULE_FIRMWARE("qcom/a530_pm4.fw");
+MODULE_FIRMWARE("qcom/a530_pfp.fw");
+MODULE_FIRMWARE("qcom/a530v3_gpmu.fw2");
+MODULE_FIRMWARE("qcom/a530_zap.mdt");
+MODULE_FIRMWARE("qcom/a530_zap.b00");
+MODULE_FIRMWARE("qcom/a530_zap.b01");
+MODULE_FIRMWARE("qcom/a530_zap.b02");
 
 static inline bool _rev_match(uint8_t entry, uint8_t id)
 {
@@ -124,10 +129,17 @@ const struct adreno_info *adreno_info(struct adreno_rev rev)
 struct msm_gpu *adreno_load_gpu(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = dev->dev_private;
-	struct platform_device *pdev = priv->gpu_pdev;
-	struct msm_gpu *gpu = platform_get_drvdata(priv->gpu_pdev);
+	struct platform_device *pdev;
+	struct msm_gpu *gpu;
 	int ret;
 
+	pdev = priv->gpu_pdev;
+	if (!pdev) {
+		dev_dbg(dev->dev, "no adreno platform device found\n");
+		return NULL;
+	}
+
+	gpu = platform_get_drvdata(pdev);
 	if (!gpu) {
 		dev_err(dev->dev, "no adreno device\n");
 		return NULL;
