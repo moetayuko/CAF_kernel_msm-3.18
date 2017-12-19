@@ -1,5 +1,5 @@
 /*
- * ddbridge-maxs8.c: Digital Devices bridge MaxS4/8 support
+ * ddbridge-max.c: Digital Devices bridge MAX card support
  *
  * Copyright (C) 2010-2017 Digital Devices GmbH
  *                         Ralph Metzler <rjkm@metzlerbros.de>
@@ -34,7 +34,7 @@
 #include "ddbridge-regs.h"
 #include "ddbridge-io.h"
 
-#include "ddbridge-maxs8.h"
+#include "ddbridge-max.h"
 #include "mxl5xx.h"
 
 /******************************************************************************/
@@ -68,7 +68,7 @@ static int lnb_command(struct ddb *dev, u32 link, u32 lnb, u32 cmd)
 	}
 	if (c == 10)
 		dev_info(dev->dev, "%s lnb = %08x  cmd = %08x\n",
-			__func__, lnb, cmd);
+			 __func__, lnb, cmd);
 	return 0;
 }
 
@@ -123,7 +123,7 @@ static int lnb_set_sat(struct ddb *dev, u32 link, u32 input, u32 sat, u32 band,
 }
 
 static int lnb_set_tone(struct ddb *dev, u32 link, u32 input,
-	enum fe_sec_tone_mode tone)
+			enum fe_sec_tone_mode tone)
 {
 	int s = 0;
 	u32 mask = (1ULL << input);
@@ -149,7 +149,7 @@ static int lnb_set_tone(struct ddb *dev, u32 link, u32 input,
 }
 
 static int lnb_set_voltage(struct ddb *dev, u32 link, u32 input,
-	enum fe_sec_voltage voltage)
+			   enum fe_sec_voltage voltage)
 {
 	int s = 0;
 
@@ -291,34 +291,45 @@ static int max_set_voltage(struct dvb_frontend *fe, enum fe_sec_voltage voltage)
 
 		if (nv != ov) {
 			if (nv) {
-				lnb_set_voltage(dev,
-					port->lnr, 0, SEC_VOLTAGE_13);
+				lnb_set_voltage(
+					dev, port->lnr,
+					0, SEC_VOLTAGE_13);
 				if (fmode == 1) {
-					lnb_set_voltage(dev, port->lnr,
+					lnb_set_voltage(
+						dev, port->lnr,
 						0, SEC_VOLTAGE_13);
 					if (old_quattro) {
-						lnb_set_voltage(dev, port->lnr,
+						lnb_set_voltage(
+							dev, port->lnr,
 							1, SEC_VOLTAGE_18);
-						lnb_set_voltage(dev, port->lnr,
+						lnb_set_voltage(
+							dev, port->lnr,
 							2, SEC_VOLTAGE_13);
 					} else {
-						lnb_set_voltage(dev, port->lnr,
+						lnb_set_voltage(
+							dev, port->lnr,
 							1, SEC_VOLTAGE_13);
-						lnb_set_voltage(dev, port->lnr,
+						lnb_set_voltage(
+							dev, port->lnr,
 							2, SEC_VOLTAGE_18);
 					}
-					lnb_set_voltage(dev, port->lnr,
+					lnb_set_voltage(
+						dev, port->lnr,
 						3, SEC_VOLTAGE_18);
 				}
 			} else {
-				lnb_set_voltage(dev, port->lnr,
+				lnb_set_voltage(
+					dev, port->lnr,
 					0, SEC_VOLTAGE_OFF);
 				if (fmode == 1) {
-					lnb_set_voltage(dev, port->lnr,
+					lnb_set_voltage(
+						dev, port->lnr,
 						1, SEC_VOLTAGE_OFF);
-					lnb_set_voltage(dev, port->lnr,
+					lnb_set_voltage(
+						dev, port->lnr,
 						2, SEC_VOLTAGE_OFF);
-					lnb_set_voltage(dev, port->lnr,
+					lnb_set_voltage(
+						dev, port->lnr,
 						3, SEC_VOLTAGE_OFF);
 				}
 			}
@@ -331,7 +342,6 @@ static int max_set_voltage(struct dvb_frontend *fe, enum fe_sec_voltage voltage)
 
 static int max_enable_high_lnb_voltage(struct dvb_frontend *fe, long arg)
 {
-
 	return 0;
 }
 
@@ -350,7 +360,7 @@ static int mxl_fw_read(void *priv, u8 *buf, u32 len)
 	return ddbridge_flashread(dev, link->nr, buf, 0xc0000, len);
 }
 
-int lnb_init_fmode(struct ddb *dev, struct ddb_link *link, u32 fm)
+int ddb_lnb_init_fmode(struct ddb *dev, struct ddb_link *link, u32 fm)
 {
 	u32 l = link->nr;
 
@@ -394,7 +404,7 @@ static struct mxl5xx_cfg mxl5xx = {
 	.fw_read  = mxl_fw_read,
 };
 
-int fe_attach_mxl5xx(struct ddb_input *input)
+int ddb_fe_attach_mxl5xx(struct ddb_input *input)
 {
 	struct ddb *dev = input->port->dev;
 	struct i2c_adapter *i2c = &input->port->i2c->adap;
@@ -414,7 +424,7 @@ int fe_attach_mxl5xx(struct ddb_input *input)
 		tuner = 0;
 
 	dvb->fe = dvb_attach(mxl5xx_attach, i2c, &cfg,
-		demod, tuner, &dvb->set_input);
+			     demod, tuner, &dvb->set_input);
 
 	if (!dvb->fe) {
 		dev_err(dev->dev, "No MXL5XX found!\n");
@@ -430,7 +440,7 @@ int fe_attach_mxl5xx(struct ddb_input *input)
 		lnb_command(dev, port->lnr, input->nr, LNB_CMD_INIT);
 		lnb_set_voltage(dev, port->lnr, input->nr, SEC_VOLTAGE_OFF);
 	}
-	lnb_init_fmode(dev, link, fmode);
+	ddb_lnb_init_fmode(dev, link, fmode);
 
 	dvb->fe->ops.set_voltage = max_set_voltage;
 	dvb->fe->ops.enable_high_lnb_voltage = max_enable_high_lnb_voltage;
