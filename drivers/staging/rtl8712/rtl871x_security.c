@@ -997,8 +997,9 @@ static void construct_mic_header2(u8 *mic_header2, u8 *mpdu, sint a4_exists,
 /* Builds the last MIC header block from        */
 /* header fields.                               */
 /************************************************/
-static void construct_ctr_preload(u8 *ctr_preload, sint a4_exists, sint qc_exists,
-			   u8 *mpdu, u8 *pn_vector, sint c)
+static void construct_ctr_preload(u8 *ctr_preload,
+				  sint a4_exists, sint qc_exists,
+				  u8 *mpdu, u8 *pn_vector, sint c)
 {
 	sint i;
 
@@ -1067,16 +1068,16 @@ static sint aes_cipher(u8 *key, uint	hdrlen,
 	if ((frtype == WIFI_DATA_CFACK) ||
 	     (frtype == WIFI_DATA_CFPOLL) ||
 	     (frtype == WIFI_DATA_CFACKPOLL)) {
-			qc_exists = 1;
-			if (hdrlen !=  WLAN_HDR_A3_QOS_LEN)
-				hdrlen += 2;
+		qc_exists = 1;
+		if (hdrlen !=  WLAN_HDR_A3_QOS_LEN)
+			hdrlen += 2;
 	} else if ((frsubtype == 0x08) ||
 		   (frsubtype == 0x09) ||
 		   (frsubtype == 0x0a) ||
 		   (frsubtype == 0x0b)) {
-			if (hdrlen !=  WLAN_HDR_A3_QOS_LEN)
-				hdrlen += 2;
-			qc_exists = 1;
+		if (hdrlen !=  WLAN_HDR_A3_QOS_LEN)
+			hdrlen += 2;
+		qc_exists = 1;
 	} else {
 		qc_exists = 0;
 	}
@@ -1405,7 +1406,7 @@ u32 r8712_aes_decrypt(struct _adapter *padapter, u8 *precvframe)
 void r8712_use_tkipkey_handler(struct timer_list *t)
 {
 	struct _adapter *padapter =
-                from_timer(padapter, t, securitypriv.tkip_timer);
+		from_timer(padapter, t, securitypriv.tkip_timer);
 
 	padapter->securitypriv.busetkipkey = true;
 }

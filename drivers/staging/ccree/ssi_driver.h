@@ -18,10 +18,9 @@
  * ARM CryptoCell Linux Crypto Driver
  */
 
-#ifndef __SSI_DRIVER_H__
-#define __SSI_DRIVER_H__
+#ifndef __CC_DRIVER_H__
+#define __CC_DRIVER_H__
 
-#include "ssi_config.h"
 #ifdef COMP_IN_WQ
 #include <linux/workqueue.h>
 #else
@@ -42,45 +41,43 @@
 /* Registers definitions from shared/hw/ree_include */
 #include "dx_host.h"
 #include "dx_reg_common.h"
-#define CC_SUPPORT_SHA DX_DEV_SHA_MAX
+#define CC_SUPPORT_SHA CC_DEV_SHA_MAX
 #include "cc_crypto_ctx.h"
-#include "ssi_sysfs.h"
 #include "hash_defs.h"
 #include "cc_hw_queue_defs.h"
 #include "ssi_sram_mgr.h"
 
+extern bool cc_dump_desc;
+extern bool cc_dump_bytes;
+
 #define DRV_MODULE_VERSION "3.0"
 
-#define SSI_DEV_NAME_STR "cc715ree"
+#define CC_DEV_NAME_STR "cc715ree"
 #define CC_COHERENT_CACHE_PARAMS 0xEEE
 
-#define SSI_CC_HAS_AES_CCM 1
-#define SSI_CC_HAS_AES_GCM 1
-#define SSI_CC_HAS_AES_XTS 1
-#define SSI_CC_HAS_AES_ESSIV 1
-#define SSI_CC_HAS_AES_BITLOCKER 1
-#define SSI_CC_HAS_AES_CTS 1
-#define SSI_CC_HAS_MULTI2 0
-#define SSI_CC_HAS_CMAC 1
+/* Maximum DMA mask supported by IP */
+#define DMA_BIT_MASK_LEN 48
 
-#define SSI_AXI_IRQ_MASK ((1 << DX_AXIM_CFG_BRESPMASK_BIT_SHIFT) | (1 << DX_AXIM_CFG_RRESPMASK_BIT_SHIFT) |	\
-			(1 << DX_AXIM_CFG_INFLTMASK_BIT_SHIFT) | (1 << DX_AXIM_CFG_COMPMASK_BIT_SHIFT))
+#define CC_AXI_IRQ_MASK ((1 << CC_AXIM_CFG_BRESPMASK_BIT_SHIFT) | \
+			  (1 << CC_AXIM_CFG_RRESPMASK_BIT_SHIFT) | \
+			  (1 << CC_AXIM_CFG_INFLTMASK_BIT_SHIFT) | \
+			  (1 << CC_AXIM_CFG_COMPMASK_BIT_SHIFT))
 
-#define SSI_AXI_ERR_IRQ_MASK BIT(DX_HOST_IRR_AXI_ERR_INT_BIT_SHIFT)
+#define CC_AXI_ERR_IRQ_MASK BIT(CC_HOST_IRR_AXI_ERR_INT_BIT_SHIFT)
 
-#define SSI_COMP_IRQ_MASK BIT(DX_HOST_IRR_AXIM_COMP_INT_BIT_SHIFT)
+#define CC_COMP_IRQ_MASK BIT(CC_HOST_IRR_AXIM_COMP_INT_BIT_SHIFT)
 
-#define AXIM_MON_COMP_VALUE GENMASK(DX_AXIM_MON_COMP_VALUE_BIT_SIZE + \
-				    DX_AXIM_MON_COMP_VALUE_BIT_SHIFT, \
-				    DX_AXIM_MON_COMP_VALUE_BIT_SHIFT)
+#define AXIM_MON_COMP_VALUE GENMASK(CC_AXIM_MON_COMP_VALUE_BIT_SIZE + \
+				    CC_AXIM_MON_COMP_VALUE_BIT_SHIFT, \
+				    CC_AXIM_MON_COMP_VALUE_BIT_SHIFT)
 
 /* Register name mangling macro */
-#define CC_REG(reg_name) DX_ ## reg_name ## _REG_OFFSET
+#define CC_REG(reg_name) CC_ ## reg_name ## _REG_OFFSET
 
 /* TEE FIPS status interrupt */
-#define SSI_GPR0_IRQ_MASK BIT(DX_HOST_IRR_GPR0_BIT_SHIFT)
+#define CC_GPR0_IRQ_MASK BIT(CC_HOST_IRR_GPR0_BIT_SHIFT)
 
-#define SSI_CRA_PRIO 3000
+#define CC_CRA_PRIO 3000
 
 #define MIN_HW_QUEUE_SIZE 50 /* Minimum size required for proper function */
 
@@ -95,41 +92,37 @@
  * field in the HW descriptor. The DMA engine +8 that value.
  */
 
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-
-#define SSI_MAX_IVGEN_DMA_ADDRESSES	3
-struct ssi_crypto_req {
-	void (*user_cb)(struct device *dev, void *req, void __iomem *cc_base);
+#define CC_MAX_IVGEN_DMA_ADDRESSES	3
+struct cc_crypto_req {
+	void (*user_cb)(struct device *dev, void *req);
 	void *user_arg;
-	dma_addr_t ivgen_dma_addr[SSI_MAX_IVGEN_DMA_ADDRESSES];
+	dma_addr_t ivgen_dma_addr[CC_MAX_IVGEN_DMA_ADDRESSES];
 	/* For the first 'ivgen_dma_addr_len' addresses of this array,
 	 * generated IV would be placed in it by send_request().
 	 * Same generated IV for all addresses!
 	 */
-	unsigned int ivgen_dma_addr_len; /* Amount of 'ivgen_dma_addr' elements to be filled. */
-	unsigned int ivgen_size; /* The generated IV size required, 8/16 B allowed. */
+	/* Amount of 'ivgen_dma_addr' elements to be filled. */
+	unsigned int ivgen_dma_addr_len;
+	/* The generated IV size required, 8/16 B allowed. */
+	unsigned int ivgen_size;
 	struct completion seq_compl; /* request completion */
 };
 
 /**
- * struct ssi_drvdata - driver private data context
+ * struct cc_drvdata - driver private data context
  * @cc_base:	virt address of the CC registers
  * @irq:	device IRQ number
  * @irq_mask:	Interrupt mask shadow (1 for masked interrupts)
  * @fw_ver:	SeP loaded firmware version
  */
-struct ssi_drvdata {
+struct cc_drvdata {
 	void __iomem *cc_base;
 	int irq;
 	u32 irq_mask;
 	u32 fw_ver;
-	/* Calibration time of start/stop
-	 * monitor descriptors
-	 */
-	u32 monitor_null_cycles;
+	struct completion hw_queue_avail; /* wait for HW queue availability */
 	struct platform_device *plat_dev;
-	ssi_sram_addr_t mlli_sram_addr;
+	cc_sram_addr_t mlli_sram_addr;
 	void *buff_mgr_handle;
 	void *hash_handle;
 	void *aead_handle;
@@ -138,21 +131,22 @@ struct ssi_drvdata {
 	void *fips_handle;
 	void *ivgen_handle;
 	void *sram_mgr_handle;
+	void *debugfs;
 	struct clk *clk;
 	bool coherent;
 };
 
-struct ssi_crypto_alg {
+struct cc_crypto_alg {
 	struct list_head entry;
 	int cipher_mode;
 	int flow_mode; /* Note: currently, refers to the cipher mode only. */
 	int auth_mode;
-	struct ssi_drvdata *drvdata;
+	struct cc_drvdata *drvdata;
 	struct crypto_alg crypto_alg;
 	struct aead_alg aead_alg;
 };
 
-struct ssi_alg_template {
+struct cc_alg_template {
 	char name[CRYPTO_MAX_ALG_NAME];
 	char driver_name[CRYPTO_MAX_ALG_NAME];
 	unsigned int blocksize;
@@ -167,7 +161,7 @@ struct ssi_alg_template {
 	int cipher_mode;
 	int flow_mode; /* Note: currently, refers to the cipher mode only. */
 	int auth_mode;
-	struct ssi_drvdata *drvdata;
+	struct cc_drvdata *drvdata;
 };
 
 struct async_gen_req_ctx {
@@ -175,32 +169,34 @@ struct async_gen_req_ctx {
 	enum drv_crypto_direction op_type;
 };
 
-static inline struct device *drvdata_to_dev(struct ssi_drvdata *drvdata)
+static inline struct device *drvdata_to_dev(struct cc_drvdata *drvdata)
 {
 	return &drvdata->plat_dev->dev;
 }
 
-#ifdef DX_DUMP_BYTES
-void dump_byte_array(const char *name, const u8 *the_array, unsigned long size);
-#else
+void __dump_byte_array(const char *name, const u8 *the_array,
+		       unsigned long size);
 static inline void dump_byte_array(const char *name, const u8 *the_array,
-				   unsigned long size) {};
-#endif
+				   unsigned long size)
+{
+	if (cc_dump_bytes)
+		__dump_byte_array(name, the_array, size);
+}
 
-int init_cc_regs(struct ssi_drvdata *drvdata, bool is_probe);
-void fini_cc_regs(struct ssi_drvdata *drvdata);
-int cc_clk_on(struct ssi_drvdata *drvdata);
-void cc_clk_off(struct ssi_drvdata *drvdata);
+int init_cc_regs(struct cc_drvdata *drvdata, bool is_probe);
+void fini_cc_regs(struct cc_drvdata *drvdata);
+int cc_clk_on(struct cc_drvdata *drvdata);
+void cc_clk_off(struct cc_drvdata *drvdata);
 
-static inline void cc_iowrite(struct ssi_drvdata *drvdata, u32 reg, u32 val)
+static inline void cc_iowrite(struct cc_drvdata *drvdata, u32 reg, u32 val)
 {
 	iowrite32(val, (drvdata->cc_base + reg));
 }
 
-static inline u32 cc_ioread(struct ssi_drvdata *drvdata, u32 reg)
+static inline u32 cc_ioread(struct cc_drvdata *drvdata, u32 reg)
 {
 	return ioread32(drvdata->cc_base + reg);
 }
 
-#endif /*__SSI_DRIVER_H__*/
+#endif /*__CC_DRIVER_H__*/
 
