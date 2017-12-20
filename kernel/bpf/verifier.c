@@ -772,7 +772,7 @@ static int check_subprogs(struct bpf_verifier_env *env)
 			return -EPERM;
 		}
 		if (bpf_prog_is_dev_bound(env->prog->aux)) {
-			verbose(env, "funcation calls in offloaded programs are not supported yet\n");
+			verbose(env, "function calls in offloaded programs are not supported yet\n");
 			return -EINVAL;
 		}
 		ret = add_subprog(env, i + insn[i].imm + 1);
@@ -823,6 +823,7 @@ next:
 	return 0;
 }
 
+static
 struct bpf_verifier_state *skip_callee(struct bpf_verifier_env *env,
 				       const struct bpf_verifier_state *state,
 				       struct bpf_verifier_state *parent,
@@ -867,7 +868,7 @@ bug:
 	verbose(env, "verifier bug regno %d tmp %p\n", regno, tmp);
 	verbose(env, "regno %d parent frame %d current frame %d\n",
 		regno, parent->curframe, state->curframe);
-	return 0;
+	return NULL;
 }
 
 static int mark_reg_read(struct bpf_verifier_env *env,
