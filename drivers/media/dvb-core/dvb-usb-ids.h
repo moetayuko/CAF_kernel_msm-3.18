@@ -81,6 +81,7 @@
 #define USB_VID_AZUREWAVE			0x13d3
 #define USB_VID_TECHNISAT			0x14f7
 #define USB_VID_HAMA				0x147f
+#define USB_VID_MICROSOFT			0x045e
 
 /* Product IDs */
 #define USB_PID_ADSTECH_USB2_COLD			0xa333
@@ -385,6 +386,7 @@
 #define USB_PID_SONY_PLAYTV				0x0003
 #define USB_PID_MYGICA_D689				0xd811
 #define USB_PID_MYGICA_T230				0xc688
+#define USB_PID_MYGICA_T230C				0xc689
 #define USB_PID_ELGATO_EYETV_DIVERSITY			0x0011
 #define USB_PID_ELGATO_EYETV_DTT			0x0021
 #define USB_PID_ELGATO_EYETV_DTT_2			0x003f
@@ -418,4 +420,5 @@
 #define USB_PID_WINTV_SOLOHD                            0x0264
 #define USB_PID_EVOLVEO_XTRATV_STICK			0xa115
 #define USB_PID_HAMA_DVBT_HYBRID			0x2758
+#define USB_PID_XBOX_ONE_TUNER                          0x02d5
 #endif
