@@ -64,36 +64,30 @@ struct priority_group {
 
 /* Multipath context */
 struct multipath {
-	struct list_head list;
-	struct dm_target *ti;
-
-	const char *hw_handler_name;
-	char *hw_handler_params;
+	unsigned long flags;		/* Multipath state flags */
 
 	spinlock_t lock;
-
-	unsigned nr_priority_groups;
-	struct list_head priority_groups;
-
-	wait_queue_head_t pg_init_wait;	/* Wait for pg_init completion */
+	enum dm_queue_mode queue_mode;
 
 	struct pgpath *current_pgpath;
 	struct priority_group *current_pg;
 	struct priority_group *next_pg;	/* Switch to this PG if set */
 
-	unsigned long flags;		/* Multipath state flags */
+	atomic_t nr_valid_paths;	/* Total number of usable paths */
+	unsigned nr_priority_groups;
+	struct list_head priority_groups;
 
+	const char *hw_handler_name;
+	char *hw_handler_params;
+	wait_queue_head_t pg_init_wait;	/* Wait for pg_init completion */
 	unsigned pg_init_retries;	/* Number of times to retry pg_init */
 	unsigned pg_init_delay_msecs;	/* Number of msecs before pg_init retry */
-
-	atomic_t nr_valid_paths;	/* Total number of usable paths */
 	atomic_t pg_init_in_progress;	/* Only one pg_init allowed at once */
 	atomic_t pg_init_count;		/* Number of times pg_init called */
 
-	enum dm_queue_mode queue_mode;
-
 	struct mutex work_mutex;
 	struct work_struct trigger_event;
+	struct dm_target *ti;
 
 	struct work_struct process_queued_bios;
 	struct bio_list queued_bios;
@@ -135,10 +129,10 @@ static struct pgpath *alloc_pgpath(void)
 {
 	struct pgpath *pgpath = kzalloc(sizeof(*pgpath), GFP_KERNEL);
 
-	if (pgpath) {
-		pgpath->is_active = true;
-		INIT_DELAYED_WORK(&pgpath->activate_path, activate_path_work);
-	}
+	if (!pgpath)
+		return NULL;
+
+	pgpath->is_active = true;
 
 	return pgpath;
 }
@@ -193,13 +187,8 @@ static struct multipath *alloc_multipath(struct dm_target *ti)
 	if (m) {
 		INIT_LIST_HEAD(&m->priority_groups);
 		spin_lock_init(&m->lock);
-		set_bit(MPATHF_QUEUE_IO, &m->flags);
 		atomic_set(&m->nr_valid_paths, 0);
-		atomic_set(&m->pg_init_in_progress, 0);
-		atomic_set(&m->pg_init_count, 0);
-		m->pg_init_delay_msecs = DM_PG_INIT_DELAY_DEFAULT;
 		INIT_WORK(&m->trigger_event, trigger_event);
-		init_waitqueue_head(&m->pg_init_wait);
 		mutex_init(&m->work_mutex);
 
 		m->queue_mode = DM_TYPE_NONE;
@@ -221,13 +210,26 @@ static int alloc_multipath_stage2(struct dm_target *ti, struct multipath *m)
 			m->queue_mode = DM_TYPE_MQ_REQUEST_BASED;
 		else
 			m->queue_mode = DM_TYPE_REQUEST_BASED;
-	} else if (m->queue_mode == DM_TYPE_BIO_BASED) {
+
+	} else if (m->queue_mode == DM_TYPE_BIO_BASED ||
+		   m->queue_mode == DM_TYPE_NVME_BIO_BASED) {
 		INIT_WORK(&m->process_queued_bios, process_queued_bios);
-		/*
-		 * bio-based doesn't support any direct scsi_dh management;
-		 * it just discovers if a scsi_dh is attached.
-		 */
-		set_bit(MPATHF_RETAIN_ATTACHED_HW_HANDLER, &m->flags);
+
+		if (m->queue_mode == DM_TYPE_BIO_BASED) {
+			/*
+			 * bio-based doesn't support any direct scsi_dh management;
+			 * it just discovers if a scsi_dh is attached.
+			 */
+			set_bit(MPATHF_RETAIN_ATTACHED_HW_HANDLER, &m->flags);
+		}
+	}
+
+	if (m->queue_mode != DM_TYPE_NVME_BIO_BASED) {
+		set_bit(MPATHF_QUEUE_IO, &m->flags);
+		atomic_set(&m->pg_init_in_progress, 0);
+		atomic_set(&m->pg_init_count, 0);
+		m->pg_init_delay_msecs = DM_PG_INIT_DELAY_DEFAULT;
+		init_waitqueue_head(&m->pg_init_wait);
 	}
 
 	dm_table_set_type(ti->table, m->queue_mode);
@@ -264,29 +266,23 @@ static struct dm_mpath_io *get_mpio_from_bio(struct bio *bio)
 	return dm_per_bio_data(bio, multipath_per_bio_data_size());
 }
 
-static struct dm_bio_details *get_bio_details_from_bio(struct bio *bio)
+static struct dm_bio_details *get_bio_details_from_mpio(struct dm_mpath_io *mpio)
 {
 	/* dm_bio_details is immediately after the dm_mpath_io in bio's per-bio-data */
-	struct dm_mpath_io *mpio = get_mpio_from_bio(bio);
 	void *bio_details = mpio + 1;
-
 	return bio_details;
 }
 
-static void multipath_init_per_bio_data(struct bio *bio, struct dm_mpath_io **mpio_p,
-					struct dm_bio_details **bio_details_p)
+static void multipath_init_per_bio_data(struct bio *bio, struct dm_mpath_io **mpio_p)
 {
 	struct dm_mpath_io *mpio = get_mpio_from_bio(bio);
-	struct dm_bio_details *bio_details = get_bio_details_from_bio(bio);
+	struct dm_bio_details *bio_details = get_bio_details_from_mpio(mpio);
 
-	memset(mpio, 0, sizeof(*mpio));
-	memset(bio_details, 0, sizeof(*bio_details));
+	mpio->nr_bytes = bio->bi_iter.bi_size;
+	mpio->pgpath = NULL;
+	*mpio_p = mpio;
+
 	dm_bio_record(bio_details, bio);
-
-	if (mpio_p)
-		*mpio_p = mpio;
-	if (bio_details_p)
-		*bio_details_p = bio_details;
 }
 
 /*-----------------------------------------------
@@ -340,6 +336,9 @@ static void __switch_pg(struct multipath *m, struct priority_group *pg)
 {
 	m->current_pg = pg;
 
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED)
+		return;
+
 	/* Must we initialise the PG first, and queue I/O till it's ready? */
 	if (m->hw_handler_name) {
 		set_bit(MPATHF_PG_INIT_REQUIRED, &m->flags);
@@ -385,7 +384,8 @@ static struct pgpath *choose_pgpath(struct multipath *m, size_t nr_bytes)
 	unsigned bypassed = 1;
 
 	if (!atomic_read(&m->nr_valid_paths)) {
-		clear_bit(MPATHF_QUEUE_IO, &m->flags);
+		if (m->queue_mode != DM_TYPE_NVME_BIO_BASED)
+			clear_bit(MPATHF_QUEUE_IO, &m->flags);
 		goto failed;
 	}
 
@@ -521,7 +521,6 @@ static int multipath_clone_and_map(struct dm_target *ti, struct request *rq,
 		return DM_MAPIO_REQUEUE;
 	}
 
-	memset(mpio, 0, sizeof(*mpio));
 	mpio->pgpath = pgpath;
 	mpio->nr_bytes = nr_bytes;
 
@@ -530,8 +529,7 @@ static int multipath_clone_and_map(struct dm_target *ti, struct request *rq,
 	clone = blk_get_request(q, rq->cmd_flags | REQ_NOMERGE, GFP_ATOMIC);
 	if (IS_ERR(clone)) {
 		/* EBUSY, ENODEV or EWOULDBLOCK: requeue */
-		bool queue_dying = blk_queue_dying(q);
-		if (queue_dying) {
+		if (blk_queue_dying(q)) {
 			atomic_inc(&m->pg_init_in_progress);
 			activate_or_offline_path(pgpath);
 		}
@@ -557,9 +555,9 @@ static void multipath_release_clone(struct request *clone)
 /*
  * Map cloned bios (bio-based multipath)
  */
-static int __multipath_map_bio(struct multipath *m, struct bio *bio, struct dm_mpath_io *mpio)
+
+static struct pgpath *__map_bio(struct multipath *m, struct bio *bio)
 {
-	size_t nr_bytes = bio->bi_iter.bi_size;
 	struct pgpath *pgpath;
 	unsigned long flags;
 	bool queue_io;
@@ -568,7 +566,7 @@ static int __multipath_map_bio(struct multipath *m, struct bio *bio, struct dm_m
 	pgpath = READ_ONCE(m->current_pgpath);
 	queue_io = test_bit(MPATHF_QUEUE_IO, &m->flags);
 	if (!pgpath || !queue_io)
-		pgpath = choose_pgpath(m, nr_bytes);
+		pgpath = choose_pgpath(m, bio->bi_iter.bi_size);
 
 	if ((pgpath && queue_io) ||
 	    (!pgpath && test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags))) {
@@ -576,13 +574,67 @@ static int __multipath_map_bio(struct multipath *m, struct bio *bio, struct dm_m
 		spin_lock_irqsave(&m->lock, flags);
 		bio_list_add(&m->queued_bios, bio);
 		spin_unlock_irqrestore(&m->lock, flags);
+
 		/* PG_INIT_REQUIRED cannot be set without QUEUE_IO */
 		if (queue_io || test_bit(MPATHF_PG_INIT_REQUIRED, &m->flags))
 			pg_init_all_paths(m);
 		else if (!queue_io)
 			queue_work(kmultipathd, &m->process_queued_bios);
-		return DM_MAPIO_SUBMITTED;
+
+		return ERR_PTR(-EAGAIN);
 	}
+
+	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
+
+	return pgpath;
+}
+
+static void multipath_failover_rq(struct request *rq);
+
+static struct pgpath *__map_bio_nvme(struct multipath *m, struct bio *bio)
+{
+	struct pgpath *pgpath;
+	unsigned long flags;
+
+	/* Do we need to select a new pgpath? */
+	/*
+	 * FIXME: currently only switching path if no path (due to failure, etc)
+	 * - which negates the point of using a path selector
+	 */
+	pgpath = READ_ONCE(m->current_pgpath);
+	if (!pgpath)
+		pgpath = choose_pgpath(m, bio->bi_iter.bi_size);
+
+	if (!pgpath) {
+		if (test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags)) {
+			/* Queue for the daemon to resubmit */
+			spin_lock_irqsave(&m->lock, flags);
+			bio_list_add(&m->queued_bios, bio);
+			spin_unlock_irqrestore(&m->lock, flags);
+			queue_work(kmultipathd, &m->process_queued_bios);
+
+			return ERR_PTR(-EAGAIN);
+		}
+		return NULL;
+	}
+
+	bio->bi_failover_rq = multipath_failover_rq;
+
+	return pgpath;
+}
+
+static int __multipath_map_bio(struct multipath *m, struct bio *bio,
+			       struct dm_mpath_io *mpio)
+{
+	struct pgpath *pgpath;
+
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED)
+		pgpath = __map_bio_nvme(m, bio);
+	else
+		pgpath = __map_bio(m, bio);
+
+	if (IS_ERR(pgpath))
+		return DM_MAPIO_SUBMITTED;
 
 	if (!pgpath) {
 		if (must_push_back_bio(m))
@@ -592,16 +644,14 @@ static int __multipath_map_bio(struct multipath *m, struct bio *bio, struct dm_m
 	}
 
 	mpio->pgpath = pgpath;
-	mpio->nr_bytes = nr_bytes;
 
 	bio->bi_status = 0;
 	bio_set_dev(bio, pgpath->path.dev->bdev);
-	bio->bi_opf |= REQ_FAILFAST_TRANSPORT;
 
 	if (pgpath->pg->ps.type->start_io)
 		pgpath->pg->ps.type->start_io(&pgpath->pg->ps,
 					      &pgpath->path,
-					      nr_bytes);
+					      mpio->nr_bytes);
 	return DM_MAPIO_REMAPPED;
 }
 
@@ -610,8 +660,7 @@ static int multipath_map_bio(struct dm_target *ti, struct bio *bio)
 	struct multipath *m = ti->private;
 	struct dm_mpath_io *mpio = NULL;
 
-	multipath_init_per_bio_data(bio, &mpio, NULL);
-
+	multipath_init_per_bio_data(bio, &mpio);
 	return __multipath_map_bio(m, bio, mpio);
 }
 
@@ -619,7 +668,8 @@ static void process_queued_io_list(struct multipath *m)
 {
 	if (m->queue_mode == DM_TYPE_MQ_REQUEST_BASED)
 		dm_mq_kick_requeue_list(dm_table_get_md(m->ti->table));
-	else if (m->queue_mode == DM_TYPE_BIO_BASED)
+	else if (m->queue_mode == DM_TYPE_BIO_BASED ||
+		 m->queue_mode == DM_TYPE_NVME_BIO_BASED)
 		queue_work(kmultipathd, &m->process_queued_bios);
 }
 
@@ -649,7 +699,9 @@ static void process_queued_bios(struct work_struct *work)
 
 	blk_start_plug(&plug);
 	while ((bio = bio_list_pop(&bios))) {
-		r = __multipath_map_bio(m, bio, get_mpio_from_bio(bio));
+		struct dm_mpath_io *mpio = get_mpio_from_bio(bio);
+		dm_bio_restore(get_bio_details_from_mpio(mpio), bio);
+		r = __multipath_map_bio(m, bio, mpio);
 		switch (r) {
 		case DM_MAPIO_KILL:
 			bio->bi_status = BLK_STS_IOERR;
@@ -752,34 +804,11 @@ static int parse_path_selector(struct dm_arg_set *as, struct priority_group *pg,
 	return 0;
 }
 
-static struct pgpath *parse_path(struct dm_arg_set *as, struct path_selector *ps,
-			       struct dm_target *ti)
+static int setup_scsi_dh(struct block_device *bdev, struct multipath *m, char **error)
 {
-	int r;
-	struct pgpath *p;
-	struct multipath *m = ti->private;
-	struct request_queue *q = NULL;
+	struct request_queue *q = bdev_get_queue(bdev);
 	const char *attached_handler_name;
-
-	/* we need at least a path arg */
-	if (as->argc < 1) {
-		ti->error = "no device given";
-		return ERR_PTR(-EINVAL);
-	}
-
-	p = alloc_pgpath();
-	if (!p)
-		return ERR_PTR(-ENOMEM);
-
-	r = dm_get_device(ti, dm_shift_arg(as), dm_table_get_mode(ti->table),
-			  &p->path.dev);
-	if (r) {
-		ti->error = "error getting device";
-		goto bad;
-	}
-
-	if (test_bit(MPATHF_RETAIN_ATTACHED_HW_HANDLER, &m->flags) || m->hw_handler_name)
-		q = bdev_get_queue(p->path.dev->bdev);
+	int r;
 
 	if (test_bit(MPATHF_RETAIN_ATTACHED_HW_HANDLER, &m->flags)) {
 retain:
@@ -811,23 +840,55 @@ retain:
 			char b[BDEVNAME_SIZE];
 
 			printk(KERN_INFO "dm-mpath: retaining handler on device %s\n",
-				bdevname(p->path.dev->bdev, b));
+			       bdevname(bdev, b));
 			goto retain;
 		}
 		if (r < 0) {
-			ti->error = "error attaching hardware handler";
-			dm_put_device(ti, p->path.dev);
-			goto bad;
+			*error = "error attaching hardware handler";
+			return r;
 		}
 
 		if (m->hw_handler_params) {
 			r = scsi_dh_set_params(q, m->hw_handler_params);
 			if (r < 0) {
-				ti->error = "unable to set hardware "
-							"handler parameters";
-				dm_put_device(ti, p->path.dev);
-				goto bad;
+				*error = "unable to set hardware handler parameters";
+				return r;
 			}
+		}
+	}
+
+	return 0;
+}
+
+static struct pgpath *parse_path(struct dm_arg_set *as, struct path_selector *ps,
+				 struct dm_target *ti)
+{
+	int r;
+	struct pgpath *p;
+	struct multipath *m = ti->private;
+
+	/* we need at least a path arg */
+	if (as->argc < 1) {
+		ti->error = "no device given";
+		return ERR_PTR(-EINVAL);
+	}
+
+	p = alloc_pgpath();
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+
+	r = dm_get_device(ti, dm_shift_arg(as), dm_table_get_mode(ti->table),
+			  &p->path.dev);
+	if (r) {
+		ti->error = "error getting device";
+		goto bad;
+	}
+
+	if (m->queue_mode != DM_TYPE_NVME_BIO_BASED) {
+		INIT_DELAYED_WORK(&p->activate_path, activate_path_work);
+		if (setup_scsi_dh(p->path.dev->bdev, m, &ti->error)) {
+			dm_put_device(ti, p->path.dev);
+			goto bad;
 		}
 	}
 
@@ -838,7 +899,6 @@ retain:
 	}
 
 	return p;
-
  bad:
 	free_pgpath(p);
 	return ERR_PTR(r);
@@ -933,7 +993,8 @@ static int parse_hw_handler(struct dm_arg_set *as, struct multipath *m)
 	if (!hw_argc)
 		return 0;
 
-	if (m->queue_mode == DM_TYPE_BIO_BASED) {
+	if (m->queue_mode == DM_TYPE_BIO_BASED ||
+	    m->queue_mode == DM_TYPE_NVME_BIO_BASED) {
 		dm_consume_args(as, hw_argc);
 		DMERR("bio-based multipath doesn't allow hardware handler args");
 		return 0;
@@ -1026,7 +1087,14 @@ static int parse_features(struct dm_arg_set *as, struct multipath *m)
 				m->queue_mode = DM_TYPE_REQUEST_BASED;
 			else if (!strcasecmp(queue_mode_name, "mq"))
 				m->queue_mode = DM_TYPE_MQ_REQUEST_BASED;
-			else {
+			else if (!strcasecmp(queue_mode_name, "nvme")) {
+#ifdef CONFIG_NVME_MULTIPATH
+				ti->error = "queue_mode nvme is unavailable due to CONFIG_NVME_MULITIPATH=Y";
+				r = -EINVAL;
+#else
+				m->queue_mode = DM_TYPE_NVME_BIO_BASED;
+#endif
+			} else {
 				ti->error = "Unknown 'queue_mode' requested";
 				r = -EINVAL;
 			}
@@ -1118,11 +1186,26 @@ static int multipath_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		goto bad;
 	}
 
+	/*
+	 * If NVMe bio-based and all path selectors don't provide .end_io hook:
+	 * inform DM core that there is no need to call this target's end_io hook.
+	 */
+	if (m->queue_mode == DM_TYPE_NVME_BIO_BASED) {
+		struct priority_group *pg;
+		if (!m->nr_priority_groups)
+			goto finish;
+		list_for_each_entry(pg, &m->priority_groups, list) {
+			if (pg->ps.type->end_io)
+				goto finish;
+		}
+		ti->skip_end_io_hook = true;
+	}
+finish:
 	ti->num_flush_bios = 1;
 	ti->num_discard_bios = 1;
 	ti->num_write_same_bios = 1;
 	ti->num_write_zeroes_bios = 1;
-	if (m->queue_mode == DM_TYPE_BIO_BASED)
+	if (m->queue_mode == DM_TYPE_BIO_BASED || m->queue_mode == DM_TYPE_NVME_BIO_BASED)
 		ti->per_io_data_size = multipath_per_bio_data_size();
 	else
 		ti->per_io_data_size = sizeof(struct dm_mpath_io);
@@ -1151,16 +1234,19 @@ static void multipath_wait_for_pg_init_completion(struct multipath *m)
 
 static void flush_multipath_work(struct multipath *m)
 {
-	set_bit(MPATHF_PG_INIT_DISABLED, &m->flags);
-	smp_mb__after_atomic();
+	if (m->hw_handler_name) {
+		set_bit(MPATHF_PG_INIT_DISABLED, &m->flags);
+		smp_mb__after_atomic();
 
-	flush_workqueue(kmpath_handlerd);
-	multipath_wait_for_pg_init_completion(m);
+		flush_workqueue(kmpath_handlerd);
+		multipath_wait_for_pg_init_completion(m);
+
+		clear_bit(MPATHF_PG_INIT_DISABLED, &m->flags);
+		smp_mb__after_atomic();
+	}
+
 	flush_workqueue(kmultipathd);
 	flush_work(&m->trigger_event);
-
-	clear_bit(MPATHF_PG_INIT_DISABLED, &m->flags);
-	smp_mb__after_atomic();
 }
 
 static void multipath_dtr(struct dm_target *ti)
@@ -1475,7 +1561,7 @@ static void activate_path_work(struct work_struct *work)
 	activate_or_offline_path(pgpath);
 }
 
-static int noretry_error(blk_status_t error)
+static bool retry_error(blk_status_t error)
 {
 	switch (error) {
 	case BLK_STS_NOTSUPP:
@@ -1483,11 +1569,11 @@ static int noretry_error(blk_status_t error)
 	case BLK_STS_TARGET:
 	case BLK_STS_NEXUS:
 	case BLK_STS_MEDIUM:
-		return 1;
+		return false;
 	}
 
 	/* Anything else could be a path failure, so should be retried */
-	return 0;
+	return true;
 }
 
 static int multipath_end_io(struct dm_target *ti, struct request *clone,
@@ -1508,7 +1594,7 @@ static int multipath_end_io(struct dm_target *ti, struct request *clone,
 	 * request into dm core, which will remake a clone request and
 	 * clone bios for it and resubmit it later.
 	 */
-	if (error && !noretry_error(error)) {
+	if (error && retry_error(error)) {
 		struct multipath *m = ti->private;
 
 		r = DM_ENDIO_REQUEUE;
@@ -1536,7 +1622,7 @@ static int multipath_end_io(struct dm_target *ti, struct request *clone,
 }
 
 static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
-		blk_status_t *error)
+				blk_status_t *error)
 {
 	struct multipath *m = ti->private;
 	struct dm_mpath_io *mpio = get_mpio_from_bio(clone);
@@ -1544,7 +1630,15 @@ static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
 	unsigned long flags;
 	int r = DM_ENDIO_DONE;
 
-	if (!*error || noretry_error(*error))
+	/*
+	 * NVMe bio-based only needs to update path selector (on
+	 * success or errors that NVMe deemed non-retryable)
+	 * - retryable errors are handled by multipath_failover_rq
+	 */
+	if (clone->bi_failover_rq)
+		goto done;
+
+	if (!*error || !retry_error(*error))
 		goto done;
 
 	if (pgpath)
@@ -1560,9 +1654,6 @@ static int multipath_end_io_bio(struct dm_target *ti, struct bio *clone,
 		}
 		goto done;
 	}
-
-	/* Queue for the daemon to resubmit */
-	dm_bio_restore(get_bio_details_from_bio(clone), clone);
 
 	spin_lock_irqsave(&m->lock, flags);
 	bio_list_add(&m->queued_bios, clone);
@@ -1580,6 +1671,44 @@ done:
 	}
 
 	return r;
+}
+
+/*
+ * multipath_failover_rq serves as a replacement for multipath_end_io_bio
+ * for all bios in a request with a retryable error.
+ */
+static void multipath_failover_rq(struct request *rq)
+{
+	struct dm_target *ti = dm_bio_get_target(rq->bio);
+	struct multipath *m = ti->private;
+	struct dm_mpath_io *mpio = get_mpio_from_bio(rq->bio);
+	struct pgpath *pgpath = mpio->pgpath;
+	unsigned long flags;
+
+	if (pgpath) {
+		if (!ti->skip_end_io_hook) {
+			struct path_selector *ps = &pgpath->pg->ps;
+
+			if (ps->type->end_io)
+				ps->type->end_io(ps, &pgpath->path, blk_rq_bytes(rq));
+		}
+		fail_path(pgpath);
+	}
+
+	if (atomic_read(&m->nr_valid_paths) == 0 &&
+	    !test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags) &&
+	    !must_push_back_bio(m)) {
+		dm_report_EIO(m);
+		blk_mq_end_request(rq, BLK_STS_IOERR);
+		return;
+	}
+
+	spin_lock_irqsave(&m->lock, flags);
+	blk_steal_bios(&m->queued_bios, rq);
+	spin_unlock_irqrestore(&m->lock, flags);
+	queue_work(kmultipathd, &m->process_queued_bios);
+
+	blk_mq_end_request(rq, 0);
 }
 
 /*
@@ -1670,6 +1799,9 @@ static void multipath_status(struct dm_target *ti, status_type_t type,
 			switch(m->queue_mode) {
 			case DM_TYPE_BIO_BASED:
 				DMEMIT("queue_mode bio ");
+				break;
+			case DM_TYPE_NVME_BIO_BASED:
+				DMEMIT("queue_mode nvme ");
 				break;
 			case DM_TYPE_MQ_REQUEST_BASED:
 				DMEMIT("queue_mode mq ");
