@@ -249,7 +249,7 @@ static void dpaa2_eth_rx(struct dpaa2_eth_priv *priv,
 	vaddr = dpaa2_iova_to_virt(priv->iommu_domain, addr);
 	dma_unmap_single(dev, addr, DPAA2_ETH_RX_BUF_SIZE, DMA_FROM_DEVICE);
 
-	fas = dpaa2_get_fas(vaddr);
+	fas = dpaa2_get_fas(vaddr, false);
 	prefetch(fas);
 	buf_data = vaddr + dpaa2_fd_get_offset(fd);
 	prefetch(buf_data);
@@ -348,7 +348,6 @@ static int build_sg_fd(struct dpaa2_eth_priv *priv,
 	int num_sg;
 	int num_dma_bufs;
 	struct dpaa2_eth_swa *swa;
-	struct dpaa2_fas *fas;
 
 	/* Create and map scatterlist.
 	 * We don't advertise NETIF_F_FRAGLIST, so skb_to_sgvec() will not have
@@ -379,15 +378,6 @@ static int build_sg_fd(struct dpaa2_eth_priv *priv,
 		goto sgt_buf_alloc_failed;
 	}
 	sgt_buf = PTR_ALIGN(sgt_buf, DPAA2_ETH_TX_BUF_ALIGN);
-
-	/* PTA from egress side is passed as is to the confirmation side so
-	 * we need to clear some fields here in order to find consistent values
-	 * on TX confirmation. We are clearing FAS (Frame Annotation Status)
-	 * field from the hardware annotation area
-	 */
-	fas = dpaa2_get_fas(sgt_buf);
-	memset(fas, 0, DPAA2_FAS_SIZE);
-
 	sgt = (struct dpaa2_sg_entry *)(sgt_buf + priv->tx_data_offset);
 
 	/* Fill in the HW SGT structure.
@@ -424,8 +414,7 @@ static int build_sg_fd(struct dpaa2_eth_priv *priv,
 	dpaa2_fd_set_format(fd, dpaa2_fd_sg);
 	dpaa2_fd_set_addr(fd, addr);
 	dpaa2_fd_set_len(fd, skb->len);
-	dpaa2_fd_set_ctrl(fd, DPAA2_FD_CTRL_ASAL | DPAA2_FD_CTRL_PTA |
-			  DPAA2_FD_CTRL_PTV1);
+	dpaa2_fd_set_ctrl(fd, DPAA2_FD_CTRL_PTA | DPAA2_FD_CTRL_PTV1);
 
 	return 0;
 
@@ -444,22 +433,19 @@ static int build_single_fd(struct dpaa2_eth_priv *priv,
 			   struct dpaa2_fd *fd)
 {
 	struct device *dev = priv->net_dev->dev.parent;
-	u8 *buffer_start;
-	struct dpaa2_fas *fas;
+	u8 *buffer_start, *aligned_start;
 	struct sk_buff **skbh;
 	dma_addr_t addr;
 
-	buffer_start = PTR_ALIGN(skb->data - priv->tx_data_offset -
-				 DPAA2_ETH_TX_BUF_ALIGN,
-				 DPAA2_ETH_TX_BUF_ALIGN);
+	buffer_start = skb->data - dpaa2_eth_needed_headroom(priv, skb);
 
-	/* PTA from egress side is passed as is to the confirmation side so
-	 * we need to clear some fields here in order to find consistent values
-	 * on TX confirmation. We are clearing FAS (Frame Annotation Status)
-	 * field from the hardware annotation area
+	/* If there's enough room to align the FD address, do it.
+	 * It will help hardware optimize accesses.
 	 */
-	fas = dpaa2_get_fas(buffer_start);
-	memset(fas, 0, DPAA2_FAS_SIZE);
+	aligned_start = PTR_ALIGN(buffer_start - DPAA2_ETH_TX_BUF_ALIGN,
+				  DPAA2_ETH_TX_BUF_ALIGN);
+	if (aligned_start >= skb->head)
+		buffer_start = aligned_start;
 
 	/* Store a backpointer to the skb at the beginning of the buffer
 	 * (in the private data area) such that we can release it
@@ -478,8 +464,7 @@ static int build_single_fd(struct dpaa2_eth_priv *priv,
 	dpaa2_fd_set_offset(fd, (u16)(skb->data - buffer_start));
 	dpaa2_fd_set_len(fd, skb->len);
 	dpaa2_fd_set_format(fd, dpaa2_fd_single);
-	dpaa2_fd_set_ctrl(fd, DPAA2_FD_CTRL_ASAL | DPAA2_FD_CTRL_PTA |
-			  DPAA2_FD_CTRL_PTV1);
+	dpaa2_fd_set_ctrl(fd, DPAA2_FD_CTRL_PTA | DPAA2_FD_CTRL_PTV1);
 
 	return 0;
 }
@@ -494,8 +479,7 @@ static int build_single_fd(struct dpaa2_eth_priv *priv,
  * to be checked if we're on the confirmation path.
  */
 static void free_tx_fd(const struct dpaa2_eth_priv *priv,
-		       const struct dpaa2_fd *fd,
-		       u32 *status)
+		       const struct dpaa2_fd *fd)
 {
 	struct device *dev = priv->net_dev->dev.parent;
 	dma_addr_t fd_addr;
@@ -506,11 +490,9 @@ static void free_tx_fd(const struct dpaa2_eth_priv *priv,
 	int num_sg, num_dma_bufs;
 	struct dpaa2_eth_swa *swa;
 	u8 fd_format = dpaa2_fd_get_format(fd);
-	struct dpaa2_fas *fas;
 
 	fd_addr = dpaa2_fd_get_addr(fd);
 	skbh = dpaa2_iova_to_virt(priv->iommu_domain, fd_addr);
-	fas = dpaa2_get_fas(skbh);
 
 	if (fd_format == dpaa2_fd_single) {
 		skb = *skbh;
@@ -537,18 +519,9 @@ static void free_tx_fd(const struct dpaa2_eth_priv *priv,
 		       sizeof(struct dpaa2_sg_entry) * (1 + num_dma_bufs);
 		dma_unmap_single(dev, fd_addr, unmap_size, DMA_BIDIRECTIONAL);
 	} else {
-		/* Unsupported format, mark it as errored and give up */
-		if (status)
-			*status = ~0;
+		netdev_dbg(priv->net_dev, "Invalid FD format\n");
 		return;
 	}
-
-	/* Read the status from the Frame Annotation after we unmap the first
-	 * buffer but before we free it. The caller function is responsible
-	 * for checking the status value.
-	 */
-	if (status)
-		*status = le32_to_cpu(fas->status);
 
 	/* Free SGT buffer kmalloc'ed on tx */
 	if (fd_format != dpaa2_fd_single)
@@ -566,19 +539,22 @@ static netdev_tx_t dpaa2_eth_tx(struct sk_buff *skb, struct net_device *net_dev)
 	struct dpaa2_eth_drv_stats *percpu_extras;
 	struct dpaa2_eth_fq *fq;
 	u16 queue_mapping;
+	unsigned int needed_headroom;
 	int err, i;
 
 	percpu_stats = this_cpu_ptr(priv->percpu_stats);
 	percpu_extras = this_cpu_ptr(priv->percpu_extras);
 
-	if (unlikely(skb_headroom(skb) < dpaa2_eth_needed_headroom(priv))) {
+	needed_headroom = dpaa2_eth_needed_headroom(priv, skb);
+	if (skb_headroom(skb) < needed_headroom) {
 		struct sk_buff *ns;
 
-		ns = skb_realloc_headroom(skb, dpaa2_eth_needed_headroom(priv));
+		ns = skb_realloc_headroom(skb, needed_headroom);
 		if (unlikely(!ns)) {
 			percpu_stats->tx_dropped++;
 			goto err_alloc_headroom;
 		}
+		percpu_extras->tx_reallocs++;
 		dev_kfree_skb(skb);
 		skb = ns;
 	}
@@ -627,7 +603,7 @@ static netdev_tx_t dpaa2_eth_tx(struct sk_buff *skb, struct net_device *net_dev)
 	if (unlikely(err < 0)) {
 		percpu_stats->tx_errors++;
 		/* Clean up everything, including freeing the skb */
-		free_tx_fd(priv, &fd, NULL);
+		free_tx_fd(priv, &fd);
 	} else {
 		percpu_stats->tx_packets++;
 		percpu_stats->tx_bytes += dpaa2_fd_get_len(&fd);
@@ -650,9 +626,7 @@ static void dpaa2_eth_tx_conf(struct dpaa2_eth_priv *priv,
 {
 	struct rtnl_link_stats64 *percpu_stats;
 	struct dpaa2_eth_drv_stats *percpu_extras;
-	u32 status = 0;
 	u32 fd_errors;
-	bool has_fas_errors = false;
 
 	/* Tracing point */
 	trace_dpaa2_tx_conf_fd(priv->net_dev, fd);
@@ -663,29 +637,18 @@ static void dpaa2_eth_tx_conf(struct dpaa2_eth_priv *priv,
 
 	/* Check frame errors in the FD field */
 	fd_errors = dpaa2_fd_get_ctrl(fd) & DPAA2_FD_TX_ERR_MASK;
-	if (unlikely(fd_errors)) {
-		/* We only check error bits in the FAS field if corresponding
-		 * FAERR bit is set in FD and the FAS field is marked as valid
-		 */
-		has_fas_errors = (fd_errors & DPAA2_FD_CTRL_FAERR) &&
-				 !!(dpaa2_fd_get_frc(fd) & DPAA2_FD_FRC_FASV);
-		if (net_ratelimit())
-			netdev_dbg(priv->net_dev, "TX frame FD error: 0x%08x\n",
-				   fd_errors);
-	}
-
-	free_tx_fd(priv, fd, has_fas_errors ? &status : NULL);
+	free_tx_fd(priv, fd);
 
 	if (likely(!fd_errors))
 		return;
 
+	if (net_ratelimit())
+		netdev_dbg(priv->net_dev, "TX frame FD error: 0x%08x\n",
+			   fd_errors);
+
 	percpu_stats = this_cpu_ptr(priv->percpu_stats);
 	/* Tx-conf logically pertains to the egress path. */
 	percpu_stats->tx_errors++;
-
-	if (has_fas_errors && net_ratelimit())
-		netdev_dbg(priv->net_dev, "TX frame FAS error: 0x%08x\n",
-			   status & DPAA2_FAS_TX_ERR_MASK);
 }
 
 static int set_rx_csum(struct dpaa2_eth_priv *priv, bool enable)
@@ -1791,10 +1754,8 @@ static int set_buffer_layout(struct dpaa2_eth_priv *priv)
 		priv->rx_buf_align = DPAA2_ETH_RX_BUF_ALIGN;
 
 	/* tx buffer */
-	buf_layout.pass_frame_status = true;
 	buf_layout.private_data_size = DPAA2_ETH_SWA_SIZE;
-	buf_layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-			     DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
+	buf_layout.options = DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
 	err = dpni_set_buffer_layout(priv->mc_io, 0, priv->mc_token,
 				     DPNI_QUEUE_TX, &buf_layout);
 	if (err) {
@@ -1803,7 +1764,7 @@ static int set_buffer_layout(struct dpaa2_eth_priv *priv)
 	}
 
 	/* tx-confirm buffer */
-	buf_layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
+	buf_layout.options = 0;
 	err = dpni_set_buffer_layout(priv->mc_io, 0, priv->mc_token,
 				     DPNI_QUEUE_TX_CONFIRM, &buf_layout);
 	if (err) {
@@ -1826,6 +1787,7 @@ static int set_buffer_layout(struct dpaa2_eth_priv *priv)
 			 priv->tx_data_offset);
 
 	/* rx buffer */
+	buf_layout.pass_frame_status = true;
 	buf_layout.pass_parser_result = true;
 	buf_layout.data_align = priv->rx_buf_align;
 	buf_layout.data_head_room = dpaa2_eth_rx_head_room(priv);
@@ -2273,7 +2235,6 @@ static int netdev_init(struct net_device *net_dev)
 {
 	struct device *dev = net_dev->dev.parent;
 	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
-	u16 rx_headroom, req_headroom;
 	u8 bcast_addr[ETH_ALEN];
 	u8 num_queues;
 	int err;
@@ -2291,24 +2252,6 @@ static int netdev_init(struct net_device *net_dev)
 		dev_err(dev, "dpni_add_mac_addr() failed\n");
 		return err;
 	}
-
-	/* Reserve enough space to align buffer as per hardware requirement;
-	 * NOTE: priv->tx_data_offset MUST be initialized at this point.
-	 */
-	net_dev->needed_headroom = dpaa2_eth_needed_headroom(priv);
-
-	/* If headroom guaranteed by hardware in the Rx frame buffer is
-	 * smaller than the Tx headroom required by the stack, issue a
-	 * one time warning. This will most likely mean skbs forwarded to
-	 * another DPAA2 network interface will get reallocated, with a
-	 * significant performance impact.
-	 */
-	req_headroom = LL_RESERVED_SPACE(net_dev) - ETH_HLEN;
-	rx_headroom = ALIGN(DPAA2_ETH_RX_HWA_SIZE +
-			    dpaa2_eth_rx_head_room(priv), priv->rx_buf_align);
-	if (req_headroom > rx_headroom)
-		dev_info_once(dev, "Required headroom (%d) greater than available (%d)\n",
-			      req_headroom, rx_headroom);
 
 	/* Set MTU limits */
 	net_dev->min_mtu = 68;

@@ -43,13 +43,6 @@
 # define DEBUG_SUBSYSTEM S_UNDEFINED
 #endif
 
-/*
- * When this is on, LASSERT macro includes check for assignment used instead
- * of equality check, but doesn't have unlikely(). Turn this on from time to
- * time to make test-builds. This shouldn't be on for production release.
- */
-#define LASSERT_CHECKED (0)
-
 #define LASSERTF(cond, fmt, ...)					\
 do {									\
 	if (unlikely(!(cond))) {					\
@@ -74,8 +67,6 @@ do {									\
 # define LINVRNT(exp) ((void)sizeof !!(exp))
 #endif
 
-#define KLASSERT(e) LASSERT(e)
-
 void __noreturn lbug_with_loc(struct libcfs_debug_msg_data *msg);
 
 #define LBUG()							  \
@@ -83,14 +74,6 @@ do {								    \
 	LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, D_EMERG, NULL);	     \
 	lbug_with_loc(&msgdata);					\
 } while (0)
-
-#ifndef LIBCFS_VMALLOC_SIZE
-#define LIBCFS_VMALLOC_SIZE	(2 << PAGE_SHIFT) /* 2 pages */
-#endif
-
-#define LIBCFS_ALLOC_PRE(size, mask)					\
-	LASSERT(!in_interrupt() || ((size) <= LIBCFS_VMALLOC_SIZE &&	\
-				    !gfpflags_allow_blocking(mask)))
 
 #define LIBCFS_ALLOC_POST(ptr, size)					    \
 do {									    \
@@ -103,45 +86,35 @@ do {									    \
 } while (0)
 
 /**
- * allocate memory with GFP flags @mask
+ * default allocator
  */
-#define LIBCFS_ALLOC_GFP(ptr, size, mask)				    \
+#define LIBCFS_ALLOC(ptr, size)						    \
 do {									    \
-	LIBCFS_ALLOC_PRE((size), (mask));				    \
-	(ptr) = (size) <= LIBCFS_VMALLOC_SIZE ?				    \
-		kmalloc((size), (mask)) : vmalloc(size);	    \
+	LASSERT(!in_interrupt());					    \
+	(ptr) = kvmalloc((size), GFP_NOFS);				    \
 	LIBCFS_ALLOC_POST((ptr), (size));				    \
 } while (0)
 
 /**
- * default allocator
- */
-#define LIBCFS_ALLOC(ptr, size) \
-	LIBCFS_ALLOC_GFP(ptr, size, GFP_NOFS)
-
-/**
  * non-sleeping allocator
  */
-#define LIBCFS_ALLOC_ATOMIC(ptr, size) \
-	LIBCFS_ALLOC_GFP(ptr, size, GFP_ATOMIC)
+#define LIBCFS_ALLOC_ATOMIC(ptr, size)					\
+do {									\
+	(ptr) = kmalloc((size), GFP_ATOMIC);				\
+	LIBCFS_ALLOC_POST(ptr, size);					\
+} while (0)
 
 /**
  * allocate memory for specified CPU partition
  *   \a cptab != NULL, \a cpt is CPU partition id of \a cptab
  *   \a cptab == NULL, \a cpt is HW NUMA node id
  */
-#define LIBCFS_CPT_ALLOC_GFP(ptr, cptab, cpt, size, mask)		    \
+#define LIBCFS_CPT_ALLOC(ptr, cptab, cpt, size)				    \
 do {									    \
-	LIBCFS_ALLOC_PRE((size), (mask));				    \
-	(ptr) = (size) <= LIBCFS_VMALLOC_SIZE ?				    \
-		kmalloc_node((size), (mask), cfs_cpt_spread_node(cptab, cpt)) :\
-		vmalloc_node(size, cfs_cpt_spread_node(cptab, cpt));	    \
+	LASSERT(!in_interrupt());					    \
+	(ptr) = kvmalloc_node((size), GFP_NOFS, cfs_cpt_spread_node(cptab, cpt)); \
 	LIBCFS_ALLOC_POST((ptr), (size));				    \
 } while (0)
-
-/** default numa allocator */
-#define LIBCFS_CPT_ALLOC(ptr, cptab, cpt, size)				    \
-	LIBCFS_CPT_ALLOC_GFP(ptr, cptab, cpt, size, GFP_NOFS)
 
 #define LIBCFS_FREE(ptr, size)					  \
 do {								    \
@@ -245,56 +218,18 @@ do {							    \
 #define CFS_ALLOC_PTR(ptr)      LIBCFS_ALLOC(ptr, sizeof(*(ptr)))
 #define CFS_FREE_PTR(ptr)       LIBCFS_FREE(ptr, sizeof(*(ptr)))
 
-/* max value for numeric network address */
-#define MAX_NUMERIC_VALUE 0xffffffff
-
 /* implication */
 #define ergo(a, b) (!(a) || (b))
 /* logical equivalence */
 #define equi(a, b) (!!(a) == !!(b))
 
-/* --------------------------------------------------------------------
- * Light-weight trace
- * Support for temporary event tracing with minimal Heisenberg effect.
- * --------------------------------------------------------------------
- */
-
-#define MKSTR(ptr) ((ptr)) ? (ptr) : ""
-
-static inline size_t cfs_size_round4(int val)
-{
-	return (val + 3) & (~0x3);
-}
-
 #ifndef HAVE_CFS_SIZE_ROUND
 static inline size_t cfs_size_round(int val)
 {
-	return (val + 7) & (~0x7);
+	return round_up(val, 8);
 }
 
 #define HAVE_CFS_SIZE_ROUND
 #endif
-
-static inline size_t cfs_size_round16(int val)
-{
-	return (val + 0xf) & (~0xf);
-}
-
-static inline size_t cfs_size_round32(int val)
-{
-	return (val + 0x1f) & (~0x1f);
-}
-
-static inline size_t cfs_size_round0(int val)
-{
-	if (!val)
-		return 0;
-	return (val + 1 + 7) & (~0x7);
-}
-
-static inline size_t cfs_round_strlen(char *fset)
-{
-	return cfs_size_round((int)strlen(fset) + 1);
-}
 
 #endif
