@@ -2309,7 +2309,8 @@ static int hisi_sas_v3_suspend(struct pci_dev *pdev, pm_message_t state)
 	struct hisi_hba *hisi_hba = sha->lldd_ha;
 	struct device *dev = hisi_hba->dev;
 	struct Scsi_Host *shost = hisi_hba->shost;
-	u32 device_state, status;
+	u32 status;
+	pci_power_t device_state;
 	int rc;
 	u32 reg_val;
 	unsigned long flags;
@@ -2371,7 +2372,7 @@ static int hisi_sas_v3_resume(struct pci_dev *pdev)
 	struct Scsi_Host *shost = hisi_hba->shost;
 	struct device *dev = hisi_hba->dev;
 	unsigned int rc;
-	u32 device_state = pdev->current_state;
+	pci_power_t device_state = pdev->current_state;
 
 	dev_warn(dev, "resuming from operating state [D%d]\n",
 			device_state);
