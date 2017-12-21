@@ -480,10 +480,10 @@ static struct extent_map *prev_extent_map(struct extent_map *em)
  * extent to map_start, and an extent that you want to insert, deal with overlap
  * and insert the best fitted new extent into the tree.
  */
-static int merge_extent_mapping(struct extent_map_tree *em_tree,
-				struct extent_map *existing,
-				struct extent_map *em,
-				u64 map_start, u64 map_len)
+static noinline int merge_extent_mapping(struct extent_map_tree *em_tree,
+					 struct extent_map *existing,
+					 struct extent_map *em,
+					 u64 map_start, u64 map_len)
 {
 	struct extent_map *prev;
 	struct extent_map *next;
