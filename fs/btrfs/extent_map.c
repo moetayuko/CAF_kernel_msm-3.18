@@ -483,7 +483,7 @@ static struct extent_map *prev_extent_map(struct extent_map *em)
 static int merge_extent_mapping(struct extent_map_tree *em_tree,
 				struct extent_map *existing,
 				struct extent_map *em,
-				u64 map_start)
+				u64 map_start, u64 map_len)
 {
 	struct extent_map *prev;
 	struct extent_map *next;
@@ -496,9 +496,13 @@ static int merge_extent_mapping(struct extent_map_tree *em_tree,
 	if (existing->start > map_start) {
 		next = existing;
 		prev = prev_extent_map(next);
+		if (prev)
+			ASSERT(extent_map_end(prev) <= map_start);
 	} else {
 		prev = existing;
 		next = next_extent_map(prev);
+		if (next)
+			ASSERT(map_start + map_len <= next->start);
 	}
 
 	start = prev ? extent_map_end(prev) : em->start;
@@ -540,35 +544,26 @@ int btrfs_add_extent_mapping(struct extent_map_tree *em_tree,
 		 * existing will always be non-NULL, since there must be
 		 * extent causing the -EEXIST.
 		 */
-		if (existing->start == em->start &&
-		    extent_map_end(existing) >= extent_map_end(em) &&
-		    em->block_start == existing->block_start) {
-			/*
-			 * The existing extent map already encompasses the
-			 * entire extent map we tried to add.
-			 */
+		if (start >= existing->start &&
+		    start < extent_map_end(existing)) {
 			free_extent_map(em);
 			*em_in = existing;
 			ret = 0;
-		} else if (start >= extent_map_end(existing) ||
-		    start <= existing->start) {
+		} else {
 			/*
 			 * The existing extent map is the one nearest to
 			 * the [start, start + len) range which overlaps
 			 */
 			ret = merge_extent_mapping(em_tree, existing,
-						   em, start);
+						   em, start, len);
 			free_extent_map(existing);
 			if (ret) {
 				free_extent_map(em);
 				*em_in = NULL;
 			}
-		} else {
-			free_extent_map(em);
-			*em_in = existing;
-			ret = 0;
 		}
 	}
+
 	ASSERT(ret == 0 || ret == -EEXIST);
 	return ret;
 }
