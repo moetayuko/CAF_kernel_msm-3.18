@@ -931,7 +931,11 @@ static int i915_driver_init_early(struct drm_i915_private *dev_priv,
 
 	intel_display_crc_init(dev_priv);
 
-	intel_device_info_dump(dev_priv);
+	if (drm_debug & DRM_UT_DRIVER) {
+		struct drm_printer p = drm_debug_printer("i915 device info:");
+
+		intel_device_info_dump(&dev_priv->info, &p);
+	}
 
 	intel_detect_preproduction_hw(dev_priv);
 
@@ -1924,9 +1928,6 @@ void i915_reset(struct drm_i915_private *i915, unsigned int flags)
 		goto taint;
 	}
 
-	i915_gem_reset(i915);
-	intel_overlay_reset(i915);
-
 	/* Ok, now get things going again... */
 
 	/*
@@ -1938,6 +1939,9 @@ void i915_reset(struct drm_i915_private *i915, unsigned int flags)
 		DRM_ERROR("Failed to re-enable GGTT following reset %d\n", ret);
 		goto error;
 	}
+
+	i915_gem_reset(i915);
+	intel_overlay_reset(i915);
 
 	/*
 	 * Next we need to restore the context, but we don't use those
@@ -2011,18 +2015,18 @@ int i915_reset_engine(struct intel_engine_cs *engine, unsigned int flags)
 
 	GEM_BUG_ON(!test_bit(I915_RESET_ENGINE + engine->id, &error->flags));
 
+	active_request = i915_gem_reset_prepare_engine(engine);
+	if (IS_ERR_OR_NULL(active_request)) {
+		/* Either the previous reset failed, or we pardon the reset. */
+		ret = PTR_ERR(active_request);
+		goto out;
+	}
+
 	if (!(flags & I915_RESET_QUIET)) {
 		dev_notice(engine->i915->drm.dev,
 			   "Resetting %s after gpu hang\n", engine->name);
 	}
 	error->reset_engine_count[engine->id]++;
-
-	active_request = i915_gem_reset_prepare_engine(engine);
-	if (IS_ERR(active_request)) {
-		DRM_DEBUG_DRIVER("Previous reset failed, promote to full reset\n");
-		ret = PTR_ERR(active_request);
-		goto out;
-	}
 
 	if (!engine->i915->guc.execbuf_client)
 		ret = intel_gt_reset_engine(engine->i915, engine);

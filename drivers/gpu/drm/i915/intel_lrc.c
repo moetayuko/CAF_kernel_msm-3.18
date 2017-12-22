@@ -449,7 +449,7 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 
 			GEM_TRACE("%s in[%d]:  ctx=%d.%d, seqno=%x\n",
 				  engine->name, n,
-				  rq->ctx->hw_id, count,
+				  port[n].context_id, count,
 				  rq->global_seqno);
 		} else {
 			GEM_BUG_ON(!n);
@@ -504,7 +504,7 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
 	ce->ring->tail &= (ce->ring->size - 1);
 	ce->lrc_reg_state[CTX_RING_TAIL+1] = ce->ring->tail;
 
-	GEM_TRACE("\n");
+	GEM_TRACE("%s\n", engine->name);
 	for (n = execlists_num_ports(&engine->execlists); --n; )
 		elsp_write(0, engine->execlists.elsp);
 
@@ -861,7 +861,7 @@ static void execlists_submission_tasklet(unsigned long data)
 			 */
 
 			status = READ_ONCE(buf[2 * head]); /* maybe mmio! */
-			GEM_TRACE("%s csb[%dd]: status=0x%08x:0x%08x\n",
+			GEM_TRACE("%s csb[%d]: status=0x%08x:0x%08x\n",
 				  engine->name, head,
 				  status, buf[2*head + 1]);
 
@@ -905,8 +905,8 @@ static void execlists_submission_tasklet(unsigned long data)
 			rq = port_unpack(port, &count);
 			GEM_TRACE("%s out[0]: ctx=%d.%d, seqno=%x\n",
 				  engine->name,
-				  rq->ctx->hw_id, count,
-				  rq->global_seqno);
+				  port->context_id, count,
+				  rq ? rq->global_seqno : 0);
 			GEM_BUG_ON(count == 0);
 			if (--count == 0) {
 				GEM_BUG_ON(status & GEN8_CTX_STATUS_PREEMPTED);
@@ -1555,6 +1555,8 @@ static void reset_common_ring(struct intel_engine_cs *engine,
 	struct intel_context *ce;
 	unsigned long flags;
 
+	GEM_TRACE("%s seqno=%x\n",
+		  engine->name, request ? request->global_seqno : 0);
 	spin_lock_irqsave(&engine->timeline->lock, flags);
 
 	/*
