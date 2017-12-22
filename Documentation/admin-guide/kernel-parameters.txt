@@ -1739,7 +1739,7 @@
 	isapnp=		[ISAPNP]
 			Format: <RDP>,<reset>,<pci_scan>,<verbosity>
 
-	isolcpus=	[KNL,SMP] Isolate a given set of CPUs from disturbance.
+	isolcpus=	[KNL,SMP,ISOL] Isolate a given set of CPUs from disturbance.
 			[Deprecated - use cpusets instead]
 			Format: [flag-list,]<cpu-list>
 
@@ -2667,7 +2667,7 @@
 			Valid arguments: on, off
 			Default: on
 
-	nohz_full=	[KNL,BOOT]
+	nohz_full=	[KNL,BOOT,SMP,ISOL]
 			The argument is a cpu list, as described above.
 			In kernels built with CONFIG_NO_HZ_FULL=y, set
 			the specified list of CPUs whose tick will be stopped
@@ -2712,6 +2712,8 @@
 	no-steal-acc    [X86,KVM] Disable paravirtualized steal time accounting.
 			steal time is computed, but won't influence scheduler
 			behaviour
+
+	nopti		[X86-64] Disable kernel page table isolation
 
 	nolapic		[X86-32,APIC] Do not enable or use the local APIC.
 
@@ -3286,6 +3288,12 @@
 
 	pt.		[PARIDE]
 			See Documentation/blockdev/paride.txt.
+
+	pti=		[X86_64]
+			Control user/kernel address space isolation:
+			on - enable
+			off - disable
+			auto - default setting
 
 	pty.legacy_count=
 			[KNL] Number of legacy pty's. Overwrites compiled-in

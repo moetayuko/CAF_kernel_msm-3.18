@@ -15,6 +15,7 @@
 #include <asm/tlbflush.h>
 #include <asm/sections.h>
 #include <asm/pgtable.h>
+#include <asm/cpu_entry_area.h>
 
 extern struct range pfn_mapped[E820_MAX_ENTRIES];
 
@@ -330,12 +331,13 @@ void __init kasan_init(void)
 			      (unsigned long)kasan_mem_to_shadow(_end),
 			      early_pfn_to_nid(__pa(_stext)));
 
-	shadow_cpu_entry_begin = (void *)__fix_to_virt(FIX_CPU_ENTRY_AREA_BOTTOM);
+	shadow_cpu_entry_begin = (void *)CPU_ENTRY_AREA_BASE;
 	shadow_cpu_entry_begin = kasan_mem_to_shadow(shadow_cpu_entry_begin);
 	shadow_cpu_entry_begin = (void *)round_down((unsigned long)shadow_cpu_entry_begin,
 						PAGE_SIZE);
 
-	shadow_cpu_entry_end = (void *)(__fix_to_virt(FIX_CPU_ENTRY_AREA_TOP) + PAGE_SIZE);
+	shadow_cpu_entry_end = (void *)(CPU_ENTRY_AREA_BASE +
+					CPU_ENTRY_AREA_TOT_SIZE);
 	shadow_cpu_entry_end = kasan_mem_to_shadow(shadow_cpu_entry_end);
 	shadow_cpu_entry_end = (void *)round_up((unsigned long)shadow_cpu_entry_end,
 					PAGE_SIZE);
