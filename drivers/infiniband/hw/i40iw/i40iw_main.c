@@ -483,6 +483,7 @@ static enum i40iw_status_code i40iw_create_hmc_objs(struct i40iw_device *iwdev,
 	for (i = 0; i < IW_HMC_OBJ_TYPE_NUM; i++) {
 		info.rsrc_type = iw_hmc_obj_types[i];
 		info.count = dev->hmc_info->hmc_obj[info.rsrc_type].cnt;
+		info.add_sd_cnt = 0;
 		status = i40iw_create_hmc_obj_type(dev, &info);
 		if (status) {
 			i40iw_pr_err("create obj type %d status = %d\n",
@@ -607,7 +608,7 @@ static enum i40iw_status_code i40iw_create_cqp(struct i40iw_device *iwdev)
 	INIT_LIST_HEAD(&cqp->cqp_avail_reqs);
 	INIT_LIST_HEAD(&cqp->cqp_pending_reqs);
 	/* init the waitq of the cqp_requests and add them to the list */
-	for (i = 0; i < I40IW_CQP_SW_SQSIZE_2048; i++) {
+	for (i = 0; i < sqsize; i++) {
 		init_waitqueue_head(&cqp->cqp_requests[i].waitq);
 		list_add_tail(&cqp->cqp_requests[i].list, &cqp->cqp_avail_reqs);
 	}
