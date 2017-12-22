@@ -34,10 +34,12 @@
 #include <net/pkt_cls.h>
 
 #include "../nfpcore/nfp_cpp.h"
+#include "../nfpcore/nfp_nffw.h"
 #include "../nfp_app.h"
 #include "../nfp_main.h"
 #include "../nfp_net.h"
 #include "../nfp_port.h"
+#include "fw.h"
 #include "main.h"
 
 static bool nfp_net_ebpf_capable(struct nfp_net *nn)
@@ -82,43 +84,11 @@ static const char *nfp_bpf_extra_cap(struct nfp_app *app, struct nfp_net *nn)
 	return nfp_net_ebpf_capable(nn) ? "BPF" : "";
 }
 
-static int
-nfp_bpf_vnic_alloc(struct nfp_app *app, struct nfp_net *nn, unsigned int id)
-{
-	int err;
-
-	nn->app_priv = kzalloc(sizeof(struct nfp_bpf_vnic), GFP_KERNEL);
-	if (!nn->app_priv)
-		return -ENOMEM;
-
-	err = nfp_app_nic_vnic_alloc(app, nn, id);
-	if (err)
-		goto err_free_priv;
-
-	return 0;
-err_free_priv:
-	kfree(nn->app_priv);
-	return err;
-}
-
-static void nfp_bpf_vnic_free(struct nfp_app *app, struct nfp_net *nn)
-{
-	struct nfp_bpf_vnic *bv = nn->app_priv;
-
-	if (nn->dp.bpf_offload_xdp)
-		nfp_bpf_xdp_offload(app, nn, NULL);
-	WARN_ON(bv->tc_prog);
-	kfree(bv);
-}
-
 static int nfp_bpf_setup_tc_block_cb(enum tc_setup_type type,
 				     void *type_data, void *cb_priv)
 {
 	struct tc_cls_bpf_offload *cls_bpf = type_data;
 	struct nfp_net *nn = cb_priv;
-	struct bpf_prog *oldprog;
-	struct nfp_bpf_vnic *bv;
-	int err;
 
 	if (type != TC_SETUP_CLSBPF ||
 	    !tc_can_offload(nn->dp.netdev) ||
@@ -126,6 +96,8 @@ static int nfp_bpf_setup_tc_block_cb(enum tc_setup_type type,
 	    cls_bpf->common.protocol != htons(ETH_P_ALL) ||
 	    cls_bpf->common.chain_index)
 		return -EOPNOTSUPP;
+	if (nn->dp.bpf_offload_xdp)
+		return -EBUSY;
 
 	/* Only support TC direct action */
 	if (!cls_bpf->exts_integrated ||
@@ -137,22 +109,7 @@ static int nfp_bpf_setup_tc_block_cb(enum tc_setup_type type,
 	if (cls_bpf->command != TC_CLSBPF_OFFLOAD)
 		return -EOPNOTSUPP;
 
-	bv = nn->app_priv;
-	oldprog = cls_bpf->oldprog;
-
-	/* Don't remove if oldprog doesn't match driver's state */
-	if (bv->tc_prog != oldprog) {
-		oldprog = NULL;
-		if (!cls_bpf->prog)
-			return 0;
-	}
-
-	err = nfp_net_bpf_offload(nn, cls_bpf->prog, oldprog);
-	if (err)
-		return err;
-
-	bv->tc_prog = cls_bpf->prog;
-	return 0;
+	return nfp_net_bpf_offload(nn, cls_bpf->prog, cls_bpf->oldprog);
 }
 
 static int nfp_bpf_setup_tc_block(struct net_device *netdev,
@@ -194,14 +151,126 @@ static bool nfp_bpf_tc_busy(struct nfp_app *app, struct nfp_net *nn)
 	return nn->dp.ctrl & NFP_NET_CFG_CTRL_BPF;
 }
 
+static int
+nfp_bpf_parse_cap_adjust_head(struct nfp_app_bpf *bpf, void __iomem *value,
+			      u32 length)
+{
+	struct nfp_bpf_cap_tlv_adjust_head __iomem *cap = value;
+	struct nfp_cpp *cpp = bpf->app->pf->cpp;
+
+	if (length < sizeof(*cap)) {
+		nfp_err(cpp, "truncated adjust_head TLV: %d\n", length);
+		return -EINVAL;
+	}
+
+	bpf->adjust_head.flags = readl(&cap->flags);
+	bpf->adjust_head.off_min = readl(&cap->off_min);
+	bpf->adjust_head.off_max = readl(&cap->off_max);
+	bpf->adjust_head.guaranteed_sub = readl(&cap->guaranteed_sub);
+	bpf->adjust_head.guaranteed_add = readl(&cap->guaranteed_add);
+
+	if (bpf->adjust_head.off_min > bpf->adjust_head.off_max) {
+		nfp_err(cpp, "invalid adjust_head TLV: min > max\n");
+		return -EINVAL;
+	}
+	if (!FIELD_FIT(UR_REG_IMM_MAX, bpf->adjust_head.off_min) ||
+	    !FIELD_FIT(UR_REG_IMM_MAX, bpf->adjust_head.off_max)) {
+		nfp_warn(cpp, "disabling adjust_head - driver expects min/max to fit in as immediates\n");
+		memset(&bpf->adjust_head, 0, sizeof(bpf->adjust_head));
+		return 0;
+	}
+
+	return 0;
+}
+
+static int nfp_bpf_parse_capabilities(struct nfp_app *app)
+{
+	struct nfp_cpp *cpp = app->pf->cpp;
+	struct nfp_cpp_area *area;
+	u8 __iomem *mem, *start;
+
+	mem = nfp_rtsym_map(app->pf->rtbl, "_abi_bpf_capabilities", "bpf.cap",
+			    8, &area);
+	if (IS_ERR(mem))
+		return PTR_ERR(mem) == -ENOENT ? 0 : PTR_ERR(mem);
+
+	start = mem;
+	while (mem - start + 8 < nfp_cpp_area_size(area)) {
+		u8 __iomem *value;
+		u32 type, length;
+
+		type = readl(mem);
+		length = readl(mem + 4);
+		value = mem + 8;
+
+		mem += 8 + length;
+		if (mem - start > nfp_cpp_area_size(area))
+			goto err_release_free;
+
+		switch (type) {
+		case NFP_BPF_CAP_TYPE_ADJUST_HEAD:
+			if (nfp_bpf_parse_cap_adjust_head(app->priv, value,
+							  length))
+				goto err_release_free;
+			break;
+		default:
+			nfp_dbg(cpp, "unknown BPF capability: %d\n", type);
+			break;
+		}
+	}
+	if (mem - start != nfp_cpp_area_size(area)) {
+		nfp_err(cpp, "BPF capabilities left after parsing, parsed:%zd total length:%zu\n",
+			mem - start, nfp_cpp_area_size(area));
+		goto err_release_free;
+	}
+
+	nfp_cpp_area_release_free(area);
+
+	return 0;
+
+err_release_free:
+	nfp_err(cpp, "invalid BPF capabilities at offset:%zd\n", mem - start);
+	nfp_cpp_area_release_free(area);
+	return -EINVAL;
+}
+
+static int nfp_bpf_init(struct nfp_app *app)
+{
+	struct nfp_app_bpf *bpf;
+	int err;
+
+	bpf = kzalloc(sizeof(*bpf), GFP_KERNEL);
+	if (!bpf)
+		return -ENOMEM;
+	bpf->app = app;
+	app->priv = bpf;
+
+	err = nfp_bpf_parse_capabilities(app);
+	if (err)
+		goto err_free_bpf;
+
+	return 0;
+
+err_free_bpf:
+	kfree(bpf);
+	return err;
+}
+
+static void nfp_bpf_clean(struct nfp_app *app)
+{
+	kfree(app->priv);
+}
+
 const struct nfp_app_type app_bpf = {
 	.id		= NFP_APP_BPF_NIC,
 	.name		= "ebpf",
 
+	.init		= nfp_bpf_init,
+	.clean		= nfp_bpf_clean,
+
 	.extra_cap	= nfp_bpf_extra_cap,
 
-	.vnic_alloc	= nfp_bpf_vnic_alloc,
-	.vnic_free	= nfp_bpf_vnic_free,
+	.vnic_alloc	= nfp_app_nic_vnic_alloc,
 
 	.setup_tc	= nfp_bpf_setup_tc,
 	.tc_busy	= nfp_bpf_tc_busy,

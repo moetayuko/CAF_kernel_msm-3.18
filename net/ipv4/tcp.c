@@ -283,8 +283,6 @@
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
 
-#include <trace/events/tcp.h>
-
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
@@ -504,7 +502,7 @@ __poll_t tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 
-	state = sk_state_load(sk);
+	state = inet_sk_state_load(sk);
 	if (state == TCP_LISTEN)
 		return inet_csk_listen_poll(sk);
 
@@ -2040,8 +2038,6 @@ void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
 
-	trace_tcp_set_state(sk, oldstate, state);
-
 	switch (state) {
 	case TCP_ESTABLISHED:
 		if (oldstate != TCP_ESTABLISHED)
@@ -2065,7 +2061,7 @@ void tcp_set_state(struct sock *sk, int state)
 	/* Change state AFTER socket is unhashed to avoid closed
 	 * socket sitting in hash tables.
 	 */
-	sk_state_store(sk, state);
+	inet_sk_state_store(sk, state);
 
 #ifdef STATE_TRACE
 	SOCK_DEBUG(sk, "TCP sk=%p, State %s -> %s\n", sk, statename[oldstate], statename[state]);
@@ -2920,7 +2916,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	if (sk->sk_type != SOCK_STREAM)
 		return;
 
-	info->tcpi_state = sk_state_load(sk);
+	info->tcpi_state = inet_sk_state_load(sk);
 
 	/* Report meaningful fields for all TCP states, including listeners */
 	rate = READ_ONCE(sk->sk_pacing_rate);
@@ -3578,6 +3574,9 @@ void __init tcp_init(void)
 	percpu_counter_init(&tcp_sockets_allocated, 0, GFP_KERNEL);
 	percpu_counter_init(&tcp_orphan_count, 0, GFP_KERNEL);
 	inet_hashinfo_init(&tcp_hashinfo);
+	inet_hashinfo2_init(&tcp_hashinfo, "tcp_listen_portaddr_hash",
+			    thash_entries, 21,  /* one slot per 2 MB*/
+			    0, 64 * 1024);
 	tcp_hashinfo.bind_bucket_cachep =
 		kmem_cache_create("tcp_bind_bucket",
 				  sizeof(struct inet_bind_bucket), 0,
