@@ -18,6 +18,9 @@ struct io_context;
 struct cgroup_subsys_state;
 typedef void (bio_end_io_t) (struct bio *);
 
+struct request;
+typedef void (rq_failover_fn)(struct request *);
+
 /*
  * Block error status values.  See block/blk-core:blk_errors for the details.
  */
@@ -76,6 +79,7 @@ struct bio {
 
 	atomic_t		__bi_remaining;
 	bio_end_io_t		*bi_end_io;
+	rq_failover_fn		*bi_failover_rq;
 
 	void			*bi_private;
 #ifdef CONFIG_BLK_CGROUP
