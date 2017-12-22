@@ -153,8 +153,8 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 			*flags |= GPIO_OPEN_SOURCE;
 	}
 
-	if (of_flags & OF_GPIO_SLEEP_MAY_LOSE_VALUE)
-		*flags |= GPIO_SLEEP_MAY_LOSE_VALUE;
+	if (of_flags & OF_GPIO_TRANSITORY)
+		*flags |= GPIO_TRANSITORY;
 
 	return desc;
 }
@@ -214,6 +214,8 @@ static struct gpio_desc *of_parse_own_gpio(struct device_node *np,
 
 	if (xlate_flags & OF_GPIO_ACTIVE_LOW)
 		*lflags |= GPIO_ACTIVE_LOW;
+	if (xlate_flags & OF_GPIO_TRANSITORY)
+		*lflags |= GPIO_TRANSITORY;
 
 	if (of_property_read_bool(np, "input"))
 		*dflags |= GPIOD_IN;
@@ -493,7 +495,8 @@ int of_gpiochip_add(struct gpio_chip *chip)
 
 	/* If the chip defines names itself, these take precedence */
 	if (!chip->names)
-		devprop_gpiochip_set_names(chip);
+		devprop_gpiochip_set_names(chip,
+					   of_fwnode_handle(chip->of_node));
 
 	of_node_get(chip->of_node);
 
