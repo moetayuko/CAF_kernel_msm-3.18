@@ -772,7 +772,7 @@ static int check_subprogs(struct bpf_verifier_env *env)
 			return -EPERM;
 		}
 		if (bpf_prog_is_dev_bound(env->prog->aux)) {
-			verbose(env, "funcation calls in offloaded programs are not supported yet\n");
+			verbose(env, "function calls in offloaded programs are not supported yet\n");
 			return -EINVAL;
 		}
 		ret = add_subprog(env, i + insn[i].imm + 1);
@@ -823,6 +823,7 @@ next:
 	return 0;
 }
 
+static
 struct bpf_verifier_state *skip_callee(struct bpf_verifier_env *env,
 				       const struct bpf_verifier_state *state,
 				       struct bpf_verifier_state *parent,
@@ -867,7 +868,7 @@ bug:
 	verbose(env, "verifier bug regno %d tmp %p\n", regno, tmp);
 	verbose(env, "regno %d parent frame %d current frame %d\n",
 		regno, parent->curframe, state->curframe);
-	return 0;
+	return NULL;
 }
 
 static int mark_reg_read(struct bpf_verifier_env *env,
@@ -4475,9 +4476,12 @@ static int do_check(struct bpf_verifier_env *env)
 		}
 
 		if (env->log.level) {
+			const struct bpf_insn_cbs cbs = {
+				.cb_print	= verbose,
+			};
+
 			verbose(env, "%d: ", insn_idx);
-			print_bpf_insn(verbose, env, insn,
-				       env->allow_ptr_leaks);
+			print_bpf_insn(&cbs, env, insn, env->allow_ptr_leaks);
 		}
 
 		err = ext_analyzer_insn_hook(env, insn_idx, prev_insn_idx);
@@ -5065,14 +5069,14 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 {
 	struct bpf_prog *prog = env->prog, **func, *tmp;
 	int i, j, subprog_start, subprog_end = 0, len, subprog;
-	struct bpf_insn *insn = prog->insnsi;
+	struct bpf_insn *insn;
 	void *old_bpf_func;
 	int err = -ENOMEM;
 
 	if (env->subprog_cnt == 0)
 		return 0;
 
-	for (i = 0; i < prog->len; i++, insn++) {
+	for (i = 0, insn = prog->insnsi; i < prog->len; i++, insn++) {
 		if (insn->code != (BPF_JMP | BPF_CALL) ||
 		    insn->src_reg != BPF_PSEUDO_CALL)
 			continue;
@@ -5111,7 +5115,10 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 			goto out_free;
 		memcpy(func[i]->insnsi, &prog->insnsi[subprog_start],
 		       len * sizeof(struct bpf_insn));
+		func[i]->type = prog->type;
 		func[i]->len = len;
+		if (bpf_prog_calc_tag(func[i]))
+			goto out_free;
 		func[i]->is_func = 1;
 		/* Use bpf_prog_F_tag to indicate functions in stack traces.
 		 * Long term would need debug info to populate names
@@ -5161,6 +5168,25 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 		bpf_prog_lock_ro(func[i]);
 		bpf_prog_kallsyms_add(func[i]);
 	}
+
+	/* Last step: make now unused interpreter insns from main
+	 * prog consistent for later dump requests, so they can
+	 * later look the same as if they were interpreted only.
+	 */
+	for (i = 0, insn = prog->insnsi; i < prog->len; i++, insn++) {
+		unsigned long addr;
+
+		if (insn->code != (BPF_JMP | BPF_CALL) ||
+		    insn->src_reg != BPF_PSEUDO_CALL)
+			continue;
+		insn->off = env->insn_aux_data[i].call_imm;
+		subprog = find_subprog(env, i + insn->off + 1);
+		addr  = (unsigned long)func[subprog + 1]->bpf_func;
+		addr &= PAGE_MASK;
+		insn->imm = (u64 (*)(u64, u64, u64, u64, u64))
+			    addr - __bpf_call_base;
+	}
+
 	prog->jited = 1;
 	prog->bpf_func = func[0]->bpf_func;
 	prog->aux->func = func;
