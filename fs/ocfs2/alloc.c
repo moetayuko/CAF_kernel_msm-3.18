@@ -444,6 +444,7 @@ static void __ocfs2_init_extent_tree(struct ocfs2_extent_tree *et,
 	et->et_ops = ops;
 	et->et_root_bh = bh;
 	et->et_ci = ci;
+	et->et_lock = 0;
 	et->et_root_journal_access = access;
 	if (!obj)
 		obj = (void *)bh->b_data;
@@ -3606,7 +3607,8 @@ static int ocfs2_merge_rec_left(struct ocfs2_path *right_path,
 		 * it and we need to delete the right extent block.
 		 */
 		if (le16_to_cpu(right_rec->e_leaf_clusters) == 0 &&
-		    le16_to_cpu(el->l_next_free_rec) == 1) {
+				le16_to_cpu(el->l_next_free_rec) == 1 &&
+				!et->et_lock) {
 			/* extend credit for ocfs2_remove_rightmost_path */
 			ret = ocfs2_extend_rotate_transaction(handle, 0,
 					handle->h_buffer_credits,

@@ -2727,6 +2727,9 @@ int ocfs2_lock_allocators(struct inode *inode,
 		}
 	}
 
+	if (extents_to_split)
+		et->et_lock = 1;
+
 	if (clusters_to_add == 0)
 		goto out;
 

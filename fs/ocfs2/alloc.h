@@ -61,6 +61,7 @@ struct ocfs2_extent_tree {
 	ocfs2_journal_access_func		et_root_journal_access;
 	void					*et_object;
 	unsigned int				et_max_leaf_clusters;
+	int					et_lock;
 };
 
 /*
