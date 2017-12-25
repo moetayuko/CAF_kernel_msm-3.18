@@ -2421,10 +2421,9 @@ static int ocfs2_dio_end_io(struct kiocb *iocb,
  * Will look for holes and unwritten extents in the range starting at
  * pos for count bytes (inclusive).
  */
-static int ocfs2_check_range_for_holes(struct inode *inode, loff_t pos,
-				       size_t count)
+static bool ocfs2_range_has_holes(struct inode *inode, loff_t pos, size_t count)
 {
-	int ret = 0;
+	bool ret = false;
 	unsigned int extent_flags;
 	u32 cpos, clusters, extent_len, phys_cpos;
 	struct super_block *sb = inode->i_sb;
@@ -2441,8 +2440,8 @@ static int ocfs2_check_range_for_holes(struct inode *inode, loff_t pos,
 		}
 
 		if (phys_cpos == 0 || (extent_flags & OCFS2_EXT_UNWRITTEN)) {
-			ret = 1;
-			break;
+			ret = true;
+			goto out;
 		}
 
 		if (extent_len > clusters)
@@ -2472,7 +2471,7 @@ static ssize_t ocfs2_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	/* Fallback to buffered I/O if we do not support append dio. */
 	if (!ocfs2_supports_append_dio(osb) &&
 			(iocb->ki_pos + iter->count > i_size_read(inode) ||
-			 ocfs2_check_range_for_holes(inode, iocb->ki_pos,
+			 ocfs2_range_has_holes(inode, iocb->ki_pos,
 						     iter->count)))
 		return 0;
 
