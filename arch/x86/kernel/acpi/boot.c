@@ -47,6 +47,7 @@
 #include <asm/mpspec.h>
 #include <asm/smp.h>
 #include <asm/i8259.h>
+#include <asm/setup.h>
 
 #include "sleep.h" /* To include x86_acpi_suspend_lowlevel */
 static int __initdata acpi_force = 0;
@@ -1758,3 +1759,9 @@ void __init arch_reserve_mem_area(acpi_physical_address addr, size_t size)
 	e820__range_add(addr, size, E820_TYPE_ACPI);
 	e820__update_table_print();
 }
+
+acpi_physical_address acpi_arch_get_root_pointer(void)
+{
+	return boot_params.hdr.acpi_rsdp_addr;
+}
+EXPORT_SYMBOL_GPL(acpi_arch_get_root_pointer);
