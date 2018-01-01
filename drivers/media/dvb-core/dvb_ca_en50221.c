@@ -37,8 +37,8 @@
 #include <linux/sched/signal.h>
 #include <linux/kthread.h>
 
-#include "dvb_ca_en50221.h"
-#include "dvb_ringbuffer.h"
+#include <media/dvb_ca_en50221.h>
+#include <media/dvb_ringbuffer.h>
 
 static int dvb_ca_en50221_debug;
 
@@ -1473,6 +1473,9 @@ static ssize_t dvb_ca_en50221_io_write(struct file *file,
 		return -EFAULT;
 	buf += 2;
 	count -= 2;
+
+	if (slot >= ca->slot_count)
+		return -EINVAL;
 	sl = &ca->slot_info[slot];
 
 	/* check if the slot is actually running */
