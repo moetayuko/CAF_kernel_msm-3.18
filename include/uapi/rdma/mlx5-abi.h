@@ -41,6 +41,7 @@ enum {
 	MLX5_QP_FLAG_SIGNATURE		= 1 << 0,
 	MLX5_QP_FLAG_SCATTER_CQE	= 1 << 1,
 	MLX5_QP_FLAG_TUNNEL_OFFLOADS	= 1 << 2,
+	MLX5_QP_FLAG_BFREG_INDEX	= 1 << 3,
 };
 
 enum {
@@ -125,6 +126,8 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u64	hca_core_clock_offset;
 	__u32	log_uar_size;
 	__u32	num_uars_per_page;
+	__u32	num_dyn_bfregs;
+	__u32	reserved3;
 };
 
 struct mlx5_ib_alloc_pd_resp {
@@ -280,7 +283,7 @@ struct mlx5_ib_create_qp {
 	__u32	rq_wqe_shift;
 	__u32	flags;
 	__u32	uidx;
-	__u32	reserved0;
+	__u32	bfreg_index;
 	__u64	sq_buf_addr;
 };
 
@@ -307,7 +310,7 @@ enum mlx5_rx_hash_fields {
 	MLX5_RX_HASH_SRC_PORT_UDP	= 1 << 6,
 	MLX5_RX_HASH_DST_PORT_UDP	= 1 << 7,
 	/* Save bits for future fields */
-	MLX5_RX_HASH_INNER		= 1 << 31
+	MLX5_RX_HASH_INNER		= (1UL << 31),
 };
 
 struct mlx5_ib_create_qp_rss {
