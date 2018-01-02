@@ -24,8 +24,7 @@
 #include <linux/i2c.h>
 #include <asm/div64.h>
 
-#include "dvb_math.h"
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 #include "stv0910.h"
 #include "stv0910_regs.h"
 
@@ -533,10 +532,8 @@ static int get_signal_parameters(struct stv *state)
 
 static int tracking_optimization(struct stv *state)
 {
-	u32 symbol_rate = 0;
 	u8 tmp;
 
-	get_cur_symbol_rate(state, &symbol_rate);
 	read_reg(state, RSTV0910_P2_DMDCFGMD + state->regoff, &tmp);
 	tmp &= ~0xC0;
 
@@ -1241,7 +1238,8 @@ static int gate_ctrl(struct dvb_frontend *fe, int enable)
 	if (write_reg(state, state->nr ? RSTV0910_P2_I2CRPT :
 		      RSTV0910_P1_I2CRPT, i2crpt) < 0) {
 		/* don't hold the I2C bus lock on failure */
-		mutex_unlock(&state->base->i2c_lock);
+		if (!WARN_ON(!mutex_is_locked(&state->base->i2c_lock)))
+			mutex_unlock(&state->base->i2c_lock);
 		dev_err(&state->base->i2c->dev,
 			"%s() write_reg failure (enable=%d)\n",
 			__func__, enable);
@@ -1251,7 +1249,8 @@ static int gate_ctrl(struct dvb_frontend *fe, int enable)
 	state->i2crpt = i2crpt;
 
 	if (!enable)
-		mutex_unlock(&state->base->i2c_lock);
+		if (!WARN_ON(!mutex_is_locked(&state->base->i2c_lock)))
+			mutex_unlock(&state->base->i2c_lock);
 	return 0;
 }
 
@@ -1271,14 +1270,11 @@ static int set_parameters(struct dvb_frontend *fe)
 {
 	int stat = 0;
 	struct stv *state = fe->demodulator_priv;
-	u32 iffreq;
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 
 	stop(state);
 	if (fe->ops.tuner_ops.set_params)
 		fe->ops.tuner_ops.set_params(fe);
-	if (fe->ops.tuner_ops.get_if_frequency)
-		fe->ops.tuner_ops.get_if_frequency(fe, &iffreq);
 	state->symbol_rate = p->symbol_rate;
 	stat = start(state, p);
 	return stat;
@@ -1498,6 +1494,19 @@ static int read_status(struct dvb_frontend *fe, enum fe_status *status)
 				enable_puncture_rate(state,
 						     state->puncture_rate);
 		}
+
+		/* Use highest signaled ModCod for quality */
+		if (state->is_vcm) {
+			u8 tmp;
+			enum fe_stv0910_mod_cod mod_cod;
+
+			read_reg(state, RSTV0910_P2_DMDMODCOD + state->regoff,
+				 &tmp);
+			mod_cod = (enum fe_stv0910_mod_cod)((tmp & 0x7c) >> 2);
+
+			if (mod_cod > state->mod_cod)
+				state->mod_cod = mod_cod;
+		}
 	}
 
 	/* read signal statistics */
@@ -1527,6 +1536,7 @@ static int get_frontend(struct dvb_frontend *fe,
 {
 	struct stv *state = fe->demodulator_priv;
 	u8 tmp;
+	u32 symbolrate;
 
 	if (state->receive_mode == RCVMODE_DVBS2) {
 		u32 mc;
@@ -1580,6 +1590,10 @@ static int get_frontend(struct dvb_frontend *fe,
 		p->rolloff = ROLLOFF_35;
 	}
 
+	if (state->receive_mode != RCVMODE_NONE) {
+		get_cur_symbol_rate(state, &symbolrate);
+		p->symbol_rate = symbolrate;
+	}
 	return 0;
 }
 
