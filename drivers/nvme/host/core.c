@@ -188,11 +188,57 @@ static inline bool nvme_req_needs_retry(struct request *req)
 	return true;
 }
 
+static bool nvme_req_needs_failover(struct request *req)
+{
+	/* Caller verifies req->q->failover_rq_fn is set */
+
+	switch (nvme_req(req)->status & 0x7ff) {
+	/*
+	 * Generic command status:
+	 */
+	case NVME_SC_INVALID_OPCODE:
+	case NVME_SC_INVALID_FIELD:
+	case NVME_SC_INVALID_NS:
+	case NVME_SC_LBA_RANGE:
+	case NVME_SC_CAP_EXCEEDED:
+	case NVME_SC_RESERVATION_CONFLICT:
+		return false;
+
+	/*
+	 * I/O command set specific error.  Unfortunately these values are
+	 * reused for fabrics commands, but those should never get here.
+	 */
+	case NVME_SC_BAD_ATTRIBUTES:
+	case NVME_SC_INVALID_PI:
+	case NVME_SC_READ_ONLY:
+	case NVME_SC_ONCS_NOT_SUPPORTED:
+		WARN_ON_ONCE(nvme_req(req)->cmd->common.opcode ==
+			nvme_fabrics_command);
+		return false;
+
+	/*
+	 * Media and Data Integrity Errors:
+	 */
+	case NVME_SC_WRITE_FAULT:
+	case NVME_SC_READ_ERROR:
+	case NVME_SC_GUARD_CHECK:
+	case NVME_SC_APPTAG_CHECK:
+	case NVME_SC_REFTAG_CHECK:
+	case NVME_SC_COMPARE_FAILED:
+	case NVME_SC_ACCESS_DENIED:
+	case NVME_SC_UNWRITTEN_BLOCK:
+		return false;
+	}
+
+	/* Everything else could be a path failure, so should be retried */
+	return true;
+}
+
 void nvme_complete_rq(struct request *req)
 {
 	if (unlikely(nvme_req(req)->status && nvme_req_needs_retry(req))) {
-		if (nvme_req_needs_failover(req)) {
-			nvme_failover_req(req);
+		if (req->q->failover_rq_fn && nvme_req_needs_failover(req)) {
+			req->q->failover_rq_fn(req);
 			return;
 		}
 
@@ -2894,6 +2940,7 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 		sprintf(disk_name, "nvme%dc%dn%d", ctrl->subsys->instance,
 				ctrl->cntlid, ns->head->instance);
 		flags = GENHD_FL_HIDDEN;
+		ns->queue->failover_rq_fn = nvme_failover_req;
 	} else {
 		sprintf(disk_name, "nvme%dn%d", ctrl->subsys->instance,
 				ns->head->instance);
