@@ -777,14 +777,16 @@ The driver can indicate that by setting ``DPM_FLAG_SMART_SUSPEND`` in
 runtime suspend at the beginning of the ``suspend_late`` phase of system-wide
 suspend (or in the ``poweroff_late`` phase of hibernation), when runtime PM
 has been disabled for it, under the assumption that its state should not change
-after that point until the system-wide transition is over.  If that happens, the
-driver's system-wide resume callbacks, if present, may still be invoked during
-the subsequent system-wide resume transition and the device's runtime power
-management status may be set to "active" before enabling runtime PM for it,
-so the driver must be prepared to cope with the invocation of its system-wide
-resume callbacks back-to-back with its ``->runtime_suspend`` one (without the
-intervening ``->runtime_resume`` and so on) and the final state of the device
-must reflect the "active" status for runtime PM in that case.
+after that point until the system-wide transition is over (the PM core itself
+does that for devices whose "noirq", "late" and "early" system-wide PM callbacks
+are executed directly by it).  If that happens, the driver's system-wide resume
+callbacks, if present, may still be invoked during the subsequent system-wide
+resume transition and the device's runtime power management status may be set
+to "active" before enabling runtime PM for it, so the driver must be prepared to
+cope with the invocation of its system-wide resume callbacks back-to-back with
+its ``->runtime_suspend`` one (without the intervening ``->runtime_resume`` and
+so on) and the final state of the device must reflect the "active" runtime PM
+status in that case.
 
 During system-wide resume from a sleep state it's easiest to put devices into
 the full-power state, as explained in :file:`Documentation/power/runtime_pm.txt`.
@@ -814,3 +816,12 @@ appropriate in its "noirq" resume callback, which is executed regardless of
 whether or not the device is left suspended, but the other resume callbacks
 (except for ``->complete``) will be skipped automatically by the PM core if the
 device really can be left in suspend.
+
+For devices whose "noirq", "late" and "early" driver callbacks are invoked
+directly by the PM core, all of the system-wide resume callbacks are skipped if
+``DPM_FLAG_LEAVE_SUSPENDED`` is set and the device is in runtime suspend during
+the ``suspend_noirq`` (or analogous) phase or the transition under way is a
+proper system suspend (rather than anything related to hibernation) and the
+device's wakeup settings are suitable for runtime PM (that is, it cannot
+generate wakeup signals at all or it is allowed to wake up the system from
+sleep).

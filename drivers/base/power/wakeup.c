@@ -448,9 +448,7 @@ int device_init_wakeup(struct device *dev, bool enable)
 		device_set_wakeup_capable(dev, true);
 		ret = device_wakeup_enable(dev);
 	} else {
-		if (dev->power.can_wakeup)
-			device_wakeup_disable(dev);
-
+		device_wakeup_disable(dev);
 		device_set_wakeup_capable(dev, false);
 	}
 
@@ -464,9 +462,6 @@ EXPORT_SYMBOL_GPL(device_init_wakeup);
  */
 int device_set_wakeup_enable(struct device *dev, bool enable)
 {
-	if (!dev || !dev->power.can_wakeup)
-		return -EINVAL;
-
 	return enable ? device_wakeup_enable(dev) : device_wakeup_disable(dev);
 }
 EXPORT_SYMBOL_GPL(device_set_wakeup_enable);
