@@ -18,6 +18,8 @@ struct ip6_rt_info {
 	u_int32_t mark;
 };
 
+struct nf_queue_entry;
+
 /*
  * Hook functions for ipv6 to allow xt_* modules to be built-in even
  * if IPv6 is a module.
