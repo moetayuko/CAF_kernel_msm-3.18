@@ -295,6 +295,7 @@ typedef int (lld_busy_fn) (struct request_queue *q);
 typedef int (bsg_job_fn) (struct bsg_job *);
 typedef int (init_rq_fn)(struct request_queue *, struct request *, gfp_t);
 typedef void (exit_rq_fn)(struct request_queue *, struct request *);
+typedef void (failover_rq_fn)(struct request *);
 
 enum blk_eh_timer_return {
 	BLK_EH_NOT_HANDLED,
@@ -440,6 +441,11 @@ struct request_queue {
 	exit_rq_fn		*exit_rq_fn;
 	/* Called from inside blk_get_request() */
 	void (*initialize_rq_fn)(struct request *rq);
+	/*
+	 * Callback to failover request's bios back to upper layer
+	 * bio-based request_queue using blk_steal_bios().
+	 */
+	failover_rq_fn		*failover_rq_fn;
 
 	const struct blk_mq_ops	*mq_ops;
 

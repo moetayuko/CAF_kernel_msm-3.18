@@ -28,6 +28,7 @@ enum dm_queue_mode {
 	DM_TYPE_REQUEST_BASED	 = 2,
 	DM_TYPE_MQ_REQUEST_BASED = 3,
 	DM_TYPE_DAX_BIO_BASED	 = 4,
+	DM_TYPE_NVME_BIO_BASED	 = 5,
 };
 
 typedef enum { STATUSTYPE_INFO, STATUSTYPE_TABLE } status_type_t;
@@ -90,6 +91,8 @@ typedef int (*dm_message_fn) (struct dm_target *ti, unsigned argc, char **argv);
 
 typedef int (*dm_prepare_ioctl_fn) (struct dm_target *ti,
 			    struct block_device **bdev, fmode_t *mode);
+
+typedef void (*dm_cleanup_device_fn) (struct dm_target *ti, struct dm_dev *dev);
 
 /*
  * These iteration functions are typically used to check (and combine)
@@ -180,6 +183,7 @@ struct target_type {
 	dm_message_fn message;
 	dm_prepare_ioctl_fn prepare_ioctl;
 	dm_busy_fn busy;
+	dm_cleanup_device_fn cleanup_device;
 	dm_iterate_devices_fn iterate_devices;
 	dm_io_hints_fn io_hints;
 	dm_dax_direct_access_fn direct_access;
@@ -219,14 +223,6 @@ struct target_type {
  */
 #define DM_TARGET_WILDCARD		0x00000008
 #define dm_target_is_wildcard(type)	((type)->features & DM_TARGET_WILDCARD)
-
-/*
- * Some targets need to be sent the same WRITE bio severals times so
- * that they can send copies of it to different devices.  This function
- * examines any supplied bio and returns the number of copies of it the
- * target requires.
- */
-typedef unsigned (*dm_num_write_bios_fn) (struct dm_target *ti, struct bio *bio);
 
 /*
  * A target implements own bio data integrity.
@@ -291,13 +287,6 @@ struct dm_target {
 	 */
 	unsigned per_io_data_size;
 
-	/*
-	 * If defined, this function is called to find out how many
-	 * duplicate bios should be sent to the target when writing
-	 * data.
-	 */
-	dm_num_write_bios_fn num_write_bios;
-
 	/* target specific data */
 	void *private;
 
@@ -321,6 +310,12 @@ struct dm_target {
 	 * on max_io_len boundary.
 	 */
 	bool split_discard_bios:1;
+
+	/*
+	 * Set if there is no need to call this target's end_io hook
+	 * (be it .end_io or .end_io_rq).
+	 */
+	bool skip_end_io_hook:1;
 };
 
 /* Each target can link one of these into the table */
@@ -329,35 +324,10 @@ struct dm_target_callbacks {
 	int (*congested_fn) (struct dm_target_callbacks *, int);
 };
 
-/*
- * For bio-based dm.
- * One of these is allocated for each bio.
- * This structure shouldn't be touched directly by target drivers.
- * It is here so that we can inline dm_per_bio_data and
- * dm_bio_from_per_bio_data
- */
-struct dm_target_io {
-	struct dm_io *io;
-	struct dm_target *ti;
-	unsigned target_bio_nr;
-	unsigned *len_ptr;
-	struct bio clone;
-};
-
-static inline void *dm_per_bio_data(struct bio *bio, size_t data_size)
-{
-	return (char *)bio - offsetof(struct dm_target_io, clone) - data_size;
-}
-
-static inline struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size)
-{
-	return (struct bio *)((char *)data + data_size + offsetof(struct dm_target_io, clone));
-}
-
-static inline unsigned dm_bio_get_target_bio_nr(const struct bio *bio)
-{
-	return container_of(bio, struct dm_target_io, clone)->target_bio_nr;
-}
+void *dm_per_bio_data(struct bio *bio, size_t data_size);
+struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size);
+struct dm_target *dm_bio_get_target(const struct bio *bio);
+unsigned dm_bio_get_target_bio_nr(const struct bio *bio);
 
 int dm_register_target(struct target_type *t);
 void dm_unregister_target(struct target_type *t);

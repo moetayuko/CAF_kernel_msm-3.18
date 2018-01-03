@@ -285,12 +285,12 @@ static void dm_done(struct request *clone, blk_status_t error, bool mapped)
 {
 	int r = DM_ENDIO_DONE;
 	struct dm_rq_target_io *tio = clone->end_io_data;
-	dm_request_endio_fn rq_end_io = NULL;
+	struct dm_target *ti = tio->ti;
 
-	if (tio->ti) {
-		rq_end_io = tio->ti->type->rq_end_io;
+	if (ti) {
+		dm_request_endio_fn rq_end_io = ti->type->rq_end_io;
 
-		if (mapped && rq_end_io)
+		if (mapped && rq_end_io && !ti->skip_end_io_hook)
 			r = rq_end_io(tio->ti, clone, error, &tio->info);
 	}
 
