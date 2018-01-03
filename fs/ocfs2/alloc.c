@@ -444,6 +444,7 @@ static void __ocfs2_init_extent_tree(struct ocfs2_extent_tree *et,
 	et->et_ops = ops;
 	et->et_root_bh = bh;
 	et->et_ci = ci;
+	et->et_lock = 0;
 	et->et_root_journal_access = access;
 	if (!obj)
 		obj = (void *)bh->b_data;
@@ -3606,7 +3607,8 @@ static int ocfs2_merge_rec_left(struct ocfs2_path *right_path,
 		 * it and we need to delete the right extent block.
 		 */
 		if (le16_to_cpu(right_rec->e_leaf_clusters) == 0 &&
-		    le16_to_cpu(el->l_next_free_rec) == 1) {
+				le16_to_cpu(el->l_next_free_rec) == 1 &&
+				!et->et_lock) {
 			/* extend credit for ocfs2_remove_rightmost_path */
 			ret = ocfs2_extend_rotate_transaction(handle, 0,
 					handle->h_buffer_credits,
@@ -7382,6 +7384,7 @@ int ocfs2_trim_fs(struct super_block *sb, struct fstrim_range *range)
 	struct buffer_head *gd_bh = NULL;
 	struct ocfs2_dinode *main_bm;
 	struct ocfs2_group_desc *gd = NULL;
+	struct ocfs2_trim_fs_info info, *pinfo = NULL;
 
 	start = range->start >> osb->s_clustersize_bits;
 	len = range->len >> osb->s_clustersize_bits;
@@ -7418,6 +7421,42 @@ int ocfs2_trim_fs(struct super_block *sb, struct fstrim_range *range)
 		len = le32_to_cpu(main_bm->i_clusters) - start;
 
 	trace_ocfs2_trim_fs(start, len, minlen);
+
+	ocfs2_trim_fs_lock_res_init(osb);
+	ret = ocfs2_trim_fs_lock(osb, NULL, 1);
+	if (ret < 0) {
+		if (ret != -EAGAIN) {
+			mlog_errno(ret);
+			ocfs2_trim_fs_lock_res_uninit(osb);
+			goto out_unlock;
+		}
+
+		mlog(ML_NOTICE, "Wait for trim on device (%s) to "
+		     "finish, which is running from another node.\n",
+		     osb->dev_str);
+		ret = ocfs2_trim_fs_lock(osb, &info, 0);
+		if (ret < 0) {
+			mlog_errno(ret);
+			ocfs2_trim_fs_lock_res_uninit(osb);
+			goto out_unlock;
+		}
+
+		if (info.tf_valid && info.tf_success &&
+		    info.tf_start == start && info.tf_len == len &&
+		    info.tf_minlen == minlen) {
+			/* Avoid sending duplicated trim to a shared device */
+			mlog(ML_NOTICE, "The same trim on device (%s) was "
+			     "just done from node (%u), return.\n",
+			     osb->dev_str, info.tf_nodenum);
+			range->len = info.tf_trimlen;
+			goto out_trimunlock;
+		}
+	}
+
+	info.tf_nodenum = osb->node_num;
+	info.tf_start = start;
+	info.tf_len = len;
+	info.tf_minlen = minlen;
 
 	/* Determine first and last group to examine based on start and len */
 	first_group = ocfs2_which_cluster_group(main_bm_inode, start);
@@ -7463,6 +7502,13 @@ int ocfs2_trim_fs(struct super_block *sb, struct fstrim_range *range)
 			group += ocfs2_clusters_to_blocks(sb, osb->bitmap_cpg);
 	}
 	range->len = trimmed * sb->s_blocksize;
+
+	info.tf_trimlen = range->len;
+	info.tf_success = (ret ? 0 : 1);
+	pinfo = &info;
+out_trimunlock:
+	ocfs2_trim_fs_unlock(osb, pinfo);
+	ocfs2_trim_fs_lock_res_uninit(osb);
 out_unlock:
 	ocfs2_inode_unlock(main_bm_inode, 0);
 	brelse(main_bm_bh);

@@ -797,6 +797,8 @@ struct ocfs2_write_ctxt {
 	struct ocfs2_cached_dealloc_ctxt w_dealloc;
 
 	struct list_head		w_unwritten_list;
+
+	unsigned int			w_unwritten_count;
 };
 
 void ocfs2_unlock_and_free_pages(struct page **pages, int num_pages)
@@ -1386,6 +1388,7 @@ retry:
 	desc->c_clear_unwritten = 0;
 	list_add_tail(&new->ue_ip_node, &oi->ip_unwritten_list);
 	list_add_tail(&new->ue_node, &wc->w_unwritten_list);
+	wc->w_unwritten_count++;
 	new = NULL;
 unlock:
 	spin_unlock(&oi->ip_lock);
@@ -1762,8 +1765,8 @@ try_again:
 		 */
 		ocfs2_init_dinode_extent_tree(&et, INODE_CACHE(inode),
 					      wc->w_di_bh);
-		ret = ocfs2_lock_allocators(inode, &et,
-					    clusters_to_alloc, extents_to_split,
+		ret = ocfs2_lock_allocators(inode, &et, clusters_to_alloc,
+					    2*extents_to_split,
 					    &data_ac, &meta_ac);
 		if (ret) {
 			mlog_errno(ret);
@@ -2256,7 +2259,7 @@ static int ocfs2_dio_wr_get_block(struct inode *inode, sector_t iblock,
 		ue->ue_phys = desc->c_phys;
 
 		list_splice_tail_init(&wc->w_unwritten_list, &dwc->dw_zero_list);
-		dwc->dw_zero_count++;
+		dwc->dw_zero_count += wc->w_unwritten_count;
 	}
 
 	ret = ocfs2_write_end_nolock(inode->i_mapping, pos, len, len, wc);
@@ -2414,6 +2417,43 @@ static int ocfs2_dio_end_io(struct kiocb *iocb,
 	return ret;
 }
 
+/*
+ * Will look for holes and unwritten extents in the range starting at
+ * pos for count bytes (inclusive).
+ */
+static bool ocfs2_range_has_holes(struct inode *inode, loff_t pos, size_t count)
+{
+	bool ret = false;
+	unsigned int extent_flags;
+	u32 cpos, clusters, extent_len, phys_cpos;
+	struct super_block *sb = inode->i_sb;
+
+	cpos = pos >> OCFS2_SB(sb)->s_clustersize_bits;
+	clusters = ocfs2_clusters_for_bytes(sb, pos + count) - cpos;
+
+	while (clusters) {
+		ret = ocfs2_get_clusters(inode, cpos, &phys_cpos, &extent_len,
+					 &extent_flags);
+		if (ret < 0) {
+			mlog_errno(ret);
+			goto out;
+		}
+
+		if (phys_cpos == 0 || (extent_flags & OCFS2_EXT_UNWRITTEN)) {
+			ret = true;
+			goto out;
+		}
+
+		if (extent_len > clusters)
+			extent_len = clusters;
+
+		clusters -= extent_len;
+		cpos += extent_len;
+	}
+out:
+	return ret;
+}
+
 static ssize_t ocfs2_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
@@ -2429,8 +2469,10 @@ static ssize_t ocfs2_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 		return 0;
 
 	/* Fallback to buffered I/O if we do not support append dio. */
-	if (iocb->ki_pos + iter->count > i_size_read(inode) &&
-	    !ocfs2_supports_append_dio(osb))
+	if (!ocfs2_supports_append_dio(osb) &&
+			(iocb->ki_pos + iter->count > i_size_read(inode) ||
+			 ocfs2_range_has_holes(inode, iocb->ki_pos,
+						     iter->count)))
 		return 0;
 
 	if (iov_iter_rw(iter) == READ)
