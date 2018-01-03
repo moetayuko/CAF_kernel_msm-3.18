@@ -77,6 +77,7 @@ enum mlx5_ib_mmap_cmd {
 	MLX5_IB_MMAP_NC_PAGE			= 3,
 	/* 5 is chosen in order to be compatible with old versions of libmlx5 */
 	MLX5_IB_MMAP_CORE_CLOCK			= 5,
+	MLX5_IB_MMAP_ALLOC_WC			= 6,
 };
 
 enum {
@@ -110,6 +111,11 @@ enum {
 enum {
 	MLX5_TM_MAX_RNDV_MSG_SIZE	= 64,
 	MLX5_TM_MAX_SGE			= 1,
+};
+
+enum {
+	MLX5_IB_INVALID_UAR_INDEX	= BIT(31),
+	MLX5_IB_INVALID_BFREG		= BIT(31),
 };
 
 struct mlx5_ib_vma_private_data {
@@ -1021,6 +1027,9 @@ void mlx5_ib_gsi_pkey_change(struct mlx5_ib_gsi_qp *gsi);
 
 int mlx5_ib_generate_wc(struct ib_cq *ibcq, struct ib_wc *wc);
 
+void mlx5_ib_free_bfreg(struct mlx5_ib_dev *dev, struct mlx5_bfreg_info *bfregi,
+			int bfregn);
+
 static inline void init_query_mad(struct ib_smp *mad)
 {
 	mad->base_version  = 1;
@@ -1113,10 +1122,10 @@ static inline int get_uars_per_sys_page(struct mlx5_ib_dev *dev, bool lib_suppor
 				MLX5_UARS_IN_PAGE : 1;
 }
 
-static inline int get_num_uars(struct mlx5_ib_dev *dev,
-			       struct mlx5_bfreg_info *bfregi)
+static inline int get_num_static_uars(struct mlx5_ib_dev *dev,
+				      struct mlx5_bfreg_info *bfregi)
 {
-	return get_uars_per_sys_page(dev, bfregi->lib_uar_4k) * bfregi->num_sys_pages;
+	return get_uars_per_sys_page(dev, bfregi->lib_uar_4k) * bfregi->num_static_sys_pages;
 }
 
 #endif /* MLX5_IB_H */
