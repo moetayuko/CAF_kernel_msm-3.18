@@ -231,7 +231,6 @@ int btrfs_alloc_stripe_hash_table(struct btrfs_fs_info *info)
 		cur = h + i;
 		INIT_LIST_HEAD(&cur->hash_list);
 		spin_lock_init(&cur->lock);
-		init_waitqueue_head(&cur->wait);
 	}
 
 	x = cmpxchg(&info->stripe_hash_table, NULL, table);
@@ -595,14 +594,31 @@ static int rbio_can_merge(struct btrfs_raid_bio *last,
 	 * bio list here, anyone else that wants to
 	 * change this stripe needs to do their own rmw.
 	 */
-	if (last->operation == BTRFS_RBIO_PARITY_SCRUB ||
-	    cur->operation == BTRFS_RBIO_PARITY_SCRUB)
+	if (last->operation == BTRFS_RBIO_PARITY_SCRUB)
 		return 0;
 
-	if (last->operation == BTRFS_RBIO_REBUILD_MISSING ||
-	    cur->operation == BTRFS_RBIO_REBUILD_MISSING)
+	if (last->operation == BTRFS_RBIO_REBUILD_MISSING)
 		return 0;
 
+	if (last->operation == BTRFS_RBIO_READ_REBUILD) {
+		int fa = last->faila;
+		int fb = last->failb;
+		int cur_fa = cur->faila;
+		int cur_fb = cur->failb;
+
+		if (last->faila >= last->failb) {
+			fa = last->failb;
+			fb = last->faila;
+		}
+
+		if (cur->faila >= cur->failb) {
+			cur_fa = cur->failb;
+			cur_fb = cur->faila;
+		}
+
+		if (fa != cur_fa || fb != cur_fb)
+			return 0;
+	}
 	return 1;
 }
 
@@ -670,7 +686,6 @@ static noinline int lock_stripe_add(struct btrfs_raid_bio *rbio)
 	struct btrfs_raid_bio *cur;
 	struct btrfs_raid_bio *pending;
 	unsigned long flags;
-	DEFINE_WAIT(wait);
 	struct btrfs_raid_bio *freeit = NULL;
 	struct btrfs_raid_bio *cache_drop = NULL;
 	int ret = 0;
@@ -816,15 +831,6 @@ static noinline void unlock_stripe(struct btrfs_raid_bio *rbio)
 			}
 
 			goto done_nolock;
-			/*
-			 * The barrier for this waitqueue_active is not needed,
-			 * we're protected by h->lock and can't miss a wakeup.
-			 */
-		} else if (waitqueue_active(&h->wait)) {
-			spin_unlock(&rbio->bio_list_lock);
-			spin_unlock_irqrestore(&h->lock, flags);
-			wake_up(&h->wait);
-			goto done_nolock;
 		}
 	}
 done:
@@ -870,11 +876,22 @@ static void free_raid_bio(struct btrfs_raid_bio *rbio)
  */
 static void rbio_orig_end_io(struct btrfs_raid_bio *rbio, blk_status_t err)
 {
-	struct bio *cur = bio_list_get(&rbio->bio_list);
+	struct bio *cur;
 	struct bio *next;
+
+	/*
+	 * We're not allowed to take any new bios to rbio->bio_list from now
+	 * on, otherwise we may get merged with more bios and rbio->bio_list is
+	 * not empty.
+	 */
+	spin_lock(&rbio->bio_list_lock);
+	set_bit(RBIO_RMW_LOCKED_BIT, &rbio->flags);
+	spin_unlock(&rbio->bio_list_lock);
 
 	if (rbio->generic_bio_cnt)
 		btrfs_bio_counter_sub(rbio->fs_info, rbio->generic_bio_cnt);
+
+	cur = bio_list_get(&rbio->bio_list);
 
 	free_raid_bio(rbio);
 
@@ -2170,11 +2187,21 @@ int raid56_parity_recover(struct btrfs_fs_info *fs_info, struct bio *bio,
 	}
 
 	/*
-	 * reconstruct from the q stripe if they are
-	 * asking for mirror 3
+	 * Loop retry:
+	 * for 'mirror == 2', reconstruct from all other stripes.
+	 * for 'mirror_num > 2', select a stripe to fail on every retry.
 	 */
-	if (mirror_num == 3)
-		rbio->failb = rbio->real_stripes - 2;
+	if (mirror_num > 2) {
+		/*
+		 * 'mirror == 3' is to fail the p stripe and
+		 * reconstruct from the q stripe.  'mirror > 3' is to
+		 * fail a data stripe and reconstruct from p+q stripe.
+		 */
+		rbio->failb = rbio->real_stripes - (mirror_num - 1);
+		ASSERT(rbio->failb > 0);
+		if (rbio->failb <= rbio->faila)
+			rbio->failb--;
+	}
 
 	ret = lock_stripe_add(rbio);
 
