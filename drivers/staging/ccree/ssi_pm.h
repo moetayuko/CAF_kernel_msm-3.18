@@ -17,26 +17,28 @@
 /* \file ssi_pm.h
  */
 
-#ifndef __SSI_POWER_MGR_H__
-#define __SSI_POWER_MGR_H__
+#ifndef __CC_POWER_MGR_H__
+#define __CC_POWER_MGR_H__
 
-#include "ssi_config.h"
 #include "ssi_driver.h"
 
-#define SSI_SUSPEND_TIMEOUT 3000
+#define CC_SUSPEND_TIMEOUT 3000
 
-int ssi_power_mgr_init(struct ssi_drvdata *drvdata);
+int cc_pm_init(struct cc_drvdata *drvdata);
 
-void ssi_power_mgr_fini(struct ssi_drvdata *drvdata);
+void cc_pm_fini(struct cc_drvdata *drvdata);
 
-#if defined(CONFIG_PM_RUNTIME) || defined(CONFIG_PM_SLEEP)
-int ssi_power_mgr_runtime_suspend(struct device *dev);
+#if defined(CONFIG_PM)
 
-int ssi_power_mgr_runtime_resume(struct device *dev);
+extern const struct dev_pm_ops ccree_pm;
 
-int ssi_power_mgr_runtime_get(struct device *dev);
+int cc_pm_suspend(struct device *dev);
 
-int ssi_power_mgr_runtime_put_suspend(struct device *dev);
+int cc_pm_resume(struct device *dev);
+
+int cc_pm_get(struct device *dev);
+
+int cc_pm_put_suspend(struct device *dev);
 #endif
 
 #endif /*__POWER_MGR_H__*/
