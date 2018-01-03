@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Jens Kuske <jenskuske@gmail.com>
+ * Copyright (C) 2017 Icenowy Zheng <icenowy@aosc.xyz>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -40,91 +40,52 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "sunxi-h3-h5.dtsi"
+/* Orange Pi R1 is based on Orange Pi Zero design */
+#include "sun8i-h2-plus-orangepi-zero.dts"
 
 / {
-	cpus {
-		#address-cells = <1>;
-		#size-cells = <0>;
+	model = "Xunlong Orange Pi R1";
+	compatible = "xunlong,orangepi-r1", "allwinner,sun8i-h2-plus";
 
-		cpu@0 {
-			compatible = "arm,cortex-a7";
-			device_type = "cpu";
-			reg = <0>;
-		};
+	/delete-node/ reg_vcc_wifi;
 
-		cpu@1 {
-			compatible = "arm,cortex-a7";
-			device_type = "cpu";
-			reg = <1>;
-		};
-
-		cpu@2 {
-			compatible = "arm,cortex-a7";
-			device_type = "cpu";
-			reg = <2>;
-		};
-
-		cpu@3 {
-			compatible = "arm,cortex-a7";
-			device_type = "cpu";
-			reg = <3>;
-		};
+	/*
+	 * Ths pin of this regulator is the same with the Wi-Fi extra
+	 * regulator on the original Zero. However it's used for USB
+	 * Ethernet rather than the Wi-Fi now.
+	 */
+	reg_vcc_usb_eth: reg-vcc-usb-ethernet {
+		compatible = "regulator-fixed";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-name = "vcc-usb-ethernet";
+		enable-active-high;
+		gpio = <&pio 0 20 GPIO_ACTIVE_HIGH>;
 	};
 
-	timer {
-		compatible = "arm,armv7-timer";
-		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
-			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
-			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
-			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;
+	aliases {
+		ethernet1 = &rtl8189etv;
 	};
 };
 
-&ccu {
-	compatible = "allwinner,sun8i-h3-ccu";
-};
-
-&display_clocks {
-	compatible = "allwinner,sun8i-h3-de2-clk";
-};
-
-&mmc0 {
-	compatible = "allwinner,sun7i-a20-mmc";
-	clocks = <&ccu CLK_BUS_MMC0>,
-		 <&ccu CLK_MMC0>,
-		 <&ccu CLK_MMC0_OUTPUT>,
-		 <&ccu CLK_MMC0_SAMPLE>;
-	clock-names = "ahb",
-		      "mmc",
-		      "output",
-		      "sample";
+&ohci1 {
+	/*
+	 * RTL8152B USB-Ethernet adapter is connected to USB1,
+	 * and it's a USB 2.0 device. So the OHCI1 controller
+	 * can be left disabled.
+	 */
+	status = "disabled";
 };
 
 &mmc1 {
-	compatible = "allwinner,sun7i-a20-mmc";
-	clocks = <&ccu CLK_BUS_MMC1>,
-		 <&ccu CLK_MMC1>,
-		 <&ccu CLK_MMC1_OUTPUT>,
-		 <&ccu CLK_MMC1_SAMPLE>;
-	clock-names = "ahb",
-		      "mmc",
-		      "output",
-		      "sample";
+	vmmc-supply = <&reg_vcc3v3>;
+	vqmmc-supply = <&reg_vcc3v3>;
+
+	rtl8189etv: sdio_wifi@1 {
+		reg = <1>;
+	};
 };
 
-&mmc2 {
-	compatible = "allwinner,sun7i-a20-mmc";
-	clocks = <&ccu CLK_BUS_MMC2>,
-		 <&ccu CLK_MMC2>,
-		 <&ccu CLK_MMC2_OUTPUT>,
-		 <&ccu CLK_MMC2_SAMPLE>;
-	clock-names = "ahb",
-		      "mmc",
-		      "output",
-		      "sample";
-};
-
-&pio {
-	compatible = "allwinner,sun8i-h3-pinctrl";
+&usbphy {
+	usb1_vbus-supply = <&reg_vcc_usb_eth>;
 };
