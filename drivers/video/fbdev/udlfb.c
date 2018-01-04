@@ -505,8 +505,6 @@ static void dlfb_compress_hline(
 	*command_buffer_ptr = cmd;
 	*pixel_start_ptr = pixel;
 	*device_address_ptr = dev_addr;
-
-	return;
 }
 
 /*
@@ -1777,8 +1775,6 @@ static void dlfb_usb_disconnect(struct usb_interface *interface)
 	kref_put(&dev->kref, dlfb_free);
 
 	/* consider dlfb_data freed */
-
-	return;
 }
 
 static struct usb_driver dlfb_driver = {
@@ -1876,7 +1872,7 @@ static int dlfb_alloc_urb_list(struct dlfb_data *dev, int count, size_t size)
 	INIT_LIST_HEAD(&dev->urbs.list);
 
 	while (i < count) {
-		unode = kzalloc(sizeof(struct urb_node), GFP_KERNEL);
+		unode = kzalloc(sizeof(*unode), GFP_KERNEL);
 		if (!unode)
 			break;
 		unode->dev = dev;
