@@ -2927,13 +2927,6 @@ static int _qcrypto_engine_req(struct crypto_engine *pengine,
 	if (need_lock)
 		spin_lock_irqsave(&cp->lock, flags);
 
-	pqcrypto_req_control = qcrypto_alloc_req_control(pengine);
-	if (pqcrypto_req_control == NULL) {
-		pr_err("Allocation of request failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
 	switch (type) {
 	case CRYPTO_ALG_TYPE_AHASH:
 		ahash_req = container_of(async_req,
@@ -2970,6 +2963,14 @@ static int _qcrypto_engine_req(struct crypto_engine *pengine,
 
 	arsp->res = -EINPROGRESS;
 	arsp->async_req = async_req;
+
+	pqcrypto_req_control = qcrypto_alloc_req_control(pengine);
+	if (pqcrypto_req_control == NULL) {
+		pr_err("Allocation of request failed\n");
+		ret = -ENOMEM;
+		goto err;
+	}
+
 	pqcrypto_req_control->pce = pengine;
 	pqcrypto_req_control->req = async_req;
 	pqcrypto_req_control->arsp = arsp;
@@ -4840,8 +4841,7 @@ static int _sha_hmac_setkey(struct crypto_ahash *tfm, const u8 *key,
 		return -ENOMEM;
 	}
 	memcpy(in_buf, key, len);
-	sg_set_buf(&sg, in_buf, len);
-	sg_mark_end(&sg);
+	sg_init_one(&sg, in_buf, len);
 
 	ahash_request_set_crypt(ahash_req, &sg,
 				&sha_ctx->authkey[0], len);
