@@ -54,21 +54,13 @@ static inline void nft_set_pktinfo(struct nft_pktinfo *pkt,
 	pkt->xt.state = state;
 }
 
-static inline void nft_set_pktinfo_proto_unspec(struct nft_pktinfo *pkt,
-						struct sk_buff *skb)
+static inline void nft_set_pktinfo_unspec(struct nft_pktinfo *pkt,
+					  struct sk_buff *skb)
 {
 	pkt->tprot_set = false;
 	pkt->tprot = 0;
 	pkt->xt.thoff = 0;
 	pkt->xt.fragoff = 0;
-}
-
-static inline void nft_set_pktinfo_unspec(struct nft_pktinfo *pkt,
-					  struct sk_buff *skb,
-					  const struct nf_hook_state *state)
-{
-	nft_set_pktinfo(pkt, skb, state);
-	nft_set_pktinfo_proto_unspec(pkt, skb);
 }
 
 /**
@@ -423,6 +415,11 @@ struct nft_set {
 	unsigned char			data[]
 		__attribute__((aligned(__alignof__(u64))));
 };
+
+static inline bool nft_set_is_anonymous(const struct nft_set *set)
+{
+	return set->flags & NFT_SET_ANONYMOUS;
+}
 
 static inline void *nft_set_priv(const struct nft_set *set)
 {
@@ -883,7 +880,7 @@ enum nft_chain_type {
  * 	@family: address family
  * 	@owner: module owner
  * 	@hook_mask: mask of valid hooks
- * 	@hooks: hookfn overrides
+ * 	@hooks: array of hook functions
  */
 struct nf_chain_type {
 	const char			*name;
@@ -905,8 +902,6 @@ struct nft_stats {
 	struct u64_stats_sync	syncp;
 };
 
-#define NFT_HOOK_OPS_MAX		2
-
 /**
  *	struct nft_base_chain - nf_tables base chain
  *
@@ -918,7 +913,7 @@ struct nft_stats {
  *	@dev_name: device name that this base chain is attached to (if any)
  */
 struct nft_base_chain {
-	struct nf_hook_ops		ops[NFT_HOOK_OPS_MAX];
+	struct nf_hook_ops		ops;
 	const struct nf_chain_type	*type;
 	u8				policy;
 	u8				flags;
@@ -979,9 +974,6 @@ enum nft_af_flags {
  *	@owner: module owner
  *	@tables: used internally
  *	@flags: family flags
- *	@nops: number of hook ops in this family
- *	@hook_ops_init: initialization function for chain hook ops
- *	@hooks: hookfn overrides for packet validation
  */
 struct nft_af_info {
 	struct list_head		list;
@@ -990,10 +982,6 @@ struct nft_af_info {
 	struct module			*owner;
 	struct list_head		tables;
 	u32				flags;
-	unsigned int			nops;
-	void				(*hook_ops_init)(struct nf_hook_ops *,
-							 unsigned int);
-	nf_hookfn			*hooks[NF_MAX_HOOKS];
 };
 
 int nft_register_afinfo(struct net *, struct nft_af_info *);
