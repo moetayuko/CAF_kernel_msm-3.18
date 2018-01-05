@@ -111,6 +111,8 @@ static __always_inline void check_object_size(const void *ptr, unsigned long n,
 	if (!__builtin_constant_p(n))
 		__check_object_size(ptr, n, to_user);
 }
+int report_usercopy(const char *name, const char *detail, bool to_user,
+		    unsigned long offset, unsigned long len);
 #else
 static inline void check_object_size(const void *ptr, unsigned long n,
 				     bool to_user)
