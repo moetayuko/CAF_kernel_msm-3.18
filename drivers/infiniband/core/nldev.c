@@ -54,14 +54,23 @@ static const struct nla_policy nldev_policy[RDMA_NLDEV_ATTR_MAX] = {
 	[RDMA_NLDEV_ATTR_DEV_NODE_TYPE] = { .type = NLA_U8 },
 };
 
-static int fill_dev_info(struct sk_buff *msg, struct ib_device *device)
+static int fill_nldev_handle(struct sk_buff *msg, struct ib_device *device)
 {
-	char fw[IB_FW_VERSION_NAME_MAX];
-
 	if (nla_put_u32(msg, RDMA_NLDEV_ATTR_DEV_INDEX, device->index))
 		return -EMSGSIZE;
 	if (nla_put_string(msg, RDMA_NLDEV_ATTR_DEV_NAME, device->name))
 		return -EMSGSIZE;
+
+	return 0;
+}
+
+static int fill_dev_info(struct sk_buff *msg, struct ib_device *device)
+{
+	char fw[IB_FW_VERSION_NAME_MAX];
+
+	if (fill_nldev_handle(msg, device))
+		return -EMSGSIZE;
+
 	if (nla_put_u32(msg, RDMA_NLDEV_ATTR_PORT_INDEX, rdma_end_port(device)))
 		return -EMSGSIZE;
 
@@ -92,10 +101,9 @@ static int fill_port_info(struct sk_buff *msg,
 	struct ib_port_attr attr;
 	int ret;
 
-	if (nla_put_u32(msg, RDMA_NLDEV_ATTR_DEV_INDEX, device->index))
+	if (fill_nldev_handle(msg, device))
 		return -EMSGSIZE;
-	if (nla_put_string(msg, RDMA_NLDEV_ATTR_DEV_NAME, device->name))
-		return -EMSGSIZE;
+
 	if (nla_put_u32(msg, RDMA_NLDEV_ATTR_PORT_INDEX, port))
 		return -EMSGSIZE;
 
@@ -142,27 +150,34 @@ static int nldev_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	index = nla_get_u32(tb[RDMA_NLDEV_ATTR_DEV_INDEX]);
 
-	device = __ib_device_get_by_index(index);
+	device = ib_device_get_by_index(index);
 	if (!device)
 		return -EINVAL;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
+	if (!msg) {
+		err = -ENOMEM;
+		goto err;
+	}
 
 	nlh = nlmsg_put(msg, NETLINK_CB(skb).portid, nlh->nlmsg_seq,
 			RDMA_NL_GET_TYPE(RDMA_NL_NLDEV, RDMA_NLDEV_CMD_GET),
 			0, 0);
 
 	err = fill_dev_info(msg, device);
-	if (err) {
-		nlmsg_free(msg);
-		return err;
-	}
+	if (err)
+		goto err_free;
 
 	nlmsg_end(msg, nlh);
 
+	put_device(&device->dev);
 	return rdma_nl_unicast(msg, NETLINK_CB(skb).portid);
+
+err_free:
+	nlmsg_free(msg);
+err:
+	put_device(&device->dev);
+	return err;
 }
 
 static int _nldev_get_dumpit(struct ib_device *device,
@@ -220,31 +235,40 @@ static int nldev_port_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return -EINVAL;
 
 	index = nla_get_u32(tb[RDMA_NLDEV_ATTR_DEV_INDEX]);
-	device = __ib_device_get_by_index(index);
+	device = ib_device_get_by_index(index);
 	if (!device)
 		return -EINVAL;
 
 	port = nla_get_u32(tb[RDMA_NLDEV_ATTR_PORT_INDEX]);
-	if (!rdma_is_port_valid(device, port))
-		return -EINVAL;
+	if (!rdma_is_port_valid(device, port)) {
+		err = -EINVAL;
+		goto err;
+	}
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
+	if (!msg) {
+		err = -ENOMEM;
+		goto err;
+	}
 
 	nlh = nlmsg_put(msg, NETLINK_CB(skb).portid, nlh->nlmsg_seq,
 			RDMA_NL_GET_TYPE(RDMA_NL_NLDEV, RDMA_NLDEV_CMD_GET),
 			0, 0);
 
 	err = fill_port_info(msg, device, port);
-	if (err) {
-		nlmsg_free(msg);
-		return err;
-	}
+	if (err)
+		goto err_free;
 
 	nlmsg_end(msg, nlh);
+	put_device(&device->dev);
 
 	return rdma_nl_unicast(msg, NETLINK_CB(skb).portid);
+
+err_free:
+	nlmsg_free(msg);
+err:
+	put_device(&device->dev);
+	return err;
 }
 
 static int nldev_port_get_dumpit(struct sk_buff *skb,
@@ -265,7 +289,7 @@ static int nldev_port_get_dumpit(struct sk_buff *skb,
 		return -EINVAL;
 
 	ifindex = nla_get_u32(tb[RDMA_NLDEV_ATTR_DEV_INDEX]);
-	device = __ib_device_get_by_index(ifindex);
+	device = ib_device_get_by_index(ifindex);
 	if (!device)
 		return -EINVAL;
 
@@ -299,7 +323,9 @@ static int nldev_port_get_dumpit(struct sk_buff *skb,
 		nlmsg_end(skb, nlh);
 	}
 
-out:	cb->args[0] = idx;
+out:
+	put_device(&device->dev);
+	cb->args[0] = idx;
 	return skb->len;
 }
 
