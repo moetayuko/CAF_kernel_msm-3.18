@@ -79,19 +79,23 @@ void menu_end_menu(void)
 	current_menu = current_menu->parent;
 }
 
-static struct expr *menu_check_dep(struct expr *e)
+/*
+ * Rewrites 'm' to 'm' && MODULES, so that it evaluates to 'n' when running
+ * without modules
+ */
+static struct expr *rewrite_m(struct expr *e)
 {
 	if (!e)
 		return e;
 
 	switch (e->type) {
 	case E_NOT:
-		e->left.expr = menu_check_dep(e->left.expr);
+		e->left.expr = rewrite_m(e->left.expr);
 		break;
 	case E_OR:
 	case E_AND:
-		e->left.expr = menu_check_dep(e->left.expr);
-		e->right.expr = menu_check_dep(e->right.expr);
+		e->left.expr = rewrite_m(e->left.expr);
+		e->right.expr = rewrite_m(e->right.expr);
 		break;
 	case E_SYMBOL:
 		/* change 'm' into 'm' && MODULES */
@@ -106,7 +110,7 @@ static struct expr *menu_check_dep(struct expr *e)
 
 void menu_add_dep(struct expr *dep)
 {
-	current_entry->dep = expr_alloc_and(current_entry->dep, menu_check_dep(dep));
+	current_entry->dep = expr_alloc_and(current_entry->dep, dep);
 }
 
 void menu_set_type(int type)
@@ -131,7 +135,7 @@ static struct property *menu_add_prop(enum prop_type type, char *prompt, struct 
 
 	prop->menu = current_entry;
 	prop->expr = expr;
-	prop->visible.expr = menu_check_dep(dep);
+	prop->visible.expr = dep;
 
 	if (prompt) {
 		if (isspace(*prompt)) {
@@ -252,6 +256,16 @@ static void sym_check_prop(struct symbol *sym)
 					    "'%s': number is invalid",
 					    sym->name);
 			}
+			if (sym_is_choice(sym)) {
+				struct property *choice_prop =
+					sym_get_choice_prop(sym2);
+
+				if (!choice_prop ||
+				    prop_get_symbol(choice_prop) != sym)
+					prop_warn(prop,
+						  "choice default symbol '%s' is not contained in the choice",
+						  sym2->name);
+			}
 			break;
 		case P_SELECT:
 		case P_IMPLY:
@@ -292,6 +306,11 @@ void menu_finalize(struct menu *parent)
 
 	sym = parent->sym;
 	if (parent->list) {
+		/*
+		 * This menu node has children. We (recursively) process them
+		 * and propagate parent dependencies before moving on.
+		 */
+
 		if (sym && sym_is_choice(sym)) {
 			if (sym->type == S_UNKNOWN) {
 				/* find the first choice value to find out choice type */
@@ -315,24 +334,68 @@ void menu_finalize(struct menu *parent)
 		else
 			parentdep = parent->dep;
 
+		/* For each child menu node... */
 		for (menu = parent->list; menu; menu = menu->next) {
-			basedep = expr_transform(menu->dep);
+			/*
+			 * Propagate parent dependencies to the child menu
+			 * node, also rewriting and simplifying expressions
+			 */
+			basedep = rewrite_m(menu->dep);
+			basedep = expr_transform(basedep);
 			basedep = expr_alloc_and(expr_copy(parentdep), basedep);
 			basedep = expr_eliminate_dups(basedep);
 			menu->dep = basedep;
+
 			if (menu->sym)
+				/*
+				 * Note: For symbols, all prompts are included
+				 * too in the symbol's own property list
+				 */
 				prop = menu->sym->prop;
 			else
+				/*
+				 * For non-symbol menu nodes, we just need to
+				 * handle the prompt
+				 */
 				prop = menu->prompt;
+
+			/* For each property... */
 			for (; prop; prop = prop->next) {
 				if (prop->menu != menu)
+					/*
+					 * Two possibilities:
+					 *
+					 * 1. The property lacks dependencies
+					 *    and so isn't location-specific,
+					 *    e.g. an 'option'
+					 *
+					 * 2. The property belongs to a symbol
+					 *    defined in multiple locations and
+					 *    is from some other location. It
+					 *    will be handled there in that
+					 *    case.
+					 *
+					 * Skip the property.
+					 */
 					continue;
-				dep = expr_transform(prop->visible.expr);
+
+				/*
+				 * Propagate parent dependencies to the
+				 * property's condition, rewriting and
+				 * simplifying expressions at the same time
+				 */
+				dep = rewrite_m(prop->visible.expr);
+				dep = expr_transform(dep);
 				dep = expr_alloc_and(expr_copy(basedep), dep);
 				dep = expr_eliminate_dups(dep);
 				if (menu->sym && menu->sym->type != S_TRISTATE)
 					dep = expr_trans_bool(dep);
 				prop->visible.expr = dep;
+
+				/*
+				 * Handle selects and implies, which modify the
+				 * dependencies of the selected/implied symbol
+				 */
 				if (prop->type == P_SELECT) {
 					struct symbol *es = prop_get_symbol(prop);
 					es->rev_dep.expr = expr_alloc_or(es->rev_dep.expr,
@@ -344,6 +407,11 @@ void menu_finalize(struct menu *parent)
 				}
 			}
 		}
+
+		/*
+		 * Recursively process children in the same fashion before
+		 * moving on
+		 */
 		for (menu = parent->list; menu; menu = menu->next)
 			menu_finalize(menu);
 	} else if (sym) {
