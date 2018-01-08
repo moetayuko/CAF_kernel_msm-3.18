@@ -22,7 +22,8 @@ static unsigned int nft_do_chain_ipv6(void *priv,
 {
 	struct nft_pktinfo pkt;
 
-	nft_set_pktinfo_ipv6(&pkt, skb, state);
+	nft_set_pktinfo(&pkt, skb, state);
+	nft_set_pktinfo_ipv6(&pkt, skb);
 
 	return nft_do_chain(&pkt, priv);
 }
@@ -41,20 +42,11 @@ static unsigned int nft_ipv6_output(void *priv,
 	return nft_do_chain_ipv6(priv, skb, state);
 }
 
-struct nft_af_info nft_af_ipv6 __read_mostly = {
+static struct nft_af_info nft_af_ipv6 __read_mostly = {
 	.family		= NFPROTO_IPV6,
 	.nhooks		= NF_INET_NUMHOOKS,
 	.owner		= THIS_MODULE,
-	.nops		= 1,
-	.hooks		= {
-		[NF_INET_LOCAL_IN]	= nft_do_chain_ipv6,
-		[NF_INET_LOCAL_OUT]	= nft_ipv6_output,
-		[NF_INET_FORWARD]	= nft_do_chain_ipv6,
-		[NF_INET_PRE_ROUTING]	= nft_do_chain_ipv6,
-		[NF_INET_POST_ROUTING]	= nft_do_chain_ipv6,
-	},
 };
-EXPORT_SYMBOL_GPL(nft_af_ipv6);
 
 static int nf_tables_ipv6_init_net(struct net *net)
 {
@@ -94,6 +86,13 @@ static const struct nf_chain_type filter_ipv6 = {
 			  (1 << NF_INET_FORWARD) |
 			  (1 << NF_INET_PRE_ROUTING) |
 			  (1 << NF_INET_POST_ROUTING),
+	.hooks		= {
+		[NF_INET_LOCAL_IN]	= nft_do_chain_ipv6,
+		[NF_INET_LOCAL_OUT]	= nft_ipv6_output,
+		[NF_INET_FORWARD]	= nft_do_chain_ipv6,
+		[NF_INET_PRE_ROUTING]	= nft_do_chain_ipv6,
+		[NF_INET_POST_ROUTING]	= nft_do_chain_ipv6,
+	},
 };
 
 static int __init nf_tables_ipv6_init(void)
