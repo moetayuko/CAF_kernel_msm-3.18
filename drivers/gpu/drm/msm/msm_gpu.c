@@ -294,6 +294,8 @@ static void recover_worker(struct work_struct *work)
 
 			msm_rd_dump_submit(priv->hangrd, submit,
 				"offending task: %s (%s)", task->comm, cmd);
+
+			kfree(cmd);
 		} else {
 			msm_rd_dump_submit(priv->hangrd, submit, NULL);
 		}
@@ -306,7 +308,7 @@ static void recover_worker(struct work_struct *work)
 	 * needs to happen after msm_rd_dump_submit() to ensure that the
 	 * bo's referenced by the offending submit are still around.
 	 */
-	for (i = 0; i < ARRAY_SIZE(gpu->rb); i++) {
+	for (i = 0; i < gpu->nr_rings; i++) {
 		struct msm_ringbuffer *ring = gpu->rb[i];
 
 		uint32_t fence = ring->memptrs->fence;
