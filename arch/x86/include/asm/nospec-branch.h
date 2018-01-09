@@ -64,6 +64,50 @@
 #endif
 .endm
 
+/*
+ * Use 32-N: 32 is the max return buffer size, but there should have been
+ * at a minimum two controlled calls already: one into the kernel from
+ * entry*.S and another into the function containing this macro. So N=2,
+ * thus 30.
+ */
+#define NUM_BRANCHES_TO_FILL	30
+
+/*
+ * Fill the CPU return stack buffer to prevent indirect branch prediction
+ * on underflow.
+ *
+ * A 'nop' after each call is required so it isn't interpreted by the CPU
+ * as a simple 'push %eip', which would be handled specially and would not
+ * put anything in the RSB.
+ *
+ * Required in various cases for retpoline and IBRS-based mitigations for
+ * Spectre variant 2 vulnerability.
+ */
+.macro	FILL_RETURN_BUFFER reg:req
+	mov	$NUM_BRANCHES_TO_FILL/2, \reg
+	.align	16
+.Ldo_call1_\@:
+	call	.Ldo_call2_\@
+.Ltrap1_\@:
+	pause
+	jmp	.Ltrap1_\@
+	.align	16
+.Ldo_call2_\@:
+	call	.Ldo_loop_\@
+.Ltrap2_\@:
+	pause
+	jmp	.Ltrap2_\@
+	.align	16
+.Ldo_loop_\@:
+	dec	\reg
+	jnz	.Ldo_call1_\@
+#ifdef CONFIG_64BIT
+	addq	$8*NUM_BRANCHES_TO_FILL, %rsp
+#else
+	addl    $4*NUM_BRANCHES_TO_FILL, %esp
+#endif
+.endm
+
 #else /* __ASSEMBLY__ */
 
 #if defined(CONFIG_X86_64) && defined(RETPOLINE)

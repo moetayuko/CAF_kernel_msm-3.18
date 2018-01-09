@@ -244,6 +244,23 @@ ENTRY(__switch_to_asm)
 	movl	%ebx, PER_CPU_VAR(stack_canary)+stack_canary_offset
 #endif
 
+#ifdef CONFIG_RETPOLINE
+	/*
+	 * When we switch from a shallower to a deeper call stack
+	 * the call stack will underflow in the kernel in the next task.
+	 * This could cause the CPU to fall back to indirect branch
+	 * prediction, which may be poisoned.
+	 *
+	 * To guard against that always fill the return stack with
+	 * known values.
+	 *
+	 * We do this in assembler because it needs to be before
+	 * any calls on the new stack, and this can be difficult to
+	 * ensure in a complex C function like __switch_to.
+	 */
+	ALTERNATIVE "", "FILL_RETURN_BUFFER %ebx", X86_FEATURE_RETPOLINE
+#endif
+
 	/* restore callee-saved registers */
 	popl	%esi
 	popl	%edi
