@@ -361,7 +361,7 @@ void sas_destruct_devices(struct asd_sas_port *port)
 	}
 }
 
-void sas_destruct_ports(struct asd_sas_port *port)
+static void sas_destruct_ports(struct asd_sas_port *port)
 {
 	struct sas_port *sas_port, *p;
 
