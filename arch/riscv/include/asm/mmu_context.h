@@ -39,11 +39,6 @@ static inline void destroy_context(struct mm_struct *mm)
 {
 }
 
-static inline void set_pgdir(pgd_t *pgd)
-{
-	csr_write(satp, virt_to_pfn(pgd) | SATP_MODE);
-}
-
 /*
  * When necessary, performs a deferred icache flush for the given MM context,
  * on the local CPU.  RISC-V has no direct mechanism for instruction cache
@@ -88,7 +83,7 @@ static inline void switch_mm(struct mm_struct *prev,
 		cpumask_clear_cpu(cpu, mm_cpumask(prev));
 		cpumask_set_cpu(cpu, mm_cpumask(next));
 
-		set_pgdir(next->pgd);
+		csr_write(satp, virt_to_pfn(next->pgd) | SATP_MODE);
 		local_flush_tlb_all();
 
 		flush_icache_deferred(next);
