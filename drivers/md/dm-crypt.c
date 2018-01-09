@@ -1953,10 +1953,15 @@ static int crypt_setkey(struct crypt_config *cc)
 	/* Ignore extra keys (which are used for IV etc) */
 	subkey_size = crypt_subkey_size(cc);
 
-	if (crypt_integrity_hmac(cc))
+	if (crypt_integrity_hmac(cc)) {
+		if (subkey_size < cc->key_mac_size)
+			return -EINVAL;
+
 		crypt_copy_authenckey(cc->authenc_key, cc->key,
 				      subkey_size - cc->key_mac_size,
 				      cc->key_mac_size);
+	}
+
 	for (i = 0; i < cc->tfms_count; i++) {
 		if (crypt_integrity_hmac(cc))
 			r = crypto_aead_setkey(cc->cipher_tfm.tfms_aead[i],
@@ -2190,6 +2195,8 @@ static void crypt_dtr(struct dm_target *ti)
 	kzfree(cc->key_string);
 	kzfree(cc->cipher_auth);
 	kzfree(cc->authenc_key);
+
+	mutex_destroy(&cc->bio_alloc_lock);
 
 	/* Must zero key material before freeing */
 	kzfree(cc);
@@ -2696,8 +2703,7 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad;
 	}
 
-	cc->bs = bioset_create(MIN_IOS, 0, (BIOSET_NEED_BVECS |
-					    BIOSET_NEED_RESCUER));
+	cc->bs = bioset_create(MIN_IOS, 0, BIOSET_NEED_BVECS);
 	if (!cc->bs) {
 		ti->error = "Cannot allocate crypt bioset";
 		goto bad;
