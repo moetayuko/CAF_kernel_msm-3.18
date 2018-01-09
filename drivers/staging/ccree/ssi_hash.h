@@ -18,21 +18,21 @@
  * ARM CryptoCell Hash Crypto API
  */
 
-#ifndef __SSI_HASH_H__
-#define __SSI_HASH_H__
+#ifndef __CC_HASH_H__
+#define __CC_HASH_H__
 
 #include "ssi_buffer_mgr.h"
 
 #define HMAC_IPAD_CONST	0x36363636
 #define HMAC_OPAD_CONST	0x5C5C5C5C
-#if (DX_DEV_SHA_MAX > 256)
+#if (CC_DEV_SHA_MAX > 256)
 #define HASH_LEN_SIZE 16
-#define SSI_MAX_HASH_DIGEST_SIZE	SHA512_DIGEST_SIZE
-#define SSI_MAX_HASH_BLCK_SIZE SHA512_BLOCK_SIZE
+#define CC_MAX_HASH_DIGEST_SIZE	SHA512_DIGEST_SIZE
+#define CC_MAX_HASH_BLCK_SIZE SHA512_BLOCK_SIZE
 #else
 #define HASH_LEN_SIZE 8
-#define SSI_MAX_HASH_DIGEST_SIZE	SHA256_DIGEST_SIZE
-#define SSI_MAX_HASH_BLCK_SIZE SHA256_BLOCK_SIZE
+#define CC_MAX_HASH_DIGEST_SIZE	SHA256_DIGEST_SIZE
+#define CC_MAX_HASH_BLCK_SIZE SHA256_BLOCK_SIZE
 #endif
 
 #define XCBC_MAC_K1_OFFSET 0
@@ -41,7 +41,9 @@
 
 #define CC_EXPORT_MAGIC 0xC2EE1070U
 
-// this struct was taken from drivers/crypto/nx/nx-aes-xcbc.c and it is used for xcbc/cmac statesize
+/* this struct was taken from drivers/crypto/nx/nx-aes-xcbc.c and it is used
+ * for xcbc/cmac statesize
+ */
 struct aeshash_state {
 	u8 state[AES_BLOCK_SIZE];
 	unsigned int count;
@@ -54,7 +56,7 @@ struct ahash_req_ctx {
 	u8 *buff1;
 	u8 *digest_result_buff;
 	struct async_gen_req_ctx gen_ctx;
-	enum ssi_req_dma_buf_type data_dma_buf_type;
+	enum cc_req_dma_buf_type data_dma_buf_type;
 	u8 *digest_buff;
 	u8 *opad_digest_buff;
 	u8 *digest_bytes_len;
@@ -73,31 +75,33 @@ struct ahash_req_ctx {
 	struct mlli_params mlli_params;
 };
 
-int ssi_hash_alloc(struct ssi_drvdata *drvdata);
-int ssi_hash_init_sram_digest_consts(struct ssi_drvdata *drvdata);
-int ssi_hash_free(struct ssi_drvdata *drvdata);
+int cc_hash_alloc(struct cc_drvdata *drvdata);
+int cc_init_hash_sram(struct cc_drvdata *drvdata);
+int cc_hash_free(struct cc_drvdata *drvdata);
 
 /*!
  * Gets the initial digest length
  *
  * \param drvdata
- * \param mode The Hash mode. Supported modes: MD5/SHA1/SHA224/SHA256/SHA384/SHA512
+ * \param mode The Hash mode. Supported modes:
+ *             MD5/SHA1/SHA224/SHA256/SHA384/SHA512
  *
  * \return u32 returns the address of the initial digest length in SRAM
  */
-ssi_sram_addr_t
-ssi_ahash_get_initial_digest_len_sram_addr(void *drvdata, u32 mode);
+cc_sram_addr_t
+cc_digest_len_addr(void *drvdata, u32 mode);
 
 /*!
  * Gets the address of the initial digest in SRAM
  * according to the given hash mode
  *
  * \param drvdata
- * \param mode The Hash mode. Supported modes: MD5/SHA1/SHA224/SHA256/SHA384/SHA512
+ * \param mode The Hash mode. Supported modes:
+ *             MD5/SHA1/SHA224/SHA256/SHA384/SHA512
  *
- * \return u32 The address of the inital digest in SRAM
+ * \return u32 The address of the initial digest in SRAM
  */
-ssi_sram_addr_t ssi_ahash_get_larval_digest_sram_addr(void *drvdata, u32 mode);
+cc_sram_addr_t cc_larval_digest_addr(void *drvdata, u32 mode);
 
-#endif /*__SSI_HASH_H__*/
+#endif /*__CC_HASH_H__*/
 
