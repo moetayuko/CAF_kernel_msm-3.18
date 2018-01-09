@@ -729,9 +729,6 @@
 			It will be ignored when crashkernel=X,high is not used
 			or memory reserved is below 4G.
 
-	crossrelease_fullstack
-			[KNL] Allow to record full stack trace in cross-release
-
 	cryptomgr.notests
                         [KNL] Disable crypto self-tests
 
@@ -2069,9 +2066,6 @@
 			This tests the locking primitive's ability to
 			transition abruptly to and from idle.
 
-	locktorture.torture_runnable= [BOOT]
-			Start locktorture running at boot time.
-
 	locktorture.torture_type= [KNL]
 			Specify the locking implementation to test.
 
@@ -2731,8 +2725,6 @@
 			steal time is computed, but won't influence scheduler
 			behaviour
 
-	nopti		[X86-64] Disable kernel page table isolation
-
 	nolapic		[X86-32,APIC] Do not enable or use the local APIC.
 
 	nolapic_timer	[X86-32,APIC] Do not use the local APIC timer.
@@ -3307,11 +3299,20 @@
 	pt.		[PARIDE]
 			See Documentation/blockdev/paride.txt.
 
-	pti=		[X86_64]
-			Control user/kernel address space isolation:
-			on - enable
-			off - disable
-			auto - default setting
+	pti=		[X86_64] Control Page Table Isolation of user and
+			kernel address spaces.  Disabling this feature
+			removes hardening, but improves performance of
+			system calls and interrupts.
+
+			on   - unconditionally enable
+			off  - unconditionally disable
+			auto - kernel detects whether your CPU model is
+			       vulnerable to issues that PTI mitigates
+
+			Not specifying this option is equivalent to pti=auto.
+
+	nopti		[X86_64]
+			Equivalent to pti=off
 
 	pty.legacy_count=
 			[KNL] Number of legacy pty's. Overwrites compiled-in
@@ -3490,9 +3491,6 @@
 			the same as for rcuperf.nreaders.
 			N, where N is the number of CPUs
 
-	rcuperf.perf_runnable= [BOOT]
-			Start rcuperf running at boot time.
-
 	rcuperf.perf_type= [KNL]
 			Specify the RCU implementation to test.
 
@@ -3625,9 +3623,6 @@
 	rcutorture.test_no_idle_hz= [KNL]
 			Test RCU's dyntick-idle handling.  See also the
 			rcutorture.shuffle_interval parameter.
-
-	rcutorture.torture_runnable= [BOOT]
-			Start rcutorture running at boot time.
 
 	rcutorture.torture_type= [KNL]
 			Specify the RCU implementation to test.
