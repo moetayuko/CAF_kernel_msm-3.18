@@ -582,6 +582,9 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 		goto err_rq_wq_destroy;
 	}
 
+	if (xdp_rxq_info_reg(&rq->xdp_rxq, rq->netdev, rq->ix) < 0)
+		goto err_rq_wq_destroy;
+
 	rq->buff.map_dir = rq->xdp_prog ? DMA_BIDIRECTIONAL : DMA_FROM_DEVICE;
 	rq->buff.headroom = params->rq_headroom;
 
@@ -687,6 +690,7 @@ err_destroy_umr_mkey:
 err_rq_wq_destroy:
 	if (rq->xdp_prog)
 		bpf_prog_put(rq->xdp_prog);
+	xdp_rxq_info_unreg(&rq->xdp_rxq);
 	mlx5_wq_destroy(&rq->wq_ctrl);
 
 	return err;
@@ -698,6 +702,8 @@ static void mlx5e_free_rq(struct mlx5e_rq *rq)
 
 	if (rq->xdp_prog)
 		bpf_prog_put(rq->xdp_prog);
+
+	xdp_rxq_info_unreg(&rq->xdp_rxq);
 
 	switch (rq->wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
@@ -2766,6 +2772,9 @@ static int mlx5e_alloc_drop_rq(struct mlx5_core_dev *mdev,
 	if (err)
 		return err;
 
+	/* Mark as unused given "Drop-RQ" packets never reach XDP */
+	xdp_rxq_info_unused(&rq->xdp_rxq);
+
 	rq->mdev = mdev;
 
 	return 0;
@@ -4307,9 +4316,6 @@ static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 {
 	mlx5e_ipsec_cleanup(priv);
 	mlx5e_vxlan_cleanup(priv);
-
-	if (priv->channels.params.xdp_prog)
-		bpf_prog_put(priv->channels.params.xdp_prog);
 }
 
 static int mlx5e_init_nic_rx(struct mlx5e_priv *priv)

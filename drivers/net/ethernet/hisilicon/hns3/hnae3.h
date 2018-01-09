@@ -274,10 +274,14 @@ struct hnae3_ae_dev {
  *   Get firmware version
  * get_mdix_mode()
  *   Get media typr of phy
+ * enable_vlan_filter()
+ *   Enable vlan filter
  * set_vlan_filter()
  *   Set vlan filter config of Ports
  * set_vf_vlan_filter()
  *   Set vlan filter config of vf
+ * enable_hw_strip_rxvtag()
+ *   Enable/disable hardware strip vlan tag of packets received
  */
 struct hnae3_ae_ops {
 	int (*init_ae_dev)(struct hnae3_ae_dev *ae_dev);
@@ -380,12 +384,21 @@ struct hnae3_ae_ops {
 	void (*get_mdix_mode)(struct hnae3_handle *handle,
 			      u8 *tp_mdix_ctrl, u8 *tp_mdix);
 
+	void (*enable_vlan_filter)(struct hnae3_handle *handle, bool enable);
 	int (*set_vlan_filter)(struct hnae3_handle *handle, __be16 proto,
 			       u16 vlan_id, bool is_kill);
 	int (*set_vf_vlan_filter)(struct hnae3_handle *handle, int vfid,
 				  u16 vlan, u8 qos, __be16 proto);
+	int (*enable_hw_strip_rxvtag)(struct hnae3_handle *handle, bool enable);
 	void (*reset_event)(struct hnae3_handle *handle,
 			    enum hnae3_reset_type reset);
+	void (*get_channels)(struct hnae3_handle *handle,
+			     struct ethtool_channels *ch);
+	void (*get_tqps_and_rss_info)(struct hnae3_handle *h,
+				      u16 *free_tqps, u16 *max_rss_size);
+	int (*set_channels)(struct hnae3_handle *handle, u32 new_tqps_num);
+	void (*get_flowctrl_adv)(struct hnae3_handle *handle,
+				 u32 *flowctrl_adv);
 };
 
 struct hnae3_dcb_ops {
@@ -452,9 +465,10 @@ struct hnae3_unic_private_info {
 	struct hnae3_queue **tqp;  /* array base of all TQPs of this instance */
 };
 
-#define HNAE3_SUPPORT_MAC_LOOPBACK    1
-#define HNAE3_SUPPORT_PHY_LOOPBACK    2
-#define HNAE3_SUPPORT_SERDES_LOOPBACK 4
+#define HNAE3_SUPPORT_MAC_LOOPBACK    BIT(0)
+#define HNAE3_SUPPORT_PHY_LOOPBACK    BIT(1)
+#define HNAE3_SUPPORT_SERDES_LOOPBACK BIT(2)
+#define HNAE3_SUPPORT_VF	      BIT(3)
 
 struct hnae3_handle {
 	struct hnae3_client *client;
