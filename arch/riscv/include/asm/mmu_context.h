@@ -39,11 +39,6 @@ static inline void destroy_context(struct mm_struct *mm)
 {
 }
 
-static inline pgd_t *current_pgdir(void)
-{
-	return pfn_to_virt(csr_read(satp) & SATP_PPN);
-}
-
 static inline void set_pgdir(pgd_t *pgd)
 {
 	csr_write(satp, virt_to_pfn(pgd) | SATP_MODE);
