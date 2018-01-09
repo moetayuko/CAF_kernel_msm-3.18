@@ -235,6 +235,16 @@ KBUILD_CFLAGS += -Wno-sign-compare
 #
 KBUILD_CFLAGS += -fno-asynchronous-unwind-tables
 
+# Avoid indirect branches in kernel to deal with Spectre
+ifdef CONFIG_RETPOLINE
+    RETPOLINE_CFLAGS += $(call cc-option,-mindirect-branch=thunk-extern -mindirect-branch-register)
+    ifneq ($(RETPOLINE_CFLAGS),)
+        KBUILD_CFLAGS += $(RETPOLINE_CFLAGS) -DRETPOLINE
+    else
+        $(warning Retpoline not supported in compiler. System may be insecure.)
+    endif
+endif
+
 archscripts: scripts_basic
 	$(Q)$(MAKE) $(build)=arch/x86/tools relocs
 
