@@ -359,8 +359,8 @@ config PUNIT_ATOM_DEBUG
 
 choice
 	prompt "Choose kernel unwinder"
-	default UNWINDER_ORC if X86_64
-	default UNWINDER_FRAME_POINTER if X86_32
+	default UNWINDER_ORC if X86_64 && !RETPOLINE
+	default UNWINDER_FRAME_POINTER if X86_32 || RETPOLINE
 	---help---
 	  This determines which method will be used for unwinding kernel stack
 	  traces for panics, oopses, bugs, warnings, perf, /proc/<pid>/stack,
@@ -368,7 +368,7 @@ choice
 
 config UNWINDER_ORC
 	bool "ORC unwinder"
-	depends on X86_64
+	depends on X86_64 && !RETPOLINE
 	select STACK_VALIDATION
 	---help---
 	  This option enables the ORC (Oops Rewind Capability) unwinder for

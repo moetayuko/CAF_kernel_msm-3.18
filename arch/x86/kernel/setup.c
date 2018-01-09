@@ -116,6 +116,7 @@
 #include <asm/microcode.h>
 #include <asm/kaslr.h>
 #include <asm/unwind.h>
+#include <asm/nospec-branch.h>
 
 /*
  * max_low_pfn_mapped: highest direct mapped pfn under 4GB
@@ -1287,6 +1288,8 @@ void __init setup_arch(char **cmdline_p)
 	arch_init_ideal_nops();
 
 	register_refined_jiffies(CLOCK_TICK_RATE);
+
+	spectre_v2_check_boottime_disable();
 
 #ifdef CONFIG_EFI
 	if (efi_enabled(EFI_BOOT))
