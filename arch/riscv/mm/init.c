@@ -39,7 +39,7 @@ void setup_zero_page(void)
 
 void __init paging_init(void)
 {
-	init_mm.pgd = (pgd_t *)pfn_to_virt(csr_read(sptbr));
+	init_mm.pgd = (pgd_t *)pfn_to_virt(csr_read(satp));
 
 	setup_zero_page();
 	local_flush_tlb_all();
