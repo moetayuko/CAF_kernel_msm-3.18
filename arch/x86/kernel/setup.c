@@ -1322,8 +1322,6 @@ void __init setup_arch(char **cmdline_p)
 
 	register_refined_jiffies(CLOCK_TICK_RATE);
 
-	spectre_v2_check_boottime_disable();
-
 #ifdef CONFIG_EFI
 	if (efi_enabled(EFI_BOOT))
 		efi_apply_memmap_quirks();
