@@ -1014,16 +1014,13 @@ static void ixgbe_get_drvinfo(struct net_device *netdev,
 			      struct ethtool_drvinfo *drvinfo)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
-	u32 nvm_track_id;
 
 	strlcpy(drvinfo->driver, ixgbe_driver_name, sizeof(drvinfo->driver));
 	strlcpy(drvinfo->version, ixgbe_driver_version,
 		sizeof(drvinfo->version));
 
-	nvm_track_id = (adapter->eeprom_verh << 16) |
-			adapter->eeprom_verl;
-	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version), "0x%08x",
-		 nvm_track_id);
+	strlcpy(drvinfo->fw_version, adapter->eeprom_id,
+		sizeof(drvinfo->fw_version));
 
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
@@ -1155,6 +1152,10 @@ static int ixgbe_set_ringparam(struct net_device *netdev,
 		for (i = 0; i < adapter->num_rx_queues; i++) {
 			memcpy(&temp_ring[i], adapter->rx_ring[i],
 			       sizeof(struct ixgbe_ring));
+
+			/* Clear copied XDP RX-queue info */
+			memset(&temp_ring[i].xdp_rxq, 0,
+			       sizeof(temp_ring[i].xdp_rxq));
 
 			temp_ring[i].count = new_rx_count;
 			err = ixgbe_setup_rx_resources(adapter, &temp_ring[i]);

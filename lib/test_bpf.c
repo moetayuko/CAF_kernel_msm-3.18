@@ -6250,8 +6250,9 @@ static struct bpf_prog *generate_filter(int which, int *err)
 				return NULL;
 			}
 		}
+		/* We don't expect to fail. */
 		if (*err) {
-			pr_cont("FAIL to prog_create err=%d len=%d\n",
+			pr_cont("FAIL to attach err=%d len=%d\n",
 				*err, fprog.len);
 			return NULL;
 		}
@@ -6275,10 +6276,6 @@ static struct bpf_prog *generate_filter(int which, int *err)
 		 * checks.
 		 */
 		fp = bpf_prog_select_runtime(fp, err);
-		if (*err) {
-			pr_cont("FAIL to select_runtime err=%d\n", *err);
-			return NULL;
-		}
 		break;
 	}
 
@@ -6464,8 +6461,8 @@ static __init int test_bpf(void)
 				pass_cnt++;
 				continue;
 			}
-			err_cnt++;
-			continue;
+
+			return err;
 		}
 
 		pr_cont("jited:%u ", fp->jited);
