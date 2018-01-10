@@ -26,7 +26,6 @@
 #include <asm/asm-offsets.h>
 #include <asm/cpufeature.h>
 #include <asm/debug-monitors.h>
-#include <asm/mmu_context.h>
 #include <asm/page.h>
 #include <asm/pgtable-hwdef.h>
 #include <asm/ptrace.h>
@@ -344,10 +343,26 @@ alternative_endif
  * tcr_set_idmap_t0sz - update TCR.T0SZ so that we can load the ID map
  */
 	.macro	tcr_set_idmap_t0sz, valreg, tmpreg
-#ifndef CONFIG_ARM64_VA_BITS_48
 	ldr_l	\tmpreg, idmap_t0sz
 	bfi	\valreg, \tmpreg, #TCR_T0SZ_OFFSET, #TCR_TxSZ_WIDTH
-#endif
+	.endm
+
+/*
+ * tcr_compute_pa_size - set TCR.(I)PS to the highest supported
+ * ID_AA64MMFR0_EL1.PARange value
+ *
+ *	tcr:		register with the TCR_ELx value to be updated
+ *	pos:		PARange bitfield position
+ *	tmp{0,1}:	temporary registers
+ */
+	.macro	tcr_compute_pa_size, tcr, pos, tmp0, tmp1
+	mrs	\tmp0, ID_AA64MMFR0_EL1
+	// Narrow PARange to fit the PS field in TCR_ELx
+	ubfx	\tmp0, \tmp0, #ID_AA64MMFR0_PARANGE_SHIFT, #3
+	mov	\tmp1, #ID_AA64MMFR0_PARANGE_MAX
+	cmp	\tmp0, \tmp1
+	csel	\tmp0, \tmp1, \tmp0, hi
+	bfi	\tcr, \tmp0, \pos, #3
 	.endm
 
 /*
@@ -478,37 +493,31 @@ alternative_endif
 	.endm
 
 /*
- * Errata workaround prior to TTBR0_EL1 update
- *
- * 	val:	TTBR value with new BADDR, preserved
- * 	tmp0:	temporary register, clobbered
- * 	tmp1:	other temporary register, clobbered
+ * Errata workaround post TTBRx_EL1 update.
  */
-	.macro	pre_ttbr0_update_workaround, val, tmp0, tmp1
-#ifdef CONFIG_QCOM_FALKOR_ERRATUM_1003
-alternative_if ARM64_WORKAROUND_QCOM_FALKOR_E1003
-	mrs	\tmp0, ttbr0_el1
-	mov	\tmp1, #FALKOR_RESERVED_ASID
-	bfi	\tmp0, \tmp1, #48, #16		// reserved ASID + old BADDR
-	msr	ttbr0_el1, \tmp0
-	isb
-	bfi	\tmp0, \val, #0, #48		// reserved ASID + new BADDR
-	msr	ttbr0_el1, \tmp0
-	isb
-alternative_else_nop_endif
-#endif
-	.endm
-
-/*
- * Errata workaround post TTBR0_EL1 update.
- */
-	.macro	post_ttbr0_update_workaround
+	.macro	post_ttbr_update_workaround
 #ifdef CONFIG_CAVIUM_ERRATUM_27456
 alternative_if ARM64_WORKAROUND_CAVIUM_27456
 	ic	iallu
 	dsb	nsh
 	isb
 alternative_else_nop_endif
+#endif
+	.endm
+
+/*
+ * Arrange a physical address in a TTBR register, taking care of 52-bit
+ * addresses.
+ *
+ * 	phys:	physical address, preserved
+ * 	ttbr:	returns the TTBR value
+ */
+	.macro	phys_to_ttbr, phys, ttbr
+#ifdef CONFIG_ARM64_PA_BITS_52
+	orr	\ttbr, \phys, \phys, lsr #46
+	and	\ttbr, \ttbr, #TTBR_BADDR_MASK_52
+#else
+	mov	\ttbr, \phys
 #endif
 	.endm
 
