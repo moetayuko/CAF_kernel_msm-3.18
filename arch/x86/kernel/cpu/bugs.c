@@ -24,6 +24,8 @@
 #include <asm/pgtable.h>
 #include <asm/set_memory.h>
 
+static void __init spectre_v2_check_boottime_disable(void);
+
 void __init check_bugs(void)
 {
 	identify_boot_cpu();
@@ -32,6 +34,9 @@ void __init check_bugs(void)
 		pr_info("CPU: ");
 		print_cpu_info(&boot_cpu_data);
 	}
+
+	/* Select the proper spectre mitigation before patching alternatives */
+	spectre_v2_check_boottime_disable();
 
 #ifdef CONFIG_X86_32
 	/*
@@ -106,7 +111,7 @@ static inline bool match_option(const char *arg, int arglen, const char *opt)
 	return len == arglen && !strncmp(arg, opt, len);
 }
 
-void __init spectre_v2_check_boottime_disable(void)
+static void __init spectre_v2_check_boottime_disable(void)
 {
 	char arg[20];
 	int ret;
@@ -148,14 +153,21 @@ force:
 retpoline:
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD) {
 	retpoline_amd:
+		if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD ||
+		    !boot_cpu_has(X86_FEATURE_LFENCE_RDTSC)) {
+			pr_info("AMD retpoline not supported, fall back to generic\n");
+			goto retpoline_generic;
+		}
+
 		spectre_v2_enabled = retp_compiler() ?
 			SPECTRE_V2_RETPOLINE_AMD : SPECTRE_V2_RETPOLINE_MINIMAL_AMD;
 		setup_force_cpu_cap(X86_FEATURE_RETPOLINE_AMD);
-	} else {
-	retpoline_generic:
-		spectre_v2_enabled = retp_compiler() ?
-			SPECTRE_V2_RETPOLINE_GENERIC : SPECTRE_V2_RETPOLINE_MINIMAL;
+		setup_force_cpu_cap(X86_FEATURE_RETPOLINE);
+		return;
 	}
+retpoline_generic:
+	spectre_v2_enabled = retp_compiler() ?
+		SPECTRE_V2_RETPOLINE_GENERIC : SPECTRE_V2_RETPOLINE_MINIMAL;
 	setup_force_cpu_cap(X86_FEATURE_RETPOLINE);
 	return;
 #else

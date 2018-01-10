@@ -152,7 +152,5 @@
 # define THUNK_TARGET(addr) [thunk_target] "rm" (addr)
 #endif
 
-void spectre_v2_check_boottime_disable(void);
-
 #endif /* __ASSEMBLY__ */
 #endif /* __NOSPEC_BRANCH_H__ */
