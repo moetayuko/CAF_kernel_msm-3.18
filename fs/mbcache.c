@@ -290,8 +290,10 @@ static unsigned long mb_cache_shrink(struct mb_cache *cache,
 			list_move_tail(&entry->e_list, &cache->c_list);
 			continue;
 		}
-		list_del_init(&entry->e_list);
-		cache->c_entry_count--;
+		if (!list_empty(&entry->e_list)) {
+			list_del_init(&entry->e_list);
+			cache->c_entry_count--;
+		}
 		/*
 		 * We keep LRU list reference so that entry doesn't go away
 		 * from under us.
