@@ -114,9 +114,9 @@
 #include <asm/alternative.h>
 #include <asm/prom.h>
 #include <asm/microcode.h>
-#include <asm/mmu_context.h>
 #include <asm/kaslr.h>
 #include <asm/unwind.h>
+#include <asm/nospec-branch.h>
 
 /*
  * max_low_pfn_mapped: highest direct mapped pfn under 4GB

@@ -44,6 +44,7 @@
 #include <asm/asm.h>
 #include <asm/smap.h>
 #include <asm/frame.h>
+#include <asm/nospec-branch.h>
 
 	.section .entry.text, "ax"
 
@@ -243,6 +244,23 @@ ENTRY(__switch_to_asm)
 	movl	%ebx, PER_CPU_VAR(stack_canary)+stack_canary_offset
 #endif
 
+#ifdef CONFIG_RETPOLINE
+	/*
+	 * When we switch from a shallower to a deeper call stack
+	 * the call stack will underflow in the kernel in the next task.
+	 * This could cause the CPU to fall back to indirect branch
+	 * prediction, which may be poisoned.
+	 *
+	 * To guard against that always fill the return stack with
+	 * known values.
+	 *
+	 * We do this in assembler because it needs to be before
+	 * any calls on the new stack, and this can be difficult to
+	 * ensure in a complex C function like __switch_to.
+	 */
+	ALTERNATIVE "", "FILL_RETURN_BUFFER %ebx", X86_FEATURE_RETPOLINE
+#endif
+
 	/* restore callee-saved registers */
 	popl	%esi
 	popl	%edi
@@ -290,7 +308,7 @@ ENTRY(ret_from_fork)
 
 	/* kernel thread */
 1:	movl	%edi, %eax
-	call	*%ebx
+	CALL_NOSPEC %ebx
 	/*
 	 * A kernel thread is allowed to return here after successfully
 	 * calling do_execve().  Exit to userspace to complete the execve()
@@ -919,7 +937,7 @@ common_exception:
 	movl	%ecx, %es
 	TRACE_IRQS_OFF
 	movl	%esp, %eax			# pt_regs pointer
-	call	*%edi
+	CALL_NOSPEC %edi
 	jmp	ret_from_exception
 END(common_exception)
 

@@ -68,9 +68,12 @@ static void __init init_pvh_bootparams(void)
 	 *
 	 * Version 2.12 supports Xen entry point but we will use default x86/PC
 	 * environment (i.e. hardware_subarch 0).
+	 * The RSDP address is available from version 2.14 on.
 	 */
-	pvh_bootparams.hdr.version = 0x212;
+	pvh_bootparams.hdr.version = (2 << 8) | 14;
 	pvh_bootparams.hdr.type_of_loader = (9 << 4) | 0; /* Xen loader */
+
+	pvh_bootparams.hdr.acpi_rsdp_addr = pvh_start_info.rsdp_paddr;
 }
 
 /*
