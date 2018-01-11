@@ -1694,15 +1694,38 @@ static blk_qc_t request_to_qc_t(struct blk_mq_hw_ctx *hctx, struct request *rq)
 	return blk_tag_to_qc_t(rq->internal_tag, hctx->queue_num, true);
 }
 
-static void __blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
-					struct request *rq,
-					blk_qc_t *cookie)
+/* return true if insert is needed */
+static bool __blk_mq_issue_req(struct blk_mq_hw_ctx *hctx,
+			       struct request *rq,
+			       blk_qc_t *new_cookie,
+			       blk_status_t *ret)
 {
 	struct request_queue *q = rq->q;
 	struct blk_mq_queue_data bd = {
 		.rq = rq,
 		.last = true,
 	};
+
+	if (!blk_mq_get_driver_tag(rq, NULL, false))
+		return true;
+
+	if (!blk_mq_get_dispatch_budget(hctx)) {
+		blk_mq_put_driver_tag(rq);
+		return true;
+	}
+
+	*new_cookie = request_to_qc_t(hctx, rq);
+
+	*ret = q->mq_ops->queue_rq(hctx, &bd);
+
+	return false;
+}
+
+static void __blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
+					struct request *rq,
+					blk_qc_t *cookie)
+{
+	struct request_queue *q = rq->q;
 	blk_qc_t new_cookie;
 	blk_status_t ret;
 	bool run_queue = true;
@@ -1716,22 +1739,14 @@ static void __blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
 	if (q->elevator)
 		goto insert;
 
-	if (!blk_mq_get_driver_tag(rq, NULL, false))
+	if (__blk_mq_issue_req(hctx, rq, &new_cookie, &ret))
 		goto insert;
-
-	if (!blk_mq_get_dispatch_budget(hctx)) {
-		blk_mq_put_driver_tag(rq);
-		goto insert;
-	}
-
-	new_cookie = request_to_qc_t(hctx, rq);
 
 	/*
 	 * For OK queue, we are done. For error, kill it. Any other
 	 * error (busy), just add it to our list as we previously
 	 * would have done
 	 */
-	ret = q->mq_ops->queue_rq(hctx, &bd);
 	switch (ret) {
 	case BLK_STS_OK:
 		*cookie = new_cookie;
