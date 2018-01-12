@@ -30,6 +30,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/err.h>
+#include <linux/of.h>
 
 #include "mtdcore.h"
 
@@ -105,34 +106,17 @@ static int part_read_oob(struct mtd_info *mtd, loff_t from,
 		struct mtd_oob_ops *ops)
 {
 	struct mtd_part *part = mtd_to_part(mtd);
+	struct mtd_ecc_stats stats;
 	int res;
 
-	if (from >= mtd->size)
-		return -EINVAL;
-	if (ops->datbuf && from + ops->len > mtd->size)
-		return -EINVAL;
-
-	/*
-	 * If OOB is also requested, make sure that we do not read past the end
-	 * of this partition.
-	 */
-	if (ops->oobbuf) {
-		size_t len, pages;
-
-		len = mtd_oobavail(mtd, ops);
-		pages = mtd_div_by_ws(mtd->size, mtd);
-		pages -= mtd_div_by_ws(from, mtd);
-		if (ops->ooboffs + ops->ooblen > pages * len)
-			return -EINVAL;
-	}
-
+	stats = part->parent->ecc_stats;
 	res = part->parent->_read_oob(part->parent, from + part->offset, ops);
-	if (unlikely(res)) {
-		if (mtd_is_bitflip(res))
-			mtd->ecc_stats.corrected++;
-		if (mtd_is_eccerr(res))
-			mtd->ecc_stats.failed++;
-	}
+	if (unlikely(mtd_is_eccerr(res)))
+		mtd->ecc_stats.failed +=
+			part->parent->ecc_stats.failed - stats.failed;
+	else
+		mtd->ecc_stats.corrected +=
+			part->parent->ecc_stats.corrected - stats.corrected;
 	return res;
 }
 
@@ -189,10 +173,6 @@ static int part_write_oob(struct mtd_info *mtd, loff_t to,
 {
 	struct mtd_part *part = mtd_to_part(mtd);
 
-	if (to >= mtd->size)
-		return -EINVAL;
-	if (ops->datbuf && to + ops->len > mtd->size)
-		return -EINVAL;
 	return part->parent->_write_oob(part->parent, to + part->offset, ops);
 }
 
@@ -435,8 +415,10 @@ static struct mtd_part *allocate_partition(struct mtd_info *parent,
 				parent->dev.parent;
 	slave->mtd.dev.of_node = part->of_node;
 
-	slave->mtd._read = part_read;
-	slave->mtd._write = part_write;
+	if (parent->_read)
+		slave->mtd._read = part_read;
+	if (parent->_write)
+		slave->mtd._write = part_write;
 
 	if (parent->_panic_write)
 		slave->mtd._panic_write = part_panic_write;
@@ -880,6 +862,45 @@ static int mtd_part_do_parse(struct mtd_part_parser *parser,
 }
 
 /**
+ * mtd_part_get_compatible_parser - find MTD parser by a compatible string
+ *
+ * @compat: compatible string describing partitions in a device tree
+ *
+ * MTD parsers can specify supported partitions by providing a table of
+ * compatibility strings. This function finds a parser that advertises support
+ * for a passed value of "compatible".
+ */
+static struct mtd_part_parser *mtd_part_get_compatible_parser(const char *compat)
+{
+	struct mtd_part_parser *p, *ret = NULL;
+
+	spin_lock(&part_parser_lock);
+
+	list_for_each_entry(p, &part_parsers, list) {
+		const struct of_device_id *matches;
+
+		matches = p->of_match_table;
+		if (!matches)
+			continue;
+
+		for (; matches->compatible[0]; matches++) {
+			if (!strcmp(matches->compatible, compat) &&
+			    try_module_get(p->owner)) {
+				ret = p;
+				break;
+			}
+		}
+
+		if (ret)
+			break;
+	}
+
+	spin_unlock(&part_parser_lock);
+
+	return ret;
+}
+
+/**
  * parse_mtd_partitions - parse MTD partitions
  * @master: the master partition (describes whole MTD device)
  * @types: names of partition parsers to try or %NULL
@@ -905,7 +926,26 @@ int parse_mtd_partitions(struct mtd_info *master, const char *const *types,
 			 struct mtd_part_parser_data *data)
 {
 	struct mtd_part_parser *parser;
+	struct device_node *np;
+	struct property *prop;
+	const char *compat;
 	int ret, err = 0;
+
+	np = of_get_child_by_name(mtd_get_of_node(master), "partitions");
+	of_property_for_each_string(np, "compatible", prop, compat) {
+		parser = mtd_part_get_compatible_parser(compat);
+		if (!parser)
+			continue;
+		ret = mtd_part_do_parse(parser, master, pparts, data);
+		if (ret > 0) {
+			of_node_put(np);
+			return 0;
+		}
+		mtd_part_parser_put(parser);
+		if (ret < 0 && !err)
+			err = ret;
+	}
+	of_node_put(np);
 
 	if (!types)
 		types = default_mtd_part_types;
