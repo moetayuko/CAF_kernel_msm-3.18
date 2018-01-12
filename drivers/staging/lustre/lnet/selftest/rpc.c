@@ -113,7 +113,7 @@ srpc_free_bulk(struct srpc_bulk *bk)
 		__free_page(pg);
 	}
 
-	LIBCFS_FREE(bk, offsetof(struct srpc_bulk, bk_iovs[bk->bk_niov]));
+	kfree(bk);
 }
 
 struct srpc_bulk *
@@ -125,8 +125,8 @@ srpc_alloc_bulk(int cpt, unsigned int bulk_off, unsigned int bulk_npg,
 
 	LASSERT(bulk_npg > 0 && bulk_npg <= LNET_MAX_IOV);
 
-	LIBCFS_CPT_ALLOC(bk, lnet_cpt_table(), cpt,
-			 offsetof(struct srpc_bulk, bk_iovs[bulk_npg]));
+	bk = kzalloc_cpt(offsetof(struct srpc_bulk, bk_iovs[bulk_npg]),
+			 GFP_KERNEL, cpt);
 	if (!bk) {
 		CERROR("Can't allocate descriptor for %d pages\n", bulk_npg);
 		return NULL;
@@ -176,7 +176,7 @@ srpc_init_server_rpc(struct srpc_server_rpc *rpc,
 		     struct srpc_buffer *buffer)
 {
 	memset(rpc, 0, sizeof(*rpc));
-	swi_init_workitem(&rpc->srpc_wi, rpc, srpc_handle_rpc,
+	swi_init_workitem(&rpc->srpc_wi, srpc_handle_rpc,
 			  srpc_serv_is_framework(scd->scd_svc) ?
 			  lst_sched_serial : lst_sched_test[scd->scd_cpt]);
 
@@ -214,7 +214,7 @@ srpc_service_fini(struct srpc_service *svc)
 				buf = list_entry(q->next, struct srpc_buffer,
 						 buf_list);
 				list_del(&buf->buf_list);
-				LIBCFS_FREE(buf, sizeof(*buf));
+				kfree(buf);
 			}
 		}
 
@@ -225,7 +225,7 @@ srpc_service_fini(struct srpc_service *svc)
 					 struct srpc_server_rpc,
 					 srpc_list);
 			list_del(&rpc->srpc_list);
-			LIBCFS_FREE(rpc, sizeof(*rpc));
+			kfree(rpc);
 		}
 	}
 
@@ -280,7 +280,7 @@ srpc_service_init(struct srpc_service *svc)
 		 * NB: don't use lst_sched_serial for adding buffer,
 		 * see details in srpc_service_add_buffers()
 		 */
-		swi_init_workitem(&scd->scd_buf_wi, scd,
+		swi_init_workitem(&scd->scd_buf_wi,
 				  srpc_add_buffer, lst_sched_test[i]);
 
 		if (i && srpc_serv_is_framework(svc)) {
@@ -294,8 +294,7 @@ srpc_service_init(struct srpc_service *svc)
 		}
 
 		for (j = 0; j < nrpcs; j++) {
-			LIBCFS_CPT_ALLOC(rpc, lnet_cpt_table(),
-					 i, sizeof(*rpc));
+			rpc = kzalloc_cpt(sizeof(*rpc), GFP_NOFS, i);
 			if (!rpc) {
 				srpc_service_fini(svc);
 				return -ENOMEM;
@@ -508,7 +507,7 @@ __must_hold(&scd->scd_lock)
 	list_del(&buf->buf_list);
 	spin_unlock(&scd->scd_lock);
 
-	LIBCFS_FREE(buf, sizeof(*buf));
+	kfree(buf);
 
 	spin_lock(&scd->scd_lock);
 	return rc;
@@ -517,7 +516,7 @@ __must_hold(&scd->scd_lock)
 int
 srpc_add_buffer(struct swi_workitem *wi)
 {
-	struct srpc_service_cd *scd = wi->swi_workitem.wi_data;
+	struct srpc_service_cd *scd = container_of(wi, struct srpc_service_cd, scd_buf_wi);
 	struct srpc_buffer *buf;
 	int rc = 0;
 
@@ -535,7 +534,7 @@ srpc_add_buffer(struct swi_workitem *wi)
 
 		spin_unlock(&scd->scd_lock);
 
-		LIBCFS_ALLOC(buf, sizeof(*buf));
+		buf = kzalloc(sizeof(*buf), GFP_NOFS);
 		if (!buf) {
 			CERROR("Failed to add new buf to service: %s\n",
 			       scd->scd_svc->sv_name);
@@ -547,7 +546,7 @@ srpc_add_buffer(struct swi_workitem *wi)
 		spin_lock(&scd->scd_lock);
 		if (scd->scd_svc->sv_shuttingdown) {
 			spin_unlock(&scd->scd_lock);
-			LIBCFS_FREE(buf, sizeof(*buf));
+			kfree(buf);
 
 			spin_lock(&scd->scd_lock);
 			rc = -ESHUTDOWN;
@@ -725,7 +724,7 @@ __must_hold(&scd->scd_lock)
 	}
 
 	spin_unlock(&scd->scd_lock);
-	LIBCFS_FREE(buf, sizeof(*buf));
+	kfree(buf);
 	spin_lock(&scd->scd_lock);
 }
 
@@ -968,7 +967,7 @@ srpc_server_rpc_done(struct srpc_server_rpc *rpc, int status)
 int
 srpc_handle_rpc(struct swi_workitem *wi)
 {
-	struct srpc_server_rpc *rpc = wi->swi_workitem.wi_data;
+	struct srpc_server_rpc *rpc = container_of(wi, struct srpc_server_rpc, srpc_wi);
 	struct srpc_service_cd *scd = rpc->srpc_scd;
 	struct srpc_service *sv = scd->scd_svc;
 	struct srpc_event *ev = &rpc->srpc_ev;
@@ -1188,7 +1187,7 @@ srpc_send_rpc(struct swi_workitem *wi)
 
 	LASSERT(wi);
 
-	rpc = wi->swi_workitem.wi_data;
+	rpc = container_of(wi, struct srpc_client_rpc, crpc_wi);
 
 	LASSERT(rpc);
 	LASSERT(wi == &rpc->crpc_wi);
@@ -1322,8 +1321,8 @@ srpc_create_client_rpc(struct lnet_process_id peer, int service,
 {
 	struct srpc_client_rpc *rpc;
 
-	LIBCFS_ALLOC(rpc, offsetof(struct srpc_client_rpc,
-				   crpc_bulk.bk_iovs[nbulkiov]));
+	rpc = kzalloc(offsetof(struct srpc_client_rpc,
+			       crpc_bulk.bk_iovs[nbulkiov]), GFP_KERNEL);
 	if (!rpc)
 		return NULL;
 
