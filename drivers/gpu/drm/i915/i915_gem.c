@@ -467,7 +467,7 @@ static void __fence_set_priority(struct dma_fence *fence, int prio)
 	struct drm_i915_gem_request *rq;
 	struct intel_engine_cs *engine;
 
-	if (!dma_fence_is_i915(fence))
+	if (dma_fence_is_signaled(fence) || !dma_fence_is_i915(fence))
 		return;
 
 	rq = to_request(fence);
@@ -5282,6 +5282,8 @@ err_ggtt:
 err_unlock:
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 	mutex_unlock(&dev_priv->drm.struct_mutex);
+
+	intel_uc_fini_wq(dev_priv);
 
 	if (ret != -EIO)
 		i915_gem_cleanup_userptr(dev_priv);

@@ -1338,6 +1338,11 @@ static int glk_init_workarounds(struct intel_engine_cs *engine)
 	if (ret)
 		return ret;
 
+	/* WA #0862: Userspace has to set "Barrier Mode" to avoid hangs. */
+	ret = wa_ring_whitelist_reg(engine, GEN9_SLICE_COMMON_ECO_CHICKEN1);
+	if (ret)
+		return ret;
+
 	/* WaToEnableHwFixForPushConstHWBug:glk */
 	WA_SET_BIT_MASKED(COMMON_SLICE_CHICKEN2,
 			  GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION);
@@ -1946,8 +1951,22 @@ int intel_enable_engine_stats(struct intel_engine_cs *engine)
 	spin_lock_irqsave(&engine->stats.lock, flags);
 	if (engine->stats.enabled == ~0)
 		goto busy;
-	if (engine->stats.enabled++ == 0)
+	if (engine->stats.enabled++ == 0) {
+		struct intel_engine_execlists *execlists = &engine->execlists;
+		const struct execlist_port *port = execlists->port;
+		unsigned int num_ports = execlists_num_ports(execlists);
+
 		engine->stats.enabled_at = ktime_get();
+
+		/* XXX submission method oblivious? */
+		while (num_ports-- && port_isset(port)) {
+			engine->stats.active++;
+			port++;
+		}
+
+		if (engine->stats.active)
+			engine->stats.start = engine->stats.enabled_at;
+	}
 	spin_unlock_irqrestore(&engine->stats.lock, flags);
 
 	return 0;
