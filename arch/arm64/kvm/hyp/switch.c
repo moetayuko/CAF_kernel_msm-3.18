@@ -17,6 +17,7 @@
 
 #include <linux/types.h>
 #include <linux/jump_label.h>
+#include <uapi/linux/psci.h>
 
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
@@ -52,7 +53,7 @@ static void __hyp_text __activate_traps_vhe(void)
 	val &= ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
 	write_sysreg(val, cpacr_el1);
 
-	write_sysreg(__kvm_hyp_vector, vbar_el1);
+	write_sysreg(kvm_get_hyp_vector(), vbar_el1);
 }
 
 static void __hyp_text __activate_traps_nvhe(void)
@@ -305,9 +306,9 @@ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	u64 exit_code;
 
 	vcpu = kern_hyp_va(vcpu);
-	write_sysreg(vcpu, tpidr_el2);
 
 	host_ctxt = kern_hyp_va(vcpu->arch.host_cpu_context);
+	host_ctxt->__hyp_running_vcpu = vcpu;
 	guest_ctxt = &vcpu->arch.ctxt;
 
 	__sysreg_save_host_state(host_ctxt);
@@ -340,6 +341,18 @@ again:
 	 */
 	if (exit_code == ARM_EXCEPTION_TRAP && !__populate_fault_info(vcpu))
 		goto again;
+
+	if (exit_code == ARM_EXCEPTION_TRAP &&
+	    (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_HVC64 ||
+	     kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_HVC32) &&
+	    vcpu_get_reg(vcpu, 0) == PSCI_0_2_FN_PSCI_VERSION) {
+		u64 val = PSCI_RET_NOT_SUPPORTED;
+		if (test_bit(KVM_ARM_VCPU_PSCI_0_2, vcpu->arch.features))
+			val = 2;
+
+		vcpu_set_reg(vcpu, 0, val);
+		goto again;
+	}
 
 	if (static_branch_unlikely(&vgic_v2_cpuif_trap) &&
 	    exit_code == ARM_EXCEPTION_TRAP) {
@@ -393,6 +406,14 @@ again:
 		/* 0 falls through to be handled out of EL2 */
 	}
 
+	if (cpus_have_const_cap(ARM64_HARDEN_BP_POST_GUEST_EXIT)) {
+		u32 midr = read_cpuid_id();
+
+		/* Apply BTAC predictors mitigation to all Falkor chips */
+		if ((midr & MIDR_CPU_MODEL_MASK) == MIDR_QCOM_FALKOR_V1)
+			__qcom_hyp_sanitize_btac_predictors();
+	}
+
 	fp_enabled = __fpsimd_enabled();
 
 	__sysreg_save_guest_state(guest_ctxt);
@@ -422,7 +443,8 @@ again:
 
 static const char __hyp_panic_string[] = "HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n";
 
-static void __hyp_text __hyp_call_panic_nvhe(u64 spsr, u64 elr, u64 par)
+static void __hyp_text __hyp_call_panic_nvhe(u64 spsr, u64 elr, u64 par,
+					     struct kvm_vcpu *vcpu)
 {
 	unsigned long str_va;
 
@@ -436,35 +458,35 @@ static void __hyp_text __hyp_call_panic_nvhe(u64 spsr, u64 elr, u64 par)
 	__hyp_do_panic(str_va,
 		       spsr,  elr,
 		       read_sysreg(esr_el2),   read_sysreg_el2(far),
-		       read_sysreg(hpfar_el2), par,
-		       (void *)read_sysreg(tpidr_el2));
+		       read_sysreg(hpfar_el2), par, vcpu);
 }
 
-static void __hyp_text __hyp_call_panic_vhe(u64 spsr, u64 elr, u64 par)
+static void __hyp_text __hyp_call_panic_vhe(u64 spsr, u64 elr, u64 par,
+					    struct kvm_vcpu *vcpu)
 {
 	panic(__hyp_panic_string,
 	      spsr,  elr,
 	      read_sysreg_el2(esr),   read_sysreg_el2(far),
-	      read_sysreg(hpfar_el2), par,
-	      (void *)read_sysreg(tpidr_el2));
+	      read_sysreg(hpfar_el2), par, vcpu);
 }
 
 static hyp_alternate_select(__hyp_call_panic,
 			    __hyp_call_panic_nvhe, __hyp_call_panic_vhe,
 			    ARM64_HAS_VIRT_HOST_EXTN);
 
-void __hyp_text __noreturn __hyp_panic(void)
+void __hyp_text __noreturn hyp_panic(struct kvm_cpu_context *__host_ctxt)
 {
+	struct kvm_vcpu *vcpu = NULL;
+
 	u64 spsr = read_sysreg_el2(spsr);
 	u64 elr = read_sysreg_el2(elr);
 	u64 par = read_sysreg(par_el1);
 
 	if (read_sysreg(vttbr_el2)) {
-		struct kvm_vcpu *vcpu;
 		struct kvm_cpu_context *host_ctxt;
 
-		vcpu = (struct kvm_vcpu *)read_sysreg(tpidr_el2);
-		host_ctxt = kern_hyp_va(vcpu->arch.host_cpu_context);
+		host_ctxt = kern_hyp_va(__host_ctxt);
+		vcpu = host_ctxt->__hyp_running_vcpu;
 		__timer_disable_traps(vcpu);
 		__deactivate_traps(vcpu);
 		__deactivate_vm(vcpu);
@@ -472,7 +494,7 @@ void __hyp_text __noreturn __hyp_panic(void)
 	}
 
 	/* Call panic for real */
-	__hyp_call_panic()(spsr, elr, par);
+	__hyp_call_panic()(spsr, elr, par, vcpu);
 
 	unreachable();
 }
