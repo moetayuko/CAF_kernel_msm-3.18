@@ -60,9 +60,8 @@ do {									\
 /* This just causes an oops. */
 #define BUG()								\
 do {									\
-	(*(int *)0 = 0);						\
-	do {} while (1);						\
-	unreachable();							\
+	barrier_before_unreachable();					\
+	__builtin_trap();						\
 } while (0)
 
 #endif
