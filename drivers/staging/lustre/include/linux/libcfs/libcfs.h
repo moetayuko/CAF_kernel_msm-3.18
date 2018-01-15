@@ -74,16 +74,6 @@ sigset_t cfs_block_sigsinv(unsigned long sigs);
 void cfs_restore_sigs(sigset_t sigset);
 void cfs_clear_sigpending(void);
 
-/*
- * Random number handling
- */
-
-/* returns a random 32-bit integer */
-unsigned int cfs_rand(void);
-/* seed the generator */
-void cfs_srand(unsigned int seed1, unsigned int seed2);
-void cfs_get_random_bytes(void *buf, int size);
-
 struct libcfs_ioctl_handler {
 	struct list_head item;
 	int (*handle_ioctl)(unsigned int cmd, struct libcfs_ioctl_hdr *hdr);
@@ -126,7 +116,7 @@ extern struct miscdevice libcfs_dev;
  */
 extern char lnet_debug_log_upcall[1024];
 
-extern struct cfs_wi_sched *cfs_sched_rehash;
+extern struct workqueue_struct *cfs_rehash_wq;
 
 struct lnet_debugfs_symlink_def {
 	char *name;
