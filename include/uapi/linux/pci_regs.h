@@ -978,9 +978,11 @@
 #define  PCI_EXP_DPC_CTL_INT_EN 	0x0008	/* DPC Interrupt Enable */
 
 #define PCI_EXP_DPC_STATUS		8	/* DPC Status */
-#define  PCI_EXP_DPC_STATUS_TRIGGER	0x0001	/* Trigger Status */
-#define  PCI_EXP_DPC_STATUS_INTERRUPT	0x0008	/* Interrupt Status */
-#define  PCI_EXP_DPC_RP_BUSY		0x0010	/* Root Port Busy */
+#define  PCI_EXP_DPC_STATUS_TRIGGER	    0x0001 /* Trigger Status */
+#define  PCI_EXP_DPC_STATUS_TRIGGER_RSN	    0x0006 /* Trigger Reason */
+#define  PCI_EXP_DPC_STATUS_INTERRUPT	    0x0008 /* Interrupt Status */
+#define  PCI_EXP_DPC_RP_BUSY		    0x0010 /* Root Port Busy */
+#define  PCI_EXP_DPC_STATUS_TRIGGER_RSN_EXT 0x0060 /* Trig Reason Extension */
 
 #define PCI_EXP_DPC_SOURCE_ID		10	/* DPC Source Identifier */
 
