@@ -2433,6 +2433,7 @@ int ipmi_si_remove_by_dev(struct device *dev)
 {
 	struct smi_info *e;
 	int rv = -ENOENT;
+	struct platform_device *pdev = to_platform_device(dev);
 
 	mutex_lock(&smi_infos_lock);
 	list_for_each_entry(e, &smi_infos, link) {
@@ -2443,6 +2444,7 @@ int ipmi_si_remove_by_dev(struct device *dev)
 		}
 	}
 	mutex_unlock(&smi_infos_lock);
+	kfree(pdev->driver_override);
 
 	return rv;
 }
