@@ -358,7 +358,7 @@ static int mlxsw_sp_fw_rev_validate(struct mlxsw_sp *mlxsw_sp)
 	if (mlxsw_sp_fw_rev_ge(rev, &mlxsw_sp_supported_fw_rev))
 		return 0;
 
-	dev_info(mlxsw_sp->bus_info->dev, "The firmware version %d.%d.%d out of data\n",
+	dev_info(mlxsw_sp->bus_info->dev, "The firmware version %d.%d.%d is out of date\n",
 		 rev->major, rev->minor, rev->subminor);
 	dev_info(mlxsw_sp->bus_info->dev, "Upgrading firmware using file %s\n",
 		 MLXSW_SP_FW_FILENAME);
@@ -1571,14 +1571,11 @@ mlxsw_sp_port_add_cls_matchall_mirror(struct mlxsw_sp_port *mlxsw_sp_port,
 				      const struct tc_action *a,
 				      bool ingress)
 {
-	struct net *net = dev_net(mlxsw_sp_port->dev);
 	enum mlxsw_sp_span_type span_type;
 	struct mlxsw_sp_port *to_port;
 	struct net_device *to_dev;
-	int ifindex;
 
-	ifindex = tcf_mirred_ifindex(a);
-	to_dev = __dev_get_by_index(net, ifindex);
+	to_dev = tcf_mirred_dev(a);
 	if (!to_dev) {
 		netdev_err(mlxsw_sp_port->dev, "Could not find requested device\n");
 		return -EINVAL;
@@ -1750,72 +1747,186 @@ static int mlxsw_sp_setup_tc_cls_matchall(struct mlxsw_sp_port *mlxsw_sp_port,
 }
 
 static int
-mlxsw_sp_setup_tc_cls_flower(struct mlxsw_sp_port *mlxsw_sp_port,
-			     struct tc_cls_flower_offload *f,
-			     bool ingress)
+mlxsw_sp_setup_tc_cls_flower(struct mlxsw_sp_acl_block *acl_block,
+			     struct tc_cls_flower_offload *f)
 {
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_acl_block_mlxsw_sp(acl_block);
+
 	switch (f->command) {
 	case TC_CLSFLOWER_REPLACE:
-		return mlxsw_sp_flower_replace(mlxsw_sp_port, ingress, f);
+		return mlxsw_sp_flower_replace(mlxsw_sp, acl_block, f);
 	case TC_CLSFLOWER_DESTROY:
-		mlxsw_sp_flower_destroy(mlxsw_sp_port, ingress, f);
+		mlxsw_sp_flower_destroy(mlxsw_sp, acl_block, f);
 		return 0;
 	case TC_CLSFLOWER_STATS:
-		return mlxsw_sp_flower_stats(mlxsw_sp_port, ingress, f);
+		return mlxsw_sp_flower_stats(mlxsw_sp, acl_block, f);
 	default:
 		return -EOPNOTSUPP;
 	}
 }
 
-static int mlxsw_sp_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
-				      void *cb_priv, bool ingress)
+static int mlxsw_sp_setup_tc_block_cb_matchall(enum tc_setup_type type,
+					       void *type_data,
+					       void *cb_priv, bool ingress)
 {
 	struct mlxsw_sp_port *mlxsw_sp_port = cb_priv;
 
-	if (!tc_can_offload(mlxsw_sp_port->dev))
-		return -EOPNOTSUPP;
-
 	switch (type) {
 	case TC_SETUP_CLSMATCHALL:
+		if (!tc_can_offload(mlxsw_sp_port->dev))
+			return -EOPNOTSUPP;
+
 		return mlxsw_sp_setup_tc_cls_matchall(mlxsw_sp_port, type_data,
 						      ingress);
 	case TC_SETUP_CLSFLOWER:
-		return mlxsw_sp_setup_tc_cls_flower(mlxsw_sp_port, type_data,
-						    ingress);
+		return 0;
 	default:
 		return -EOPNOTSUPP;
 	}
 }
 
-static int mlxsw_sp_setup_tc_block_cb_ig(enum tc_setup_type type,
-					 void *type_data, void *cb_priv)
+static int mlxsw_sp_setup_tc_block_cb_matchall_ig(enum tc_setup_type type,
+						  void *type_data,
+						  void *cb_priv)
 {
-	return mlxsw_sp_setup_tc_block_cb(type, type_data, cb_priv, true);
+	return mlxsw_sp_setup_tc_block_cb_matchall(type, type_data,
+						   cb_priv, true);
 }
 
-static int mlxsw_sp_setup_tc_block_cb_eg(enum tc_setup_type type,
-					 void *type_data, void *cb_priv)
+static int mlxsw_sp_setup_tc_block_cb_matchall_eg(enum tc_setup_type type,
+						  void *type_data,
+						  void *cb_priv)
 {
-	return mlxsw_sp_setup_tc_block_cb(type, type_data, cb_priv, false);
+	return mlxsw_sp_setup_tc_block_cb_matchall(type, type_data,
+						   cb_priv, false);
+}
+
+static int mlxsw_sp_setup_tc_block_cb_flower(enum tc_setup_type type,
+					     void *type_data, void *cb_priv)
+{
+	struct mlxsw_sp_acl_block *acl_block = cb_priv;
+
+	switch (type) {
+	case TC_SETUP_CLSMATCHALL:
+		return 0;
+	case TC_SETUP_CLSFLOWER:
+		if (mlxsw_sp_acl_block_disabled(acl_block))
+			return -EOPNOTSUPP;
+
+		return mlxsw_sp_setup_tc_cls_flower(acl_block, type_data);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int
+mlxsw_sp_setup_tc_block_flower_bind(struct mlxsw_sp_port *mlxsw_sp_port,
+				    struct tcf_block *block, bool ingress)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	struct mlxsw_sp_acl_block *acl_block;
+	struct tcf_block_cb *block_cb;
+	int err;
+
+	block_cb = tcf_block_cb_lookup(block, mlxsw_sp_setup_tc_block_cb_flower,
+				       mlxsw_sp);
+	if (!block_cb) {
+		acl_block = mlxsw_sp_acl_block_create(mlxsw_sp, block->net);
+		if (!acl_block)
+			return -ENOMEM;
+		block_cb = __tcf_block_cb_register(block,
+						   mlxsw_sp_setup_tc_block_cb_flower,
+						   mlxsw_sp, acl_block);
+		if (IS_ERR(block_cb)) {
+			err = PTR_ERR(block_cb);
+			goto err_cb_register;
+		}
+	} else {
+		acl_block = tcf_block_cb_priv(block_cb);
+	}
+	tcf_block_cb_incref(block_cb);
+	err = mlxsw_sp_acl_block_bind(mlxsw_sp, acl_block,
+				      mlxsw_sp_port, ingress);
+	if (err)
+		goto err_block_bind;
+
+	if (ingress)
+		mlxsw_sp_port->ing_acl_block = acl_block;
+	else
+		mlxsw_sp_port->eg_acl_block = acl_block;
+
+	return 0;
+
+err_block_bind:
+	if (!tcf_block_cb_decref(block_cb)) {
+		__tcf_block_cb_unregister(block_cb);
+err_cb_register:
+		mlxsw_sp_acl_block_destroy(acl_block);
+	}
+	return err;
+}
+
+static void
+mlxsw_sp_setup_tc_block_flower_unbind(struct mlxsw_sp_port *mlxsw_sp_port,
+				      struct tcf_block *block, bool ingress)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	struct mlxsw_sp_acl_block *acl_block;
+	struct tcf_block_cb *block_cb;
+	int err;
+
+	block_cb = tcf_block_cb_lookup(block, mlxsw_sp_setup_tc_block_cb_flower,
+				       mlxsw_sp);
+	if (!block_cb)
+		return;
+
+	if (ingress)
+		mlxsw_sp_port->ing_acl_block = NULL;
+	else
+		mlxsw_sp_port->eg_acl_block = NULL;
+
+	acl_block = tcf_block_cb_priv(block_cb);
+	err = mlxsw_sp_acl_block_unbind(mlxsw_sp, acl_block,
+					mlxsw_sp_port, ingress);
+	if (!err && !tcf_block_cb_decref(block_cb)) {
+		__tcf_block_cb_unregister(block_cb);
+		mlxsw_sp_acl_block_destroy(acl_block);
+	}
 }
 
 static int mlxsw_sp_setup_tc_block(struct mlxsw_sp_port *mlxsw_sp_port,
 				   struct tc_block_offload *f)
 {
 	tc_setup_cb_t *cb;
+	bool ingress;
+	int err;
 
-	if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-		cb = mlxsw_sp_setup_tc_block_cb_ig;
-	else if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_EGRESS)
-		cb = mlxsw_sp_setup_tc_block_cb_eg;
-	else
+	if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS) {
+		cb = mlxsw_sp_setup_tc_block_cb_matchall_ig;
+		ingress = true;
+	} else if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_EGRESS) {
+		cb = mlxsw_sp_setup_tc_block_cb_matchall_eg;
+		ingress = false;
+	} else {
 		return -EOPNOTSUPP;
+	}
 
 	switch (f->command) {
 	case TC_BLOCK_BIND:
-		return tcf_block_cb_register(f->block, cb, mlxsw_sp_port,
-					     mlxsw_sp_port);
+		err = tcf_block_cb_register(f->block, cb, mlxsw_sp_port,
+					    mlxsw_sp_port);
+		if (err)
+			return err;
+		err = mlxsw_sp_setup_tc_block_flower_bind(mlxsw_sp_port,
+							  f->block, ingress);
+		if (err) {
+			tcf_block_cb_unregister(f->block, cb, mlxsw_sp_port);
+			return err;
+		}
+		return 0;
 	case TC_BLOCK_UNBIND:
+		mlxsw_sp_setup_tc_block_flower_unbind(mlxsw_sp_port,
+						      f->block, ingress);
 		tcf_block_cb_unregister(f->block, cb, mlxsw_sp_port);
 		return 0;
 	default:
@@ -1833,9 +1944,67 @@ static int mlxsw_sp_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		return mlxsw_sp_setup_tc_block(mlxsw_sp_port, type_data);
 	case TC_SETUP_QDISC_RED:
 		return mlxsw_sp_setup_tc_red(mlxsw_sp_port, type_data);
+	case TC_SETUP_QDISC_PRIO:
+		return mlxsw_sp_setup_tc_prio(mlxsw_sp_port, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
+}
+
+
+static int mlxsw_sp_feature_hw_tc(struct net_device *dev, bool enable)
+{
+	struct mlxsw_sp_port *mlxsw_sp_port = netdev_priv(dev);
+
+	if (!enable) {
+		if (mlxsw_sp_acl_block_rule_count(mlxsw_sp_port->ing_acl_block) ||
+		    mlxsw_sp_acl_block_rule_count(mlxsw_sp_port->eg_acl_block) ||
+		    !list_empty(&mlxsw_sp_port->mall_tc_list)) {
+			netdev_err(dev, "Active offloaded tc filters, can't turn hw_tc_offload off\n");
+			return -EINVAL;
+		}
+		mlxsw_sp_acl_block_disable_inc(mlxsw_sp_port->ing_acl_block);
+		mlxsw_sp_acl_block_disable_inc(mlxsw_sp_port->eg_acl_block);
+	} else {
+		mlxsw_sp_acl_block_disable_dec(mlxsw_sp_port->ing_acl_block);
+		mlxsw_sp_acl_block_disable_dec(mlxsw_sp_port->eg_acl_block);
+	}
+	return 0;
+}
+
+typedef int (*mlxsw_sp_feature_handler)(struct net_device *dev, bool enable);
+
+static int mlxsw_sp_handle_feature(struct net_device *dev,
+				   netdev_features_t wanted_features,
+				   netdev_features_t feature,
+				   mlxsw_sp_feature_handler feature_handler)
+{
+	netdev_features_t changes = wanted_features ^ dev->features;
+	bool enable = !!(wanted_features & feature);
+	int err;
+
+	if (!(changes & feature))
+		return 0;
+
+	err = feature_handler(dev, enable);
+	if (err) {
+		netdev_err(dev, "%s feature %pNF failed, err %d\n",
+			   enable ? "Enable" : "Disable", &feature, err);
+		return err;
+	}
+
+	if (enable)
+		dev->features |= feature;
+	else
+		dev->features &= ~feature;
+
+	return 0;
+}
+static int mlxsw_sp_set_features(struct net_device *dev,
+				 netdev_features_t features)
+{
+	return mlxsw_sp_handle_feature(dev, features, NETIF_F_HW_TC,
+				       mlxsw_sp_feature_hw_tc);
 }
 
 static const struct net_device_ops mlxsw_sp_port_netdev_ops = {
@@ -1852,6 +2021,7 @@ static const struct net_device_ops mlxsw_sp_port_netdev_ops = {
 	.ndo_vlan_rx_add_vid	= mlxsw_sp_port_add_vid,
 	.ndo_vlan_rx_kill_vid	= mlxsw_sp_port_kill_vid,
 	.ndo_get_phys_port_name	= mlxsw_sp_port_get_phys_port_name,
+	.ndo_set_features	= mlxsw_sp_set_features,
 };
 
 static void mlxsw_sp_port_get_drvinfo(struct net_device *dev,
@@ -3039,6 +3209,13 @@ static int mlxsw_sp_port_create(struct mlxsw_sp *mlxsw_sp, u8 local_port,
 		goto err_port_fids_init;
 	}
 
+	err = mlxsw_sp_tc_qdisc_init(mlxsw_sp_port);
+	if (err) {
+		dev_err(mlxsw_sp->bus_info->dev, "Port %d: Failed to initialize TC qdiscs\n",
+			mlxsw_sp_port->local_port);
+		goto err_port_qdiscs_init;
+	}
+
 	mlxsw_sp_port_vlan = mlxsw_sp_port_vlan_get(mlxsw_sp_port, 1);
 	if (IS_ERR(mlxsw_sp_port_vlan)) {
 		dev_err(mlxsw_sp->bus_info->dev, "Port %d: Failed to create VID 1\n",
@@ -3067,6 +3244,8 @@ err_register_netdev:
 	mlxsw_sp_port_switchdev_fini(mlxsw_sp_port);
 	mlxsw_sp_port_vlan_put(mlxsw_sp_port_vlan);
 err_port_vlan_get:
+	mlxsw_sp_tc_qdisc_fini(mlxsw_sp_port);
+err_port_qdiscs_init:
 	mlxsw_sp_port_fids_fini(mlxsw_sp_port);
 err_port_fids_init:
 	mlxsw_sp_port_dcb_fini(mlxsw_sp_port);
@@ -3102,6 +3281,7 @@ static void mlxsw_sp_port_remove(struct mlxsw_sp *mlxsw_sp, u8 local_port)
 	mlxsw_sp->ports[local_port] = NULL;
 	mlxsw_sp_port_switchdev_fini(mlxsw_sp_port);
 	mlxsw_sp_port_vlan_flush(mlxsw_sp_port);
+	mlxsw_sp_tc_qdisc_fini(mlxsw_sp_port);
 	mlxsw_sp_port_fids_fini(mlxsw_sp_port);
 	mlxsw_sp_port_dcb_fini(mlxsw_sp_port);
 	mlxsw_sp_port_swid_set(mlxsw_sp_port, MLXSW_PORT_SWID_DISABLED_PORT);
@@ -3933,6 +4113,253 @@ static const struct mlxsw_config_profile mlxsw_sp_config_profile = {
 	.resource_query_enable		= 1,
 };
 
+static bool
+mlxsw_sp_resource_kvd_granularity_validate(struct netlink_ext_ack *extack,
+					   u64 size)
+{
+	const struct mlxsw_config_profile *profile;
+
+	profile = &mlxsw_sp_config_profile;
+	if (size % profile->kvd_hash_granularity) {
+		NL_SET_ERR_MSG_MOD(extack, "resource set with wrong granularity");
+		return false;
+	}
+	return true;
+}
+
+static int
+mlxsw_sp_resource_kvd_size_validate(struct devlink *devlink, u64 size,
+				    struct netlink_ext_ack *extack)
+{
+	NL_SET_ERR_MSG_MOD(extack, "kvd size cannot be changed");
+	return -EINVAL;
+}
+
+static int
+mlxsw_sp_resource_kvd_linear_size_validate(struct devlink *devlink, u64 size,
+					   struct netlink_ext_ack *extack)
+{
+	if (!mlxsw_sp_resource_kvd_granularity_validate(extack, size))
+		return -EINVAL;
+
+	return 0;
+}
+
+static int
+mlxsw_sp_resource_kvd_hash_single_size_validate(struct devlink *devlink, u64 size,
+						struct netlink_ext_ack *extack)
+{
+	struct mlxsw_core *mlxsw_core = devlink_priv(devlink);
+
+	if (!mlxsw_sp_resource_kvd_granularity_validate(extack, size))
+		return -EINVAL;
+
+	if (size < MLXSW_CORE_RES_GET(mlxsw_core, KVD_SINGLE_MIN_SIZE)) {
+		NL_SET_ERR_MSG_MOD(extack, "hash single size is smaller than minimum");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int
+mlxsw_sp_resource_kvd_hash_double_size_validate(struct devlink *devlink, u64 size,
+						struct netlink_ext_ack *extack)
+{
+	struct mlxsw_core *mlxsw_core = devlink_priv(devlink);
+
+	if (!mlxsw_sp_resource_kvd_granularity_validate(extack, size))
+		return -EINVAL;
+
+	if (size < MLXSW_CORE_RES_GET(mlxsw_core, KVD_DOUBLE_MIN_SIZE)) {
+		NL_SET_ERR_MSG_MOD(extack, "hash double size is smaller than minimum");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static u64 mlxsw_sp_resource_kvd_linear_occ_get(struct devlink *devlink)
+{
+	struct mlxsw_core *mlxsw_core = devlink_priv(devlink);
+	struct mlxsw_sp *mlxsw_sp = mlxsw_core_driver_priv(mlxsw_core);
+
+	return mlxsw_sp_kvdl_occ_get(mlxsw_sp);
+}
+
+static struct devlink_resource_ops mlxsw_sp_resource_kvd_ops = {
+	.size_validate = mlxsw_sp_resource_kvd_size_validate,
+};
+
+static struct devlink_resource_ops mlxsw_sp_resource_kvd_linear_ops = {
+	.size_validate = mlxsw_sp_resource_kvd_linear_size_validate,
+	.occ_get = mlxsw_sp_resource_kvd_linear_occ_get,
+};
+
+static struct devlink_resource_ops mlxsw_sp_resource_kvd_hash_single_ops = {
+	.size_validate = mlxsw_sp_resource_kvd_hash_single_size_validate,
+};
+
+static struct devlink_resource_ops mlxsw_sp_resource_kvd_hash_double_ops = {
+	.size_validate = mlxsw_sp_resource_kvd_hash_double_size_validate,
+};
+
+static struct devlink_resource_size_params mlxsw_sp_kvd_size_params;
+static struct devlink_resource_size_params mlxsw_sp_linear_size_params;
+static struct devlink_resource_size_params mlxsw_sp_hash_single_size_params;
+static struct devlink_resource_size_params mlxsw_sp_hash_double_size_params;
+
+static void
+mlxsw_sp_resource_size_params_prepare(struct mlxsw_core *mlxsw_core)
+{
+	u32 single_size_min = MLXSW_CORE_RES_GET(mlxsw_core,
+						 KVD_SINGLE_MIN_SIZE);
+	u32 double_size_min = MLXSW_CORE_RES_GET(mlxsw_core,
+						 KVD_DOUBLE_MIN_SIZE);
+	u32 kvd_size = MLXSW_CORE_RES_GET(mlxsw_core, KVD_SIZE);
+	u32 linear_size_min = 0;
+
+	/* KVD top resource */
+	mlxsw_sp_kvd_size_params.size_min = kvd_size;
+	mlxsw_sp_kvd_size_params.size_max = kvd_size;
+	mlxsw_sp_kvd_size_params.size_granularity = MLXSW_SP_KVD_GRANULARITY;
+	mlxsw_sp_kvd_size_params.unit = DEVLINK_RESOURCE_UNIT_ENTRY;
+
+	/* Linear part init */
+	mlxsw_sp_linear_size_params.size_min = linear_size_min;
+	mlxsw_sp_linear_size_params.size_max = kvd_size - single_size_min -
+					       double_size_min;
+	mlxsw_sp_linear_size_params.size_granularity = MLXSW_SP_KVD_GRANULARITY;
+	mlxsw_sp_linear_size_params.unit = DEVLINK_RESOURCE_UNIT_ENTRY;
+
+	/* Hash double part init */
+	mlxsw_sp_hash_double_size_params.size_min = double_size_min;
+	mlxsw_sp_hash_double_size_params.size_max = kvd_size - single_size_min -
+						    linear_size_min;
+	mlxsw_sp_hash_double_size_params.size_granularity = MLXSW_SP_KVD_GRANULARITY;
+	mlxsw_sp_hash_double_size_params.unit = DEVLINK_RESOURCE_UNIT_ENTRY;
+
+	/* Hash single part init */
+	mlxsw_sp_hash_single_size_params.size_min = single_size_min;
+	mlxsw_sp_hash_single_size_params.size_max = kvd_size - double_size_min -
+						    linear_size_min;
+	mlxsw_sp_hash_single_size_params.size_granularity = MLXSW_SP_KVD_GRANULARITY;
+	mlxsw_sp_hash_single_size_params.unit = DEVLINK_RESOURCE_UNIT_ENTRY;
+}
+
+static int mlxsw_sp_resources_register(struct mlxsw_core *mlxsw_core)
+{
+	struct devlink *devlink = priv_to_devlink(mlxsw_core);
+	u32 kvd_size, single_size, double_size, linear_size;
+	const struct mlxsw_config_profile *profile;
+	int err;
+
+	profile = &mlxsw_sp_config_profile;
+	if (!MLXSW_CORE_RES_VALID(mlxsw_core, KVD_SIZE))
+		return -EIO;
+
+	mlxsw_sp_resource_size_params_prepare(mlxsw_core);
+	kvd_size = MLXSW_CORE_RES_GET(mlxsw_core, KVD_SIZE);
+	err = devlink_resource_register(devlink, MLXSW_SP_RESOURCE_NAME_KVD,
+					true, kvd_size,
+					MLXSW_SP_RESOURCE_KVD,
+					DEVLINK_RESOURCE_ID_PARENT_TOP,
+					&mlxsw_sp_kvd_size_params,
+					&mlxsw_sp_resource_kvd_ops);
+	if (err)
+		return err;
+
+	linear_size = profile->kvd_linear_size;
+	err = devlink_resource_register(devlink, MLXSW_SP_RESOURCE_NAME_KVD_LINEAR,
+					false, linear_size,
+					MLXSW_SP_RESOURCE_KVD_LINEAR,
+					MLXSW_SP_RESOURCE_KVD,
+					&mlxsw_sp_linear_size_params,
+					&mlxsw_sp_resource_kvd_linear_ops);
+	if (err)
+		return err;
+
+	double_size = kvd_size - linear_size;
+	double_size *= profile->kvd_hash_double_parts;
+	double_size /= profile->kvd_hash_double_parts +
+		       profile->kvd_hash_single_parts;
+	double_size = rounddown(double_size, profile->kvd_hash_granularity);
+	err = devlink_resource_register(devlink, MLXSW_SP_RESOURCE_NAME_KVD_HASH_DOUBLE,
+					false, double_size,
+					MLXSW_SP_RESOURCE_KVD_HASH_DOUBLE,
+					MLXSW_SP_RESOURCE_KVD,
+					&mlxsw_sp_hash_double_size_params,
+					&mlxsw_sp_resource_kvd_hash_double_ops);
+	if (err)
+		return err;
+
+	single_size = kvd_size - double_size - linear_size;
+	err = devlink_resource_register(devlink, MLXSW_SP_RESOURCE_NAME_KVD_HASH_SINGLE,
+					false, single_size,
+					MLXSW_SP_RESOURCE_KVD_HASH_SINGLE,
+					MLXSW_SP_RESOURCE_KVD,
+					&mlxsw_sp_hash_single_size_params,
+					&mlxsw_sp_resource_kvd_hash_single_ops);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static int mlxsw_sp_kvd_sizes_get(struct mlxsw_core *mlxsw_core,
+				  const struct mlxsw_config_profile *profile,
+				  u64 *p_single_size, u64 *p_double_size,
+				  u64 *p_linear_size)
+{
+	struct devlink *devlink = priv_to_devlink(mlxsw_core);
+	u32 double_size;
+	int err;
+
+	if (!MLXSW_CORE_RES_VALID(mlxsw_core, KVD_SINGLE_MIN_SIZE) ||
+	    !MLXSW_CORE_RES_VALID(mlxsw_core, KVD_DOUBLE_MIN_SIZE) ||
+	    !profile->used_kvd_split_data)
+		return -EIO;
+
+	/* The hash part is what left of the kvd without the
+	 * linear part. It is split to the single size and
+	 * double size by the parts ratio from the profile.
+	 * Both sizes must be a multiplications of the
+	 * granularity from the profile. In case the user
+	 * provided the sizes they are obtained via devlink.
+	 */
+	err = devlink_resource_size_get(devlink,
+					MLXSW_SP_RESOURCE_KVD_LINEAR,
+					p_linear_size);
+	if (err)
+		*p_linear_size = profile->kvd_linear_size;
+
+	err = devlink_resource_size_get(devlink,
+					MLXSW_SP_RESOURCE_KVD_HASH_DOUBLE,
+					p_double_size);
+	if (err) {
+		double_size = MLXSW_CORE_RES_GET(mlxsw_core, KVD_SIZE) -
+			      *p_linear_size;
+		double_size *= profile->kvd_hash_double_parts;
+		double_size /= profile->kvd_hash_double_parts +
+			       profile->kvd_hash_single_parts;
+		*p_double_size = rounddown(double_size,
+					   profile->kvd_hash_granularity);
+	}
+
+	err = devlink_resource_size_get(devlink,
+					MLXSW_SP_RESOURCE_KVD_HASH_SINGLE,
+					p_single_size);
+	if (err)
+		*p_single_size = MLXSW_CORE_RES_GET(mlxsw_core, KVD_SIZE) -
+				 *p_double_size - *p_linear_size;
+
+	/* Check results are legal. */
+	if (*p_single_size < MLXSW_CORE_RES_GET(mlxsw_core, KVD_SINGLE_MIN_SIZE) ||
+	    *p_double_size < MLXSW_CORE_RES_GET(mlxsw_core, KVD_DOUBLE_MIN_SIZE) ||
+	    MLXSW_CORE_RES_GET(mlxsw_core, KVD_SIZE) < *p_linear_size)
+		return -EIO;
+
+	return 0;
+}
+
 static struct mlxsw_driver mlxsw_sp_driver = {
 	.kind				= mlxsw_sp_driver_name,
 	.priv_size			= sizeof(struct mlxsw_sp),
@@ -3952,6 +4379,8 @@ static struct mlxsw_driver mlxsw_sp_driver = {
 	.sb_occ_port_pool_get		= mlxsw_sp_sb_occ_port_pool_get,
 	.sb_occ_tc_port_bind_get	= mlxsw_sp_sb_occ_tc_port_bind_get,
 	.txhdr_construct		= mlxsw_sp_txhdr_construct,
+	.resources_register		= mlxsw_sp_resources_register,
+	.kvd_sizes_get			= mlxsw_sp_kvd_sizes_get,
 	.txhdr_len			= MLXSW_TXHDR_LEN,
 	.profile			= &mlxsw_sp_config_profile,
 };
