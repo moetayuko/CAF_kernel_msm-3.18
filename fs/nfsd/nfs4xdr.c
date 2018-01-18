@@ -648,6 +648,7 @@ nfsd4_decode_commit(struct nfsd4_compoundargs *argp, struct nfsd4_commit *commit
 static __be32
 nfsd4_decode_create(struct nfsd4_compoundargs *argp, struct nfsd4_create *create)
 {
+	struct kvec *head;
 	DECODE_HEAD;
 
 	READ_BUF(4);
@@ -656,10 +657,13 @@ nfsd4_decode_create(struct nfsd4_compoundargs *argp, struct nfsd4_create *create
 	case NF4LNK:
 		READ_BUF(4);
 		create->cr_datalen = be32_to_cpup(p++);
+		if (create->cr_datalen == 0)
+			return nfserr_inval;
+		head = argp->rqstp->rq_arg.head;
+		create->cr_first.iov_base = p;
+		create->cr_first.iov_len = head->iov_len;
+		create->cr_first.iov_len -= (char *)p - (char *)head->iov_base;
 		READ_BUF(create->cr_datalen);
-		create->cr_data = svcxdr_dupstr(argp, p, create->cr_datalen);
-		if (!create->cr_data)
-			return nfserr_jukebox;
 		break;
 	case NF4BLK:
 	case NF4CHR:
@@ -1285,7 +1289,6 @@ nfsd4_decode_write(struct nfsd4_compoundargs *argp, struct nfsd4_write *write)
 	}
 	write->wr_head.iov_base = p;
 	write->wr_head.iov_len = avail;
-	write->wr_pagelist = argp->pagelist;
 
 	len = XDR_QUADLEN(write->wr_buflen) << 2;
 	if (len >= avail) {
@@ -1918,8 +1921,13 @@ nfsd4_decode_compound(struct nfsd4_compoundargs *argp)
 
 	if (argp->taglen > NFSD4_MAX_TAGLEN)
 		goto xdr_error;
-	if (argp->opcnt > 100)
-		goto xdr_error;
+	/*
+	 * NFS4ERR_RESOURCE is a more helpful error than GARBAGE_ARGS
+	 * here, so we return success at the xdr level so that
+	 * nfsd4_proc can handle this is an NFS-level error.
+	 */
+	if (argp->opcnt > NFSD_MAX_OPS_PER_COMPOUND)
+		return 0;
 
 	if (argp->opcnt > ARRAY_SIZE(argp->iops)) {
 		argp->ops = kzalloc(argp->opcnt * sizeof(*argp->ops), GFP_KERNEL);
