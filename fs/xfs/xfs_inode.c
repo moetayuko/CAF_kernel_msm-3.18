@@ -3479,6 +3479,34 @@ abort_out:
 	return error;
 }
 
+/*
+ * If there are inline format data / attr forks attached to this inode,
+ * make sure they're not corrupt.
+ */
+bool
+xfs_inode_verify_forks(
+	struct xfs_inode	*ip)
+{
+	xfs_failaddr_t		fa;
+
+	fa = xfs_ifork_verify_data(ip, &xfs_default_ifork_ops);
+	if (fa) {
+		xfs_alert(ip->i_mount,
+				"%s: bad inode %llu inline data fork at %pS",
+				__func__, ip->i_ino, fa);
+		return false;
+	}
+
+	fa = xfs_ifork_verify_attr(ip, &xfs_default_ifork_ops);
+	if (fa) {
+		xfs_alert(ip->i_mount,
+				"%s: bad inode %llu inline attr fork at %pS",
+				__func__, ip->i_ino, fa);
+		return false;
+	}
+	return true;
+}
+
 STATIC int
 xfs_iflush_int(
 	struct xfs_inode	*ip,
@@ -3501,7 +3529,7 @@ xfs_iflush_int(
 	if (XFS_TEST_ERROR(dip->di_magic != cpu_to_be16(XFS_DINODE_MAGIC),
 			       mp, XFS_ERRTAG_IFLUSH_1)) {
 		xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
-			"%s: Bad inode %Lu magic number 0x%x, ptr 0x%p",
+			"%s: Bad inode %Lu magic number 0x%x, ptr "PTR_FMT,
 			__func__, ip->i_ino, be16_to_cpu(dip->di_magic), dip);
 		goto corrupt_out;
 	}
@@ -3511,7 +3539,7 @@ xfs_iflush_int(
 		    (ip->i_d.di_format != XFS_DINODE_FMT_BTREE),
 		    mp, XFS_ERRTAG_IFLUSH_3)) {
 			xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
-				"%s: Bad regular inode %Lu, ptr 0x%p",
+				"%s: Bad regular inode %Lu, ptr "PTR_FMT,
 				__func__, ip->i_ino, ip);
 			goto corrupt_out;
 		}
@@ -3522,7 +3550,7 @@ xfs_iflush_int(
 		    (ip->i_d.di_format != XFS_DINODE_FMT_LOCAL),
 		    mp, XFS_ERRTAG_IFLUSH_4)) {
 			xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
-				"%s: Bad directory inode %Lu, ptr 0x%p",
+				"%s: Bad directory inode %Lu, ptr "PTR_FMT,
 				__func__, ip->i_ino, ip);
 			goto corrupt_out;
 		}
@@ -3531,7 +3559,7 @@ xfs_iflush_int(
 				ip->i_d.di_nblocks, mp, XFS_ERRTAG_IFLUSH_5)) {
 		xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
 			"%s: detected corrupt incore inode %Lu, "
-			"total extents = %d, nblocks = %Ld, ptr 0x%p",
+			"total extents = %d, nblocks = %Ld, ptr "PTR_FMT,
 			__func__, ip->i_ino,
 			ip->i_d.di_nextents + ip->i_d.di_anextents,
 			ip->i_d.di_nblocks, ip);
@@ -3540,7 +3568,7 @@ xfs_iflush_int(
 	if (XFS_TEST_ERROR(ip->i_d.di_forkoff > mp->m_sb.sb_inodesize,
 				mp, XFS_ERRTAG_IFLUSH_6)) {
 		xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
-			"%s: bad inode %Lu, forkoff 0x%x, ptr 0x%p",
+			"%s: bad inode %Lu, forkoff 0x%x, ptr "PTR_FMT,
 			__func__, ip->i_ino, ip->i_d.di_forkoff, ip);
 		goto corrupt_out;
 	}
@@ -3557,10 +3585,8 @@ xfs_iflush_int(
 	if (ip->i_d.di_version < 3)
 		ip->i_d.di_flushiter++;
 
-	/* Check the inline directory data. */
-	if (S_ISDIR(VFS_I(ip)->i_mode) &&
-	    ip->i_d.di_format == XFS_DINODE_FMT_LOCAL &&
-	    xfs_dir2_sf_verify(ip))
+	/* Check the inline fork data before we write out. */
+	if (!xfs_inode_verify_forks(ip))
 		goto corrupt_out;
 
 	/*
