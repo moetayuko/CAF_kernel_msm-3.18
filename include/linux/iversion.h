@@ -27,6 +27,12 @@
  * i_version on namespace changes in directories (mkdir, rmdir, unlink, etc.).
  * We consider these sorts of filesystems to have a kernel-managed i_version.
  *
+ * It may be impractical for filesystems to keep i_version updates atomic with
+ * respect to the changes that cause them.  They should, however, guarantee
+ * that i_version updates are never visible before the changes that caused
+ * them.  Also, i_version updates should never be delayed longer than it takes
+ * the original change to reach disk.
+ *
  * Note that some filesystems (e.g. NFS and AFS) just use the field to store
  * a server-provided value (for the most part). For that reason, those
  * filesystems do not set SB_I_VERSION. These filesystems are considered to
