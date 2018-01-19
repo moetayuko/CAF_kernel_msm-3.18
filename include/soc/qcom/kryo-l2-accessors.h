@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,11 +11,12 @@
  * GNU General Public License for more details.
  */
 
-/dts-v1/;
+#ifndef __ASM_ARCH_MSM_MSM_KRYO_L2_ACCESSORS_H
+#define __ASM_ARCH_MSM_MSM_KRYO_L2_ACCESSORS_H
 
-#include "apq8096-db820c.dtsi"
+#ifdef CONFIG_ARCH_QCOM
+void set_l2_indirect_reg(u64 reg_addr, u64 val);
+u64 get_l2_indirect_reg(u64 reg_addr);
+#endif
 
-/ {
-	model = "Qualcomm Technologies, Inc. DB820c";
-	compatible = "arrow,apq8096-db820c", "qcom,apq8096-sbc", "qcom,apq8096";
-};
+#endif
