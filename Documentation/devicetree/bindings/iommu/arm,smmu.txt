@@ -17,6 +17,7 @@ conditions.
                         "arm,mmu-401"
                         "arm,mmu-500"
                         "cavium,smmu-v2"
+                        "qcom,msm8996-smmu-v2"
 
                   depending on the particular implementation and/or the
                   version of the architecture implemented.
@@ -71,6 +72,31 @@ conditions.
                   or using stream matching with #iommu-cells = <2>, and
                   may be ignored if present in such cases.
 
+- clock-names:    Should be "tcu" and "iface" for "arm,mmu-400",
+                  "arm,mmu-401" and "arm,mmu-500"
+
+                  Should be "bus", and "iface" for "qcom,msm8996-smmu-v2"
+                  implementation.
+
+                  "tcu" clock is required for smmu's register access using the
+                  programming interface and ptw for downstream bus access. This
+                  clock is also used for access to the TBU connected to the
+                  master locally. Sometimes however, TBU is clocked along with
+                  the master.
+                  "bus" clock for "qcom,msm8996-smmu-v2" is requierd for downstream
+                  bus access and for the smmu ptw.
+
+                  "iface" clock is required to access the TCU's programming
+                  interface, apart from the "tcu" clock.
+
+- clocks:         Phandles for respective clocks described by clock-names.
+
+- power-domains:  Phandles to SMMU's power domain specifier. This is
+                  required even if SMMU belongs to the master's power
+                  domain, as the SMMU will have to be enabled and
+                  accessed before master gets enabled and linked to its
+                  SMMU.
+
 ** Deprecated properties:
 
 - mmu-masters (deprecated in favour of the generic "iommus" binding) :
@@ -95,6 +121,10 @@ conditions.
                              <0 36 4>,
                              <0 37 4>;
                 #iommu-cells = <1>;
+                clocks = <&gcc GCC_SMMU_CFG_CLK>,
+                         <&gcc GCC_APSS_TCU_CLK>;
+
+		clock-names = "iface", "tcu";
         };
 
         /* device with two stream IDs, 0 and 7 */
@@ -137,3 +167,15 @@ conditions.
                 iommu-map = <0 &smmu3 0 0x400>;
                 ...
         };
+
+	/* Qcom's arm,smmu-v2 implementation for msm8996 */
+	smmu4: iommu {
+		compatible = "qcom,msm8996-smmu-v2";
+		...
+		#iommu-cells = <1>;
+		power-domains = <&mmcc MDSS_GDSC>;
+
+		clocks = <&mmcc SMMU_MDP_AXI_CLK>,
+			 <&mmcc SMMU_MDP_AHB_CLK>;
+		clock-names = "bus", "iface";
+	};
