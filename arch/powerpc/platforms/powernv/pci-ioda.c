@@ -89,6 +89,7 @@ void pe_level_printk(const struct pnv_ioda_pe *pe, const char *level,
 }
 
 static bool pnv_iommu_bypass_disabled __read_mostly;
+static bool pci_reset_phbs __read_mostly;
 
 static int __init iommu_setup(char *str)
 {
@@ -109,6 +110,14 @@ static int __init iommu_setup(char *str)
 	return 0;
 }
 early_param("iommu", iommu_setup);
+
+static int __init pci_reset_phbs_setup(char *str)
+{
+	pci_reset_phbs = true;
+	return 0;
+}
+
+early_param("ppc_pci_reset_phbs", pci_reset_phbs_setup);
 
 static inline bool pnv_pci_is_m64(struct pnv_phb *phb, struct resource *r)
 {
@@ -1059,8 +1068,8 @@ static struct pnv_ioda_pe *pnv_ioda_setup_dev_PE(struct pci_dev *dev)
 
 	pe = pnv_ioda_alloc_pe(phb);
 	if (!pe) {
-		pr_warning("%s: Not enough PE# available, disabling device\n",
-			   pci_name(dev));
+		pr_warn("%s: Not enough PE# available, disabling device\n",
+			pci_name(dev));
 		return NULL;
 	}
 
@@ -1164,7 +1173,7 @@ static struct pnv_ioda_pe *pnv_ioda_setup_bus_PE(struct pci_bus *bus, bool all)
 		pe = pnv_ioda_alloc_pe(phb);
 
 	if (!pe) {
-		pr_warning("%s: Not enough PE# available for PCI bus %04x:%02x\n",
+		pr_warn("%s: Not enough PE# available for PCI bus %04x:%02x\n",
 			__func__, pci_domain_nr(bus), bus->number);
 		return NULL;
 	}
@@ -1692,7 +1701,7 @@ m64_failed:
 	return ret;
 }
 
-int pcibios_sriov_disable(struct pci_dev *pdev)
+int pnv_pcibios_sriov_disable(struct pci_dev *pdev)
 {
 	pnv_pci_sriov_disable(pdev);
 
@@ -1701,7 +1710,7 @@ int pcibios_sriov_disable(struct pci_dev *pdev)
 	return 0;
 }
 
-int pcibios_sriov_enable(struct pci_dev *pdev, u16 num_vfs)
+int pnv_pcibios_sriov_enable(struct pci_dev *pdev, u16 num_vfs)
 {
 	/* Allocate PCI data */
 	add_dev_pci_data(pdev);
@@ -2572,7 +2581,6 @@ static unsigned long pnv_pci_ioda2_get_table_size(__u32 page_shift,
 	unsigned long direct_table_size;
 
 	if (!levels || (levels > POWERNV_IOMMU_MAX_LEVELS) ||
-			(window_size > memory_hotplug_max()) ||
 			!is_power_of_2(window_size))
 		return 0;
 
@@ -3293,7 +3301,7 @@ static void pnv_pci_ioda_create_dbgfs(void)
 		sprintf(name, "PCI%04x", hose->global_number);
 		phb->dbgfs = debugfs_create_dir(name, powerpc_debugfs_root);
 		if (!phb->dbgfs) {
-			pr_warning("%s: Error on creating debugfs on PHB#%x\n",
+			pr_warn("%s: Error on creating debugfs on PHB#%x\n",
 				__func__, hose->global_number);
 			continue;
 		}
@@ -4019,6 +4027,8 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
 #ifdef CONFIG_PCI_IOV
 	ppc_md.pcibios_fixup_sriov = pnv_pci_ioda_fixup_iov_resources;
 	ppc_md.pcibios_iov_resource_alignment = pnv_pci_iov_resource_alignment;
+	ppc_md.pcibios_sriov_enable = pnv_pcibios_sriov_enable;
+	ppc_md.pcibios_sriov_disable = pnv_pcibios_sriov_disable;
 #endif
 
 	pci_add_flags(PCI_REASSIGN_ALL_RSRC);
@@ -4026,15 +4036,16 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
 	/* Reset IODA tables to a clean state */
 	rc = opal_pci_reset(phb_id, OPAL_RESET_PCI_IODA_TABLE, OPAL_ASSERT_RESET);
 	if (rc)
-		pr_warning("  OPAL Error %ld performing IODA table reset !\n", rc);
+		pr_warn("  OPAL Error %ld performing IODA table reset !\n", rc);
 
 	/*
 	 * If we're running in kdump kernel, the previous kernel never
 	 * shutdown PCI devices correctly. We already got IODA table
 	 * cleaned out. So we have to issue PHB reset to stop all PCI
-	 * transactions from previous kernel.
+	 * transactions from previous kernel. The ppc_pci_reset_phbs
+	 * kernel parameter will force this reset too.
 	 */
-	if (is_kdump_kernel()) {
+	if (is_kdump_kernel() || pci_reset_phbs) {
 		pr_info("  Issue PHB reset ...\n");
 		pnv_eeh_phb_reset(hose, EEH_RESET_FUNDAMENTAL);
 		pnv_eeh_phb_reset(hose, EEH_RESET_DEACTIVATE);
