@@ -39,6 +39,23 @@ typedef u8 __bitwise blk_status_t;
 
 #define BLK_STS_AGAIN		((__force blk_status_t)12)
 
+/*
+ * Block layer and block driver specific status, which is ususally returnd
+ * from driver to block layer in IO path.
+ *
+ * This status is returned from driver to block layer if device related
+ * resource is run out of, but driver can guarantee that IO dispatch will
+ * be triggered in future for handling the current request when the
+ * resource is available.
+ *
+ * If driver isn't sure if the queue can be run again for dealing with the
+ * current request after this kind of resource is available, please return
+ * BLK_STS_SOURCE, for example, when memory allocation, DMA Mapping or other
+ * system resource allocation fails and IO can't be submitted to device,
+ * BLK_STS_RESOURCE should be returned to block layer.
+ */
+#define BLK_STS_DEV_RESOURCE	((__force blk_status_t)13)
+
 /**
  * blk_path_error - returns true if error may be path related
  * @error: status the request was completed with
