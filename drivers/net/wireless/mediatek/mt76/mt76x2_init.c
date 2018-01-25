@@ -614,6 +614,8 @@ void mt76x2_stop_hardware(struct mt76x2_dev *dev)
 
 void mt76x2_cleanup(struct mt76x2_dev *dev)
 {
+	tasklet_disable(&dev->dfs_pd.dfs_tasklet);
+	tasklet_disable(&dev->pre_tbtt_tasklet);
 	mt76x2_stop_hardware(dev);
 	mt76x2_dma_cleanup(dev);
 	mt76x2_mcu_cleanup(dev);
@@ -652,7 +654,7 @@ static void mt76x2_regd_notifier(struct wiphy *wiphy,
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct mt76x2_dev *dev = hw->priv;
 
-	dev->dfs_pd.region = request->dfs_region;
+	mt76x2_dfs_set_domain(dev, request->dfs_region);
 }
 
 #define CCK_RATE(_idx, _rate) {					\
