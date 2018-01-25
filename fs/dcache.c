@@ -32,7 +32,6 @@
 #include <linux/swap.h>
 #include <linux/bootmem.h>
 #include <linux/fs_struct.h>
-#include <linux/hardirq.h>
 #include <linux/bit_spinlock.h>
 #include <linux/rculist_bl.h>
 #include <linux/prefetch.h>
@@ -49,8 +48,8 @@
  *   - i_dentry, d_u.d_alias, d_inode of aliases
  * dcache_hash_bucket lock protects:
  *   - the dcache hash table
- * s_anon bl list spinlock protects:
- *   - the s_anon list (see __d_drop)
+ * s_roots bl list spinlock protects:
+ *   - the s_roots list (see __d_drop)
  * dentry->d_sb->s_dentry_lru_lock protects:
  *   - the dcache lru lists and counters
  * d_lock protects:
@@ -68,7 +67,7 @@
  *   dentry->d_lock
  *     dentry->d_sb->s_dentry_lru_lock
  *     dcache_hash_bucket lock
- *     s_anon lock
+ *     s_roots lock
  *
  * If there is an ancestor relationship:
  * dentry->d_parent->...->d_parent->d_lock
@@ -477,10 +476,10 @@ void __d_drop(struct dentry *dentry)
 		/*
 		 * Hashed dentries are normally on the dentry hashtable,
 		 * with the exception of those newly allocated by
-		 * d_obtain_alias, which are always IS_ROOT:
+		 * d_obtain_root, which are always IS_ROOT:
 		 */
 		if (unlikely(IS_ROOT(dentry)))
-			b = &dentry->d_sb->s_anon;
+			b = &dentry->d_sb->s_roots;
 		else
 			b = d_hash(dentry->d_name.hash);
 
@@ -1500,8 +1499,8 @@ void shrink_dcache_for_umount(struct super_block *sb)
 	sb->s_root = NULL;
 	do_one_tree(dentry);
 
-	while (!hlist_bl_empty(&sb->s_anon)) {
-		dentry = dget(hlist_bl_entry(hlist_bl_first(&sb->s_anon), struct dentry, d_hash));
+	while (!hlist_bl_empty(&sb->s_roots)) {
+		dentry = dget(hlist_bl_entry(hlist_bl_first(&sb->s_roots), struct dentry, d_hash));
 		do_one_tree(dentry);
 	}
 }
@@ -1957,9 +1956,11 @@ static struct dentry *__d_instantiate_anon(struct dentry *dentry,
 	spin_lock(&dentry->d_lock);
 	__d_set_inode_and_type(dentry, inode, add_flags);
 	hlist_add_head(&dentry->d_u.d_alias, &inode->i_dentry);
-	hlist_bl_lock(&dentry->d_sb->s_anon);
-	hlist_bl_add_head(&dentry->d_hash, &dentry->d_sb->s_anon);
-	hlist_bl_unlock(&dentry->d_sb->s_anon);
+	if (!disconnected) {
+		hlist_bl_lock(&dentry->d_sb->s_roots);
+		hlist_bl_add_head(&dentry->d_hash, &dentry->d_sb->s_roots);
+		hlist_bl_unlock(&dentry->d_sb->s_roots);
+	}
 	spin_unlock(&dentry->d_lock);
 	spin_unlock(&inode->i_lock);
 
