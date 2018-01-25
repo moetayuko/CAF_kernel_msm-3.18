@@ -39,6 +39,51 @@ typedef u8 __bitwise blk_status_t;
 
 #define BLK_STS_AGAIN		((__force blk_status_t)12)
 
+/*
+ * Block layer and block driver specific status, which is ususally returnd
+ * from driver to block layer in IO path.
+ *
+ * This status is returned from driver to block layer if device related
+ * resource is run out of, but driver can guarantee that IO dispatch will
+ * be triggered in future for handling the current request when the
+ * resource is available.
+ *
+ * If driver isn't sure if the queue can be run again for dealing with the
+ * current request after this kind of resource is available, please return
+ * BLK_STS_SOURCE, for example, when memory allocation, DMA Mapping or other
+ * system resource allocation fails and IO can't be submitted to device,
+ * BLK_STS_RESOURCE should be returned to block layer.
+ */
+#define BLK_STS_DEV_RESOURCE	((__force blk_status_t)13)
+
+/**
+ * blk_path_error - returns true if error may be path related
+ * @error: status the request was completed with
+ *
+ * Description:
+ *     This classifies block error status into non-retryable errors and ones
+ *     that may be successful if retried on a failover path.
+ *
+ * Return:
+ *     %false - retrying failover path will not help
+ *     %true  - may succeed if retried
+ */
+static inline bool blk_path_error(blk_status_t error)
+{
+	switch (error) {
+	case BLK_STS_NOTSUPP:
+	case BLK_STS_NOSPC:
+	case BLK_STS_TARGET:
+	case BLK_STS_NEXUS:
+	case BLK_STS_MEDIUM:
+	case BLK_STS_PROTECTION:
+		return false;
+	}
+
+	/* Anything else could be a path failure, so should be retried */
+	return true;
+}
+
 struct blk_issue_stat {
 	u64 stat;
 };
