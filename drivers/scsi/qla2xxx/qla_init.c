@@ -1567,9 +1567,10 @@ qla24xx_async_abort_cmd(srb_t *cmd_sp)
 	abt_iocb->u.abt.cmd_hndl = cmd_sp->handle;
 
 	if (vha->flags.qpairs_available && cmd_sp->qpair)
-		abt_iocb->u.abt.req_que_no = cmd_sp->qpair->req->id;
+		abt_iocb->u.abt.req_que_no =
+		    cpu_to_le16(cmd_sp->qpair->req->id);
 	else
-		abt_iocb->u.abt.req_que_no = vha->req->id;
+		abt_iocb->u.abt.req_que_no = cpu_to_le16(vha->req->id);
 
 	sp->done = qla24xx_abort_sp_done;
 	abt_iocb->timeout = qla24xx_abort_iocb_timeout;
