@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <generated/utsrelease.h>
 
 /* Simply sanity version stamp for modules. */
@@ -30,11 +31,17 @@
 #else
 #define MODULE_RANDSTRUCT_PLUGIN
 #endif
+#ifdef RETPOLINE
+#define MODULE_VERMAGIC_RETPOLINE "retpoline "
+#else
+#define MODULE_VERMAGIC_RETPOLINE ""
+#endif
 
 #define VERMAGIC_STRING 						\
 	UTS_RELEASE " "							\
 	MODULE_VERMAGIC_SMP MODULE_VERMAGIC_PREEMPT 			\
 	MODULE_VERMAGIC_MODULE_UNLOAD MODULE_VERMAGIC_MODVERSIONS	\
 	MODULE_ARCH_VERMAGIC						\
-	MODULE_RANDSTRUCT_PLUGIN
+	MODULE_RANDSTRUCT_PLUGIN					\
+	MODULE_VERMAGIC_RETPOLINE
 

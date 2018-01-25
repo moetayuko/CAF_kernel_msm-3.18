@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 
 obj-$(CONFIG_BTRFS_FS) := btrfs.o
 
@@ -18,4 +19,4 @@ btrfs-$(CONFIG_BTRFS_FS_REF_VERIFY) += ref-verify.o
 btrfs-$(CONFIG_BTRFS_FS_RUN_SANITY_TESTS) += tests/free-space-tests.o \
 	tests/extent-buffer-tests.o tests/btrfs-tests.o \
 	tests/extent-io-tests.o tests/inode-tests.o tests/qgroup-tests.o \
-	tests/free-space-tree-tests.o
+	tests/free-space-tree-tests.o tests/extent-map-tests.o
