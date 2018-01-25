@@ -400,7 +400,7 @@ xfs_bmap_check_leaf_extents(
 		pp = XFS_BMBT_PTR_ADDR(mp, block, 1, mp->m_bmap_dmxr[1]);
 		bno = be64_to_cpu(*pp);
 		XFS_WANT_CORRUPTED_GOTO(mp,
-					XFS_FSB_SANITY_CHECK(mp, bno), error0);
+					xfs_verify_fsbno(mp, bno), error0);
 		if (bp_release) {
 			bp_release = 0;
 			xfs_trans_brelse(NULL, bp);
@@ -1220,7 +1220,7 @@ xfs_iread_extents(
 		pp = XFS_BMBT_PTR_ADDR(mp, block, 1, mp->m_bmap_dmxr[1]);
 		bno = be64_to_cpu(*pp);
 		XFS_WANT_CORRUPTED_GOTO(mp,
-			XFS_FSB_SANITY_CHECK(mp, bno), out_brelse);
+			xfs_verify_fsbno(mp, bno), out_brelse);
 		xfs_trans_brelse(tp, bp);
 	}
 
@@ -4304,8 +4304,16 @@ xfs_bmapi_write(
 	while (bno < end && n < *nmap) {
 		bool			need_alloc = false, wasdelay = false;
 
-		/* in hole or beyoned EOF? */
+		/* in hole or beyond EOF? */
 		if (eof || bma.got.br_startoff > bno) {
+			/*
+			 * CoW fork conversions should /never/ hit EOF or
+			 * holes.  There should always be something for us
+			 * to work on.
+			 */
+			ASSERT(!((flags & XFS_BMAPI_CONVERT) &&
+			         (flags & XFS_BMAPI_COWFORK)));
+
 			if (flags & XFS_BMAPI_DELALLOC) {
 				/*
 				 * For the COW fork we can reasonably get a
