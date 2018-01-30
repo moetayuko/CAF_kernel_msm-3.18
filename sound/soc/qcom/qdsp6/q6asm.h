@@ -26,6 +26,15 @@
 #define MSM_FRONTEND_DAI_MULTIMEDIA6	5
 #define	MSM_FRONTEND_DAI_MULTIMEDIA7	6
 #define	MSM_FRONTEND_DAI_MULTIMEDIA8	7
+#define	MSM_FRONTEND_DAI_MULTIMEDIA9	8
+#define	MSM_FRONTEND_DAI_MULTIMEDIA10	9
+#define	MSM_FRONTEND_DAI_MULTIMEDIA11	10
+#define	MSM_FRONTEND_DAI_MULTIMEDIA12	11
+#define	MSM_FRONTEND_DAI_MULTIMEDIA13	12
+#define	MSM_FRONTEND_DAI_MULTIMEDIA14	13
+#define	MSM_FRONTEND_DAI_MULTIMEDIA15	14
+#define	MSM_FRONTEND_DAI_MULTIMEDIA16	15
+
 
 #define MAX_SESSIONS	16
 #define NO_TIMESTAMP    0xFF00
@@ -35,7 +44,7 @@ typedef void (*app_cb) (uint32_t opcode, uint32_t token,
 			uint32_t *payload, void *priv);
 struct audio_client;
 struct audio_client *q6asm_audio_client_alloc(struct device *dev,
-					      app_cb cb, void *priv);
+					      app_cb cb, void *priv, int session_id);
 void q6asm_audio_client_free(struct audio_client *ac);
 int q6asm_write_nolock(struct audio_client *ac, uint32_t len, uint32_t msw_ts,
 		       uint32_t lsw_ts, uint32_t flags);

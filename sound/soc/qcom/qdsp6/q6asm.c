@@ -143,12 +143,12 @@ struct q6asm {
 	struct audio_client *session[MAX_SESSIONS + 1];
 };
 
-static int q6asm_session_alloc(struct audio_client *ac, struct q6asm *a)
+static int q6asm_session_alloc(struct audio_client *ac, struct q6asm *a, int session_id)
 {
 	int n = -EINVAL;
 
 	mutex_lock(&a->session_lock);
-	for (n = 1; n <= MAX_SESSIONS; n++) {
+	for (n = session_id; n <= MAX_SESSIONS; n++) {
 		if (!a->session[n]) {
 			a->session[n] = ac;
 			break;
@@ -675,7 +675,7 @@ EXPORT_SYMBOL_GPL(q6asm_get_session_id);
  * on success.
  */
 struct audio_client *q6asm_audio_client_alloc(struct device *dev,
-					      app_cb cb, void *priv)
+					      app_cb cb, void *priv, int stream_id)
 {
 	struct q6asm *a = dev_get_drvdata(dev->parent);
 	struct audio_client *ac;
@@ -685,14 +685,17 @@ struct audio_client *q6asm_audio_client_alloc(struct device *dev,
 	if (!ac)
 		return NULL;
 
-	n = q6asm_session_alloc(ac, a);
+	a->session[stream_id + 1] = ac;
+#if 0
+	n = q6asm_session_alloc(ac, a, stream_id);
 	if (n <= 0) {
 		dev_err(dev, "ASM Session alloc fail n=%d\n", n);
 		kfree(ac);
 		return NULL;
 	}
-
-	ac->session = n;
+#endif
+	//ac->session = n;
+	ac->session = stream_id + 1;
 	ac->cb = cb;
 	ac->dev = dev;
 	ac->priv = priv;

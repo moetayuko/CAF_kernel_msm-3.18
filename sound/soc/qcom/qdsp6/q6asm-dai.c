@@ -217,10 +217,15 @@ static int q6asm_dai_open(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
+        struct snd_soc_dai *cpu_dai = soc_prtd->cpu_dai;
+
 	struct q6asm_dai_rtd *prtd;
 	struct q6asm_dai_data *pdata;
 	struct device *dev = soc_prtd->platform->dev;
 	int ret = 0;
+	int stream_id;
+
+	stream_id = cpu_dai->driver->id;
 
 	pdata = dev_get_drvdata(dev);
 	if (!pdata) {
@@ -234,7 +239,7 @@ static int q6asm_dai_open(struct snd_pcm_substream *substream)
 
 	prtd->substream = substream;
 	prtd->audio_client = q6asm_audio_client_alloc(dev,
-				(app_cb)event_handler, prtd);
+				(app_cb)event_handler, prtd, stream_id);
 	if (!prtd->audio_client) {
 		pr_info("%s: Could not allocate memory\n", __func__);
 		kfree(prtd);
