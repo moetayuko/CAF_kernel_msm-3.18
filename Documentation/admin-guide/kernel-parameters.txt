@@ -2066,9 +2066,6 @@
 			This tests the locking primitive's ability to
 			transition abruptly to and from idle.
 
-	locktorture.torture_runnable= [BOOT]
-			Start locktorture running at boot time.
-
 	locktorture.torture_type= [KNL]
 			Specify the locking implementation to test.
 
@@ -3505,9 +3502,6 @@
 			the same as for rcuperf.nreaders.
 			N, where N is the number of CPUs
 
-	rcuperf.perf_runnable= [BOOT]
-			Start rcuperf running at boot time.
-
 	rcuperf.perf_type= [KNL]
 			Specify the RCU implementation to test.
 
@@ -3641,9 +3635,6 @@
 			Test RCU's dyntick-idle handling.  See also the
 			rcutorture.shuffle_interval parameter.
 
-	rcutorture.torture_runnable= [BOOT]
-			Start rcutorture running at boot time.
-
 	rcutorture.torture_type= [KNL]
 			Specify the RCU implementation to test.
 
@@ -3701,7 +3692,8 @@
 
 	rdt=		[HW,X86,RDT]
 			Turn on/off individual RDT features. List is:
-			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, mba.
+			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, l2cdp,
+			mba.
 			E.g. to turn on cmt and turn off mba use:
 				rdt=cmt,!mba
 
