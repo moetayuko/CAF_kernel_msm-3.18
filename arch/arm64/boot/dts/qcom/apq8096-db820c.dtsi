@@ -223,12 +223,22 @@
 				core-vcc-supply = <&pm8994_s4>;
 			};
 		};
+
+		slim_msm:sc {
+			tasha_codec: tas {
+				pinctrl-0 = <&cdc_reset_active &wcd_intr_default &audio_mclk>;
+				pinctrl-1 = <&cdc_reset_sleep>;
+				pinctrl-names = "default", "sleep";
+			};
+		};
 	};
 
 	snd {
                 power-domains = <&gcc HLOS1_VOTE_LPASS_ADSP_GDSC>;
 		compatible = "qcom,apq8096-sndcard";
 		qcom,model = "DB820c";
+		qcom,audio-routing =
+				"RX_BIAS", "MCLK";
 		iommus = <&lpass_q6_smmu 1>;
 	};
 
