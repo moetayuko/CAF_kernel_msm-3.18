@@ -13,19 +13,19 @@
 #include <sound/pcm_params.h>
 #include "q6afe.h"
 
-struct q6hdmi_dai_data {
-	struct q6afe_port *port;
-	struct q6afe_hdmi_cfg port_config;
-	bool is_port_started;
+struct q6afe_dai_data {
+	struct q6afe_port *port[AFE_PORT_MAX];
+	struct q6afe_port_config port_config[AFE_PORT_MAX];
+	bool is_port_started[AFE_PORT_MAX];
 };
 
 static int q6hdmi_format_put(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct q6hdmi_dai_data *dai_data = kcontrol->private_data;
+	struct q6afe_dai_data *dai_data = kcontrol->private_data;
 	int value = ucontrol->value.integer.value[0];
 
-	dai_data->port_config.datatype = value;
+	dai_data->port_config[AFE_PORT_HDMI_RX].hdmi.datatype = value;
 
 	return 0;
 }
@@ -34,10 +34,10 @@ static int q6hdmi_format_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
 
-	struct q6hdmi_dai_data *dai_data = kcontrol->private_data;
+	struct q6afe_dai_data *dai_data = kcontrol->private_data;
 
 	ucontrol->value.integer.value[0] =
-		dai_data->port_config.datatype;
+		dai_data->port_config[AFE_PORT_HDMI_RX].hdmi.datatype;
 
 	return 0;
 }
@@ -51,51 +51,86 @@ static const struct soc_enum hdmi_config_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, hdmi_format),
 };
 
-static const struct snd_kcontrol_new hdmi_config_controls[] = {
+static const struct snd_kcontrol_new q6afe_config_controls[] = {
 	SOC_ENUM_EXT("HDMI RX Format", hdmi_config_enum[0],
 				 q6hdmi_format_get,
 				 q6hdmi_format_put),
 };
 
+static int q6slim_hw_params(struct snd_pcm_substream *substream,
+			    struct snd_pcm_hw_params *params,
+			    struct snd_soc_dai *dai)
+{
+
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	int channels = params_channels(params);
+	struct q6afe_slim_cfg *slim = &dai_data->port_config[dai->id].slim;
+
+	slim->sample_rate = params_rate(params);
+
+	slim->num_channels = params_channels(params);
+	slim->sample_rate = params_rate(params);
+
+	switch (params_format(params)) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+	case SNDRV_PCM_FORMAT_SPECIAL:
+		slim->bit_width = 16;
+		break;
+	case SNDRV_PCM_FORMAT_S24_LE:
+		slim->bit_width = 24;
+		break;
+	case SNDRV_PCM_FORMAT_S32_LE:
+		slim->bit_width = 32;
+		break;
+	default:
+		pr_err("%s: format %d\n",
+			__func__, params_format(params));
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int q6hdmi_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params,
 				struct snd_soc_dai *dai)
 {
-	struct q6hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
 	int channels = params_channels(params);
+	struct q6afe_hdmi_cfg *hdmi = &dai_data->port_config[dai->id].hdmi;
 
-	dai_data->port_config.sample_rate = params_rate(params);
+	hdmi->sample_rate = params_rate(params);
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S16_LE:
-		dai_data->port_config.bit_width = 16;
+		hdmi->bit_width = 16;
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
-		dai_data->port_config.bit_width = 24;
+		hdmi->bit_width = 24;
 		break;
 	}
 
 	/*refer to HDMI spec CEA-861-E: Table 28 Audio InfoFrame Data Byte 4*/
 	switch (channels) {
 	case 2:
-		dai_data->port_config.channel_allocation = 0;
+		hdmi->channel_allocation = 0;
 		break;
 	case 3:
-		dai_data->port_config.channel_allocation = 0x02;
+		hdmi->channel_allocation = 0x02;
 		break;
 	case 4:
-		dai_data->port_config.channel_allocation = 0x06;
+		hdmi->channel_allocation = 0x06;
 		break;
 	case 5:
-		dai_data->port_config.channel_allocation = 0x0A;
+		hdmi->channel_allocation = 0x0A;
 		break;
 	case 6:
-		dai_data->port_config.channel_allocation = 0x0B;
+		hdmi->channel_allocation = 0x0B;
 		break;
 	case 7:
-		dai_data->port_config.channel_allocation = 0x12;
+		hdmi->channel_allocation = 0x12;
 		break;
 	case 8:
-		dai_data->port_config.channel_allocation = 0x13;
+		hdmi->channel_allocation = 0x13;
 		break;
 	default:
 		dev_err(dai->dev, "invalid Channels = %u\n", channels);
@@ -105,65 +140,269 @@ static int q6hdmi_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int q6hdmi_startup(struct snd_pcm_substream *substream,
+static int q6afe_dai_startup(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
-	struct q6hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
 
-	dai_data->is_port_started = false;
+	dai_data->is_port_started[dai->id] = false;
 
 	return 0;
 }
 
-static void q6hdmi_shutdown(struct snd_pcm_substream *substream,
+static void q6afe_dai_shutdown(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
-	struct q6hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
 	int rc;
 
-	rc = q6afe_port_stop(dai_data->port);
+	rc = q6afe_port_stop(dai_data->port[dai->id]);
 	if (rc < 0)
 		dev_err(dai->dev, "fail to close AFE port\n");
 
-	dai_data->is_port_started = false;
+	dai_data->is_port_started[dai->id] = false;
 
 }
 
-static int q6hdmi_prepare(struct snd_pcm_substream *substream,
+static int q6afe_dai_prepare(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
-	struct q6hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
 	int rc;
 
-	if (dai_data->is_port_started) {
+	if (dai_data->is_port_started[dai->id]) {
 		/* stop the port and restart with new port config */
-		rc = q6afe_port_stop(dai_data->port);
+		rc = q6afe_port_stop(dai_data->port[dai->id]);
 		if (rc < 0) {
 			dev_err(dai->dev, "fail to close AFE port\n");
 			return rc;
 		}
 	}
 
-	q6afe_hdmi_port_prepare(dai_data->port, &dai_data->port_config);
-	rc = q6afe_port_start(dai_data->port);
+	if (dai->id == AFE_PORT_HDMI_RX)
+		q6afe_hdmi_port_prepare(dai_data->port[dai->id], &dai_data->port_config[dai->id].hdmi);
+	else if (dai->id >= SLIMBUS_0_RX && dai->id <= SLIMBUS_6_TX)
+		q6afe_slim_port_prepare(dai_data->port[dai->id], &dai_data->port_config[dai->id].slim);
+
+	rc = q6afe_port_start(dai_data->port[dai->id]);
 	if (rc < 0) {
 		dev_err(dai->dev, "fail to start AFE port %x\n", dai->id);
 		return rc;
 	}
-	dai_data->is_port_started = true;
+	dai_data->is_port_started[dai->id] = true;
 
 	return 0;
 }
 
-static const struct snd_soc_dapm_route hdmi_dapm_routes[] = {
-	{"HDMI Playback", NULL, "HDMI"},
+static int q6slim_set_channel_map(struct snd_soc_dai *dai,
+				unsigned int tx_num, unsigned int *tx_slot,
+				unsigned int rx_num, unsigned int *rx_slot)
+{
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_port_config *pcfg = &dai_data->port_config[dai->id];
+	int i;
+
+	if (!rx_slot) {
+		pr_err("%s: rx slot not found\n", __func__);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < rx_num; i++) {
+		pcfg->slim.ch_mapping[i] =   rx_slot[i];
+		pr_debug("%s: find number of channels[%d] ch[%d]\n",
+		       __func__, i, rx_slot[i]);
+	}
+
+	pcfg->slim.num_channels = rx_num;
+	
+	pr_debug("%s: SLIMBUS_%d_RX cnt[%d] ch[%d %d]\n", __func__,
+		(dai->id - SLIMBUS_0_RX) / 2, rx_num,
+		pcfg->slim.ch_mapping[0],
+		pcfg->slim.ch_mapping[1]);
+
+	return 0;
+}
+
+static const struct snd_soc_dapm_route q6afe_dapm_routes[] = {
+	{"HDMI Playback", NULL, "HDMI_RX"},
+	{"Slimbus1 Playback", NULL, "SLIMBUS_1_RX"},
+	{"Slimbus2 Playback", NULL, "SLIMBUS_2_RX"},
+	{"Slimbus3 Playback", NULL, "SLIMBUS_3_RX"},
+	{"Slimbus4 Playback", NULL, "SLIMBUS_4_RX"},
+	{"Slimbus5 Playback", NULL, "SLIMBUS_5_RX"},
+	{"Slimbus6 Playback", NULL, "SLIMBUS_6_RX"},
 };
 
 static struct snd_soc_dai_ops q6hdmi_ops = {
-	.prepare	= q6hdmi_prepare,
+	.prepare	= q6afe_dai_prepare,
 	.hw_params	= q6hdmi_hw_params,
-	.shutdown	= q6hdmi_shutdown,
-	.startup	= q6hdmi_startup,
+	.shutdown	= q6afe_dai_shutdown,
+	.startup	= q6afe_dai_startup,
+};
+
+static struct snd_soc_dai_ops q6slim_ops = {
+	.prepare	= q6afe_dai_prepare,
+	.hw_params	= q6slim_hw_params,
+	.shutdown	= q6afe_dai_shutdown,
+	.startup	= q6afe_dai_startup,
+	.set_channel_map = q6slim_set_channel_map,
+};
+
+static int msm_dai_q6_dai_probe(struct snd_soc_dai *dai)
+{
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
+	struct q6afe_port *port;
+	struct snd_soc_dapm_context *dapm;
+	dapm = snd_soc_component_get_dapm(dai->component);
+
+	port = q6afe_port_get_from_id(dai->dev, dai->id);
+	if (IS_ERR(port)) {
+		dev_err(dai->dev, "Unable to get afe port\n");
+		return -EINVAL;
+	}
+	dai_data->port[dai->id] = port;
+
+	return 0;
+}
+
+static int msm_dai_q6_dai_remove(struct snd_soc_dai *dai)
+{
+	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
+
+	q6afe_port_put(dai_data->port[dai->id]);
+
+	return 0;
+}
+
+static struct snd_soc_dai_driver q6afe_dai_slimbus_rx[] = {
+	{
+		//.name = "SLIMBUS_0_RX",
+		.name = "SLIM",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_0_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+		.playback = {
+			.stream_name = "Slimbus Playback",
+			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
+			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 8,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+	},{
+		.playback = {
+			.stream_name = "Slimbus1 Playback",
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.name = "SLIMBUS_1_RX",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_1_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	}, {
+		.playback = {
+			.stream_name = "Slimbus2 Playback",
+			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
+			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 8,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.name = "SLIMBUS_2_RX",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_2_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	}, {
+		.playback = {
+			.stream_name = "Slimbus3 Playback",
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.name = "SLIMBUS_3_RX",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_3_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	}, {
+		.playback = {
+			.stream_name = "Slimbus4 Playback",
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.name = "SLIMBUS_4_RX",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_4_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	}, {
+		.playback = {
+			.stream_name = "Slimbus5 Playback",
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+			 SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.name = "SLIMBUS_5_RX",
+		.ops = &q6slim_ops,
+		.id = SLIMBUS_5_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	}, {
+		.playback = {
+			.stream_name = "Slimbus6 Playback",
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_192000 | SNDRV_PCM_RATE_44100,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.ops = &q6slim_ops,
+		.name = "SLIMBUS_6_RX",
+		.id = SLIMBUS_6_RX,
+		.probe = msm_dai_q6_dai_probe,
+		.remove = msm_dai_q6_dai_remove,
+	},
 };
 
 static struct snd_soc_dai_driver q6afe_dai_hdmi_rx = {
@@ -180,52 +419,40 @@ static struct snd_soc_dai_driver q6afe_dai_hdmi_rx = {
 	.ops = &q6hdmi_ops,
 	.id = AFE_PORT_HDMI_RX,
 	.name = "HDMI",
+	.probe = msm_dai_q6_dai_probe,
+	.remove = msm_dai_q6_dai_remove,
 };
 
-static const struct snd_soc_dapm_widget hdmi_dapm_widgets[] = {
-	SND_SOC_DAPM_AIF_OUT("HDMI", "HDMI Playback", 0, 0, 0, 0),
-	SND_SOC_DAPM_OUTPUT("HDMI-RX"),
-};
-
-static const struct snd_soc_component_driver msm_dai_hdmi_q6_component = {
-	.name		= "msm-dai-q6-hdmi",
-	.dapm_widgets = hdmi_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(hdmi_dapm_widgets),
-	.controls = hdmi_config_controls,
-	.num_controls = ARRAY_SIZE(hdmi_config_controls),
-	.dapm_routes = hdmi_dapm_routes,
-	.num_dapm_routes = ARRAY_SIZE(hdmi_dapm_routes),
+static const struct snd_soc_component_driver q6afe_dai_component = {
+	.name		= "q6afe-dai-component",
+	.controls = q6afe_config_controls,
+	.num_controls = ARRAY_SIZE(q6afe_config_controls),
+	.dapm_routes = q6afe_dapm_routes,
+	.num_dapm_routes = ARRAY_SIZE(q6afe_dapm_routes),
 };
 
 static int q6afe_dai_dev_probe(struct platform_device *pdev)
 {
-	struct q6hdmi_dai_data *dai_data;
+	struct q6afe_dai_data *dai_data;
 	int rc = 0;
-	struct q6afe_port *port;
 
 	dai_data = devm_kzalloc(&pdev->dev, sizeof(*dai_data), GFP_KERNEL);
 	if (!dai_data)
 		rc = -ENOMEM;
 
-	port = q6afe_port_get_from_id(&pdev->dev, AFE_PORT_HDMI_RX);
-	if (IS_ERR(port)) {
-		dev_err(&pdev->dev, "Unable to get afe port\n");
-		return -EPROBE_DEFER;
-	}
-	dai_data->port = port;
 	dev_set_drvdata(&pdev->dev, dai_data);
 
-	return devm_snd_soc_register_component(&pdev->dev,
-					  &msm_dai_hdmi_q6_component,
+	rc = devm_snd_soc_register_component(&pdev->dev,
+					  &q6afe_dai_component,
 					  &q6afe_dai_hdmi_rx, 1);
+
+	return  devm_snd_soc_register_component(&pdev->dev,
+					  &q6afe_dai_component,
+					  q6afe_dai_slimbus_rx, ARRAY_SIZE(q6afe_dai_slimbus_rx));
 }
 
 static int q6afe_dai_dev_remove(struct platform_device *pdev)
 {
-	struct q6hdmi_dai_data *dai_data = dev_get_drvdata(&pdev->dev);
-
-	q6afe_port_put(dai_data->port);
-
 	return 0;
 }
 
