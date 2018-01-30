@@ -69,6 +69,10 @@ static int apq8096_sbc_parse_of(struct snd_soc_card *card)
 	if (ret)
 		dev_err(dev, "Error parsing card name: %d\n", ret);
 
+	if (of_property_read_bool(dev->of_node, "qcom,audio-routing"))
+		ret = snd_soc_of_parse_audio_routing(card,
+					"qcom,audio-routing");
+
 	return ret;
 }
 
