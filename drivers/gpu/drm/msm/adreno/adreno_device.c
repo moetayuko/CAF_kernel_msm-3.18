@@ -84,7 +84,7 @@ static const struct adreno_info gpulist[] = {
 		.quirks = ADRENO_QUIRK_TWO_PASS_USE_WFI |
 			ADRENO_QUIRK_FAULT_DETECT_MASK,
 		.init = a5xx_gpu_init,
-		.gpmufw = "a530v3_gpmu.fw2",
+		.powerfw = "a530v3_gpmu.fw2",
 		.zapfw = "a530_zap.mdt",
 	},
 };
@@ -148,6 +148,12 @@ struct msm_gpu *adreno_load_gpu(struct drm_device *dev)
 	if (ret) {
 		dev_err(dev->dev, "gpu hw init failed: %d\n", ret);
 		return NULL;
+	}
+
+	if (gpu->funcs->debugfs_init) {
+		gpu->funcs->debugfs_init(gpu, dev->primary);
+		gpu->funcs->debugfs_init(gpu, dev->render);
+		gpu->funcs->debugfs_init(gpu, dev->control);
 	}
 
 	return gpu;
