@@ -1407,9 +1407,8 @@ static int iucv_sock_recvmsg(struct socket *sock, struct msghdr *msg,
 	/* create control message to store iucv msg target class:
 	 * get the trgcls from the control buffer of the skb due to
 	 * fragmentation of original iucv message. */
-	err = put_cmsg(msg, SOL_IUCV, SCM_IUCV_TRGCLS,
-		       sizeof(IUCV_SKB_CB(skb)->class),
-		       (void *)&IUCV_SKB_CB(skb)->class);
+	err = put_cmsg_whitelist(msg, SOL_IUCV, SCM_IUCV_TRGCLS,
+				 &IUCV_SKB_CB(skb)->class);
 	if (err) {
 		if (!(flags & MSG_PEEK))
 			skb_queue_head(&sk->sk_receive_queue, skb);

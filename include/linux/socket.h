@@ -343,6 +343,14 @@ struct ucred {
 
 extern int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *kaddr);
 extern int put_cmsg(struct msghdr*, int level, int type, int len, void *data);
+/*
+ * Provide a bounce buffer for copying cmsg data to userspace when the
+ * target memory isn't already whitelisted for hardened usercopy.
+ */
+#define put_cmsg_whitelist(_msg, _level, _type, _ptr) ({		\
+		typeof(*(_ptr)) _val = *(_ptr);				\
+		put_cmsg(_msg, _level, _type, sizeof(_val), &_val);	\
+	})
 
 struct timespec;
 
