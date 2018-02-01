@@ -1736,8 +1736,8 @@ L:	linux-oxnas@lists.tuxfamily.org (moderated for non-subscribers)
 S:	Maintained
 F:	arch/arm/mach-oxnas/
 F:	arch/arm/boot/dts/ox8*.dtsi
-F:	arch/arm/boot/dts/wd-mbwe.dts
-F:	arch/arm/boot/dts/cloudengines-pogoplug-series-3.dts
+F:	arch/arm/boot/dts/ox810se-wd-mbwe.dts
+F:	arch/arm/boot/dts/ox820-cloudengines-pogoplug-series-3.dts
 N:	oxnas
 
 ARM/PALM TREO SUPPORT
