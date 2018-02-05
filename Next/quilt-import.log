@@ -1,0 +1,17 @@
+Importing dmi based on 4.15
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard d8a5b80568a9cb66810e75b182018e9edb68e8ff
+HEAD is now at d8a5b80568a9 Linux 4.15
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-optimize-dmi_matches.patch
+Applying: firmware: dmi: Optimize dmi_matches
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-remove-dmi_initialized.patch
+Applying: firmware: dmi_scan: Drop dmi_initialized
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-fix-dmi_empty_string-handling.patch
+Applying: firmware: dmi_scan: Fix handling of empty DMI strings
+$ git am -s --patch-format=mbox ../quilt/dmi/firmware-dmi-handle-missing-dmi-data-gracefully.patch
+Applying: firmware: dmi: handle missing DMI data gracefully
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:dmi/master
+From ../quilt-tmp
+ + 0bcea5c474d1...36a840c73dc6 master     -> dmi/master  (forced update)
