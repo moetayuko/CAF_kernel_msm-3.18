@@ -763,7 +763,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 
 	hrtimer_init(&vcpu->arch.dec_timer, CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	vcpu->arch.dec_timer.function = kvmppc_decrementer_wakeup;
-	vcpu->arch.dec_expires = ~(u64)0;
+	vcpu->arch.dec_expires = get_tb();
 
 #ifdef CONFIG_KVM_EXIT_TIMING
 	mutex_init(&vcpu->arch.exit_timing_lock);
@@ -1106,11 +1106,9 @@ int kvmppc_handle_vsx_load(struct kvm_run *run, struct kvm_vcpu *vcpu,
 {
 	enum emulation_result emulated = EMULATE_DONE;
 
-	/* Currently, mmio_vsx_copy_nums only allowed to be less than 4 */
-	if ( (vcpu->arch.mmio_vsx_copy_nums > 4) ||
-		(vcpu->arch.mmio_vsx_copy_nums < 0) ) {
+	/* Currently, mmio_vsx_copy_nums only allowed to be 4 or less */
+	if (vcpu->arch.mmio_vsx_copy_nums > 4)
 		return EMULATE_FAIL;
-	}
 
 	while (vcpu->arch.mmio_vsx_copy_nums) {
 		emulated = __kvmppc_handle_load(run, vcpu, rt, bytes,
@@ -1252,11 +1250,9 @@ int kvmppc_handle_vsx_store(struct kvm_run *run, struct kvm_vcpu *vcpu,
 
 	vcpu->arch.io_gpr = rs;
 
-	/* Currently, mmio_vsx_copy_nums only allowed to be less than 4 */
-	if ( (vcpu->arch.mmio_vsx_copy_nums > 4) ||
-		(vcpu->arch.mmio_vsx_copy_nums < 0) ) {
+	/* Currently, mmio_vsx_copy_nums only allowed to be 4 or less */
+	if (vcpu->arch.mmio_vsx_copy_nums > 4)
 		return EMULATE_FAIL;
-	}
 
 	while (vcpu->arch.mmio_vsx_copy_nums) {
 		if (kvmppc_get_vsr_data(vcpu, rs, &val) == -1)
@@ -1413,6 +1409,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	int r;
 
+	vcpu_load(vcpu);
+
 	if (vcpu->mmio_needed) {
 		vcpu->mmio_needed = 0;
 		if (!vcpu->mmio_is_write)
@@ -1427,7 +1425,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 			r = kvmppc_emulate_mmio_vsx_loadstore(vcpu, run);
 			if (r == RESUME_HOST) {
 				vcpu->mmio_needed = 1;
-				return r;
+				goto out;
 			}
 		}
 #endif
@@ -1461,6 +1459,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 
 	kvm_sigset_deactivate(vcpu);
 
+out:
+	vcpu_put(vcpu);
 	return r;
 }
 
@@ -1608,6 +1608,21 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 	return -EINVAL;
 }
 
+long kvm_arch_vcpu_async_ioctl(struct file *filp,
+			       unsigned int ioctl, unsigned long arg)
+{
+	struct kvm_vcpu *vcpu = filp->private_data;
+	void __user *argp = (void __user *)arg;
+
+	if (ioctl == KVM_INTERRUPT) {
+		struct kvm_interrupt irq;
+		if (copy_from_user(&irq, argp, sizeof(irq)))
+			return -EFAULT;
+		return kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+	}
+	return -ENOIOCTLCMD;
+}
+
 long kvm_arch_vcpu_ioctl(struct file *filp,
                          unsigned int ioctl, unsigned long arg)
 {
@@ -1615,16 +1630,9 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 	void __user *argp = (void __user *)arg;
 	long r;
 
-	switch (ioctl) {
-	case KVM_INTERRUPT: {
-		struct kvm_interrupt irq;
-		r = -EFAULT;
-		if (copy_from_user(&irq, argp, sizeof(irq)))
-			goto out;
-		r = kvm_vcpu_ioctl_interrupt(vcpu, &irq);
-		goto out;
-	}
+	vcpu_load(vcpu);
 
+	switch (ioctl) {
 	case KVM_ENABLE_CAP:
 	{
 		struct kvm_enable_cap cap;
@@ -1664,6 +1672,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 	}
 
 out:
+	vcpu_put(vcpu);
 	return r;
 }
 
