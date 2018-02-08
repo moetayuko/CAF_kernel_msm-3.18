@@ -1817,8 +1817,8 @@ static void netlink_cmsg_listen_all_nsid(struct sock *sk, struct msghdr *msg,
 	if (!NETLINK_CB(skb).nsid_is_set)
 		return;
 
-	put_cmsg(msg, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID, sizeof(int),
-		 &NETLINK_CB(skb).nsid);
+	put_cmsg_whitelist(msg, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
+			   &NETLINK_CB(skb).nsid);
 }
 
 static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
