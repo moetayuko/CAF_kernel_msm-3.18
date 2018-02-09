@@ -36,12 +36,12 @@ extern void tpd_eint_interrupt_handler(void);
 
 #ifdef HX_TP_PROC_DIAG
 #ifdef HX_TP_PROC_2T2R
-int		HX_RX_NUM_2					= 0;
-int 		HX_TX_NUM_2					= 0;
+int	HX_RX_NUM_2			= 0;
+int	HX_TX_NUM_2			= 0;
 #endif
-int  touch_monitor_stop_flag 		= 0;
-int 	touch_monitor_stop_limit 		= 5;
-uint8_t g_diag_arr_num = 0;
+int	touch_monitor_stop_flag		= 0;
+int	touch_monitor_stop_limit	= 5;
+uint8_t	g_diag_arr_num			= 0;
 #endif
 
 #ifdef HX_ESD_WORKAROUND
@@ -63,12 +63,21 @@ static ssize_t himax_vendor_read(struct file *file, char *buf,
 	size_t len, loff_t *pos)
 {
 	ssize_t ret = 0;
+	char *temp_buf;
 
 	if(!HX_PROC_SEND_FLAG)
 	{
-		ret += sprintf(buf, "%s_FW:%#x_CFG:%#x_SensorId:%#x\n", HIMAX_common_NAME,
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		ret += sprintf(temp_buf, "%s_FW:%#x_CFG:%#x_SensorId:%#x\n", HIMAX_common_NAME,
 		ic_data->vendor_fw_ver, ic_data->vendor_config_ver, ic_data->vendor_sensor_id);
 		HX_PROC_SEND_FLAG=1;
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -87,13 +96,21 @@ static ssize_t himax_attn_read(struct file *file, char *buf,
 {
 	ssize_t ret = 0;
 	struct himax_ts_data *ts_data;
+	char *temp_buf;
+
 	ts_data = private_ts;
 
-	if(!HX_PROC_SEND_FLAG)
-	{
-		sprintf(buf, "attn = %x\n", himax_int_gpio_read(ts_data->pdata->gpio_irq));
-		ret = strlen(buf) + 1;
-		HX_PROC_SEND_FLAG=1;
+	if (!HX_PROC_SEND_FLAG) {
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		ret += sprintf(temp_buf, "attn = %x\n", himax_int_gpio_read(ts_data->pdata->gpio_irq));
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -112,17 +129,25 @@ static ssize_t himax_int_en_read(struct file *file, char *buf,
 	size_t len, loff_t *pos)
 {
 	struct himax_ts_data *ts = private_ts;
-	size_t count = 0;
+	size_t ret = 0;
+	char *temp_buf;
 
-	if(!HX_PROC_SEND_FLAG)
-	{
-		count += sprintf(buf + count, "%d ", ts->irq_enabled);
-		count += sprintf(buf + count, "\n");
-		HX_PROC_SEND_FLAG=1;
+	if (!HX_PROC_SEND_FLAG) {
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		ret += sprintf(temp_buf, "%d ", ts->irq_enabled);
+		ret += sprintf(temp_buf, "\n");
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
-	return count;
+	return ret;
 }
 
 static ssize_t himax_int_en_write(struct file *file, const char *buff,
@@ -150,38 +175,38 @@ static ssize_t himax_int_en_write(struct file *file, const char *buff,
 		return -EINVAL;
 
 	if (value) {
-				if(ic_data->HX_INT_IS_EDGE)
-				{
+		if(ic_data->HX_INT_IS_EDGE)
+		{
 #ifdef MTK
 #ifdef CONFIG_OF_TOUCH
-					himax_int_enable(ts->client->irq,1);
+			himax_int_enable(ts->client->irq,1);
 #else
-					//mt_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE);
-					//mt_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-					mt_eint_registration(ts->client->irq, EINTF_TRIGGER_FALLING, tpd_eint_interrupt_handler, 1);
+			//mt_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE);
+			//mt_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
+			mt_eint_registration(ts->client->irq, EINTF_TRIGGER_FALLING, tpd_eint_interrupt_handler, 1);
 #endif
 #endif
 #ifdef QCT
-					ret = request_threaded_irq(ts->client->irq, NULL, himax_ts_thread,
+			ret = request_threaded_irq(ts->client->irq, NULL, himax_ts_thread,
 					IRQF_TRIGGER_FALLING | IRQF_ONESHOT, ts->client->name, ts);
 #endif
-				}
-				else
-				{
+		}
+		else
+		{
 #ifdef MTK
 #ifdef CONFIG_OF_TOUCH
-					himax_int_enable(ts->client->irq,1);
+			himax_int_enable(ts->client->irq,1);
 #else
-					//mt_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE);
-					//mt_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-					mt_eint_registration(ts->client->irq, EINTF_TRIGGER_LOW, tpd_eint_interrupt_handler, 1);
+			//mt_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE);
+			//mt_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
+			mt_eint_registration(ts->client->irq, EINTF_TRIGGER_LOW, tpd_eint_interrupt_handler, 1);
 #endif
 #endif
 #ifdef QCT
-					ret = request_threaded_irq(ts->client->irq, NULL, himax_ts_thread,
+			ret = request_threaded_irq(ts->client->irq, NULL, himax_ts_thread,
 					IRQF_TRIGGER_LOW | IRQF_ONESHOT, ts->client->name, ts);
 #endif
-				}
+		}
 		if (ret == 0) {
 			ts->irq_enabled = 1;
 			irq_enable_count = 1;
@@ -206,21 +231,29 @@ static ssize_t himax_layout_read(struct file *file, char *buf,
 	size_t len, loff_t *pos)
 {
 	struct himax_ts_data *ts = private_ts;
-	size_t count = 0;
+	size_t ret = 0;
+	char *temp_buf;
 
-	if(!HX_PROC_SEND_FLAG)
-	{
-		count += sprintf(buf + count, "%d ", ts->pdata->abs_x_min);
-		count += sprintf(buf + count, "%d ", ts->pdata->abs_x_max);
-		count += sprintf(buf + count, "%d ", ts->pdata->abs_y_min);
-		count += sprintf(buf + count, "%d ", ts->pdata->abs_y_max);
-		count += sprintf(buf + count, "\n");
-		HX_PROC_SEND_FLAG=1;
+	if (!HX_PROC_SEND_FLAG) {
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		ret += sprintf(temp_buf, "%d ", ts->pdata->abs_x_min);
+		ret += sprintf(temp_buf, "%d ", ts->pdata->abs_x_max);
+		ret += sprintf(temp_buf, "%d ", ts->pdata->abs_y_min);
+		ret += sprintf(temp_buf, "%d ", ts->pdata->abs_y_max);
+		ret += sprintf(temp_buf, "\n");
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
 
-	return count;
+	return ret;
 }
 
 static ssize_t himax_layout_write(struct file *file, const char *buff,
@@ -264,13 +297,11 @@ static ssize_t himax_layout_write(struct file *file, const char *buff,
 		ts->pdata->abs_x_max=layout[1];
 		ts->pdata->abs_y_min=layout[2];
 		ts->pdata->abs_y_max=layout[3];
-		I("%d, %d, %d, %d\n",
-			ts->pdata->abs_x_min, ts->pdata->abs_x_max, ts->pdata->abs_y_min, ts->pdata->abs_y_max);
+		I("%d, %d, %d, %d\n",ts->pdata->abs_x_min, ts->pdata->abs_x_max, ts->pdata->abs_y_min, ts->pdata->abs_y_max);
 		input_unregister_device(ts->input_dev);
 		himax_input_register(ts);
 	} else
-		I("ERR@%d, %d, %d, %d\n",
-			ts->pdata->abs_x_min, ts->pdata->abs_x_max, ts->pdata->abs_y_min, ts->pdata->abs_y_max);
+		I("ERR@%d, %d, %d, %d\n",ts->pdata->abs_x_min, ts->pdata->abs_x_max, ts->pdata->abs_y_min, ts->pdata->abs_y_max);
 	return len;
 }
 
@@ -285,18 +316,26 @@ static ssize_t himax_debug_level_read(struct file *file, char *buf,
 	size_t len, loff_t *pos)
 {
 	struct himax_ts_data *ts_data;
-	size_t count = 0;
+	size_t ret = 0;
+	char *temp_buf;
 	ts_data = private_ts;
 
-	if(!HX_PROC_SEND_FLAG)
-	{
-		count += sprintf(buf, "%d\n", ts_data->debug_log_level);
+	if (!HX_PROC_SEND_FLAG) {
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		ret += sprintf(temp_buf, "%d\n", ts_data->debug_log_level);
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
 
-	return count;
+	return ret;
 }
 
 static ssize_t himax_debug_level_write(struct file *file, const char *buff,
@@ -368,24 +407,33 @@ static ssize_t himax_proc_register_read(struct file *file, char *buf,
 {
 	int ret = 0;
 	uint16_t loop_i;
-	uint8_t data[128];	
+	uint8_t data[128];
+	char *temp_buf;
 
 	memset(data, 0x00, sizeof(data));
 
 	I("himax_register_show: %x,%x,%x,%x\n", register_command[0],register_command[1],register_command[2],register_command[3]);
 	if(!HX_PROC_SEND_FLAG)
 	{
+		temp_buf = kzalloc(len, GFP_KERNEL);
 		himax_register_read(private_ts->client, register_command, 1, data);
 
-		ret += sprintf(buf, "command:  %x,%x,%x,%x\n", register_command[0],register_command[1],register_command[2],register_command[3]);
-	
+		ret += sprintf(temp_buf, "command:  %x,%x,%x,%x\n", register_command[0],register_command[1],register_command[2],register_command[3]);
+
 		for (loop_i = 0; loop_i < 128; loop_i++) {
-			ret += sprintf(buf + ret, "0x%2.2X ", data[loop_i]);
+			ret += sprintf(temp_buf + ret, "0x%2.2X ", data[loop_i]);
 			if ((loop_i % 16) == 15)
-				ret += sprintf(buf + ret, "\n");
+				ret += sprintf(temp_buf + ret, "\n");
 		}
-		ret += sprintf(buf + ret, "\n");
+		ret += sprintf(temp_buf + ret, "\n");
 		HX_PROC_SEND_FLAG=1;
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -433,10 +481,10 @@ static ssize_t himax_proc_register_write(struct file *file, const char *buff,
 			
 			for (loop_i = 0; loop_i < 128; loop_i++) {
 				if (buf[base] == '\n') {
-						if (buf[0] == 'w') {
-								himax_register_write(private_ts->client, register_command, 1, write_da);
-								I("CMD: %x, %x, %x, %x, len=%d\n", write_da[0], write_da[1],write_da[2],write_da[3],length);
-						}
+					if (buf[0] == 'w') {
+						himax_register_write(private_ts->client, register_command, 1, write_da);
+						I("CMD: %x, %x, %x, %x, len=%d\n", write_da[0], write_da[1],write_da[2],write_da[3],length);
+					}
 					I("\n");
 					return len;
 				}
@@ -771,8 +819,8 @@ bool DSRAM_Flag = false;
 void himax_ts_diag_func(void)
 {
 	int i=0, j=0;
-  unsigned int index = 0;
-  int total_size = ic_data->HX_TX_NUM * ic_data->HX_RX_NUM * 2;
+	unsigned int index = 0;
+	int total_size = ic_data->HX_TX_NUM * ic_data->HX_RX_NUM * 2;
 	uint8_t  info_data[total_size];
 	int16_t *mutual_data;
 	int16_t *mutual_data_new;
@@ -783,7 +831,7 @@ void himax_ts_diag_func(void)
 	if(diag_command == 9 || diag_command == 91)
 	{
 		mutual_data = getMutualBuffer();
-	}	else if(diag_command == 92){
+	}else if(diag_command == 92){
 		mutual_data = getMutualBuffer();
 		mutual_data_new = getMutualNewBuffer();
 		mutual_data_old = getMutualOldBuffer();
@@ -792,7 +840,7 @@ void himax_ts_diag_func(void)
 
 	index = 0;
 	for (i = 0; i < ic_data->HX_TX_NUM; i++)
-   {
+	{
 		for (j = 0; j < ic_data->HX_RX_NUM; j++)
 		{
 			new_data = (short)(info_data[index + 1] << 8 | info_data[index]);
@@ -816,20 +864,20 @@ void himax_ts_diag_func(void)
 		queue_delayed_work(private_ts->himax_diag_wq, &private_ts->himax_diag_delay_wrok, 1/10*HZ);
 	}else if(diag_command == 91){
 		if(diag_max_cnt > 100) //count for 100 frame
-			{
-				//Clear DSRAM flag
-			  DSRAM_Flag = false;
+		{
+			//Clear DSRAM flag
+			DSRAM_Flag = false;
 
-			  //Enable ISR
-			  himax_int_enable(private_ts->client->irq,1);
+			//Enable ISR
+			himax_int_enable(private_ts->client->irq,1);
 
-			  //=====================================
-		    // test result command : 0x8002_0324 ==> 0x00
-		    //=====================================
-				himax_diag_register_set(private_ts->client, 0x00);
-			}else{
-				queue_delayed_work(private_ts->himax_diag_wq, &private_ts->himax_diag_delay_wrok, 1/10*HZ);
-			}
+			//=====================================
+			// test result command : 0x8002_0324 ==> 0x00
+			//=====================================
+			himax_diag_register_set(private_ts->client, 0x00);
+		}else{
+			queue_delayed_work(private_ts->himax_diag_wq, &private_ts->himax_diag_delay_wrok, 1/10*HZ);
+		}
 	}
 }
 
@@ -870,8 +918,8 @@ static ssize_t himax_diag_write(struct file *filp, const char __user *buff, size
 			//3. Enable ISR
 			himax_int_enable(private_ts->client->irq,1);
 		}
-			command[0] = diag_command;
-			himax_diag_register_set(private_ts->client, command[0]);
+		command[0] = diag_command;
+		himax_diag_register_set(private_ts->client, command[0]);
 	}
 	//coordinate dump start
 	else if (diag_command == 0x08)	{
@@ -885,21 +933,21 @@ static ssize_t himax_diag_write(struct file *filp, const char __user *buff, size
 		coordinate_dump_enable = 1;
 	}
 	else if (diag_command == 0x09 || diag_command == 91 || diag_command == 92){
-	diag_max_cnt = 0;
-	memset(diag_mutual, 0x00, x_channel * y_channel * sizeof(int16_t)); //Set data 0 everytime
+		diag_max_cnt = 0;
+		memset(diag_mutual, 0x00, x_channel * y_channel * sizeof(int16_t)); //Set data 0 everytime
 
-    //1. Disable ISR
-    himax_int_enable(private_ts->client->irq,0);
+		//1. Disable ISR
+		himax_int_enable(private_ts->client->irq,0);
 
-	//2. Start DSRAM thread
-	//himax_diag_register_set(private_ts->client, 0x0A);
+		//2. Start DSRAM thread
+		//himax_diag_register_set(private_ts->client, 0x0A);
 
-	queue_delayed_work(private_ts->himax_diag_wq, &private_ts->himax_diag_delay_wrok, 2*HZ/100);
+		queue_delayed_work(private_ts->himax_diag_wq, &private_ts->himax_diag_delay_wrok, 2*HZ/100);
 
-	I("%s: Start get raw data in DSRAM\n", __func__);
+		I("%s: Start get raw data in DSRAM\n", __func__);
 
-	//3. Set DSRAM flag
-	DSRAM_Flag = true;
+		//3. Set DSRAM flag
+		DSRAM_Flag = true;
 	}else{
 		command[0] = 0x00;
 		himax_diag_register_set(private_ts->client, command[0]);
@@ -950,118 +998,127 @@ static ssize_t himax_debug_read(struct file *file, char *buf,
 	size_t len, loff_t *pos)
 {
 	size_t count = 0;
+	char *temp_buf;
+
 	if(!HX_PROC_SEND_FLAG)
 	{
+		temp_buf = kzalloc(len, GFP_KERNEL);
 		if (debug_level_cmd == 't')
 		{
 			if (fw_update_complete)
 			{
-				count += sprintf(buf, "FW Update Complete ");
+				count += sprintf(temp_buf, "FW Update Complete ");
 			}
 			else
 			{
-				count += sprintf(buf, "FW Update Fail ");
+				count += sprintf(temp_buf, "FW Update Fail ");
 			}
 		}
 		else if (debug_level_cmd == 'h')
 		{
 			if (handshaking_result == 0)
 			{
-				count += sprintf(buf, "Handshaking Result = %d (MCU Running)\n",handshaking_result);
+				count += sprintf(temp_buf, "Handshaking Result = %d (MCU Running)\n",handshaking_result);
 			}
 			else if (handshaking_result == 1)
 			{
-				count += sprintf(buf, "Handshaking Result = %d (MCU Stop)\n",handshaking_result);
+				count += sprintf(temp_buf, "Handshaking Result = %d (MCU Stop)\n",handshaking_result);
 			}
 			else if (handshaking_result == 2)
 			{
-				count += sprintf(buf, "Handshaking Result = %d (I2C Error)\n",handshaking_result);
+				count += sprintf(temp_buf, "Handshaking Result = %d (I2C Error)\n",handshaking_result);
 			}
 			else
 			{
-				count += sprintf(buf, "Handshaking Result = error \n");
+				count += sprintf(temp_buf, "Handshaking Result = error \n");
 			}
 		}
 		else if (debug_level_cmd == 'v')
 		{
-			count += sprintf(buf + count, "FW_VER = ");
-	           count += sprintf(buf + count, "0x%2.2X \n",ic_data->vendor_fw_ver);
+			count += sprintf(temp_buf + count, "FW_VER = ");
+			count += sprintf(temp_buf + count, "0x%2.2X \n",ic_data->vendor_fw_ver);
 
-			count += sprintf(buf + count, "CONFIG_VER = ");
-	           count += sprintf(buf + count, "0x%2.2X \n",ic_data->vendor_config_ver);
-			count += sprintf(buf + count, "\n");
+			count += sprintf(temp_buf + count, "CONFIG_VER = ");
+			count += sprintf(temp_buf + count, "0x%2.2X \n",ic_data->vendor_config_ver);
+			count += sprintf(temp_buf + count, "\n");
 		}
 		else if (debug_level_cmd == 'd')
 		{
-			count += sprintf(buf + count, "Himax Touch IC Information :\n");
+			count += sprintf(temp_buf + count, "Himax Touch IC Information :\n");
 			if (IC_TYPE == HX_85XX_D_SERIES_PWON)
 			{
-				count += sprintf(buf + count, "IC Type : D\n");
+				count += sprintf(temp_buf + count, "IC Type : D\n");
 			}
 			else if (IC_TYPE == HX_85XX_E_SERIES_PWON)
 			{
-				count += sprintf(buf + count, "IC Type : E\n");
+				count += sprintf(temp_buf + count, "IC Type : E\n");
 			}
 			else if (IC_TYPE == HX_85XX_ES_SERIES_PWON)
 			{
-				count += sprintf(buf + count, "IC Type : ES\n");
+				count += sprintf(temp_buf + count, "IC Type : ES\n");
 			}
 			else if (IC_TYPE == HX_85XX_F_SERIES_PWON)
 			{
-				count += sprintf(buf + count, "IC Type : F\n");
+				count += sprintf(temp_buf + count, "IC Type : F\n");
 			}
 			else
 			{
-				count += sprintf(buf + count, "IC Type error.\n");
+				count += sprintf(temp_buf + count, "IC Type error.\n");
 			}
 
 			if (IC_CHECKSUM == HX_TP_BIN_CHECKSUM_SW)
 			{
-				count += sprintf(buf + count, "IC Checksum : SW\n");
+				count += sprintf(temp_buf + count, "IC Checksum : SW\n");
 			}
 			else if (IC_CHECKSUM == HX_TP_BIN_CHECKSUM_HW)
 			{
-				count += sprintf(buf + count, "IC Checksum : HW\n");
+				count += sprintf(temp_buf + count, "IC Checksum : HW\n");
 			}
 			else if (IC_CHECKSUM == HX_TP_BIN_CHECKSUM_CRC)
 			{
-				count += sprintf(buf + count, "IC Checksum : CRC\n");
+				count += sprintf(temp_buf + count, "IC Checksum : CRC\n");
 			}
 			else
 			{
-				count += sprintf(buf + count, "IC Checksum error.\n");
+				count += sprintf(temp_buf + count, "IC Checksum error.\n");
 			}
 
 			if (ic_data->HX_INT_IS_EDGE)
 			{
-				count += sprintf(buf + count, "Interrupt : EDGE TIRGGER\n");
+				count += sprintf(temp_buf + count, "Interrupt : EDGE TIRGGER\n");
 			}
 			else
 			{
-				count += sprintf(buf + count, "Interrupt : LEVEL TRIGGER\n");
+				count += sprintf(temp_buf + count, "Interrupt : LEVEL TRIGGER\n");
 			}
 
-			count += sprintf(buf + count, "RX Num : %d\n",ic_data->HX_RX_NUM);
-			count += sprintf(buf + count, "TX Num : %d\n",ic_data->HX_TX_NUM);
-			count += sprintf(buf + count, "BT Num : %d\n",ic_data->HX_BT_NUM);
-			count += sprintf(buf + count, "X Resolution : %d\n",ic_data->HX_X_RES);
-			count += sprintf(buf + count, "Y Resolution : %d\n",ic_data->HX_Y_RES);
-			count += sprintf(buf + count, "Max Point : %d\n",ic_data->HX_MAX_PT);
-			count += sprintf(buf + count, "XY reverse : %d\n",ic_data->HX_XY_REVERSE);
+			count += sprintf(temp_buf + count, "RX Num : %d\n",ic_data->HX_RX_NUM);
+			count += sprintf(temp_buf + count, "TX Num : %d\n",ic_data->HX_TX_NUM);
+			count += sprintf(temp_buf + count, "BT Num : %d\n",ic_data->HX_BT_NUM);
+			count += sprintf(temp_buf + count, "X Resolution : %d\n",ic_data->HX_X_RES);
+			count += sprintf(temp_buf + count, "Y Resolution : %d\n",ic_data->HX_Y_RES);
+			count += sprintf(temp_buf + count, "Max Point : %d\n",ic_data->HX_MAX_PT);
+			count += sprintf(temp_buf + count, "XY reverse : %d\n",ic_data->HX_XY_REVERSE);
 	#ifdef HX_TP_PROC_2T2R
 			if(Is_2T2R)
 			{
-			count += sprintf(buf + count, "2T2R panel\n");
-			count += sprintf(buf + count, "RX Num_2 : %d\n",HX_RX_NUM_2);
-			count += sprintf(buf + count, "TX Num_2 : %d\n",HX_TX_NUM_2);
+				count += sprintf(temp_buf + count, "2T2R panel\n");
+				count += sprintf(temp_buf + count, "RX Num_2 : %d\n",HX_RX_NUM_2);
+				count += sprintf(temp_buf + count, "TX Num_2 : %d\n",HX_TX_NUM_2);
 			}
 	#endif
 		}
 		else if (debug_level_cmd == 'i')
 		{
-			count += sprintf(buf + count, "Himax Touch Driver Version:\n");
-			count += sprintf(buf + count, "%s \n", HIMAX_DRIVER_VER);
+			count += sprintf(temp_buf + count, "Himax Touch Driver Version:\n");
+			count += sprintf(temp_buf + count, "%s \n", HIMAX_DRIVER_VER);
 		}
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 		HX_PROC_SEND_FLAG=1;
 	}
 	else
@@ -1172,62 +1229,62 @@ static ssize_t himax_debug_write(struct file *file, const char *buff,
 			himax_int_enable(private_ts->client->irq,0);
 			
 			if ((buf[1] == '6') && (buf[2] == '0'))
+			{
+				if (fts_ctpm_fw_upgrade_with_sys_fs_60k(private_ts->client,upgrade_fw, result, false) == 0)
 				{
-					if (fts_ctpm_fw_upgrade_with_sys_fs_60k(private_ts->client,upgrade_fw, result, false) == 0)
-					{
-						E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
-						fw_update_complete = false;
-					}
-					else
-					{
-						I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
-						fw_update_complete = true;
-					}
-				}
-			else if ((buf[1] == '6') && (buf[2] == '4'))
-				{
-					if (fts_ctpm_fw_upgrade_with_sys_fs_64k(private_ts->client,upgrade_fw, result, false) == 0)
-					{
-						E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
-						fw_update_complete = false;
-					}
-					else
-					{
-						I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
-						fw_update_complete = true;
-					}
-				}
-			else if ((buf[1] == '2') && (buf[2] == '4'))
-				{
-					if (fts_ctpm_fw_upgrade_with_sys_fs_124k(private_ts->client,upgrade_fw, result, false) == 0)
-					{
-						E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
-						fw_update_complete = false;
-					}
-					else
-					{
-						I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
-						fw_update_complete = true;
-					}
-				}
-			else if ((buf[1] == '2') && (buf[2] == '8'))
-				{
-					if (fts_ctpm_fw_upgrade_with_sys_fs_128k(private_ts->client,upgrade_fw, result, false) == 0)
-					{
-						E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
-						fw_update_complete = false;
-					}
-					else
-					{
-						I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
-						fw_update_complete = true;
-					}
-				}
-			else
-				{
-					E("%s: Flash command fail: %d\n", __func__, __LINE__);
+					E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
 					fw_update_complete = false;
 				}
+				else
+				{
+					I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
+					fw_update_complete = true;
+				}
+			}
+			else if ((buf[1] == '6') && (buf[2] == '4'))
+			{
+				if (fts_ctpm_fw_upgrade_with_sys_fs_64k(private_ts->client,upgrade_fw, result, false) == 0)
+				{
+					E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
+					fw_update_complete = false;
+				}
+				else
+				{
+					I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
+					fw_update_complete = true;
+				}
+			}
+			else if ((buf[1] == '2') && (buf[2] == '4'))
+			{
+				if (fts_ctpm_fw_upgrade_with_sys_fs_124k(private_ts->client,upgrade_fw, result, false) == 0)
+				{
+					E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
+					fw_update_complete = false;
+				}
+				else
+				{
+					I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
+					fw_update_complete = true;
+				}
+			}
+			else if ((buf[1] == '2') && (buf[2] == '8'))
+			{
+				if (fts_ctpm_fw_upgrade_with_sys_fs_128k(private_ts->client,upgrade_fw, result, false) == 0)
+				{
+					E("%s: TP upgrade error, line: %d\n", __func__, __LINE__);
+					fw_update_complete = false;
+				}
+				else
+				{
+					I("%s: TP upgrade OK, line: %d\n", __func__, __LINE__);
+					fw_update_complete = true;
+				}
+			}
+			else
+			{
+				E("%s: Flash command fail: %d\n", __func__, __LINE__);
+				fw_update_complete = false;
+			}
 			goto firmware_upgrade_done;
 			//return count;
 		}
@@ -1235,9 +1292,9 @@ static ssize_t himax_debug_write(struct file *file, const char *buff,
 
 	firmware_upgrade_done:
 
-	#ifdef HX_RST_PIN_FUNC
+#ifdef HX_RST_PIN_FUNC
 	himax_HW_reset(true,false);
-	#endif
+#endif
 
 	himax_sense_on(private_ts->client, 0x01);
 	msleep(120);
@@ -1370,7 +1427,7 @@ static ssize_t himax_proc_flash_read(struct file *file, char *buf,
 	uint8_t local_flash_progress = 0;
 	uint8_t local_flash_command = 0;
 	uint8_t local_flash_fail = 0;
-
+	char *temp_buf;
 	local_flash_complete = getFlashDumpComplete();
 	local_flash_progress = getFlashDumpProgress();
 	local_flash_command = getFlashCommand();
@@ -1379,64 +1436,103 @@ static ssize_t himax_proc_flash_read(struct file *file, char *buf,
 	I("flash_progress = %d \n",local_flash_progress);
 	if(!HX_PROC_SEND_FLAG)
 	{
+		temp_buf = kzalloc(len, GFP_KERNEL);
 		if (local_flash_fail)
 		{
-			ret += sprintf(buf+ret, "FlashStart:Fail \n");
-			ret += sprintf(buf + ret, "FlashEnd");
-			ret += sprintf(buf + ret, "\n");
+			ret += sprintf(temp_buf+ret, "FlashStart:Fail \n");
+			ret += sprintf(temp_buf + ret, "FlashEnd");
+			ret += sprintf(temp_buf + ret, "\n");
+
+			if (copy_to_user(buf, temp_buf, len))
+			{
+				I("%s,here:%d\n", __func__, __LINE__);
+			}
+
+			kfree(temp_buf);
+			HX_PROC_SEND_FLAG = 1;
 			return ret;
 		}
 
 		if (!local_flash_complete)
 		{
-			ret += sprintf(buf+ret, "FlashStart:Ongoing:0x%2.2x \n",flash_progress);
-			ret += sprintf(buf + ret, "FlashEnd");
-			ret += sprintf(buf + ret, "\n");
+			ret += sprintf(temp_buf+ret, "FlashStart:Ongoing:0x%2.2x \n",flash_progress);
+			ret += sprintf(temp_buf + ret, "FlashEnd");
+			ret += sprintf(temp_buf + ret, "\n");
+
+			if (copy_to_user(buf, temp_buf, len))
+			{
+				I("%s,here:%d\n", __func__, __LINE__);
+			}
+
+			kfree(temp_buf);
+			HX_PROC_SEND_FLAG = 1;
 			return ret;
 		}
 
 		if (local_flash_command == 1 && local_flash_complete)
 		{
-			ret += sprintf(buf+ret, "FlashStart:Complete \n");
-			ret += sprintf(buf + ret, "FlashEnd");
-			ret += sprintf(buf + ret, "\n");
+			ret += sprintf(temp_buf+ret, "FlashStart:Complete \n");
+			ret += sprintf(temp_buf + ret, "FlashEnd");
+			ret += sprintf(temp_buf + ret, "\n");
+
+			if (copy_to_user(buf, temp_buf, len))
+			{
+				I("%s,here:%d\n", __func__, __LINE__);
+			}
+
+			kfree(temp_buf);
+			HX_PROC_SEND_FLAG = 1;
 			return ret;
 		}
 
 		if (local_flash_command == 3 && local_flash_complete)
 		{
-			ret += sprintf(buf+ret, "FlashStart: \n");
+			ret += sprintf(temp_buf+ret, "FlashStart: \n");
 			for(loop_i = 0; loop_i < 128; loop_i++)
 			{
-				ret += sprintf(buf + ret, "x%2.2x", flash_buffer[loop_i]);
+				ret += sprintf(temp_buf + ret, "x%2.2x", flash_buffer[loop_i]);
 				if ((loop_i % 16) == 15)
 				{
-					ret += sprintf(buf + ret, "\n");
+					ret += sprintf(temp_buf + ret, "\n");
 				}
 			}
-			ret += sprintf(buf + ret, "FlashEnd");
-			ret += sprintf(buf + ret, "\n");
+			ret += sprintf(temp_buf + ret, "FlashEnd");
+			ret += sprintf(temp_buf + ret, "\n");
+
+			if (copy_to_user(buf, temp_buf, len))
+			{
+				I("%s,here:%d\n", __func__, __LINE__);
+			}
+
+			kfree(temp_buf);
+			HX_PROC_SEND_FLAG = 1;
 			return ret;
 		}
 
 		//flash command == 0 , report the data
 		local_flash_read_step = getFlashReadStep();
 
-		ret += sprintf(buf+ret, "FlashStart:%2.2x \n",local_flash_read_step);
+		ret += sprintf(temp_buf+ret, "FlashStart:%2.2x \n",local_flash_read_step);
 
 		for (loop_i = 0; loop_i < 1024; loop_i++)
 		{
-			ret += sprintf(buf + ret, "x%2.2X", flash_buffer[local_flash_read_step*1024 + loop_i]);
+			ret += sprintf(temp_buf + ret, "x%2.2X", flash_buffer[local_flash_read_step*1024 + loop_i]);
 
 			if ((loop_i % 16) == 15)
 			{
-				ret += sprintf(buf + ret, "\n");
+				ret += sprintf(temp_buf + ret, "\n");
 			}
 		}
 
-		ret += sprintf(buf + ret, "FlashEnd");
-		ret += sprintf(buf + ret, "\n");
-		HX_PROC_SEND_FLAG=1;
+		ret += sprintf(temp_buf + ret, "FlashEnd");
+		ret += sprintf(temp_buf + ret, "\n");
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -1674,23 +1770,32 @@ static ssize_t himax_self_test_read(struct file *file, char *buf,
 {
 	int val=0x00;
 	int ret = 0;
+	char *temp_buf;
 
 	I("%s: enter, %d \n", __func__, __LINE__);
 	if(!HX_PROC_SEND_FLAG)
 	{
+		temp_buf = kzalloc(len, GFP_KERNEL);
 		himax_int_enable(private_ts->client->irq,0);//disable irq
 		val = himax_chip_self_test(private_ts->client);
 #ifdef HX_ESD_WORKAROUND
-	  HX_ESD_RESET_ACTIVATE = 1;
+		HX_ESD_RESET_ACTIVATE = 1;
 #endif
 		himax_int_enable(private_ts->client->irq,1);//enable irq
 
 		if (val == 0x01) {
-			ret += sprintf(buf + ret, "Self_Test Pass\n");
+			ret += sprintf(temp_buf + ret, "Self_Test Pass\n");
 		} else {
-			ret += sprintf(buf + ret, "Self_Test Fail\n");
+			ret += sprintf(temp_buf + ret, "Self_Test Fail\n");
 		}
-		HX_PROC_SEND_FLAG=1;
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -1718,81 +1823,6 @@ static struct file_operations himax_proc_self_test_ops =
 {
 	.owner = THIS_MODULE,
 	.read = himax_self_test_read,
-};
-#endif
-
-#ifdef HX_TP_PROC_HITOUCH
-static ssize_t himax_hitouch_read(struct file *file, char *buf,
-	size_t len, loff_t *pos)
-{
-	int ret = 0;
-
-	if(!HX_PROC_SEND_FLAG)
-	{
-		if(hitouch_command == 0)
-		{
-			ret += sprintf(buf + ret, "Himax Touch Driver Version:\n");
-			ret += sprintf(buf + ret, "%s \n", HIMAX_DRIVER_VER);
-		}
-		else if(hitouch_command == 1)
-		{
-			ret += sprintf(buf + ret, "hitouch_is_connect = true\n");
-		}
-		else if(hitouch_command == 2)
-		{
-			ret += sprintf(buf + ret, "hitouch_is_connect = false\n");
-		}
-		HX_PROC_SEND_FLAG=1;
-	}
-	else
-		HX_PROC_SEND_FLAG=0;
-
-	return ret;
-}
-
-//-----------------------------------------------------------------------------------
-//himax_hitouch_store
-//command 0 : Get Driver Version
-//command 1 : Hitouch Connect
-//command 2 : Hitouch Disconnect
-//-----------------------------------------------------------------------------------
-static ssize_t himax_hitouch_write(struct file *file, const char *buff,
-	size_t len, loff_t *pos)
-{
-	char buf[80] = {0};
-
-	if (len >= 80)
-	{
-		I("%s: no command exceeds 80 chars.\n", __func__);
-		return -EFAULT;
-	}
-	if (copy_from_user(buf, buff, len))
-	{
-		return -EFAULT;
-	}
-
-	if(buf[0] == '0')
-	{
-		hitouch_command = 0;
-	}
-	else if(buf[0] == '1')
-	{
-		hitouch_is_connect = true;
-		I("hitouch_is_connect = true\n");
-	}
-	else if(buf[0] == '2')
-	{
-		hitouch_is_connect = false;
-		I("hitouch_is_connect = false\n"); 
-	}
-	return len;
-}
-
-static struct file_operations himax_proc_hitouch_ops =
-{
-	.owner = THIS_MODULE,
-	.read = himax_hitouch_read,
-	.write = himax_hitouch_write,
 };
 #endif
 
@@ -1849,11 +1879,20 @@ static ssize_t himax_HSEN_read(struct file *file, char *buf,
 {
 	struct himax_ts_data *ts = private_ts;
 	size_t count = 0;
+	char *temp_buf;
 
 	if(!HX_PROC_SEND_FLAG)
 	{
-		count = snprintf(buf, PAGE_SIZE, "%d\n", ts->HSEN_enable);
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		count = sprintf(temp_buf, "%d\n", ts->HSEN_enable);
 		HX_PROC_SEND_FLAG=1;
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 	}
 	else
 		HX_PROC_SEND_FLAG=0;
@@ -1907,10 +1946,19 @@ static ssize_t himax_SMWP_read(struct file *file, char *buf,
 {
 	size_t count = 0;
 	struct himax_ts_data *ts = private_ts;
+	char *temp_buf;
 
 	if(!HX_PROC_SEND_FLAG)
 	{
-		count = snprintf(buf, PAGE_SIZE, "%d\n", ts->SMWP_enable);
+		temp_buf = kzalloc(len, GFP_KERNEL);
+		count = sprintf(temp_buf, "%d\n", ts->SMWP_enable);
+
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
 		HX_PROC_SEND_FLAG=1;
 	}
 	else
@@ -1967,12 +2015,21 @@ static ssize_t himax_GESTURE_read(struct file *file, char *buf,
 	struct himax_ts_data *ts = private_ts;
 	int i =0;
 	int ret = 0;
+	char *temp_buf;
 
 	if(!HX_PROC_SEND_FLAG)
 	{
+		temp_buf = kzalloc(len, GFP_KERNEL);
 		for(i=0;i<16;i++)
-			ret += sprintf(buf + ret, "ges_en[%d]=%d \n",i ,ts->gesture_cust_en[i]);
-			HX_PROC_SEND_FLAG = 1;
+			ret += sprintf(temp_buf + ret, "ges_en[%d]=%d \n",i ,ts->gesture_cust_en[i]);
+		HX_PROC_SEND_FLAG = 1;
+		if (copy_to_user(buf, temp_buf, len))
+		{
+			I("%s,here:%d\n", __func__, __LINE__);
+		}
+
+		kfree(temp_buf);
+		HX_PROC_SEND_FLAG = 1;
 	}
 	else
 	{
@@ -2001,15 +2058,15 @@ static ssize_t himax_GESTURE_write(struct file *file, const char *buff,
 
 	I("himax_GESTURE_store= %s \n",buf);
 	for (i=0;i<16;i++)
-		{
-			if (buf[i] == '0')
-				ts->gesture_cust_en[i]= 0;
-			else if (buf[i] == '1')
-				ts->gesture_cust_en[i]= 1;
-			else
-				ts->gesture_cust_en[i]= 0;
-			I("gesture en[%d]=%d \n", i, ts->gesture_cust_en[i]);
-		}
+	{
+		if (buf[i] == '0')
+			ts->gesture_cust_en[i]= 0;
+		else if (buf[i] == '1')
+			ts->gesture_cust_en[i]= 1;
+		else
+			ts->gesture_cust_en[i]= 0;
+		I("gesture en[%d]=%d \n", i, ts->gesture_cust_en[i]);
+	}
 	return len;
 }
 
@@ -2030,40 +2087,35 @@ int himax_touch_proc_init(void)
 		return -ENOMEM;
 	}
 
-	himax_proc_debug_level_file = proc_create(HIMAX_PROC_DEBUG_LEVEL_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_debug_level_ops);
+	himax_proc_debug_level_file = proc_create(HIMAX_PROC_DEBUG_LEVEL_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_debug_level_ops);
 	if (himax_proc_debug_level_file == NULL)
 	{
 		E(" %s: proc debug_level file create failed!\n", __func__);
 		goto fail_1;
 	}
 
-	himax_proc_vendor_file = proc_create(HIMAX_PROC_VENDOR_FILE, (S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_vendor_ops);
+	himax_proc_vendor_file = proc_create(HIMAX_PROC_VENDOR_FILE, (S_IRUGO),himax_touch_proc_dir, &himax_proc_vendor_ops);
 	if(himax_proc_vendor_file == NULL)
 	{
 		E(" %s: proc vendor file create failed!\n", __func__);
 		goto fail_2;
 	}
 
-	himax_proc_attn_file = proc_create(HIMAX_PROC_ATTN_FILE, (S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_attn_ops);
+	himax_proc_attn_file = proc_create(HIMAX_PROC_ATTN_FILE, (S_IRUGO),himax_touch_proc_dir, &himax_proc_attn_ops);
 	if(himax_proc_attn_file == NULL)
 	{
 		E(" %s: proc attn file create failed!\n", __func__);
 		goto fail_3;
 	}
 
-	himax_proc_int_en_file = proc_create(HIMAX_PROC_INT_EN_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_int_en_ops);
+	himax_proc_int_en_file = proc_create(HIMAX_PROC_INT_EN_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_int_en_ops);
 	if(himax_proc_int_en_file == NULL)
 	{
 		E(" %s: proc int en file create failed!\n", __func__);
 		goto fail_4;
 	}
 
-	himax_proc_layout_file = proc_create(HIMAX_PROC_LAYOUT_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_layout_ops);
+	himax_proc_layout_file = proc_create(HIMAX_PROC_LAYOUT_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_layout_ops);
 	if(himax_proc_layout_file == NULL)
 	{
 		E(" %s: proc layout file create failed!\n", __func__);
@@ -2071,8 +2123,7 @@ int himax_touch_proc_init(void)
 	}
 	
 #ifdef HX_TP_PROC_RESET
-	himax_proc_reset_file = proc_create(HIMAX_PROC_RESET_FILE, (S_IWUSR),
-		himax_touch_proc_dir, &himax_proc_reset_ops);
+	himax_proc_reset_file = proc_create(HIMAX_PROC_RESET_FILE, (S_IWUSR), himax_touch_proc_dir, &himax_proc_reset_ops);
 	if(himax_proc_reset_file == NULL)
 	{
 		E(" %s: proc reset file create failed!\n", __func__);
@@ -2081,15 +2132,13 @@ int himax_touch_proc_init(void)
 #endif
 
 #ifdef HX_TP_PROC_DIAG
-	himax_proc_diag_file = proc_create(HIMAX_PROC_DIAG_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_diag_ops);
+	himax_proc_diag_file = proc_create(HIMAX_PROC_DIAG_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_diag_ops);
 	if(himax_proc_diag_file == NULL)
 	{
 		E(" %s: proc diag file create failed!\n", __func__);
 		goto fail_7;
 	}
-	himax_proc_diag_arrange_file = proc_create(HIMAX_PROC_DIAG_ARR_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_diag_arrange_ops);
+	himax_proc_diag_arrange_file = proc_create(HIMAX_PROC_DIAG_ARR_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_diag_arrange_ops);
 	if(himax_proc_diag_arrange_file == NULL)
 	{
 		E(" %s: proc diag file create failed!\n", __func__);
@@ -2098,8 +2147,7 @@ int himax_touch_proc_init(void)
 #endif
 
 #ifdef HX_TP_PROC_REGISTER
-	himax_proc_register_file = proc_create(HIMAX_PROC_REGISTER_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_register_ops);
+	himax_proc_register_file = proc_create(HIMAX_PROC_REGISTER_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_register_ops);
 	if(himax_proc_register_file == NULL)
 	{
 		E(" %s: proc register file create failed!\n", __func__);
@@ -2108,8 +2156,7 @@ int himax_touch_proc_init(void)
 #endif
 
 #ifdef HX_TP_PROC_DEBUG
-	himax_proc_debug_file = proc_create(HIMAX_PROC_DEBUG_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_debug_ops);
+	himax_proc_debug_file = proc_create(HIMAX_PROC_DEBUG_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_debug_ops);
 	if(himax_proc_debug_file == NULL)
 	{
 		E(" %s: proc debug file create failed!\n", __func__);
@@ -2118,8 +2165,7 @@ int himax_touch_proc_init(void)
 #endif
 
 #ifdef HX_TP_PROC_FLASH_DUMP
-	himax_proc_flash_dump_file = proc_create(HIMAX_PROC_FLASH_DUMP_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_flash_ops);
+	himax_proc_flash_dump_file = proc_create(HIMAX_PROC_FLASH_DUMP_FILE, (S_IWUSR|S_IRUGO), himax_touch_proc_dir, &himax_proc_flash_ops);
 	if(himax_proc_flash_dump_file == NULL)
 	{
 		E(" %s: proc flash dump file create failed!\n", __func__);
@@ -2128,8 +2174,7 @@ int himax_touch_proc_init(void)
 #endif
 
 #ifdef HX_TP_PROC_SELF_TEST
-	himax_proc_self_test_file = proc_create(HIMAX_PROC_SELF_TEST_FILE, (S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_self_test_ops);
+	himax_proc_self_test_file = proc_create(HIMAX_PROC_SELF_TEST_FILE, (S_IRUGO), himax_touch_proc_dir, &himax_proc_self_test_ops);
 	if(himax_proc_self_test_file == NULL)
 	{
 		E(" %s: proc self_test file create failed!\n", __func__);
@@ -2137,70 +2182,52 @@ int himax_touch_proc_init(void)
 	}
 #endif
 
-#ifdef HX_TP_PROC_HITOUCH
-	himax_proc_hitouch_file = proc_create(HIMAX_PROC_HITOUCH_FILE, (S_IWUSR|S_IRUGO),
-		himax_touch_proc_dir, &himax_proc_hitouch_ops);
-	if(himax_proc_hitouch_file == NULL)
+#ifdef HX_HIGH_SENSE
+	himax_proc_HSEN_file = proc_create(HIMAX_PROC_HSEN_FILE, (S_IWUSR|S_IRUGO|S_IWUGO), himax_touch_proc_dir, &himax_proc_HSEN_ops);
+	if(himax_proc_HSEN_file == NULL)
 	{
-		E(" %s: proc hitouch file create failed!\n", __func__);
+		E(" %s: proc HSEN file create failed!\n", __func__);
 		goto fail_12;
 	}
 #endif
 
-#ifdef HX_HIGH_SENSE
-	himax_proc_HSEN_file = proc_create(HIMAX_PROC_HSEN_FILE, (S_IWUSR|S_IRUGO|S_IWUGO),
-		himax_touch_proc_dir, &himax_proc_HSEN_ops);
-	if(himax_proc_HSEN_file == NULL)
-	{
-		E(" %s: proc HSEN file create failed!\n", __func__);
-		goto fail_13;
-	}
-#endif
-
 #ifdef HX_SMART_WAKEUP
-	himax_proc_SMWP_file = proc_create(HIMAX_PROC_SMWP_FILE, (S_IWUSR|S_IRUGO|S_IWUGO),
-		himax_touch_proc_dir, &himax_proc_SMWP_ops);
+	himax_proc_SMWP_file = proc_create(HIMAX_PROC_SMWP_FILE, (S_IWUSR|S_IRUGO|S_IWUGO), himax_touch_proc_dir, &himax_proc_SMWP_ops);
 	if(himax_proc_SMWP_file == NULL)
 	{
 		E(" %s: proc SMWP file create failed!\n", __func__);
-		goto fail_14;
+		goto fail_13;
 	}
-	himax_proc_GESTURE_file = proc_create(HIMAX_PROC_GESTURE_FILE, (S_IWUSR|S_IRUGO|S_IWUGO),
-		himax_touch_proc_dir, &himax_proc_Gesture_ops);
+	himax_proc_GESTURE_file = proc_create(HIMAX_PROC_GESTURE_FILE, (S_IWUSR|S_IRUGO|S_IWUGO), himax_touch_proc_dir, &himax_proc_Gesture_ops);
 	if(himax_proc_GESTURE_file == NULL)
 	{
 		E(" %s: proc GESTURE file create failed!\n", __func__);
-		goto fail_15;
+		goto fail_14;
 	}
 #endif
 
 #ifdef HX_TP_PROC_SENSE_ON_OFF
-	himax_proc_SENSE_ON_OFF_file = proc_create(HIMAX_PROC_SENSE_ON_OFF_FILE, (S_IWUSR|S_IRUGO|S_IWUGO),
-		himax_touch_proc_dir, &himax_proc_sense_on_off_ops);
+	himax_proc_SENSE_ON_OFF_file = proc_create(HIMAX_PROC_SENSE_ON_OFF_FILE, (S_IWUSR|S_IRUGO|S_IWUGO), himax_touch_proc_dir, &himax_proc_sense_on_off_ops);
 	if(himax_proc_SENSE_ON_OFF_file == NULL)
 	{
 		E(" %s: proc SENSE_ON_OFF file create failed!\n", __func__);
-		goto fail_16;
+		goto fail_15;
 	}
 #endif
 
 	return 0 ;
 	
 #ifdef HX_TP_PROC_SENSE_ON_OFF
-	fail_16:
+	fail_15:
 #endif
 #ifdef HX_SMART_WAKEUP
 	remove_proc_entry( HIMAX_PROC_GESTURE_FILE, himax_touch_proc_dir );
-	fail_15:
-	remove_proc_entry( HIMAX_PROC_SMWP_FILE, himax_touch_proc_dir );
 	fail_14:
+	remove_proc_entry( HIMAX_PROC_SMWP_FILE, himax_touch_proc_dir );
+	fail_13:
 #endif
 #ifdef HX_HIGH_SENSE
 	remove_proc_entry( HIMAX_PROC_HSEN_FILE, himax_touch_proc_dir );
-	fail_13:
-#endif
-#ifdef HX_TP_PROC_HITOUCH
-	remove_proc_entry( HIMAX_PROC_HITOUCH_FILE, himax_touch_proc_dir );
 	fail_12:
 #endif
 #ifdef HX_TP_PROC_SELF_TEST
@@ -2241,41 +2268,38 @@ int himax_touch_proc_init(void)
 void himax_touch_proc_deinit(void)
 {
 #ifdef HX_TP_PROC_SENSE_ON_OFF
-		remove_proc_entry( HIMAX_PROC_SENSE_ON_OFF_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_SENSE_ON_OFF_FILE, himax_touch_proc_dir );
 #endif
 #ifdef HX_SMART_WAKEUP
-		remove_proc_entry( HIMAX_PROC_GESTURE_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_SMWP_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_GESTURE_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_SMWP_FILE, himax_touch_proc_dir );
 #endif
 #ifdef HX_DOT_VIEW
-		remove_proc_entry( HIMAX_PROC_HSEN_FILE, himax_touch_proc_dir );
-#endif
-#ifdef HX_TP_PROC_HITOUCH
-		remove_proc_entry( HIMAX_PROC_HITOUCH_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_HSEN_FILE, himax_touch_proc_dir );
 #endif
 #ifdef HX_TP_PROC_SELF_TEST
-		remove_proc_entry(HIMAX_PROC_SELF_TEST_FILE, himax_touch_proc_dir);
+	remove_proc_entry(HIMAX_PROC_SELF_TEST_FILE, himax_touch_proc_dir);
 #endif
 #ifdef HX_TP_PROC_FLASH_DUMP
-		remove_proc_entry(HIMAX_PROC_FLASH_DUMP_FILE, himax_touch_proc_dir);
+	remove_proc_entry(HIMAX_PROC_FLASH_DUMP_FILE, himax_touch_proc_dir);
 #endif
 #ifdef HX_TP_PROC_DEBUG
-		remove_proc_entry( HIMAX_PROC_DEBUG_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_DEBUG_FILE, himax_touch_proc_dir );
 #endif
 #ifdef HX_TP_PROC_REGISTER
-		remove_proc_entry(HIMAX_PROC_REGISTER_FILE, himax_touch_proc_dir);
+	remove_proc_entry(HIMAX_PROC_REGISTER_FILE, himax_touch_proc_dir);
 #endif
 #ifdef HX_TP_PROC_DIAG
-		remove_proc_entry(HIMAX_PROC_DIAG_FILE, himax_touch_proc_dir);
+	remove_proc_entry(HIMAX_PROC_DIAG_FILE, himax_touch_proc_dir);
 #endif
 #ifdef HX_TP_PROC_RESET
-		remove_proc_entry( HIMAX_PROC_RESET_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_RESET_FILE, himax_touch_proc_dir );
 #endif
-		remove_proc_entry( HIMAX_PROC_LAYOUT_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_INT_EN_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_ATTN_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_VENDOR_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_DEBUG_LEVEL_FILE, himax_touch_proc_dir );
-		remove_proc_entry( HIMAX_PROC_TOUCH_FOLDER, NULL );
+	remove_proc_entry( HIMAX_PROC_LAYOUT_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_INT_EN_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_ATTN_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_VENDOR_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_DEBUG_LEVEL_FILE, himax_touch_proc_dir );
+	remove_proc_entry( HIMAX_PROC_TOUCH_FOLDER, NULL );
 }
 #endif

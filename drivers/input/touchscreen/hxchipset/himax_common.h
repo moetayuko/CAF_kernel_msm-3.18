@@ -49,7 +49,7 @@
 #ifdef CONFIG_OF
 #include <linux/of_gpio.h>
 #endif
-#define HIMAX_DRIVER_VER "0.1.9.2"
+#define HIMAX_DRIVER_VER "0.2.2.0"
 
 #define FLASH_DUMP_FILE "/data/user/Flash_Dump.bin"
 #define DIAG_COORDINATE_FILE "/sdcard/Coordinate_Dump.csv"
@@ -62,7 +62,6 @@
 #define HX_TP_PROC_FLASH_DUMP
 #define HX_TP_PROC_SELF_TEST
 #define HX_TP_PROC_RESET
-#define HX_TP_PROC_HITOUCH
 #define HX_TP_PROC_SENSE_ON_OFF
 //#define HX_TP_PROC_2T2R
 

@@ -148,14 +148,6 @@ bool getFlashDumpGoing(void);
 	uint8_t sel_type = 0x0D;
 #endif
 
-#ifdef HX_TP_PROC_HITOUCH
-	#define HIMAX_PROC_HITOUCH_FILE	"hitouch"
-	struct proc_dir_entry *himax_proc_hitouch_file = NULL;
-
-	static int	hitouch_command			= 0;
-	bool hitouch_is_connect	= false;
-#endif
-
 #ifdef HX_TP_PROC_RESET
 #define HIMAX_PROC_RESET_FILE		"reset"
 extern void himax_HW_reset(uint8_t loadconfig,uint8_t int_off);
