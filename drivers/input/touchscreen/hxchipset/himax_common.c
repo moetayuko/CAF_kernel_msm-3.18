@@ -23,9 +23,7 @@
 #if defined(HX_AUTO_UPDATE_FW)
 	static unsigned char i_CTPM_FW[]=
 	{
-//		#include "20170317_HX83100-A_Innolux_FW_01_21_09_11.i"
-		#include "20170413_HX83100-A_Innolux_FW_01_2A_0A_02.i"      //tanzubai
-
+		#include "HX83100_Amber_0601.i"
 	};
 #endif
 

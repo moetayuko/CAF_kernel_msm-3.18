@@ -49,7 +49,7 @@
 #ifdef CONFIG_OF
 #include <linux/of_gpio.h>
 #endif
-#define HIMAX_DRIVER_VER "0.2.2.0"
+#define HIMAX_DRIVER_VER "0.2.3.0"
 
 #define FLASH_DUMP_FILE "/data/user/Flash_Dump.bin"
 #define DIAG_COORDINATE_FILE "/sdcard/Coordinate_Dump.csv"
@@ -71,7 +71,7 @@ void himax_touch_proc_deinit(void);
 
 //===========Himax Option function=============
 //#define HX_RST_PIN_FUNC
-//#define HX_AUTO_UPDATE_FW
+#define HX_AUTO_UPDATE_FW
 //#define HX_HIGH_SENSE
 //#define HX_SMART_WAKEUP
 //#define HX_USB_DETECT
